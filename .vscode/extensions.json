@@ -1,0 +1,6 @@
+{
+  "recommendations": [
+    "streetsidesoftware.code-spell-checker", // Spell checking (good for docstrings and comments)
+    "editorconfig.editorconfig", // EditorConfig support in VSCode
+  ]
+}

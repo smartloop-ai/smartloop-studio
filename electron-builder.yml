@@ -1,0 +1,56 @@
+appId: ai.smartloop.agent
+productName: smartloop
+copyright: Copyright © 2025 Smartloop Inc.
+buildVersion: 1.0.0
+directories:
+  output: dist
+  buildResources: build
+asar: true
+protocols:
+  name: smartloop
+  schemes:
+    - smartloop
+files:
+  - dist-web/**/*
+  - electron/**/*
+  - public/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/node_modules/**"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+mac:
+  category: public.app-category.productivity
+  icon: icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  identity: "Apple Development: Mehfuz Hossain (5CA94W63R2)"
+  notarize: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+win:
+  icon: public/img/logo.png
+  target:
+    - nsis
+    - portable
+linux:
+  icon: public/img/logo.png
+  category: Development
+  target:
+    - AppImage
+    - deb
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

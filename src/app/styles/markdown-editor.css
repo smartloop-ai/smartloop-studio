@@ -1,0 +1,65 @@
+/* Import EasyMDE styles */
+@import 'easymde/dist/easymde.min.css';
+
+/* Custom dark theme overrides */
+.markdown-editor-container .EasyMDEContainer .CodeMirror {
+    background-color: #000;
+    color: #fff;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: monospace;
+    min-height: 200px;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror:hover {
+    border-color: #3a3a3a;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror.CodeMirror-focused {
+    border-color: #ec4899;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-cursor {
+    border-color: #ec4899;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-toolbar {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-toolbar button {
+    color: #9ca3af !important;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-toolbar button:hover {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-toolbar button.active {
+    background-color: rgba(236, 72, 153, 0.1);
+    color: #ec4899 !important;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-toolbar i.separator {
+    border-left: 1px solid #3a3a3a;
+    border-right: 1px solid #3a3a3a;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-placeholder {
+    color: #6b7280 !important;
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-preview,
+.markdown-editor-container .EasyMDEContainer .editor-preview-side {
+    background-color: #000;
+    color: #fff;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-scroll {
+    min-height: 200px;
+}

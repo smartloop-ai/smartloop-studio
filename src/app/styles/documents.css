@@ -1,0 +1,15 @@
+/* Documents Page Styles */
+.documents-container {
+  min-height: 100vh;
+  background-color: #000;
+}
+
+.document-card {
+  transition: all 0.3s ease;
+}
+
+.document-card:hover {
+  background-color: #1a1a1a;
+  border-color: #3a3a3a;
+}
+

@@ -1,0 +1,25 @@
+.p-fileupload-row {
+	padding-top: 10px;
+	padding-bottom: 10px;
+}
+
+.input {
+	display: block;
+}
+
+/* Projects Page Styles */
+.projects-page {
+	background-color: #000;
+	min-height: 100vh;
+}
+
+.projects-page__big-container {
+	max-width: 1400px;
+	margin: 0 auto;
+}
+
+/* Book illustration styles */
+.book-spine {
+	border-radius: 4px 4px 0 0;
+	box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
+}

@@ -1,0 +1,61 @@
+.system-message ::selection {
+	background: #cabdff;
+}
+
+.header {
+	position: relative !important;
+}
+
+.editable-title {
+	margin: 5px 0px;
+}
+
+.chat-content_agent table {
+	@apply w-full table-auto text-left my-5 border border-slate-300 border-[1px];
+}
+
+.chat-content_agent table th {
+	@apply p-2 border-solid border-slate-300 text-start text-xs font-medium uppercase border-[1px];
+}
+
+.chat-content_agent table td {
+	@apply border-solid border-slate-300 p-2 border-[1px];
+}
+
+.chat-content_agent pre code {
+	@apply text-sm sm:text-base inline-flex text-left  items-start flex-col text-wrap my-2 space-x-4 bg-slate-900 text-white p-5;
+}
+
+.chat-content_agent code {
+	@apply text-sm sm:text-base inline-flex text-left  items-start flex-col text-wrap my-2 space-x-4 bg-slate-900 text-white px-2;
+}
+
+.chat-content_agent code p {
+	@apply flex gap-4;
+}
+
+.chat-content_agent a {
+	@apply text-blue-200 hover:underline;
+}
+
+.summary code {
+	@apply text-sm sm:text-base inline-flex flex-col text-wrap my-2 bg-slate-900 text-white p-5;
+}
+
+.summary pre code {
+	@apply text-sm sm:text-base inline-flex flex-col text-wrap my-2 bg-slate-900 text-white p-5;
+}
+
+.summary code p {
+	@apply flex gap-4;
+}
+
+.summary p {
+	@apply flex flex-col;
+}
+
+
+
+.cursor-not-allowed {
+	cursor: not-allowed;
+}

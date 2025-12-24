@@ -1,0 +1,10 @@
+# Values for deploying the dev site
+namespace: "dev"
+replicaCount: 1
+image: "gcr.io/chris-smartloop-dev/app:latest"
+ingress:
+  hosts:
+    - dev.smartloop.ai
+    - dev-agent.smartloop.ai
+    - dev-dashboard.smartloop.ai
+  tlsSecret: "tls-crt"

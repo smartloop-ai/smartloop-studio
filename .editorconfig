@@ -1,0 +1,51 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# Top-level EditorConfig file
+root = true
+
+# Global settings (applies to all files unless overridden)
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Python files
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 88 # black formatter default
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# TypeScript & JavaScript files
+[*.{ts,tsx,js,jsx}]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# CSS, SCSS, and Tailwind files
+[*.{css,scss}]
+indent_style = space
+indent_size = 2
+
+# JSON, YAML, and Markdown (Common in Next.js projects)
+[*.{json,yml,yaml,md}]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+insert_final_newline = true
+
+# Ignore Prettier-managed files
+[*.{prettierrc,eslintrc}]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+
+# Makefiles and included .mk fragments require tab indentation
++[Makefile, *.mk]
++indent_style = tab
++trim_trailing_whitespace = true
++insert_final_newline = true

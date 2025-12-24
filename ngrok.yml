@@ -1,0 +1,14 @@
+version: "2"
+
+# hardcoded token for Mehfuz's personal account
+authtoken: 1SxhvWVBndnUlBvLsC9PAzA43Ad_5EWPULaaLNtta94ZpEpfm
+
+tunnels:
+  api:
+    addr: 8888
+    proto: http
+    hostname: api-local.smartloop.ai
+  frontend:
+    addr: 3000
+    proto: http
+    hostname: local.smartloop.ai
