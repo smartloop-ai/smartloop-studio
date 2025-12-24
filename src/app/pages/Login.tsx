@@ -181,6 +181,22 @@ export default function Login() {
             </a>
           </p>
         </Box>
+        {/* Sign Up Link */}
+        <Box className="mt-6 pt-6 border-t border-gray-800">
+          <p className="text-sm text-gray-400">
+            Don't have an account?{' '}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                window.open('https://docgpt.smartloop.ai/signup?mode=native', '_blank');
+              }}
+              className="text-pink-500 hover:text-pink-400 font-medium cursor-pointer"
+            >
+              Sign up
+            </a>
+          </p>
+        </Box>
       </Box>
 
       {/* Footer Info */}
