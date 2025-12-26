@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Box } from '@mui/material';
 import Sidebar from './app/components/sidebar';
 import MobileNav from './app/components/mobile-nav';
+import { AuthProvider } from './app/components/auth-provider';
 import { useAuth } from './app/hooks/useAuth';
 import Home from './app/pages/Home';
 import Login from './app/pages/Login';
@@ -34,48 +35,50 @@ function App() {
   const showSidebar = !authRoutes.includes(location.pathname);
 
   return (
-    <div className="wrapper">
-      {showSidebar && user && (
-        <>
-          {/* Persistent Sidebar across all app routes */}
-          <Sidebar
-            user={user}
-            mobileOpen={mobileMenuOpen}
-            onMobileClose={() => setMobileMenuOpen(false)}
-          />
-        </>
-      )}
-
-      <Box sx={{ marginLeft: { xs: 0, md: showSidebar && user ? '280px' : 0 } }}>
+    <AuthProvider>
+      <div className="wrapper">
         {showSidebar && user && (
-          /* Mobile Nav */
-          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-            <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-          </Box>
+          <>
+            {/* Persistent Sidebar across all app routes */}
+            <Sidebar
+              user={user}
+              mobileOpen={mobileMenuOpen}
+              onMobileClose={() => setMobileMenuOpen(false)}
+            />
+          </>
         )}
 
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={isElectron ? <Navigate to="/login" replace /> : <Signup />} />
-          <Route path="/forgot" element={<Forgot />} />
-          <Route path="/reset" element={<Reset />} />
-          <Route path="/verify" element={<Verify />} />
-          <Route path="/resend" element={<Resend />} />
-          <Route path="/invite" element={<Invite />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/project/:slug" element={<Project />} />
-          <Route path="/documents" element={<Documents />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="/developer" element={isElectron ? <Navigate to="/" replace /> : <Developer />} />
-          <Route path="/oauth-callback" element={<OAuthCallback />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Box>
-    </div>
+        <Box sx={{ marginLeft: { xs: 0, md: showSidebar && user ? '280px' : 0 } }}>
+          {showSidebar && user && (
+            /* Mobile Nav */
+            <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+              <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
+            </Box>
+          )}
+
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={isElectron ? <Navigate to="/login" replace /> : <Signup />} />
+            <Route path="/forgot" element={<Forgot />} />
+            <Route path="/reset" element={<Reset />} />
+            <Route path="/verify" element={<Verify />} />
+            <Route path="/resend" element={<Resend />} />
+            <Route path="/invite" element={<Invite />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/project/:slug" element={<Project />} />
+            <Route path="/documents" element={<Documents />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/developer" element={isElectron ? <Navigate to="/" replace /> : <Developer />} />
+            <Route path="/oauth-callback" element={<OAuthCallback />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Box>
+      </div>
+    </AuthProvider>
   );
 }
 
