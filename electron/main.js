@@ -1,11 +1,17 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 
+// Load environment variables from .env files
+require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 let mainWindow;
 let splashWindow;
 
 const isDev = process.env.NODE_ENV === 'development';
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
+const APP_URL = process.env.VITE_APP_URL || 'https://docgpt.smartloop.ai';
+const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
 
 // Register custom protocol for OAuth callback
 const PROTOCOL = 'smartloop';
@@ -42,7 +48,7 @@ function createSplashScreen() {
           .splash-container {
             text-align: center;
             background: #000000;
-            border-radius: 20px;
+            border-radius: 5px;
             padding: 60px 40px;
             border: 1px solid #2a2a2a;
           }
@@ -83,7 +89,7 @@ function createSplashScreen() {
             <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
           </div>
           <div class="spinner"></div>
-          <div class="loading-text">Loading...</div>
+          <div class="loading-text">Warming up...</div>
         </div>
       </body>
     </html>
@@ -149,7 +155,7 @@ function createWindow() {
 ipcMain.handle('oauth-login', async (event) => {
   console.log('[OAuth] oauth-login called');
 
-  const authUrl = `https://docgpt.smartloop.ai/login?redirect_uri=${PROTOCOL}://oauth/callback&app=electron&mode=native`;
+  const authUrl = `${APP_URL}/login?redirect_uri=${PROTOCOL}://oauth/callback&app=electron&mode=native&app_url=${encodeURIComponent(BASE_URL)}`;
   console.log('[OAuth] Opening URL:', authUrl);
 
   // Open in system's default browser
@@ -166,7 +172,6 @@ ipcMain.handle('validate-token', async (event, token) => {
 
   try {
     // Make a request to validate the token using the /users/me endpoint
-    const BASE_URL = process.env.VITE_BASE_URL || "https://api.smartloop.ai";
     const validateUrl = `${BASE_URL}/v1/users/me`;
     console.log('[OAuth] Validation URL:', validateUrl);
 

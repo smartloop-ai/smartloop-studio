@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Box, CircularProgress } from '@mui/material';
+import { APP_URL, API_BASE_URL } from '@/app/constants';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -94,9 +95,9 @@ export default function Login() {
         // The callback will be handled by the onOAuthCallback listener
         // Keep loading state until we get the callback
       } else {
-        // Web flow - redirect to docgpt.smartloop.ai
         setStatusMessage("Redirecting to authentication...");
-        window.location.href = 'https://docgpt.smartloop.ai/login?mode=native';
+        const apiUrl = encodeURIComponent(API_BASE_URL);
+        window.location.href = `${APP_URL}/login?mode=native&app_url=${apiUrl}`;
       }
     } catch (error: any) {
       console.error('Login error:', error);

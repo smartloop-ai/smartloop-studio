@@ -5,6 +5,8 @@ const BASE_URL = import.meta.env.VITE_BASE_URL || "https://api.smartloop.ai";
 
 export const API_ENDPOINT = `${BASE_URL}/v1`;
 export const WS_ENDPOINT = `${BASE_URL}/ws`;
+export const APP_URL = import.meta.env.VITE_APP_URL || "https://docgpt.smartloop.ai";
+export const API_BASE_URL = BASE_URL; // For OAuth app_url parameter
 
 export const APP_DESCRIPTION = (
   <>
