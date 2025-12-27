@@ -27,7 +27,6 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  identity: "Apple Development: Mehfuz Hossain (5CA94W63R2)"
   notarize: false
   target:
     - target: dmg
