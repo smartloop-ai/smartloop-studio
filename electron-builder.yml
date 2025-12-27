@@ -1,5 +1,5 @@
-appId: ai.smartloop.agent
-productName: smartloop
+appId: ai.smartloop.studio
+productName: Smartloop Studio
 copyright: Copyright © 2025 Smartloop Inc.
 buildVersion: 1.0.0
 directories:
@@ -23,6 +23,7 @@ files:
 mac:
   category: public.app-category.productivity
   icon: icon.icns
+  artifactName: ${productName}-${version}-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -39,15 +40,19 @@ mac:
         - x64
 win:
   icon: public/img/logo.png
+  artifactName: ${productName}-Setup-${version}.${ext}
   target:
     - nsis
     - portable
 linux:
   icon: public/img/logo.png
   category: Development
+  executableName: smartloop-studio
+  artifactName: ${productName}-${version}-${arch}.${ext}
   target:
     - AppImage
     - deb
+    - rpm
 nsis:
   oneClick: false
   perMachine: false
