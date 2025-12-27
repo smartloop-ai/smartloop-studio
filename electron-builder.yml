@@ -52,7 +52,6 @@ linux:
   target:
     - AppImage
     - deb
-    - rpm
 nsis:
   oneClick: false
   perMachine: false

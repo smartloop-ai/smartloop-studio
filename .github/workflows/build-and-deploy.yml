@@ -31,9 +31,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Build for Linux
         run: make build-electron-linux
         env:
@@ -64,9 +61,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-
-      - name: Install dependencies
-        run: npm install
 
       - name: Build for macOS
         run: make build-electron-mac

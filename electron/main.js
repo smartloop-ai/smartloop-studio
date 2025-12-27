@@ -1,9 +1,11 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 
-// Load environment variables from .env files
-require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// Load environment variables from .env files (development only)
+if (process.env.NODE_ENV === 'development') {
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+  require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+}
 
 let mainWindow;
 let splashWindow;
@@ -155,7 +157,7 @@ function createWindow() {
 ipcMain.handle('oauth-login', async (event) => {
   console.log('[OAuth] oauth-login called');
 
-  const authUrl = `${APP_URL}/login?redirect_uri=${PROTOCOL}://oauth/callback&app=electron&mode=native&app_url=${encodeURIComponent(BASE_URL)}`;
+  const authUrl = `${APP_URL}/login?mode=native`;
   console.log('[OAuth] Opening URL:', authUrl);
 
   // Open in system's default browser
