@@ -5,8 +5,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import DescriptionIcon from '@mui/icons-material/Description';
-import CodeIcon from '@mui/icons-material/Code';
-import SubscriptionsIcon from '@mui/icons-material/Subscriptions';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -15,6 +13,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import { userService } from '@/app/services/user.service';
+import { APP_URL } from '@/app/constants';
+
+const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
 export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void }) {
   const navigate = useNavigate();
@@ -29,7 +30,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [liveUser, setLiveUser] = useState(user);
   const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
-  const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
   // Update live user when prop changes
   useEffect(() => {
@@ -93,9 +93,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     { icon: <ChatBubbleOutlineIcon fontSize="small" />, label: 'Chat', path: '/' },
     { icon: <FolderOpenIcon fontSize="small" />, label: 'Projects', path: '/projects' },
     { icon: <DescriptionIcon fontSize="small" />, label: 'Documents', path: '/documents' },
-    // Hide Developer link in Electron
-    ...(!isElectron ? [{ icon: <CodeIcon fontSize="small" />, label: 'Developer', path: '/developer' }] : []),
-    { icon: <SubscriptionsIcon fontSize="small" />, label: 'Pricing', path: '/pricing' },
   ];
 
   // Get recent chats from user projects
@@ -589,6 +586,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         const remainingCredits = isPremium ? Infinity : Math.floor(remainingTokens / 100);
         const usagePercentage = isPremium ? 0 : (totalTokens > 0 ? (processedTokens / totalTokens) * 100 : 0);
 
+        console.log('[Upgrade] Render check - isPremium:', isPremium, 'isPro:', isPro, 'Show button:', !isPremium && !isPro);
+
         return (
           <Box sx={{
             px: 2.5,
@@ -644,7 +643,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             {!isPremium && !isPro && (
               <Box
                 onClick={() => {
-                  navigate('/pricing');
+                  console.log('[Upgrade] Opening pricing page:', `${APP_URL}/pricing`);
+                  if (isElectron) {
+                    // For Electron, open in external browser
+                    window.open(`${APP_URL}/pricing`, '_blank');
+                  } else {
+                    // For web, open in same window
+                    window.location.href = `${APP_URL}/pricing`;
+                  }
                   onMobileClose?.();
                 }}
                 sx={{
