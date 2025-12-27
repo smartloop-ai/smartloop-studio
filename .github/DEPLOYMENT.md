@@ -53,6 +53,15 @@ Go to your GitHub repository:
 - Production companion app URL  
 - Example: `https://docgpt.smartloop.ai`
 
+#### Note on GH_TOKEN:
+
+The workflow automatically uses `GITHUB_TOKEN` (provided by GitHub Actions) for:
+- Publishing releases
+- Auto-update functionality
+- Accessing repository information
+
+**No manual setup required** - `GITHUB_TOKEN` is automatically available with `contents: write` permission.
+
 ### 4. Update Workflow Configuration
 
 Edit `.github/workflows/build-and-deploy.yml`:
