@@ -1,0 +1,240 @@
+name: Build and Deploy Electron App
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  GCP_BUCKET: gs://electron-releases
+  APP_NAME: smartloop-studio
+
+jobs:
+  build-linux:
+    name: Build for Linux
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build for Linux
+        run: make build-electron-linux
+        env:
+          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+          retention-days: 7
+
+  build-macos:
+    name: Build for macOS
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build for macOS
+        run: make build-electron-mac
+        env:
+          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          retention-days: 7
+
+  build-windows:
+    name: Build for Windows
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build for Windows
+        run: npm run electron-pack-win
+        env:
+          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+          retention-days: 7
+
+  upload-to-gcp:
+    name: Upload to GCP Bucket
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: artifacts/linux
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: artifacts/macos
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts/windows
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get version info
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="${GITHUB_SHA:0:7}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create version directory structure
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p release/$VERSION/{linux,macos,windows}
+          
+          # Move artifacts to versioned directories
+          if [ -d "artifacts/linux" ]; then
+            mv artifacts/linux/* release/$VERSION/linux/ 2>/dev/null || true
+          fi
+          if [ -d "artifacts/macos" ]; then
+            mv artifacts/macos/* release/$VERSION/macos/ 2>/dev/null || true
+          fi
+          if [ -d "artifacts/windows" ]; then
+            mv artifacts/windows/* release/$VERSION/windows/ 2>/dev/null || true
+          fi
+          
+          # Create latest symlinks
+          mkdir -p release/latest
+          cp -r release/$VERSION/* release/latest/
+
+      - name: Upload to GCP Bucket
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Upload versioned files
+          gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/$VERSION/
+          
+          # Upload latest files
+          gsutil -m cp -r release/latest/* ${{ env.GCP_BUCKET }}/latest/
+          
+          # Make files publicly readable (optional)
+          # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
+          # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/latest/
+
+      - name: Create version manifest
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > manifest.json << EOF
+          {
+            "version": "$VERSION",
+            "buildDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "files": {
+              "linux": [
+                $(cd release/$VERSION/linux 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
+              ],
+              "macos": [
+                $(cd release/$VERSION/macos 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
+              ],
+              "windows": [
+                $(cd release/$VERSION/windows 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
+              ]
+            }
+          }
+          EOF
+
+      - name: Upload manifest
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gsutil cp manifest.json ${{ env.GCP_BUCKET }}/$VERSION/manifest.json
+          gsutil cp manifest.json ${{ env.GCP_BUCKET }}/latest/manifest.json
+
+      - name: Generate download URLs
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "## Download URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version: $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Linux:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/linux/ || echo "No Linux builds" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**macOS:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/macos/ || echo "No macOS builds" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Windows:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/windows/ || echo "No Windows builds" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
