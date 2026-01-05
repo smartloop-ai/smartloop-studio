@@ -181,6 +181,73 @@ const getDocumentStatus = async (conversationId: string, documentId: string): Pr
   }
 };
 
+/**
+ * Update a conversation's title
+ * @param conversationId - The conversation ID
+ * @param title - New title
+ * @returns Promise with updated conversation data or error
+ */
+const updateConversation = async (conversationId: string, title: string): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId || !conversationId.trim()) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    if (!title || !title.trim()) {
+      return {
+        success: false,
+        error: 'Conversation title is required'
+      };
+    }
+
+    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: title.trim()
+      })
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.ok) {
+      const conversation = await response.json();
+      return {
+        success: true,
+        data: conversation
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to update conversation'
+    };
+  } catch (error: any) {
+    console.error('Error updating conversation:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while updating the conversation'
+    };
+  }
+};
+
+/**
+ * Delete a conversation
+ * @param conversationId - The conversation ID to delete
+ * @returns Promise indicating success or failure
+ */
 const deleteConversation = async (conversationId: string): Promise<ConversationServiceResponse> => {
   try {
     if (!conversationId) {
@@ -224,6 +291,7 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
 
 export const conversationService = {
   createConversation,
+  updateConversation,
   uploadDocument,
   getDocumentStatus,
   deleteConversation

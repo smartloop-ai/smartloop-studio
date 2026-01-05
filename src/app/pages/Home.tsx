@@ -237,6 +237,7 @@ export default function Home() {
       const cleanMessage = message.replace(/@\[([^\]]+)\]\([^)]+\)/g, '').trim();
 
       let activeConversationId = conversationId;
+      let shouldUpdateTitle = false;
 
       // Create a conversation if one doesn't exist yet
       if (!conversationId) {
@@ -267,13 +268,47 @@ export default function Home() {
           console.error('Failed to create conversation:', error);
           return;
         }
+      } else if (conversation) {
+        // If conversation exists and title looks like a filename (has extension), update it
+        const hasFileExtension = /\.(pdf|docx|txt|csv)$/i.test(conversation.title);
+        if (hasFileExtension) {
+          shouldUpdateTitle = true;
+        }
+      }
+
+      // Update conversation title if needed (when it was created from file upload)
+      if (shouldUpdateTitle && activeConversationId) {
+        try {
+          const words = cleanMessage.split(' ');
+          const titleWords = words.slice(0, 5).join(' ');
+          const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+
+          const updateResult = await conversationService.updateConversation(
+            activeConversationId,
+            conversationTitle
+          );
+
+          if (updateResult.success && updateResult.data) {
+            setConversation(updateResult.data);
+
+            // Refresh user data to get updated conversations in sidebar
+            const updatedUser = await userService.get();
+            if (updatedUser) {
+              setUser(updatedUser);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to update conversation title:', error);
+          // Continue anyway, title update is not critical
+        }
       }
 
       // File is already uploaded by FileAttacher, just navigate
       if (activeConversationId) {
         setChatMessage(cleanMessage);
         setMessage('');
-        setMessageAttachments([]);
+        // Don't clear messageAttachments here - they need to be passed to Chat component
+        // setMessageAttachments([]);
         setClearAttachmentTrigger(prev => prev + 1);
 
         // Navigate to conversation page
@@ -283,31 +318,32 @@ export default function Home() {
   };
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
-    // Create conversation if it doesn't exist
-    if (!conversationId) {
-      try {
-        const conversationResult = await conversationService.createConversation({
-          title: fileName,
-          project_id: selectedProject?.id || undefined
-        });
-
-        if (conversationResult.success && conversationResult.data) {
-          const conversation = conversationResult.data;
-          setConversationId(conversation.id);
-          setConversation(conversation);
-
-          const updatedUser = await userService.get();
-          if (updatedUser) {
-            setUser(updatedUser);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        return;
-      }
-    }
-
     setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
+  };
+
+  const handleCreateConversation = async (fileName: string): Promise<string | null> => {
+    try {
+      const conversationResult = await conversationService.createConversation({
+        title: fileName,
+        project_id: selectedProject?.id || undefined
+      });
+
+      if (conversationResult.success && conversationResult.data) {
+        const conversation = conversationResult.data;
+        setConversationId(conversation.id);
+        setConversation(conversation);
+
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+
+        return conversation.id;
+      }
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+    }
+    return null;
   };
 
   const features = [
@@ -680,6 +716,7 @@ export default function Home() {
                 <FileAttacher
                   conversationId={conversationId}
                   onSuccess={handleFileAttached}
+                  onCreateConversation={handleCreateConversation}
                   onError={(error) => console.error('File upload error:', error)}
                   size="medium"
                   showDragDrop={true}
@@ -940,6 +977,7 @@ export default function Home() {
                         <FileAttacher
                           conversationId={conversationId}
                           onSuccess={handleFileAttached}
+                          onCreateConversation={handleCreateConversation}
                           onError={(error) => console.error('File upload error:', error)}
                           size="small"
                           showDragDrop={true}

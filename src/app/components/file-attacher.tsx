@@ -11,6 +11,7 @@ interface FileAttacherProps {
   onSuccess: (documentId: string, fileName: string) => void;
   onError?: (error: string) => void;
   onClear?: () => void;
+  onCreateConversation?: (fileName: string) => Promise<string | null>; // Returns conversationId
   disabled?: boolean;
   size?: 'small' | 'medium';
   showDragDrop?: boolean;
@@ -23,6 +24,7 @@ export default function FileAttacher({
   onSuccess,
   onError,
   onClear,
+  onCreateConversation,
   disabled = false,
   size = 'small',
   showDragDrop = false,
@@ -65,7 +67,24 @@ export default function FileAttacher({
   };
 
   const uploadFile = async (file: File) => {
-    if (!conversationId) {
+    let activeConversationId = conversationId;
+
+    // Create conversation if needed
+    if (!activeConversationId && onCreateConversation) {
+      try {
+        activeConversationId = await onCreateConversation(file.name);
+        if (!activeConversationId) {
+          throw new Error('Failed to create conversation');
+        }
+      } catch (error: any) {
+        const errorMessage = error.message || 'Failed to create conversation';
+        setUploadError(errorMessage);
+        if (onError) onError(errorMessage);
+        return;
+      }
+    }
+
+    if (!activeConversationId) {
       const error = 'No conversation ID available';
       setUploadError(error);
       if (onError) onError(error);
@@ -78,7 +97,7 @@ export default function FileAttacher({
     try {
       // Upload document
       const uploadResult = await conversationService.uploadDocument(
-        conversationId,
+        activeConversationId,
         file
       );
 
@@ -89,7 +108,7 @@ export default function FileAttacher({
       const document = uploadResult.data;
 
       // Update status to show processing
-      setUploadError('Processing document...');
+      setUploadError('Processing attachment...');
 
       // Poll for document processing completion
       const maxAttempts = 60;
@@ -101,7 +120,7 @@ export default function FileAttacher({
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const statusResult = await conversationService.getDocumentStatus(
-          conversationId,
+          activeConversationId,
           document.id
         );
 
@@ -216,7 +235,7 @@ export default function FileAttacher({
           <>
             <CircularProgress size={isSmall ? 14 : 24} sx={{ color: '#ec4899' }} />
             <Box className={`text-gray-300 ${isSmall ? 'text-xs' : 'text-sm'}`}>
-              {uploadError && uploadError.toLowerCase().includes('processing') ? uploadError : 'Uploading...'}
+              {uploadError && (uploadError.toLowerCase().includes('processing') || uploadError.toLowerCase().includes('attachment')) ? uploadError : 'Uploading...'}
             </Box>
           </>
         ) : uploadError ? (
