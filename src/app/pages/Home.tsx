@@ -3,27 +3,26 @@
 import '../styles/home.css';
 import '../styles/mentions.css';
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Tooltip } from '@mui/material';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Box, Dialog, IconButton, CircularProgress } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ManageSearchIcon from '@mui/icons-material/ManageSearch';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CloseIcon from '@mui/icons-material/Close';
-import ErrorIcon from '@mui/icons-material/Error';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import FileAttacher from '@/app/components/file-attacher';
 import { userService } from '@/app/services/user.service';
-import { projectService } from '@/app/services/project.service';
+import { conversationService } from '@/app/services/conversation.service';
+import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
@@ -40,14 +39,17 @@ export default function Home() {
   const [showProjectInfoDialog, setShowProjectInfoDialog] = useState(false);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [uploadedDocument, setUploadedDocument] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [hideTokenLimit, setHideTokenLimit] = useState(false);
+  const [uploadedDocument, setUploadedDocument] = useState<any>(null);
+  const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
+  const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -70,6 +72,83 @@ export default function Home() {
       }
     }
   }, [user]);
+
+  // Handle conversation ID from URL parameter
+  useEffect(() => {
+    const urlConversationId = searchParams.get('conversation');
+
+    if (urlConversationId && user) {
+      console.log('Conversation ID from URL:', urlConversationId);
+
+      // Find the conversation in user's conversations first
+      const foundConversation = user.conversations?.find((c: any) => c.id === urlConversationId);
+
+      if (foundConversation) {
+        // Valid conversation found - use it
+        setConversationId(foundConversation.id);
+
+        if (foundConversation.title && foundConversation.title !== 'New Chat') {
+          // Use the conversation with a real title (not default)
+          setConversation(foundConversation);
+        } else if (!conversation || conversation.id !== foundConversation.id) {
+          // Only update conversation if we don't already have one with this ID
+          // This prevents overwriting the title when navigating to a newly created conversation
+          const key = `chat_${foundConversation.id}`;
+          const stored = localStorage.getItem(key);
+          let conversationTitle = foundConversation.title || 'New Chat';
+
+          if (stored) {
+            try {
+              const messages = JSON.parse(stored);
+              if (messages.length > 0) {
+                // Find first user message
+                const firstUserMessage = messages.find((m: any) => m.direction === 'in');
+                if (firstUserMessage) {
+                  const words = firstUserMessage.payload.text.trim().split(' ');
+                  const titleWords = words.slice(0, 5).join(' ');
+                  conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing messages:', e);
+            }
+          }
+
+          // Set conversation object with title
+          setConversation({ ...foundConversation, title: conversationTitle });
+        }
+
+        // Only clear chatMessage if this conversation already has messages in localStorage
+        // This prevents auto-sending when clicking sidebar, but allows sending new messages
+        const key = `chat_${foundConversation.id}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          try {
+            const messages = JSON.parse(stored);
+            if (messages.length > 0) {
+              // Existing conversation with messages - clear chatMessage to prevent auto-send
+              setChatMessage(null);
+            }
+            // If no messages, keep chatMessage so new message can be sent
+          } catch (e) {
+            console.error('Error checking stored messages:', e);
+          }
+        }
+
+        setShowChat(true);
+      } else {
+        // Invalid conversation ID in URL - navigate back to home
+        console.warn('Invalid conversation ID in URL:', urlConversationId);
+        navigate('/');
+      }
+    } else if (!urlConversationId && showChat) {
+      // No conversation parameter, clear chat state
+      setShowChat(false);
+      setConversationId(null);
+      setConversation(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -151,166 +230,84 @@ export default function Home() {
     }
   };
 
-  const createProject = async (projectName: string) => {
-    try {
-      // Use project service to create project
-      const result = await projectService.createProject({
-        title: projectName,
-        temperature: 0.3
-      });
-
-      if (result.success && result.data) {
-        console.log('Project created successfully:', result.data);
-
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
-        setUser(updatedUser);
-        return result.data;
-      }
-
-      // Log error response
-      console.error('Failed to create project:', result.error);
-      return null;
-    } catch (error) {
-      console.error('Error in createProject:', error);
-      return null;
-    }
-  };
-
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (message.trim()) {
       // Remove @mention markup before sending the message
       // The markup format is: @[display](id)
       const cleanMessage = message.replace(/@\[([^\]]+)\]\([^)]+\)/g, '').trim();
 
-      // Show chat on the same page (works with or without project)
-      setChatMessage(cleanMessage);
-      setShowChat(true);
-      setMessage('');
-    }
-  };
+      let activeConversationId = conversationId;
 
-  // Drag and drop handlers for file upload
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
+      // Create a conversation if one doesn't exist yet
+      if (!conversationId) {
+        try {
+          // Generate title from first 5 words of message
+          const words = cleanMessage.split(' ');
+          const titleWords = words.slice(0, 5).join(' ');
+          const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
+          const conversationResult = await conversationService.createConversation({
+            title: conversationTitle,
+            project_id: selectedProject?.id || undefined
+          });
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+          if (conversationResult.success && conversationResult.data) {
+            const conversation = conversationResult.data;
+            activeConversationId = conversation.id;
+            setConversationId(conversation.id);
+            setConversation(conversation);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
-      const maxSize = 5 * 1024 * 1024;
-
-      if (!allowedTypes.includes(file.type)) {
-        setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
-        return;
-      }
-      if (file.size > maxSize) {
-        setUploadError('File size exceeds 5MB limit');
-        return;
-      }
-
-      // Auto-create project if needed
-      let targetProject = selectedProject;
-      if (!targetProject) {
-        const fileName = file.name;
-        const projectName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-        const newProject = await createProject(projectName);
-        if (newProject) {
-          setSelectedProject(newProject);
-          targetProject = newProject;
-        } else {
-          setUploadError('Failed to create project');
+            // Refresh user data to get updated conversations
+            const updatedUser = await userService.get();
+            if (updatedUser) {
+              setUser(updatedUser);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to create conversation:', error);
           return;
         }
       }
 
-      // Upload file
-      setIsUploading(true);
-      setUploadError('');
-      setUploadFiles([file]);
+      // File is already uploaded by FileAttacher, just navigate
+      if (activeConversationId) {
+        setChatMessage(cleanMessage);
+        setMessage('');
+        setMessageAttachments([]);
+        setClearAttachmentTrigger(prev => prev + 1);
 
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const url = `${API_ENDPOINT}/projects/${targetProject.id}/documents`;
-        const response = await fetch(url, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${userService.token()}`
-          },
-          body: formData
-        });
-
-        if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.detail || result.message || 'Upload failed');
-        }
-
-        const result = await response.json();
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-        }
-
-        // Set uploaded document and start processing check
-        setUploadedDocument({
-          name: file.name,
-          size: file.size,
-          projectId: targetProject.id,
-          documentId: result.id
-        });
-
-        setIsProcessing(true);
-
-        // Poll for processing completion
-        const pollInterval = setInterval(async () => {
-          try {
-            const updatedUser = await userService.get();
-            if (updatedUser) {
-              setUser(updatedUser);
-
-              const project = updatedUser.projects.find((p: any) => p.id === targetProject.id);
-              const document = project?.documents?.find((d: any) => d.id === result.id);
-
-              if (document && ((document.num_of_tokens && document.num_of_tokens > 0) || document.is_token_limit_reached)) {
-                setIsProcessing(false);
-                clearInterval(pollInterval);
-
-                // Update uploaded document with token limit status
-                if (document.is_token_limit_reached) {
-                  setUploadedDocument((prev: any) => ({
-                    ...prev,
-                    is_token_limit_reached: true
-                  }));
-                }
-              }
-            }
-          } catch (error) {
-            console.error('Error polling document status:', error);
-          }
-        }, 3000);
-
-        setIsUploading(false);
-      } catch (error: any) {
-        setUploadError(error.message || 'Failed to upload document');
-        setIsUploading(false);
-        setUploadFiles([]);
+        // Navigate to conversation page
+        navigate(`/?conversation=${activeConversationId}`);
       }
     }
+  };
+
+  const handleFileAttached = async (documentId: string, fileName: string) => {
+    // Create conversation if it doesn't exist
+    if (!conversationId) {
+      try {
+        const conversationResult = await conversationService.createConversation({
+          title: fileName,
+          project_id: selectedProject?.id || undefined
+        });
+
+        if (conversationResult.success && conversationResult.data) {
+          const conversation = conversationResult.data;
+          setConversationId(conversation.id);
+          setConversation(conversation);
+
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        return;
+      }
+    }
+
+    setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
   };
 
   const features = [
@@ -349,20 +346,10 @@ export default function Home() {
             maxWidth="md"
             fullWidth
             PaperProps={{
-              sx: {
-                bgcolor: 'rgba(10, 10, 10, 0.7)',
-                backdropFilter: 'blur(20px)',
-                border: '1px solid rgba(236, 72, 153, 0.3)',
-                borderRadius: '16px',
-                maxWidth: '600px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-              }
+              sx: dialogStyles.paperWide
             }}
             BackdropProps={{
-              sx: {
-                backdropFilter: 'blur(4px)',
-                bgcolor: 'rgba(0, 0, 0, 0.4)',
-              }
+              sx: dialogStyles.backdrop
             }}
           >
             <Box className="relative">
@@ -544,18 +531,10 @@ export default function Home() {
             maxWidth="sm"
             fullWidth
             PaperProps={{
-              sx: {
-                bgcolor: '#0a0a0a',
-                border: '1px solid #1a1a1a',
-                borderRadius: '12px',
-                maxWidth: '480px',
-              }
+              sx: dialogStyles.paper
             }}
             BackdropProps={{
-              sx: {
-                backdropFilter: 'blur(4px)',
-                bgcolor: 'rgba(0, 0, 0, 0.6)',
-              }
+              sx: dialogStyles.backdrop
             }}
           >
             <Box className="relative p-6">
@@ -646,24 +625,14 @@ export default function Home() {
             onClose={() => {
               setShowFileUploadDialog(false);
               setUploadFiles([]);
-              setUploadError('');
-              setIsDragging(false);
             }}
             maxWidth="sm"
             fullWidth
             PaperProps={{
-              sx: {
-                bgcolor: '#0a0a0a',
-                border: '1px solid #1a1a1a',
-                borderRadius: '12px',
-                maxWidth: '480px',
-              }
+              sx: dialogStyles.paper
             }}
             BackdropProps={{
-              sx: {
-                backdropFilter: 'blur(4px)',
-                bgcolor: 'rgba(0, 0, 0, 0.6)',
-              }
+              sx: dialogStyles.backdrop
             }}
           >
             <Box className="relative p-6">
@@ -672,8 +641,6 @@ export default function Home() {
                 onClick={() => {
                   setShowFileUploadDialog(false);
                   setUploadFiles([]);
-                  setUploadError('');
-                  setIsDragging(false);
                 }}
                 sx={{
                   position: 'absolute',
@@ -705,120 +672,28 @@ export default function Home() {
                   </Box>
                 )}
 
-                {/* File Upload Area */}
-                <Box>
-                  {uploadFiles.length === 0 ? (
-                    <Box
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setIsDragging(true);
-                      }}
-                      onDragLeave={(e) => {
-                        e.preventDefault();
-                        setIsDragging(false);
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setIsDragging(false);
-                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                          const file = e.dataTransfer.files[0];
-                          const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
-                          const maxSize = 50 * 1024 * 1024;
+              {/* File Upload Area */}
+              <Box className="mb-6">
+                <label className="block text-gray-400 text-sm mb-3">
+                  Select a document to analyze
+                </label>
+                <FileAttacher
+                  conversationId={conversationId}
+                  onSuccess={handleFileAttached}
+                  onError={(error) => console.error('File upload error:', error)}
+                  size="medium"
+                  showDragDrop={true}
+                  clearTrigger={clearAttachmentTrigger}
+                />
+              </Box>
 
-                          if (!allowedTypes.includes(file.type)) {
-                            setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
-                            return;
-                          }
-                          if (file.size > maxSize) {
-                            setUploadError('File size exceeds 50MB limit');
-                            return;
-                          }
-                          setUploadError('');
-                          setUploadFiles([file]);
-                        }
-                      }}
-                      className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
-                        isDragging
-                          ? 'border-pink-500 bg-pink-500/10'
-                          : 'border-gray-700 hover:border-gray-600 bg-gray-900/50'
-                      }`}
-                      onClick={() => document.getElementById('home-file-upload-input')?.click()}
-                    >
-                      <CloudUploadIcon sx={{ fontSize: 48, color: '#6b7280', mb: 2 }} />
-                      <Box className="text-gray-300 text-sm mb-1">
-                        Drag and drop your file here
-                      </Box>
-                      <Box className="text-gray-500 text-xs mb-3">
-                        or click to browse
-                      </Box>
-                      <Box className="text-gray-600 text-xs">
-                        Supported: PDF, DOCX, TXT, CSV (Max 5MB)
-                      </Box>
-                      <input
-                        id="home-file-upload-input"
-                        type="file"
-                        accept=".pdf,.docx,.txt,.csv"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            const file = e.target.files[0];
-                            const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
-                            const maxSize = 5 * 1024 * 1024;
-
-                            if (!allowedTypes.includes(file.type)) {
-                              setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
-                              return;
-                            }
-                            if (file.size > maxSize) {
-                              setUploadError('File size exceeds 5MB limit');
-                              return;
-                            }
-                            setUploadError('');
-                            setUploadFiles([file]);
-                          }
-                        }}
-                        className="hidden"
-                      />
-                    </Box>
-                  ) : (
-                    <Box className="flex items-center justify-between p-4 bg-gray-900 border border-green-500/50 rounded-lg">
-                      <Box className="flex items-center gap-3">
-                        <InsertDriveFileIcon sx={{ color: '#10b981', fontSize: 24 }} />
-                        <Box>
-                          <Box className="text-white text-sm">{uploadFiles[0].name}</Box>
-                          <Box className="text-gray-400 text-xs">
-                            {(uploadFiles[0].size / 1024 / 1024).toFixed(2)} MB
-                          </Box>
-                        </Box>
-                      </Box>
-                      <IconButton
-                        onClick={() => setUploadFiles([])}
-                        size="small"
-                        sx={{ color: '#ef4444' }}
-                      >
-                        <CloseIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  )}
-                </Box>
-
-                {/* Error Message */}
-                {uploadError && (
-                  <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <Box className="text-red-400 text-sm">
-                      {uploadError}
-                    </Box>
-                  </Box>
-                )}
-
-                {/* Action Buttons */}
-                <Box className="flex items-center gap-3 pt-2">
-                  <button
+              {/* Action Buttons */}
+              <Box className="flex items-center gap-3 pt-2">
+                <button
                     type="button"
                     onClick={() => {
                       setShowFileUploadDialog(false);
                       setUploadFiles([]);
-                      setUploadError('');
-                      setIsDragging(false);
                     }}
                     disabled={isUploading}
                     className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
@@ -889,7 +764,7 @@ export default function Home() {
             </Box>
           </Dialog>
 
-          <Box className="min-h-screen bg-black text-white" >
+          <Box className="min-h-screen bg-black text-white">
             {showChat ? (
               // Chat View
               <Box className="h-screen flex flex-col bg-black">
@@ -900,10 +775,16 @@ export default function Home() {
                   <Box className="flex items-center gap-4">
                     <button
                       onClick={() => {
+                        // Navigate to home without conversation parameter
+                        navigate('/');
+
+                        // Clear all states
                         setShowChat(false);
                         setChatMessage(null);
                         setMessage('');
                         setSelectedProject(null);
+                        setConversation(null);
+                        setConversationId(null);
                         setUploadFiles([]);
                         setUploadedDocument(null);
                         setIsProcessing(false);
@@ -919,7 +800,7 @@ export default function Home() {
                     <div
                       className="text-xl md:text-2xl font-bold text-white"
                     >
-                      {selectedProject ? (selectedProject.title || selectedProject.name) : 'general'}
+                      {conversation?.title || 'New Chat'}
                     </div>
                   </Box>
                 </Box>
@@ -929,6 +810,15 @@ export default function Home() {
                   <Chat
                     project={selectedProject}
                     initialMessage={chatMessage}
+                    attachments={messageAttachments}
+                    conversationId={conversationId || undefined}
+                    onAttachmentsClear={() => {
+                      setMessageAttachments([]);
+                      setUploadedDocument(null);
+                      setUploadFiles([]);
+                      setConversation(null);
+                      setConversationId(null);
+                    }}
                     onTokenUpdate={() => {
                       // Trigger sidebar refresh via custom event
                       window.dispatchEvent(new Event('refreshUserTokens'));
@@ -982,92 +872,12 @@ export default function Home() {
                     </Box>
                   )}
 
-                  {/* Error Messages - Above Input Box */}
-                  {(uploadError || uploadedDocument?.is_token_limit_reached) && (
-                    <Box className="mb-4">
-                      {uploadError && (
-                        <Box className="flex items-center justify-between gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                          <Box className="flex items-center gap-2">
-                            <ErrorIcon sx={{ color: '#ef4444', fontSize: 18 }} />
-                            <Box className="text-red-400 text-sm font-medium">
-                              {uploadError}
-                            </Box>
-                          </Box>
-                          <IconButton
-                            size="small"
-                            onClick={async () => {
-                              // Delete the project if it was auto-created
-                              if (uploadedDocument?.projectId) {
-                                try {
-                                  await projectService.deleteProject(uploadedDocument.projectId, user?.email);
-                                  const updatedUser = await userService.get();
-                                  setUser(updatedUser);
-                                } catch (error) {
-                                  console.error('Error deleting project:', error);
-                                }
-                              }
 
-                              // Clear all upload-related states
-                              setUploadError('');
-                              setUploadFiles([]);
-                              setUploadedDocument(null);
-                              setIsProcessing(false);
-                              setSelectedProject(null);
-                            }}
-                            sx={{ color: '#ef4444', padding: '4px' }}
-                          >
-                            <CloseIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Box>
-                      )}
-                      {uploadedDocument?.is_token_limit_reached && !hideTokenLimit && (
-                        <Box className="flex items-center justify-between gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg mt-2">
-                          <Box className="flex items-center gap-2">
-                            <ErrorIcon sx={{ color: '#ef4444', fontSize: 18 }} />
-                            <Box className="text-red-400 text-sm font-medium">
-                              Token Limit Exceeded. Please upgrade your plan to upload larger documents.
-                            </Box>
-                          </Box>
-                          <IconButton
-                            size="small"
-                            onClick={async () => {
-                              setHideTokenLimit(true);
-                              setIsProcessing(false);
-                              setUploadError('');
-                            }}
-                            sx={{ color: '#ef4444', padding: '4px' }}
-                          >
-                            <CloseIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Box>
-                      )}
-                    </Box>
-                  )}
 
                   {/* Main Input Area */}
                   <Box
-                    className={`bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all ${
-                      isDragging
-                        ? 'border-pink-500 bg-pink-500/10'
-                        : 'border-gray-700 hover:border-pink-500/50'
-                    }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
+                    className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
                   >
-                    {isDragging && (
-                      <Box className="absolute inset-0 flex items-center justify-center bg-pink-500/10 rounded-2xl pointer-events-none z-10">
-                        <Box className="text-center">
-                          <CloudUploadIcon sx={{ fontSize: 48, color: '#ec4899', mb: 1 }} />
-                          <div className="text-pink-400 font-medium">
-                            Drop file to upload
-                          </div>
-                          <div className="text-pink-300 text-sm">
-                            PDF, DOCX, TXT, CSV (Max 50MB)
-                          </div>
-                        </Box>
-                      </Box>
-                    )}
 
                     <MentionsInput
                       value={message}
@@ -1127,186 +937,18 @@ export default function Home() {
                     <Box className="flex items-center justify-between mt-4">
                       {/* Left side - File attachment */}
                       <Box className="flex items-center gap-2">
-                        {/* File Attachment */}
-                        {(uploadFiles.length > 0 || uploadedDocument) ? (
-                          <Box
-                            className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-lg"
-                            sx={{ height: '28px' }}
-                          >
-                            {isUploading || isProcessing ? (
-                              <CircularProgress size={14} sx={{ color: '#ec4899' }} />
-                            ) : uploadedDocument?.is_token_limit_reached ? (
-                              <Tooltip title="Token limit reached for this document">
-                                <ErrorIcon sx={{ color: '#ef4444', fontSize: 14 }} />
-                              </Tooltip>
-                            ) : (
-                              <InsertDriveFileIcon sx={{ color: '#10b981', fontSize: 14 }} />
-                            )}
-                            <Box className="text-white text-xs truncate max-w-[140px]">
-                              {uploadedDocument?.name || uploadFiles[0]?.name}
-                            </Box>
-                            {!isUploading && (
-                              <IconButton
-                                onClick={async () => {
-                                  // Delete the project if it was auto-created using project service
-                                  if (uploadedDocument?.projectId) {
-                                    try {
-                                      await projectService.deleteProject(uploadedDocument.projectId, user?.email);
-
-                                      // Refresh user data
-                                      const updatedUser = await userService.get();
-                                      setUser(updatedUser);
-                                    } catch (error) {
-                                      console.error('Error deleting project:', error);
-                                    }
-                                  }
-
-                                  // Clear attachment state
-                                  setUploadFiles([]);
-                                  setUploadedDocument(null);
-                                  setIsProcessing(false);
-                                  setUploadError('');
-                                  setSelectedProject(null);
-                                }}
-                                size="small"
-                                sx={{
-                                  color: '#9ca3af',
-                                  '&:hover': { color: '#ef4444' },
-                                  padding: '2px'
-                                }}
-                              >
-                                <CloseIcon sx={{ fontSize: 12 }} />
-                              </IconButton>
-                            )}
-                          </Box>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              document.getElementById('home-file-attach-input')?.click();
-                            }}
-                            className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/30 border border-gray-800/50 hover:bg-gray-800/50 hover:border-gray-700/50 text-gray-500 hover:text-gray-300 transition-all text-xs"
-                            style={{ height: '28px' }}
-                          >
-                            <AttachFileIcon sx={{ fontSize: 14 }} />
-                            <span>Attach</span>
-                          </button>
-                        )}
+                        <FileAttacher
+                          conversationId={conversationId}
+                          onSuccess={handleFileAttached}
+                          onError={(error) => console.error('File upload error:', error)}
+                          size="small"
+                          showDragDrop={true}
+                          clearTrigger={clearAttachmentTrigger}
+                        />
                       </Box>
-                      <input
-                        id="home-file-attach-input"
-                        type="file"
-                        accept=".pdf,.docx,.txt,.csv"
-                          onChange={async (e) => {
-                            if (e.target.files && e.target.files.length > 0) {
-                              const file = e.target.files[0];
-                              const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
-                              const maxSize = 5 * 1024 * 1024;
-
-                              if (!allowedTypes.includes(file.type)) {
-                                setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
-                                return;
-                              }
-                              if (file.size > maxSize) {
-                                setUploadError('File size exceeds 5MB limit');
-                                return;
-                              } // Auto-create project if needed
-                            let targetProject = selectedProject;
-                            if (!targetProject) {
-                              // Use file name without extension as project name
-                              const fileName = file.name;
-                              const projectName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-                              const newProject = await createProject(projectName);
-                              if (newProject) {
-                                setSelectedProject(newProject);
-                                targetProject = newProject;
-                              } else {
-                                setUploadError('Failed to create project');
-                                return;
-                              }
-                            }
-
-                            // Upload file
-                            setIsUploading(true);
-                            setUploadError('');
-                            setUploadFiles([file]);
-
-                            try {
-                              const formData = new FormData();
-                              formData.append('file', file);
-
-                              const url = `${API_ENDPOINT}/projects/${targetProject.id}/documents`;
-                              const response = await fetch(url, {
-                                method: 'PUT',
-                                headers: {
-                                  'Authorization': `Bearer ${userService.token()}`
-                                },
-                                body: formData
-                              });
-
-                              if (!response.ok) {
-                                const result = await response.json();
-                                throw new Error(result.detail || result.message || 'Upload failed');
-                              }
-
-                              const result = await response.json();
-                              const updatedUser = await userService.get();
-                              if (updatedUser) {
-                                setUser(updatedUser);
-                              }
-
-                              // Set uploaded document and start processing check
-                              setUploadedDocument({
-                                name: file.name,
-                                size: file.size,
-                                id: result.id,
-                                projectId: targetProject.id
-                              });
-                              setIsProcessing(true);
-
-                              // Start polling for processing status
-                              const checkProcessing = setInterval(async () => {
-                                const currentUser = await userService.get();
-                                if (currentUser) {
-                                  const project = currentUser.projects.find((p: any) => p.id === targetProject.id);
-                                  if (project) {
-                                    const doc = project.documents.find((d: any) => d.id === result.id);
-                                    if (doc && ((doc.num_of_tokens && doc.num_of_tokens > 0) || doc.is_token_limit_reached)) {
-                                      setIsProcessing(false);
-                                      clearInterval(checkProcessing);
-
-                                      // Update uploaded document with token limit status
-                                      if (doc.is_token_limit_reached) {
-                                        setUploadedDocument((prev: any) => ({
-                                          ...prev,
-                                          is_token_limit_reached: true
-                                        }));
-                                      }
-                                    }
-                                  }
-                                }
-                              }, 3000);
-
-                              // Dispatch event
-                              window.dispatchEvent(new CustomEvent('documentUploaded', {
-                                detail: { projectId: targetProject.id }
-                              }));
-
-                            } catch (error: any) {
-                              setUploadError(error.message || 'Failed to upload document');
-                              setUploadFiles([]);
-                            } finally {
-                              setIsUploading(false);
-                            }
-
-                            // Reset file input
-                            e.target.value = '';
-                          }
-                        }}
-                        className="hidden"
-                      />
 
                       <button
-                        disabled={!message.trim() || isUploading || isProcessing || !!uploadError || uploadedDocument?.is_token_limit_reached}
+                        disabled={message.trim().length <= 1}
                         className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
                         onClick={handleSendMessage}
 

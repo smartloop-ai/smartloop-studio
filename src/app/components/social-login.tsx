@@ -31,7 +31,7 @@ export default function SocialLogin(props: { onError: any, searchParams?: URLSea
         }
       });
     }
-  }, [isElectron, navigate]);
+  }, [isElectron, navigate, props]);
 
   // Handle OAuth login for Electron
   const handleElectronOAuth = async () => {

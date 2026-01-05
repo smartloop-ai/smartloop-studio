@@ -99,12 +99,6 @@ export default function SettingsPage() {
                     <Box className="min-h-screen bg-black text-white" >
                         <Box className="p-4">
                             <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-                            <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                                <Breadcrumb items={[
-                                    { label: 'Home', path: '/' },
-                                    { label: 'Settings' }
-                                ]} />
-                            </Box>
 
                             {/* Unobtrusive Save Indicator */}
                             <Box

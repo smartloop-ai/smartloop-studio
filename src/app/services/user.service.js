@@ -77,6 +77,7 @@ const getUser = async () => {
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
         projects: result.projects,
+        conversations: result.conversations || [], // Add conversations list
 
         // Default settings
         default_temperature: result.default_temperature !== undefined ? result.default_temperature : 0.3,

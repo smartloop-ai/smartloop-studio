@@ -1,6 +1,5 @@
 import '../styles/markdown-editor.css';
 
-import Breadcrumb from "@/app/components/breadcrumb";
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { userService } from '@/app/services/user.service';
@@ -20,13 +19,11 @@ import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import Box from '@mui/material/Box';
 import {Chip, CircularProgress, IconButton, TextField, Typography, Switch } from '@mui/material';
 
-import { styled } from '@mui/material/styles'
 import { Dialog, DialogContent, DialogTitle } from "@mui/material";
-
-import Chat from '@/app/components/chat';
 
 import { API_ENDPOINT } from '@/app/constants';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
+import { dialogStyles } from '@/app/shared/utils';
 
 // Import SimpleMDE directly for desktop app (no lazy loading)
 import SimpleMDE from 'react-simplemde-editor';
@@ -55,21 +52,6 @@ function ProjectSection(props: TabPanelProps) {
     </div>
   );
 }
-
-const ProjectDialog = styled(Dialog)(({ theme }) => ({
-  '& .MuiPaper-root': {
-    backgroundColor: '#282828',
-    width: '100%',
-    color: '#eee'
-  },
-  '& .MuiDialogContent-root': {
-    padding: theme.spacing(2),
-  },
-  '& .MuiDialogActions-root': {
-    padding: theme.spacing(1),
-  },
-}));
-
 
 export default function Project() {
   const [user, setUser] = useAuth();
@@ -134,7 +116,7 @@ export default function Project() {
     }
   }
 
-  const handleProjectDelete = (_: any) => {
+  const handleProjectDelete = () => {
     setErrorMessage("");
     setOpenProjectDeleteDialog(true);
   }
@@ -153,8 +135,8 @@ export default function Project() {
         return;
       }
 
-      var id = current.id;
-      var url = `${API_ENDPOINT}/projects/${id}`;
+      const id = current.id;
+      const url = `${API_ENDPOINT}/projects/${id}`;
 
       setIsLoading(true);
 
@@ -166,8 +148,8 @@ export default function Project() {
       }
       await fetch(url, options);
 
-      var user = await userService.get();
-      setUser(user);
+      const updatedUser = await userService.get();
+      setUser(updatedUser);
 
       setIsLoading(false);
 
@@ -251,8 +233,8 @@ export default function Project() {
     };
 
     try {
-      var response = await fetch(url, options)
-      var result = await response.json();
+      const response = await fetch(url, options)
+      const result = await response.json();
 
       console.log('📥 updateProjectSettings - Response from /config:', result);
       console.log('Response status:', response.status);
@@ -298,8 +280,8 @@ export default function Project() {
     };
 
     try {
-      var response = await fetch(url, options);
-      var result = await response.json();
+      const response = await fetch(url, options);
+      const result = await response.json();
 
       console.log('📥 Response from /config endpoint:', result);
       console.log('Response status:', response.status);
@@ -431,6 +413,7 @@ export default function Project() {
     return () => {
       stopPolling();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
@@ -439,9 +422,6 @@ export default function Project() {
       setValue(parseInt(tab));
     }
   }, [searchParams]);
-
-  // Get message from URL and store it
-  const initialMessage = searchParams.get('message');
 
   const selectTab = (tablIndex: number) => {
     setValue(tablIndex);
@@ -484,14 +464,6 @@ export default function Project() {
             <Box className="p-4 flex-shrink-0">
               {/* MobileNav is now rendered in App.tsx for persistence across routes */}
               {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                {current && (
-                  <Breadcrumb items={[
-                    { label: 'Home', path: '/' },
-                    { label: current.title || 'Project' }
-                  ]} />
-                )}
-              </Box>
 
             <main className="page projects files relative bg-black flex-1 overflow-hidden flex flex-col">
               <Box className="flex flex-col">
@@ -501,7 +473,7 @@ export default function Project() {
                       <button
                         onClick={() => {
                           if (value === 0) {
-                            navigate('/');
+                            navigate('/projects');
                           } else {
                             selectTab(0);
                           }
@@ -546,16 +518,6 @@ export default function Project() {
                           type="button"
                           onClick={() => selectTab(1)}
                           className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${value === 1
-                            ? 'bg-white text-black'
-                            : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
-                            }`}
-                        >
-                          Chat
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => selectTab(2)}
-                          className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${value === 2
                             ? 'bg-white text-black'
                             : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
                             }`}
@@ -697,7 +659,7 @@ export default function Project() {
 
                                         <IconButton
                                           size="small"
-                                          onClick={() => selectTab(2)}
+                                          onClick={() => selectTab(1)}
                                           sx={{
                                             color: '#9ca3af',
                                             bgcolor: 'rgba(59, 130, 246, 0.1)',
@@ -770,62 +732,18 @@ export default function Project() {
                       </ProjectSection>
 
                       <ProjectSection value={value} index={1}>
-                        {value === 1 && (
-                          <Box
-                            sx={{
-                              position: 'fixed',
-                              top: 0,
-                              left: { xs: 0, md: '280px' },
-                              right: 0,
-                              bottom: 0,
-                              bgcolor: 'black',
-                              zIndex: 1000,
-                              display: 'flex',
-                              flexDirection: 'column'
-                            }}
-                          >
-                            {/* Chat Header */}
-                            <Box className="flex-none px-4 py-4 md:py-6 border-b border-gray-900">
-                              {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-                              {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-                              <Box className="flex items-center gap-4">
-                                <button
-                                  onClick={() => selectTab(0)}
-                                  className="text-gray-400 hover:text-white transition-colors"
-                                  title="Back to project"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                                  </svg>
-                                </button>
-                                <div className="text-xl md:text-2xl font-bold text-white">
-                                  {current?.title || current?.name}
-                                </div>
-                              </Box>
-                            </Box>
-
-                            {/* Chat Component - full height */}
-                            <Box className="flex-1 overflow-hidden">
-                              <Chat
-                                project={current}
-                                initialMessage={initialMessage}
-                                onTokenUpdate={() => {
-                                  // Trigger sidebar refresh via custom event
-                                  window.dispatchEvent(new Event('refreshUserTokens'));
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        )}
-                      </ProjectSection>
-
-                      <ProjectSection value={value} index={2}>
-                        <ProjectDialog
+                        <Dialog
                           id="deleteProjectDialog"
                           open={openProjectDeleteDialog}
                           onClose={handleCloseProjectDeleteDialog}
                           maxWidth="sm"
                           fullWidth
+                          PaperProps={{
+                            sx: dialogStyles.paper
+                          }}
+                          BackdropProps={{
+                            sx: dialogStyles.backdrop
+                          }}
                         >
                           <DialogTitle sx={{ m: 0, p: 3, bgcolor: '#0a0a0a', borderBottom: '1px solid #1a1a1a' }}>
                             <Box className="flex items-center justify-between">
@@ -931,7 +849,7 @@ export default function Project() {
                               </Box>
                             </form>
                           </DialogContent>
-                        </ProjectDialog>
+                        </Dialog>
                         <Box className="h-full overflow-auto">
                           <div className="py-5 flex flex-col gap-6 px-2">
                             <Box

@@ -35,9 +35,9 @@ export default function Signup() {
 		const inviteCodeParam = urlParams.get('inviteCode');
 		if (inviteCodeParam) {
 			setInviteCode(inviteCodeParam);
-			console.log("Found inviteCode: " + inviteCode + " using it for signup.");
+			console.log("Found inviteCode: " + inviteCodeParam + " using it for signup.");
 		}
-	});
+	}, []);
 
 	const handleInput = (e: any) => {
 		const fieldName = e.target.name;

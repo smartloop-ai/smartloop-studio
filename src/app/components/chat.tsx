@@ -1,13 +1,12 @@
 
 import { userService } from '@/app/services/user.service';
 import { useEffect, useRef, useState } from "react";
-import { Box, CircularProgress, InputAdornment, InputBase } from "@mui/material";
+import { Box } from "@mui/material";
 import OpenAI from 'openai';
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SearchIcon from '@mui/icons-material/Search';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import MessageInput from './message-input';
 
 import { API_ENDPOINT } from '@/app/constants';
 
@@ -25,6 +24,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LockIcon from '@mui/icons-material/Lock';
 import BuildIcon from '@mui/icons-material/Build';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 // Configure marked options for proper code rendering
 marked.setOptions({
@@ -74,36 +74,76 @@ renderer.code = function(token: Tokens.Code) {
 
 marked.use({ renderer });
 
-export default function Chat(props: { project?: any, initialMessage?: string | null, onTokenUpdate?: () => void }) {
+interface Attachment {
+  file_id: string;
+  name?: string;
+  size?: number;
+  type?: string;
+}
+
+export default function Chat(props: {
+  project?: any,
+  initialMessage?: string | null,
+  onTokenUpdate?: () => void,
+  attachments?: Attachment[],
+  onAttachmentsClear?: () => void,
+  conversationId?: string
+}) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
   const [formData, setFormData] = useState({
     message: "",
   });
+  const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
+  const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
   const [messages, setMessages]: any = useState([]);
   const [searchQuery] = useState("");
   const [filteredMessages, setFilteredMessages]: any = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showTips, setShowTips] = useState<null | Boolean>(null);
+  const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
   const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [generalProjectId, setGeneralProjectId] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const currentProjectIdRef = useRef<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const currentConversationIdRef = useRef<string | null>(null);
 
-  const handleInput = (e: any) => {
-    const fieldName = e.target.name;
-    const fieldValue = e.target.value;
+  // Save messages to localStorage
+  const saveMessagesToStorage = (msgs: any[]) => {
+    if (conversationId) {
+      const key = `chat_${conversationId}`;
+      console.log(`[Storage] Saving ${msgs.length} messages for conversation ${conversationId}`);
+      localStorage.setItem(key, JSON.stringify(msgs));
+    }
+  };
 
-    setFormData((prevState) => ({
-      ...prevState,
-      [fieldName]: fieldValue
-    }));
-  }
+  // Load messages from localStorage
+  const loadMessagesFromStorage = () => {
+    if (conversationId) {
+      const key = `chat_${conversationId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          console.log(`[Storage] Loaded ${parsed.length} messages for conversation ${conversationId}`);
+          return parsed;
+        } catch (e) {
+          console.error('Error parsing stored messages:', e);
+        }
+      }
+    }
+    return [];
+  };
+
+  // Update attachments when props change
+  useEffect(() => {
+    if (props.attachments && props.attachments.length > 0) {
+      setMessageAttachments(props.attachments);
+    }
+  }, [props.attachments]);
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -116,7 +156,7 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
   }
 
   const sendFeedback = async (msg: any) => {
-    var url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
+    const url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
 
     const options = {
       method: 'PUT',
@@ -165,30 +205,8 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
     }
   }
 
-  // Save messages to localStorage
-  const saveMessagesToStorage = (msgs: any[]) => {
-    if (sessionId) {
-      const projectId = props.project?.id || generalProjectId || 'general';
-      const key = `chat_${sessionId}_${projectId}`;
-      localStorage.setItem(key, JSON.stringify(msgs));
-    }
-  };
-
-  // Load messages from localStorage
-  const loadMessagesFromStorage = () => {
-    if (sessionId) {
-      const projectId = props.project?.id || generalProjectId || 'general';
-      const key = `chat_${sessionId}_${projectId}`;
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        try {
-          return JSON.parse(stored);
-        } catch (e) {
-          console.error('Error parsing stored messages:', e);
-        }
-      }
-    }
-    return [];
+  const handleFileAttached = (documentId: string, fileName: string) => {
+    setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
   };
 
   const sendMessage = async (_: any, messageOverride?: string) => {
@@ -197,7 +215,7 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
       return;
     }
 
-    let userMessage = messageOverride || formData.message.trim();
+    const userMessage = messageOverride || formData.message.trim();
 
     if (userMessage.length === 0) {
       console.log('Empty message, skipping');
@@ -210,6 +228,9 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
     const effectiveProjectId = props.project?.id || generalProjectId || 'general';
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId, 'General ID:', generalProjectId);
 
+    // Use attachments from messageAttachments state
+    const currentAttachments = [...messageAttachments];
+
     // Add user message to the chat
     const userMsg = {
       id: messageId,
@@ -219,20 +240,26 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
         text: userMessage,
         html: marked(userMessage),
         is_new: false
-      }
+      },
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined
     };
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
     saveMessagesToStorage(updatedMessages);
     setFormData({ message: "" });
+    setMessageAttachments([]); // Clear attachments after sending
+    setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
+    if (props.onAttachmentsClear) {
+      props.onAttachmentsClear();
+    }
     setIsLoading(true);
 
     // Create abort controller for this request
     abortControllerRef.current = new AbortController();
 
     // Create initial response message for streaming
-    let responseMsg = {
+    const responseMsg = {
       id: responseId,
       direction: 'out',
       is_new: true,
@@ -255,18 +282,29 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
 
       let fullText = '';
 
-      // Determine assistant type and project ID based on whether a project is selected
+      // Use project_assistant when a project is selected, otherwise general_assistant
       const assistantType = props.project?.id ? 'project_assistant' : 'general_assistant';
       const projectId = props.project?.id ? String(props.project.id) : (generalProjectId || 'general');
+
+      // Prepare the message object with optional attachments
+      const messageObject: any = {
+        role: 'user',
+        content: userMessage
+      };
+
+      // Add attachments if they exist
+      if (messageAttachments.length > 0) {
+        messageObject.attachments = messageAttachments;
+      }
 
       // Create streaming chat completion with custom fields
       const stream = await openai.chat.completions.create({
         model: 'slp-model-001',
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [messageObject],
         stream: true,
         assistant_type: assistantType,
         project_id: projectId,
-        session_id: sessionId || 'default_session'
+        conversation_id: conversationId || 'default_conversation'
       } as any) as any;
 
       // Process the stream
@@ -306,7 +344,7 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
         }
       }
 
-      // Mark response as complete and save to storage
+      // Mark response as complete
       setMessages((prevMessages: any) => {
         const finalMessages = prevMessages.map((msg: any) =>
           msg.id === responseId ? {
@@ -322,11 +360,6 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
       if (props.onTokenUpdate) {
         props.onTokenUpdate();
       }
-
-      // Refocus input after response
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 200);
 
     } catch (error: any) {
       if (error.message === 'AbortError' || error.name === 'AbortError') {
@@ -375,7 +408,6 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
       abortControllerRef.current = null;
       setTimeout(() => {
         scrollToBottom();
-        inputRef.current?.focus();
       }, 100);
     }
   }
@@ -399,46 +431,64 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
         console.log('General project ID set:', storedProjectId);
         setGeneralProjectId(storedProjectId);
 
-        // Generate or retrieve a session ID for this user session
-        const sessionKey = `chat_session_${u.email}`;
-        let storedSessionId = sessionStorage.getItem(sessionKey);
-
-        if (!storedSessionId) {
-          // Generate a unique session ID for this browser session
-          storedSessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-          sessionStorage.setItem(sessionKey, storedSessionId);
+        // Use conversation ID from props if provided
+        if (props.conversationId) {
+          console.log('Conversation ID from props:', props.conversationId);
+          setConversationId(props.conversationId);
         }
-
-        console.log('Session ID set:', storedSessionId);
-        setSessionId(storedSessionId);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load messages from localStorage when sessionId is available or project changes
+  // Update conversationId when prop changes
   useEffect(() => {
-    if (sessionId) {
+    if (props.conversationId) {
+      console.log('Conversation ID updated from props:', props.conversationId);
+      console.log('Current conversationId state:', conversationId);
+      console.log('Current conversationId ref:', currentConversationIdRef.current);
+
+      // Clear messages immediately when conversation changes (use ref for accurate comparison)
+      if (currentConversationIdRef.current && currentConversationIdRef.current !== props.conversationId) {
+        console.log('Clearing messages for conversation switch from', currentConversationIdRef.current, 'to', props.conversationId);
+        setMessages([]);
+        setShowTips(false);
+      }
+
+      // Update state
+      setConversationId(props.conversationId);
+      // Note: ref will be updated in the next useEffect when messages are loaded
+    }
+  }, [props.conversationId]);
+
+  // Load messages from localStorage when conversationId is available or project changes
+  useEffect(() => {
+    if (conversationId) {
       const currentProjectId = props.project?.id || generalProjectId || 'general';
 
-      // Only reload if the project ID actually changed
-      if (currentProjectIdRef.current !== currentProjectId) {
+      // Reload if the project ID or conversation ID changed
+      if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
+        console.log('Conversation or project changed, loading new messages');
         currentProjectIdRef.current = currentProjectId;
+        currentConversationIdRef.current = conversationId;
 
-        // Small delay to ensure generalProjectId is set
-        setTimeout(() => {
-          const storedMessages = loadMessagesFromStorage();
-          console.log('Loading messages for project:', currentProjectId, 'Count:', storedMessages.length);
-          if (storedMessages.length > 0) {
-            setMessages(storedMessages);
-            setShowTips(false);
-          } else {
-            setMessages([]);
-            setShowTips(true);
-          }
-        }, 100);
+        // Clear messages first to ensure clean state
+        setMessages([]);
+
+        // Load messages for the new conversation
+        const storedMessages = loadMessagesFromStorage();
+        console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
+        if (storedMessages.length > 0) {
+          setMessages(storedMessages);
+          setShowTips(false);
+        } else {
+          setMessages([]);
+          setShowTips(true);
+        }
       }
     }
-  }, [sessionId, generalProjectId, props.project?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, generalProjectId, props.project?.id]);
 
   useEffect(() => {
     // Show tips if no messages and no initial message is being sent
@@ -469,7 +519,16 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
         setMessageSent(true);
       }, 800);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.initialMessage, messageSent, isLoading, userId]);
+
+  // Save messages to localStorage whenever they change (backup save)
+  useEffect(() => {
+    if (messages.length > 0 && conversationId) {
+      saveMessagesToStorage(messages);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, conversationId]);
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -489,10 +548,14 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
 
   // Save messages to localStorage whenever they change (backup save)
   useEffect(() => {
-    if (messages.length > 0 && sessionId) {
+    if (messages.length > 0 && conversationId) {
       saveMessagesToStorage(messages);
     }
-  }, [messages, sessionId, props.project?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, conversationId]);
+
+  // Messages are stored in the database via conversation_id, no localStorage needed
+  // The backend handles persistence
 
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
 
@@ -914,6 +977,21 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
                               __html: marked(msg.payload.text)
                             }}>
                             </div>
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <Box className="mt-3 pt-3 border-t border-pink-500/30">
+                                <Box className="flex flex-wrap gap-2">
+                                  {msg.attachments.map((attachment: any, idx: number) => (
+                                    <Box
+                                      key={idx}
+                                      className="flex items-center gap-2 px-2 py-1 bg-pink-700/50 rounded text-xs"
+                                    >
+                                      <InsertDriveFileIcon sx={{ fontSize: 14 }} />
+                                      <span>{attachment.name || 'Document attached'}</span>
+                                    </Box>
+                                  ))}
+                                </Box>
+                              </Box>
+                            )}
                           </div>
                           <Box className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
                             <Box className="w-3 h-3 rounded-full bg-pink-500"></Box>
@@ -930,75 +1008,22 @@ export default function Chat(props: { project?: any, initialMessage?: string | n
           </div>
         </section>
         <footer className="flex-none px-3 md:px-4 py-4 md:py-6 bg-black border-t border-gray-900">
-          <Box>
-            <Box
-              className="px-4 md:px-6 py-3 md:py-4 border border-gray-800 rounded-lg shadow-lg"
-              sx={{
-                bgcolor: 'rgba(17, 24, 39, 0.5)',
-                borderLeft: '3px solid #ec4899',
-               }}
-            >
-              <InputBase
-                inputRef={inputRef}
-                id="message"
-                name="message"
-                autoComplete="off"
-                placeholder={isLoading ? "Thinking..." : "Enter your prompt..."}
-                type="text"
-                multiline={true}
-                maxRows={4}
-                value={formData.message}
-                onChange={handleInput}
-                fullWidth
-                disabled={isLoading}
-                className="w-full text-inherit mb-3"
-                onKeyDown={handleKeyDown}
-                startAdornment={
-                  isLoading ? (
-                    <InputAdornment position="start">
-                      <AutoAwesomeIcon sx={{ color: '#ec4899', fontSize: 18, mr: 0.5 }} />
-                    </InputAdornment>
-                  ) : null
-                }
-                sx={{
-                  border: 'none',
-                  height: '100%',
-                  fontSize: '15px',
-                  lineHeight: '1.5',
-                  '& .MuiInputBase-input': {
-                    caretColor: '#ec4899',
-                  },
-                  '& .MuiInputBase-input.Mui-disabled': {
-                    color: '#9ca3af !important',
-                    WebkitTextFillColor: '#9ca3af !important',
-                  },
-                  '& .MuiInputBase-input::placeholder': {
-                    color: '#4b5563',
-                    opacity: 1
-                  },
-                  '& .MuiInputBase-input.Mui-disabled::placeholder': {
-                    color: '#9ca3af !important',
-                    opacity: '1 !important',
-                    WebkitTextFillColor: '#9ca3af !important',
-                  },
-                }}
-              />
-
-              <Box className="flex items-center justify-end">
-                <button
-                  disabled={isLoading || !formData.message.trim()}
-                  className="p-2 md:p-3 rounded-lg bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg"
-                  onClick={sendMessage}
-                >
-                  {isLoading ? (
-                    <CircularProgress size={20} sx={{ color: '#fff' }} />
-                  ) : (
-                    <ArrowUpwardIcon sx={{ color: '#fff', fontSize: { xs: 18, md: 20 } }} />
-                  )}
-                </button>
-              </Box>
-            </Box>
-          </Box>
+          <MessageInput
+            message={formData.message}
+            onMessageChange={(value) => setFormData({ message: value })}
+            onSend={() => sendMessage(null)}
+            onKeyDown={handleKeyDown}
+            placeholder="Enter your prompt..."
+            disabled={false}
+            isLoading={isLoading}
+            allowAttachments={true}
+            conversationId={conversationId}
+            onFileAttached={handleFileAttached}
+            clearAttachmentTrigger={clearAttachmentTrigger}
+            showDragDrop={true}
+            minRows={1}
+            maxRows={4}
+          />
         </footer>
 
       </Box>

@@ -21,7 +21,6 @@ import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
 import { API_ENDPOINT } from '@/app/constants';
 import Sidebar from '@/app/components/sidebar';
-import Breadcrumb from '@/app/components/breadcrumb';
 import { useAuth } from '@/app/hooks/useAuth';
 
 function DocumentsListContent() {
@@ -120,6 +119,7 @@ function DocumentsListContent() {
         stopPolling();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, projectId]);
 
   // Cleanup polling on unmount
@@ -152,6 +152,7 @@ function DocumentsListContent() {
     return () => {
       window.removeEventListener('documentUploaded', handleDocumentUploaded);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Optimized search and sort using useMemo for faster local filtering
@@ -299,12 +300,6 @@ function DocumentsListContent() {
           <Box className="min-h-screen bg-black text-white">
             <Box className="p-4">
               <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                <Breadcrumb items={[
-                  { label: 'Home', path: '/' },
-                  { label: 'Documents' }
-                ]} />
-              </Box>
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
               {/* Header */}
               <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">

@@ -117,6 +117,9 @@ run-electron-dev:
 	@echo "🚀 Starting Electron app in development mode..."
 	npm run electron-dev
 
+# Alias for run-electron-dev
+electron-dev: run-electron-dev
+
 # Quick rebuild without cleaning (faster for iterating)
 rebuild-electron:
 	@echo "🔨 Building Vite app..."
