@@ -9,6 +9,7 @@ import { userService } from "./user.service";
 interface CreateConversationParams {
   title: string;
   project_id?: string;
+  document_ids?: string[];
 }
 
 interface ConversationServiceResponse {
@@ -19,12 +20,12 @@ interface ConversationServiceResponse {
 
 /**
  * Create a new conversation
- * @param params - Conversation creation parameters (title, optional project_id)
+ * @param params - Conversation creation parameters (title, optional project_id, optional document_ids)
  * @returns Promise with conversation data or error
  */
 const createConversation = async (params: CreateConversationParams): Promise<ConversationServiceResponse> => {
   try {
-    const { title, project_id } = params;
+    const { title, project_id, document_ids } = params;
 
     if (!title || !title.trim()) {
       return {
@@ -33,16 +34,25 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
       };
     }
 
+    const requestBody: any = {
+      title: title.trim()
+    };
+
+    if (project_id) {
+      requestBody.project_id = project_id;
+    }
+
+    if (document_ids && document_ids.length > 0) {
+      requestBody.document_ids = document_ids;
+    }
+
     const url = `${API_ENDPOINT}/conversations`;
     const response = await userService.makeAuthenticatedRequest(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        title: title.trim(),
-        project_id
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response) {
@@ -74,64 +84,6 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
   }
 };
 
-/**
- * Upload a document to a conversation
- * @param conversationId - ID of the conversation
- * @param file - File to upload
- * @returns Promise with document data or error
- */
-const uploadDocument = async (conversationId: string, file: File): Promise<ConversationServiceResponse> => {
-  try {
-    if (!conversationId) {
-      return {
-        success: false,
-        error: 'Conversation ID is required'
-      };
-    }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const url = `${API_ENDPOINT}/conversations/${conversationId}/documents`;
-    const response = await userService.makeAuthenticatedRequest(url, {
-      method: 'PUT',
-      body: formData
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
-    if (response.status === 200 || response.status === 201) {
-      const document = await response.json();
-      return {
-        success: true,
-        data: document
-      };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to upload document'
-    };
-  } catch (error: any) {
-    console.error('Error uploading document:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while uploading the document'
-    };
-  }
-};
-
-/**
- * Delete a conversation
- * @param conversationId - ID of the conversation to delete
- * @returns Promise with success status or error
- */
 /**
  * Get document status from a conversation
  * @param conversationId - ID of the conversation
@@ -289,10 +241,61 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
   }
 };
 
+/**
+ * Get a conversation by ID
+ * @param conversationId - ID of the conversation
+ * @returns Promise with conversation data or error
+ */
+const getConversation = async (conversationId: string): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.status === 200) {
+      const conversation = await response.json();
+      return {
+        success: true,
+        data: conversation
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to fetch conversation'
+    };
+  } catch (error: any) {
+    console.error('Error fetching conversation:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while fetching the conversation'
+    };
+  }
+};
+
 export const conversationService = {
   createConversation,
   updateConversation,
-  uploadDocument,
   getDocumentStatus,
-  deleteConversation
+  deleteConversation,
+  getConversation
 };

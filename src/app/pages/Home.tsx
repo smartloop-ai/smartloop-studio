@@ -45,7 +45,6 @@ export default function Home() {
   const [uploadedDocument, setUploadedDocument] = useState<any>(null);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
@@ -77,78 +76,51 @@ export default function Home() {
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
 
+    console.log('[useEffect] URL conversation:', urlConversationId, 'showChat:', showChat, 'current conversation:', conversation?.id);
+
     if (urlConversationId && user) {
       console.log('Conversation ID from URL:', urlConversationId);
 
-      // Find the conversation in user's conversations first
+      // If we already have this conversation loaded, don't reload it
+      if (conversation && conversation.id === urlConversationId) {
+        console.log('Conversation already loaded, skipping reload');
+        if (!showChat) {
+          console.log('Setting showChat to true');
+          setShowChat(true);
+        }
+        return;
+      }
+
+      // Find the conversation in user's conversations (always available in desktop app)
       const foundConversation = user.conversations?.find((c: any) => c.id === urlConversationId);
 
       if (foundConversation) {
-        // Valid conversation found - use it
-        setConversationId(foundConversation.id);
-
-        if (foundConversation.title && foundConversation.title !== 'New Chat') {
-          // Use the conversation with a real title (not default)
-          setConversation(foundConversation);
-        } else if (!conversation || conversation.id !== foundConversation.id) {
-          // Only update conversation if we don't already have one with this ID
-          // This prevents overwriting the title when navigating to a newly created conversation
-          const key = `chat_${foundConversation.id}`;
-          const stored = localStorage.getItem(key);
-          let conversationTitle = foundConversation.title || 'New Chat';
-
-          if (stored) {
-            try {
-              const messages = JSON.parse(stored);
-              if (messages.length > 0) {
-                // Find first user message
-                const firstUserMessage = messages.find((m: any) => m.direction === 'in');
-                if (firstUserMessage) {
-                  const words = firstUserMessage.payload.text.trim().split(' ');
-                  const titleWords = words.slice(0, 5).join(' ');
-                  conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
-                }
-              }
-            } catch (e) {
-              console.error('Error parsing messages:', e);
-            }
-          }
-
-          // Set conversation object with title
-          setConversation({ ...foundConversation, title: conversationTitle });
-        }
-
-        // Only clear chatMessage if this conversation already has messages in localStorage
-        // This prevents auto-sending when clicking sidebar, but allows sending new messages
-        const key = `chat_${foundConversation.id}`;
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          try {
-            const messages = JSON.parse(stored);
-            if (messages.length > 0) {
-              // Existing conversation with messages - clear chatMessage to prevent auto-send
-              setChatMessage(null);
-            }
-            // If no messages, keep chatMessage so new message can be sent
-          } catch (e) {
-            console.error('Error checking stored messages:', e);
-          }
-        }
-
+        console.log('Loading conversation from user data:', foundConversation.title);
+        setConversation(foundConversation);
         setShowChat(true);
       } else {
-        // Invalid conversation ID in URL - navigate back to home
-        console.warn('Invalid conversation ID in URL:', urlConversationId);
-        navigate('/');
+        console.warn('Invalid conversation ID in URL:', urlConversationId, 'Available conversations:', user.conversations?.map((c: any) => c.id));
+        // Don't navigate away if we already have the conversation loaded
+        if (!conversation || conversation.id !== urlConversationId) {
+          navigate('/');
+        }
       }
-    } else if (!urlConversationId && showChat) {
-      // No conversation parameter, clear chat state
-      setShowChat(false);
-      setConversationId(null);
-      setConversation(null);
     }
+    // Don't clear showChat when URL param is missing - it's managed explicitly
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, user]);
+
+  // Clear chatMessage after it's been passed to Chat component
+  useEffect(() => {
+    if (chatMessage && showChat && conversation) {
+      // Clear after a short delay to ensure Chat component has received it
+      const timer = setTimeout(() => {
+        console.log('Clearing chatMessage after initial send');
+        setChatMessage(null);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [chatMessage, showChat, conversation]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -236,70 +208,45 @@ export default function Home() {
       // The markup format is: @[display](id)
       const cleanMessage = message.replace(/@\[([^\]]+)\]\([^)]+\)/g, '').trim();
 
-      let activeConversationId = conversationId;
-      let shouldUpdateTitle = false;
+      let activeConversationId = conversation?.id;
 
-      // Create a conversation if one doesn't exist yet
-      if (!conversationId) {
+      // Generate title from first 5 words of message
+      const words = cleanMessage.split(' ');
+      const titleWords = words.slice(0, 5).join(' ');
+      const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+
+      // Create or update conversation
+      if (!activeConversationId) {
+        // Create a new conversation
         try {
-          // Generate title from first 5 words of message
-          const words = cleanMessage.split(' ');
-          const titleWords = words.slice(0, 5).join(' ');
-          const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
-
           const conversationResult = await conversationService.createConversation({
             title: conversationTitle,
             project_id: selectedProject?.id || undefined
           });
 
           if (conversationResult.success && conversationResult.data) {
-            const conversation = conversationResult.data;
-            activeConversationId = conversation.id;
-            setConversationId(conversation.id);
-            setConversation(conversation);
+            const newConversation = conversationResult.data;
+            activeConversationId = newConversation.id;
+            setConversation(newConversation);
+            setShowChat(true); // Set showChat immediately to prevent navigation issues
+
+            // Dispatch event for sidebar to refresh conversations
+            window.dispatchEvent(new CustomEvent('conversationCreated', {
+              detail: { conversationId: newConversation.id }
+            }));
 
             // Refresh user data to get updated conversations
             const updatedUser = await userService.get();
             if (updatedUser) {
               setUser(updatedUser);
             }
+          } else {
+            console.error('Failed to create conversation');
+            return;
           }
         } catch (error) {
           console.error('Failed to create conversation:', error);
           return;
-        }
-      } else if (conversation) {
-        // If conversation exists and title looks like a filename (has extension), update it
-        const hasFileExtension = /\.(pdf|docx|txt|csv)$/i.test(conversation.title);
-        if (hasFileExtension) {
-          shouldUpdateTitle = true;
-        }
-      }
-
-      // Update conversation title if needed (when it was created from file upload)
-      if (shouldUpdateTitle && activeConversationId) {
-        try {
-          const words = cleanMessage.split(' ');
-          const titleWords = words.slice(0, 5).join(' ');
-          const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
-
-          const updateResult = await conversationService.updateConversation(
-            activeConversationId,
-            conversationTitle
-          );
-
-          if (updateResult.success && updateResult.data) {
-            setConversation(updateResult.data);
-
-            // Refresh user data to get updated conversations in sidebar
-            const updatedUser = await userService.get();
-            if (updatedUser) {
-              setUser(updatedUser);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to update conversation title:', error);
-          // Continue anyway, title update is not critical
         }
       }
 
@@ -319,31 +266,6 @@ export default function Home() {
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
     setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
-  };
-
-  const handleCreateConversation = async (fileName: string): Promise<string | null> => {
-    try {
-      const conversationResult = await conversationService.createConversation({
-        title: fileName,
-        project_id: selectedProject?.id || undefined
-      });
-
-      if (conversationResult.success && conversationResult.data) {
-        const conversation = conversationResult.data;
-        setConversationId(conversation.id);
-        setConversation(conversation);
-
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-        }
-
-        return conversation.id;
-      }
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-    }
-    return null;
   };
 
   const features = [
@@ -714,9 +636,8 @@ export default function Home() {
                   Select a document to analyze
                 </label>
                 <FileAttacher
-                  conversationId={conversationId}
+                  conversation={conversation}
                   onSuccess={handleFileAttached}
-                  onCreateConversation={handleCreateConversation}
                   onError={(error) => console.error('File upload error:', error)}
                   size="medium"
                   showDragDrop={true}
@@ -802,7 +723,10 @@ export default function Home() {
           </Dialog>
 
           <Box className="min-h-screen bg-black text-white">
-            {showChat ? (
+            {(() => {
+              console.log('[Home Render] showChat:', showChat, 'conversation:', conversation?.id);
+              return showChat && conversation;
+            })() ? (
               // Chat View
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
@@ -821,7 +745,6 @@ export default function Home() {
                         setMessage('');
                         setSelectedProject(null);
                         setConversation(null);
-                        setConversationId(null);
                         setUploadFiles([]);
                         setUploadedDocument(null);
                         setIsProcessing(false);
@@ -834,10 +757,8 @@ export default function Home() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                       </svg>
                     </button>
-                    <div
-                      className="text-xl md:text-2xl font-bold text-white"
-                    >
-                      {conversation?.title || 'New Chat'}
+                    <div className="text-xl md:text-2xl font-bold text-white">
+                      {conversation.title}
                     </div>
                   </Box>
                 </Box>
@@ -848,13 +769,12 @@ export default function Home() {
                     project={selectedProject}
                     initialMessage={chatMessage}
                     attachments={messageAttachments}
-                    conversationId={conversationId || undefined}
+                    conversation={conversation}
                     onAttachmentsClear={() => {
                       setMessageAttachments([]);
                       setUploadedDocument(null);
                       setUploadFiles([]);
-                      setConversation(null);
-                      setConversationId(null);
+                      // Don't clear conversation - it should persist during chat session
                     }}
                     onTokenUpdate={() => {
                       // Trigger sidebar refresh via custom event
@@ -975,9 +895,8 @@ export default function Home() {
                       {/* Left side - File attachment */}
                       <Box className="flex items-center gap-2">
                         <FileAttacher
-                          conversationId={conversationId}
+                          conversation={conversation}
                           onSuccess={handleFileAttached}
-                          onCreateConversation={handleCreateConversation}
                           onError={(error) => console.error('File upload error:', error)}
                           size="small"
                           showDragDrop={true}

@@ -21,7 +21,7 @@ export default function AttachmentUpload({
 
   return (
     <Box
-      className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-lg"
+      className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700"
       sx={{ height: isSmall ? '28px' : '40px' }}
     >
       {isUploading ? (

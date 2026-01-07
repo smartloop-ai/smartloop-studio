@@ -67,8 +67,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshUserData();
     };
 
+    const handleConversationCreated = () => {
+      refreshUserData();
+    };
+
     window.addEventListener('refreshUserTokens', handleRefresh);
-    return () => window.removeEventListener('refreshUserTokens', handleRefresh);
+    window.addEventListener('conversationCreated', handleConversationCreated);
+
+    return () => {
+      window.removeEventListener('refreshUserTokens', handleRefresh);
+      window.removeEventListener('conversationCreated', handleConversationCreated);
+    };
   }, []);
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -160,14 +169,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         // Check for chat history in localStorage for this conversation
         let messageCount = 0;
         let hasMessages = false;
-        let lastMessageTime = conversation.updated_at || new Date();
+        let lastMessageTime = conversation.created_at || new Date();
 
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
           projectId: conversation.project_id || null,
           lastMessage: conversation.last_message || null,
-          updatedAt: lastMessageTime,
+          createdAt: lastMessageTime,
           messageCount,
           hasMessages: hasMessages || messageCount > 0,
         };
@@ -175,7 +184,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       // Filter to show all conversations (with or without messages)
       .filter((conv: any) => conv.id)
       // Sort by most recently updated (using message timestamps from localStorage)
-      .sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       // Limit to 3 most recent
       .slice(0, 3);
 

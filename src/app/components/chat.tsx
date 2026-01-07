@@ -87,7 +87,8 @@ export default function Chat(props: {
   onTokenUpdate?: () => void,
   attachments?: Attachment[],
   onAttachmentsClear?: () => void,
-  conversationId?: string
+  conversation?: any,
+  onConversationCreated?: (conversation: any) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -107,28 +108,27 @@ export default function Chat(props: {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [generalProjectId, setGeneralProjectId] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
   // Save messages to localStorage
   const saveMessagesToStorage = (msgs: any[]) => {
-    if (conversationId) {
-      const key = `chat_${conversationId}`;
-      console.log(`[Storage] Saving ${msgs.length} messages for conversation ${conversationId}`);
+    if (props.conversation?.id) {
+      const key = `chat_${props.conversation.id}`;
+      console.log(`[Storage] Saving ${msgs.length} messages for conversation ${props.conversation.id}`);
       localStorage.setItem(key, JSON.stringify(msgs));
     }
   };
 
   // Load messages from localStorage
   const loadMessagesFromStorage = () => {
-    if (conversationId) {
-      const key = `chat_${conversationId}`;
+    if (props.conversation?.id) {
+      const key = `chat_${props.conversation.id}`;
       const stored = localStorage.getItem(key);
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          console.log(`[Storage] Loaded ${parsed.length} messages for conversation ${conversationId}`);
+          console.log(`[Storage] Loaded ${parsed.length} messages for conversation ${props.conversation.id}`);
           return parsed;
         } catch (e) {
           console.error('Error parsing stored messages:', e);
@@ -231,6 +231,15 @@ export default function Chat(props: {
     // Use attachments from messageAttachments state
     const currentAttachments = [...messageAttachments];
 
+    // Use conversation from props
+    if (!props.conversation?.id) {
+      console.error('No conversation provided. Conversation should be created by parent component.');
+      alert('Please create a conversation first before sending messages.');
+      return;
+    }
+
+    console.log('Using conversation ID:', props.conversation.id);
+
     // Add user message to the chat
     const userMsg = {
       id: messageId,
@@ -286,16 +295,19 @@ export default function Chat(props: {
       const assistantType = props.project?.id ? 'project_assistant' : 'general_assistant';
       const projectId = props.project?.id ? String(props.project.id) : (generalProjectId || 'general');
 
-      // Prepare the message object with optional attachments
+      // Prepare the message object with optional attachments and project_id
       const messageObject: any = {
         role: 'user',
         content: userMessage
       };
 
       // Add attachments if they exist
-      if (messageAttachments.length > 0) {
-        messageObject.attachments = messageAttachments;
+      if (currentAttachments.length > 0) {
+        messageObject.attachments = currentAttachments;
       }
+
+      // Add project_id to message
+      messageObject.project_id = projectId;
 
       // Create streaming chat completion with custom fields
       const stream = await openai.chat.completions.create({
@@ -304,7 +316,7 @@ export default function Chat(props: {
         stream: true,
         assistant_type: assistantType,
         project_id: projectId,
-        conversation_id: conversationId || 'default_conversation'
+        conversation_id: props.conversation.id
       } as any) as any;
 
       // Process the stream
@@ -430,39 +442,31 @@ export default function Chat(props: {
 
         console.log('General project ID set:', storedProjectId);
         setGeneralProjectId(storedProjectId);
-
-        // Use conversation ID from props if provided
-        if (props.conversationId) {
-          console.log('Conversation ID from props:', props.conversationId);
-          setConversationId(props.conversationId);
-        }
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update conversationId when prop changes
+  // Update when conversation prop changes
   useEffect(() => {
-    if (props.conversationId) {
-      console.log('Conversation ID updated from props:', props.conversationId);
-      console.log('Current conversationId state:', conversationId);
+    const newConversationId = props.conversation?.id;
+
+    if (newConversationId) {
+      console.log('Conversation ID updated from props:', newConversationId);
       console.log('Current conversationId ref:', currentConversationIdRef.current);
 
       // Clear messages immediately when conversation changes (use ref for accurate comparison)
-      if (currentConversationIdRef.current && currentConversationIdRef.current !== props.conversationId) {
-        console.log('Clearing messages for conversation switch from', currentConversationIdRef.current, 'to', props.conversationId);
+      if (currentConversationIdRef.current && currentConversationIdRef.current !== newConversationId) {
+        console.log('Clearing messages for conversation switch from', currentConversationIdRef.current, 'to', newConversationId);
         setMessages([]);
         setShowTips(false);
       }
-
-      // Update state
-      setConversationId(props.conversationId);
-      // Note: ref will be updated in the next useEffect when messages are loaded
     }
-  }, [props.conversationId]);
+  }, [props.conversation]);
 
-  // Load messages from localStorage when conversationId is available or project changes
+  // Load messages from localStorage when conversation is available or project changes
   useEffect(() => {
+    const conversationId = props.conversation?.id;
     if (conversationId) {
       const currentProjectId = props.project?.id || generalProjectId || 'general';
 
@@ -488,7 +492,7 @@ export default function Chat(props: {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, generalProjectId, props.project?.id]);
+  }, [props.conversation, generalProjectId, props.project?.id]);
 
   useEffect(() => {
     // Show tips if no messages and no initial message is being sent
@@ -524,11 +528,11 @@ export default function Chat(props: {
 
   // Save messages to localStorage whenever they change (backup save)
   useEffect(() => {
-    if (messages.length > 0 && conversationId) {
+    if (messages.length > 0 && props.conversation?.id) {
       saveMessagesToStorage(messages);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, conversationId]);
+  }, [messages, props.conversation]);
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -546,15 +550,7 @@ export default function Chat(props: {
     scrollToBottom();
   }, [messages]);
 
-  // Save messages to localStorage whenever they change (backup save)
-  useEffect(() => {
-    if (messages.length > 0 && conversationId) {
-      saveMessagesToStorage(messages);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, conversationId]);
-
-  // Messages are stored in the database via conversation_id, no localStorage needed
+  // Messages are stored in the database via conversation, no localStorage needed
   // The backend handles persistence
 
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
@@ -1017,8 +1013,14 @@ export default function Chat(props: {
             disabled={false}
             isLoading={isLoading}
             allowAttachments={true}
-            conversationId={conversationId}
+            conversation={props.conversation}
             onFileAttached={handleFileAttached}
+            onAttachmentClear={() => {
+              setMessageAttachments([]);
+              if (props.onAttachmentsClear) {
+                props.onAttachmentsClear();
+              }
+            }}
             clearAttachmentTrigger={clearAttachmentTrigger}
             showDragDrop={true}
             minRows={1}

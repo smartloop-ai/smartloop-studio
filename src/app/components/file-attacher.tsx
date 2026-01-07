@@ -4,14 +4,13 @@ import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import { conversationService } from '@/app/services/conversation.service';
+import { documentService } from '@/app/services/document.service';
 
 interface FileAttacherProps {
-  conversationId: string | null;
+  conversation?: any; // Made optional since v2 endpoint doesn't require it
   onSuccess: (documentId: string, fileName: string) => void;
   onError?: (error: string) => void;
   onClear?: () => void;
-  onCreateConversation?: (fileName: string) => Promise<string | null>; // Returns conversationId
   disabled?: boolean;
   size?: 'small' | 'medium';
   showDragDrop?: boolean;
@@ -20,11 +19,9 @@ interface FileAttacherProps {
 }
 
 export default function FileAttacher({
-  conversationId,
   onSuccess,
   onError,
   onClear,
-  onCreateConversation,
   disabled = false,
   size = 'small',
   showDragDrop = false,
@@ -67,39 +64,12 @@ export default function FileAttacher({
   };
 
   const uploadFile = async (file: File) => {
-    let activeConversationId = conversationId;
-
-    // Create conversation if needed
-    if (!activeConversationId && onCreateConversation) {
-      try {
-        activeConversationId = await onCreateConversation(file.name);
-        if (!activeConversationId) {
-          throw new Error('Failed to create conversation');
-        }
-      } catch (error: any) {
-        const errorMessage = error.message || 'Failed to create conversation';
-        setUploadError(errorMessage);
-        if (onError) onError(errorMessage);
-        return;
-      }
-    }
-
-    if (!activeConversationId) {
-      const error = 'No conversation ID available';
-      setUploadError(error);
-      if (onError) onError(error);
-      return;
-    }
-
     setIsUploading(true);
     setUploadError('');
 
     try {
-      // Upload document
-      const uploadResult = await conversationService.uploadDocument(
-        activeConversationId,
-        file
-      );
+      // Upload document using /v2/documents endpoint (decoupled from conversations)
+      const uploadResult = await documentService.uploadDocument(file);
 
       if (!uploadResult.success || !uploadResult.data) {
         throw new Error(uploadResult.error || 'Failed to upload document');
@@ -110,51 +80,16 @@ export default function FileAttacher({
       // Update status to show processing
       setUploadError('Processing attachment...');
 
-      // Poll for document processing completion
-      const maxAttempts = 60;
-      let attempts = 0;
-      let isProcessing = true;
-      let finalDocStatus: any = null;
-
-      while (isProcessing && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        const statusResult = await conversationService.getDocumentStatus(
-          activeConversationId,
-          document.id
-        );
-
-        if (statusResult.success && statusResult.data) {
-          finalDocStatus = statusResult.data;
-          if (
-            finalDocStatus.is_processing === false ||
-            (finalDocStatus.num_of_tokens && finalDocStatus.num_of_tokens > 0)
-          ) {
-            isProcessing = false;
-            console.log('Document processing completed:', finalDocStatus);
-          }
-        }
-
-        attempts++;
-      }
-
-      if (isProcessing) {
-        console.warn('Document processing timed out, but continuing anyway');
-      }
-
-      // Check for token limit
-      const hasTokenLimit = finalDocStatus?.is_token_limit_reached === true;
-
-      if (hasTokenLimit) {
-        const error = finalDocStatus?.error || 'Token limit reached for this document';
-        setUploadError(error);
-        setIsUploading(false);
-        if (onError) onError(error);
-      } else {
+      // Note: Since we're using v2/documents, we may not have conversationId yet
+      // The processing check will be handled differently
+      // For now, we'll use a simpler approach - just check if document has an ID
+      if (document.id) {
         // Success - store document ID and notify parent
         setUploadError('');
         setIsUploading(false);
         onSuccess(document.id, file.name);
+      } else {
+        throw new Error('Document upload did not return a valid ID');
       }
     } catch (error: any) {
       console.error('Failed to upload document:', error);
@@ -163,9 +98,11 @@ export default function FileAttacher({
       setIsUploading(false);
       if (onError) onError(errorMessage);
 
-      // Clear file only for non-token-limit errors
-      const isTokenLimitError = error.is_token_limit_reached === true;
-      if (!isTokenLimitError) {
+      // Don't clear file for credit limit or token limit errors so user can see the error
+      const isCreditLimitError = errorMessage.toLowerCase().includes('credit') || errorMessage.toLowerCase().includes('limit exceeded');
+      const isTokenLimitError = error.is_token_limit_reached === true || errorMessage.toLowerCase().includes('token limit');
+
+      if (!isCreditLimitError && !isTokenLimitError) {
         setSelectedFile(null);
       }
     }
@@ -228,7 +165,7 @@ export default function FileAttacher({
   if (selectedFile) {
     return (
       <Box
-        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-lg"
+        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700"
         sx={{ height: isSmall ? '28px' : '40px' }}
       >
         {isUploading ? (
@@ -284,7 +221,7 @@ export default function FileAttacher({
       )}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/30 border border-gray-800/50 hover:bg-gray-800/50 hover:border-gray-700/50 text-gray-500 hover:text-gray-300 transition-all text-xs"
+        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
         style={{ height: isSmall ? '28px' : '40px' }}
         disabled={disabled || isUploading}
       >

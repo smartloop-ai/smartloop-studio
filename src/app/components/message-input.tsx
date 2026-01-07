@@ -13,8 +13,9 @@ interface MessageInputProps {
   disabled?: boolean;
   isLoading?: boolean;
   allowAttachments?: boolean;
-  conversationId?: string | null;
+  conversation?: any;
   onFileAttached?: (documentId: string, fileName: string) => void;
+  onAttachmentClear?: () => void;
   clearAttachmentTrigger?: number;
   showDragDrop?: boolean;
   minRows?: number;
@@ -30,8 +31,9 @@ export default function MessageInput({
   disabled = false,
   isLoading = false,
   allowAttachments = false,
-  conversationId = null,
+  conversation = null,
   onFileAttached,
+  onAttachmentClear,
   clearAttachmentTrigger = 0,
   showDragDrop = false,
   minRows = 1,
@@ -109,12 +111,17 @@ export default function MessageInput({
         <Box className="flex items-center justify-between">
           {/* Left side - File attachment */}
           <Box className="flex items-center gap-2">
-            {allowAttachments && conversationId && (
+            {allowAttachments && (
               <FileAttacher
-                conversationId={conversationId}
+                conversation={conversation}
                 onSuccess={(documentId, fileName) => {
                   if (onFileAttached) {
                     onFileAttached(documentId, fileName);
+                  }
+                }}
+                onClear={() => {
+                  if (onAttachmentClear) {
+                    onAttachmentClear();
                   }
                 }}
                 onError={(error) => {
