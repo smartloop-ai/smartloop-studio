@@ -140,6 +140,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         // Clear localStorage for this conversation
         localStorage.removeItem(`chat_${conversationToDelete}`);
 
+        // Dispatch event for other components to react to conversation deletion
+        window.dispatchEvent(new CustomEvent('conversationDeleted', {
+          detail: { conversationId: conversationToDelete }
+        }));
+
         // If currently viewing this conversation, navigate to home
         const currentPath = location.pathname + location.search;
         if (currentPath.includes(conversationToDelete)) {

@@ -72,6 +72,29 @@ export default function Home() {
     }
   }, [user]);
 
+  // Listen for conversation deletion events
+  useEffect(() => {
+    const handleConversationDeleted = (event: any) => {
+      const deletedConversationId = event.detail?.conversationId;
+
+      // If the deleted conversation is currently open, navigate back to home
+      if (deletedConversationId && conversation?.id === deletedConversationId) {
+        console.log('Currently opened conversation was deleted, navigating to home');
+        navigate('/');
+        setShowChat(false);
+        setConversation(null);
+        setChatMessage(null);
+        setMessage('');
+      }
+    };
+
+    window.addEventListener('conversationDeleted', handleConversationDeleted);
+
+    return () => {
+      window.removeEventListener('conversationDeleted', handleConversationDeleted);
+    };
+  }, [conversation, navigate]);
+
   // Handle conversation ID from URL parameter
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
