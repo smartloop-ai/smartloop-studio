@@ -893,7 +893,7 @@ export default function Chat(props: {
                         </Box>
 
                         <Box className="flex-1">
-                          <div className="bg-gray-900 border border-gray-900 rounded-lg p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
+                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="prose prose-invert max-w-none chat-content">
                               {msg.isError && msg.errorIconType && (
                                 <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', mr: 1, verticalAlign: 'middle' }}>
@@ -968,18 +968,18 @@ export default function Chat(props: {
                       </Box>
                       : <Box key={msg.id} className="flex justify-end">
                         <Box className="flex items-start gap-3 max-w-3xl">
-                          <div className="bg-pink-600 border border-gray-900 rounded-lg p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
+                          <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="text-wrap break-words" dangerouslySetInnerHTML={{
                               __html: marked(msg.payload.text)
                             }}>
                             </div>
                             {msg.attachments && msg.attachments.length > 0 && (
-                              <Box className="mt-3 pt-3 border-t border-pink-500/30">
+                              <Box className="mt-3 pt-3 border-t border-gray-700">
                                 <Box className="flex flex-wrap gap-2">
                                   {msg.attachments.map((attachment: any, idx: number) => (
                                     <Box
                                       key={idx}
-                                      className="flex items-center gap-2 px-2 py-1 bg-pink-700/50 rounded text-xs"
+                                      className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-gray-700"
                                     >
                                       <InsertDriveFileIcon sx={{ fontSize: 14 }} />
                                       <span>{attachment.name || 'Document attached'}</span>
