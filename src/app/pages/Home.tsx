@@ -118,9 +118,30 @@ export default function Home() {
       const foundConversation = user.conversations?.find((c: any) => c.id === urlConversationId);
 
       if (foundConversation) {
-        console.log('Loading conversation from user data:', foundConversation.title);
+        console.log('[Home URL Effect] Loading conversation from user data:', {
+          conversationId: foundConversation.id,
+          conversationTitle: foundConversation.title,
+          conversationProjectId: foundConversation.project_id
+        });
         setConversation(foundConversation);
         setShowChat(true);
+
+        // Set the selected project based on the conversation's project_id
+        if (foundConversation.project_id) {
+          const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
+          if (project) {
+            console.log('[Home URL Effect] Setting selected project from conversation:', {
+              projectId: project.id,
+              projectName: project.title || project.name,
+              conversationProjectId: foundConversation.project_id
+            });
+            setSelectedProject(project);
+          } else {
+            console.warn('[Home URL Effect] Project not found in user.projects for project_id:', foundConversation.project_id, 'Available projects:', user.projects?.map((p: any) => ({ id: p.id, name: p.title || p.name })));
+          }
+        } else {
+          console.log('[Home URL Effect] Conversation has no project_id');
+        }
       } else {
         console.warn('Invalid conversation ID in URL:', urlConversationId, 'Available conversations:', user.conversations?.map((c: any) => c.id));
         // Don't navigate away if we already have the conversation loaded
@@ -215,8 +236,6 @@ export default function Home() {
       })
       .filter(Boolean);
 
-    console.log('Mentions detected:', mentions, 'Projects found:', projectMentions);
-
     // Always use the last mentioned project as the selected one
     if (projectMentions.length > 0) {
       setSelectedProject(projectMentions[projectMentions.length - 1]);
@@ -238,9 +257,24 @@ export default function Home() {
       const titleWords = words.slice(0, 5).join(' ');
       const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
+      // Prepare attachments array including project if selected
+      const attachmentsToSend = [...messageAttachments];
+      if (selectedProject?.id) {
+        console.log('[handleSendMessage] Adding project as attachment:', {
+          projectId: selectedProject.id,
+          projectName: selectedProject.title || selectedProject.name,
+          file_id: `project-${selectedProject.id}`
+        });
+        attachmentsToSend.push({
+          file_id: `project-${selectedProject.id}`,
+          name: selectedProject.title || selectedProject.name || 'Project'
+        });
+      }
+      console.log('[handleSendMessage] Final attachments to send:', attachmentsToSend);
+
       // Create or update conversation
       if (!activeConversationId) {
-        // Create a new conversation
+        // Create a new conversation with the selected project
         try {
           const conversationResult = await conversationService.createConversation({
             title: conversationTitle,
@@ -251,7 +285,7 @@ export default function Home() {
             const newConversation = conversationResult.data;
             activeConversationId = newConversation.id;
             setConversation(newConversation);
-            setShowChat(true); // Set showChat immediately to prevent navigation issues
+            setShowChat(true); // Set showChat immediately after creating conversation
 
             // Dispatch event for sidebar to refresh conversations
             window.dispatchEvent(new CustomEvent('conversationCreated', {
@@ -263,6 +297,15 @@ export default function Home() {
             if (updatedUser) {
               setUser(updatedUser);
             }
+
+            // Set chat message with attachments and navigate after all state updates
+            setMessageAttachments(attachmentsToSend);
+            setChatMessage(cleanMessage);
+            setMessage('');
+            setClearAttachmentTrigger(prev => prev + 1);
+
+            // Navigate to conversation page
+            navigate(`/?conversation=${activeConversationId}`);
           } else {
             console.error('Failed to create conversation');
             return;
@@ -271,18 +314,12 @@ export default function Home() {
           console.error('Failed to create conversation:', error);
           return;
         }
-      }
-
-      // File is already uploaded by FileAttacher, just navigate
-      if (activeConversationId) {
+      } else {
+        // Existing conversation - just send the message with attachments
+        setMessageAttachments(attachmentsToSend);
         setChatMessage(cleanMessage);
         setMessage('');
-        // Don't clear messageAttachments here - they need to be passed to Chat component
-        // setMessageAttachments([]);
         setClearAttachmentTrigger(prev => prev + 1);
-
-        // Navigate to conversation page
-        navigate(`/?conversation=${activeConversationId}`);
       }
     }
   };
@@ -653,24 +690,24 @@ export default function Home() {
                   </Box>
                 )}
 
-              {/* File Upload Area */}
-              <Box className="mb-6">
-                <label className="block text-gray-400 text-sm mb-3">
-                  Select a document to analyze
-                </label>
-                <FileAttacher
-                  conversation={conversation}
-                  onSuccess={handleFileAttached}
-                  onError={(error) => console.error('File upload error:', error)}
-                  size="medium"
-                  showDragDrop={true}
-                  clearTrigger={clearAttachmentTrigger}
-                />
-              </Box>
+                {/* File Upload Area */}
+                <Box className="mb-6">
+                  <label className="block text-gray-400 text-sm mb-3">
+                    Select a document to analyze
+                  </label>
+                  <FileAttacher
+                    conversation={conversation}
+                    onSuccess={handleFileAttached}
+                    onError={(error) => console.error('File upload error:', error)}
+                    size="medium"
+                    showDragDrop={true}
+                    clearTrigger={clearAttachmentTrigger}
+                  />
+                </Box>
 
-              {/* Action Buttons */}
-              <Box className="flex items-center gap-3 pt-2">
-                <button
+                {/* Action Buttons */}
+                <Box className="flex items-center gap-3 pt-2">
+                  <button
                     type="button"
                     onClick={() => {
                       setShowFileUploadDialog(false);
@@ -747,7 +784,6 @@ export default function Home() {
 
           <Box className="min-h-screen bg-black text-white">
             {(() => {
-              console.log('[Home Render] showChat:', showChat, 'conversation:', conversation?.id);
               return showChat && conversation;
             })() ? (
               // Chat View
@@ -815,160 +851,161 @@ export default function Home() {
                   <Box className="max-w-4xl w-full">
                     {/* Greeting */}
                     <Box className="mb-8">
-                    <Box className="hidden md:flex items-center mb-4">
-                      <Box className="w-12 h-12 rounded-full flex">
-                        <svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M13.4663 24.5027C19.6795 24.5027 24.7163 19.6266 24.7163 13.6117C24.7163 7.5968 19.6795 2.72075 13.4663 2.72075C7.25311 2.72075 2.21631 7.5968 2.21631 13.6117C2.21631 19.6266 7.25311 24.5027 13.4663 24.5027Z" stroke="url(#paint0_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <path d="M8.11121 17.9681C9.29246 19.6126 11.2725 20.6908 13.5 20.6908C15.7275 20.6908 17.6962 19.6126 18.8887 17.9681" stroke="url(#paint1_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <defs>
-                            <linearGradient id="paint0_linear_160_831" x1="13.4663" y1="2.72075" x2="13.4663" y2="24.5027" gradientUnits="userSpaceOnUse">
-                              <stop stopColor="#D3F3FF" />
-                              <stop offset="1" stopColor="white" />
-                            </linearGradient>
-                            <linearGradient id="paint1_linear_160_831" x1="13.5" y1="17.9681" x2="13.5" y2="20.6908" gradientUnits="userSpaceOnUse">
-                              <stop stopColor="#D3F3FF" />
-                              <stop offset="1" stopColor="white" />
-                            </linearGradient>
-                          </defs>
-                        </svg>
+                      <Box className="hidden md:flex items-center mb-4">
+                        <Box className="w-12 h-12 rounded-full flex">
+                          <svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M13.4663 24.5027C19.6795 24.5027 24.7163 19.6266 24.7163 13.6117C24.7163 7.5968 19.6795 2.72075 13.4663 2.72075C7.25311 2.72075 2.21631 7.5968 2.21631 13.6117C2.21631 19.6266 7.25311 24.5027 13.4663 24.5027Z" stroke="url(#paint0_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M8.11121 17.9681C9.29246 19.6126 11.2725 20.6908 13.5 20.6908C15.7275 20.6908 17.6962 19.6126 18.8887 17.9681" stroke="url(#paint1_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            <defs>
+                              <linearGradient id="paint0_linear_160_831" x1="13.4663" y1="2.72075" x2="13.4663" y2="24.5027" gradientUnits="userSpaceOnUse">
+                                <stop stopColor="#D3F3FF" />
+                                <stop offset="1" stopColor="white" />
+                              </linearGradient>
+                              <linearGradient id="paint1_linear_160_831" x1="13.5" y1="17.9681" x2="13.5" y2="20.6908" gradientUnits="userSpaceOnUse">
+                                <stop stopColor="#D3F3FF" />
+                                <stop offset="1" stopColor="white" />
+                              </linearGradient>
+                            </defs>
+                          </svg>
+                        </Box>
                       </Box>
-                    </Box>
-                    <h1 className="text-2xl md:text-4xl font-light mb-2">
-                      <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                      <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                    </h1>
-                  </Box>
-
-                  {/* Pro Plan Banner - Only show if user is not paid */}
-                  {!user?.is_paid && (
-                    <Box
-                      className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
-                      onClick={() => navigate('/pricing')}
-                    >
-                      <Box className="flex items-center gap-2 text-sm">
-                        <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
-                        <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
-                      </Box>
-                    </Box>
-                  )}
-
-
-
-                  {/* Main Input Area */}
-                  <Box
-                    className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
-                  >
-
-                    <MentionsInput
-                      value={message}
-                      onChange={handleMentionChange}
-                      placeholder="Enter your prompt here (e.g. what are the places to visit in Madrid)"
-                      className="mentions"
-                      allowSuggestionsAboveCursor={true}
-                      style={{
-                        control: {
-                          minHeight: '100px',
-                          border: 'none',
-                          outline: 'none',
-                          boxShadow: 'none',
-                        },
-                        input: {
-                          color: 'white',
-                          minHeight: '100px',
-                          border: 'none',
-                          outline: 'none',
-                          boxShadow: 'none',
-                        },
-                        highlighter: {
-                          minHeight: '100px',
-                          border: 'none',
-                          outline: 'none',
-                          boxShadow: 'none',
-                        },
-                        suggestions: {
-                          backgroundColor: '#0a0a0a',
-                          border: '1px solid #2a2a2a',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
-                          zIndex: 10000,
-                        },
-                      }}
-                      inputRef={textareaRef}
-                      onKeyDown={(e: any) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }}
-                    >
-                      <Mention
-                        trigger="@"
-                        data={fetchProjects}
-                        renderSuggestion={renderProjectSuggestion}
-                        displayTransform={(_id: string, display: string) => `@${display}`}
-                        markup="@[__display__](__id__)"
-                        appendSpaceOnAdd={true}
-                        style={{
-                          backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                        }}
-                      />
-                    </MentionsInput>
-
-                    <Box className="flex items-center justify-between mt-4">
-                      {/* Left side - File attachment */}
-                      <Box className="flex items-center gap-2">
-                        <FileAttacher
-                          conversation={conversation}
-                          onSuccess={handleFileAttached}
-                          onError={(error) => console.error('File upload error:', error)}
-                          size="small"
-                          showDragDrop={true}
-                          clearTrigger={clearAttachmentTrigger}
-                        />
-                      </Box>
-
-                      <button
-                        disabled={message.trim().length <= 1}
-                        className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                        onClick={handleSendMessage}
-
-                      >
-                        <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
-                      </button>
+                      <h1 className="text-2xl md:text-4xl font-light mb-2">
+                        <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                        <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                      </h1>
                     </Box>
 
-                    {/* Helper Text */}
-                    <Box className="mt-4 pt-4 border-t border-gray-800">
-                      <Box className="text-xs text-gray-500">
-                        💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@name</span> to mention a project (e.g., <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@myproject</span>). Use ↑↓ to navigate, Enter to confirm.
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  {/* Feature Cards */}
-                  <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
-                    {features.map((feature, index) => (
+                    {/* Pro Plan Banner - Only show if user is not paid */}
+                    {!user?.is_paid && (
                       <Box
-                        key={index}
-                        className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
+                        className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
+                        onClick={() => navigate('/pricing')}
                       >
-                        <Box className="mb-4">
-                          <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
-                        </Box>
-                        <Box className="flex items-center gap-2 text-gray-400">
-                          {feature.icon}
-                          <span className="text-sm">{feature.subtitle}</span>
+                        <Box className="flex items-center gap-2 text-sm">
+                          <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
+                          <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
                         </Box>
                       </Box>
-                    ))}
-                  </Box>
+                    )}
 
-                  {/* Bottom Text */}
-                  <Box className="text-center text-gray-400 text-sm">
-                    Ready to assist you with anything you need.
+
+
+                    {/* Main Input Area */}
+                    <Box
+                      className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
+                    >
+
+                      <MentionsInput
+                        value={message}
+                        onChange={handleMentionChange}
+                        placeholder="Enter your prompt here (e.g. what are the places to visit in Madrid)"
+                        className="mentions"
+                        allowSuggestionsAboveCursor={true}
+                        style={{
+                          control: {
+                            minHeight: '100px',
+                            border: 'none',
+                            outline: 'none',
+                            boxShadow: 'none',
+                          },
+                          input: {
+                            color: 'white',
+                            minHeight: '100px',
+                            border: 'none',
+                            outline: 'none',
+                            boxShadow: 'none',
+                          },
+                          highlighter: {
+                            minHeight: '100px',
+                            border: 'none',
+                            outline: 'none',
+                            boxShadow: 'none',
+                          },
+                          suggestions: {
+                            backgroundColor: '#0a0a0a',
+                            border: '1px solid #2a2a2a',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+                            zIndex: 10000,
+                          },
+                        }}
+                        inputRef={textareaRef}
+                        onKeyDown={(e: any) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendMessage();
+                          }
+                        }}
+                      >
+                        <Mention
+                          trigger="@"
+                          data={fetchProjects}
+                          renderSuggestion={renderProjectSuggestion}
+                          displayTransform={(_id: string, display: string) => `@${display}`}
+                          markup="@[__display__](__id__)"
+                          isLoading={false}
+                          onAdd={() => null}
+                          style={{
+                            backgroundColor: 'rgba(236, 72, 153, 0.15)',
+                          }}
+                        />
+                      </MentionsInput>
+
+                      <Box className="flex items-center justify-between mt-4">
+                        {/* Left side - File attachment */}
+                        <Box className="flex items-center gap-2">
+                          <FileAttacher
+                            conversation={conversation}
+                            onSuccess={handleFileAttached}
+                            onError={(error) => console.error('File upload error:', error)}
+                            size="small"
+                            showDragDrop={true}
+                            clearTrigger={clearAttachmentTrigger}
+                          />
+                        </Box>
+
+                        <button
+                          disabled={message.trim().length <= 1}
+                          className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
+                          onClick={handleSendMessage}
+
+                        >
+                          <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
+                        </button>
+                      </Box>
+
+                      {/* Helper Text */}
+                      <Box className="mt-4 pt-4 border-t border-gray-800">
+                        <Box className="text-xs text-gray-500">
+                          💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@name</span> to mention a project (e.g., <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@myproject</span>). Use ↑↓ to navigate, Enter to confirm.
+                        </Box>
+                      </Box>
+                    </Box>
+
+                    {/* Feature Cards */}
+                    <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+                      {features.map((feature, index) => (
+                        <Box
+                          key={index}
+                          className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
+                        >
+                          <Box className="mb-4">
+                            <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
+                          </Box>
+                          <Box className="flex items-center gap-2 text-gray-400">
+                            {feature.icon}
+                            <span className="text-sm">{feature.subtitle}</span>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
+
+                    {/* Bottom Text */}
+                    <Box className="text-center text-gray-400 text-sm">
+                      Ready to assist you with anything you need.
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
               </Box>
             )}
           </Box>

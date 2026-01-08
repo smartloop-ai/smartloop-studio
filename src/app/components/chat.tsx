@@ -35,7 +35,7 @@ marked.setOptions({
 // Custom renderer for code blocks to preserve formatting
 const renderer = new Renderer();
 const originalCodeRenderer = renderer.code.bind(renderer);
-renderer.code = function(token: Tokens.Code) {
+renderer.code = function (token: Tokens.Code) {
   const code = token.text;
   const language = token.lang || '';
 
@@ -107,7 +107,6 @@ export default function Chat(props: {
   const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [generalProjectId, setGeneralProjectId] = useState<string | null>(null);
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
@@ -138,8 +137,18 @@ export default function Chat(props: {
     return [];
   };
 
+  // Log project prop for debugging
+  useEffect(() => {
+    console.log('[Chat] Project prop:', {
+      project: props.project,
+      projectId: props.project?.id,
+      projectName: props.project?.title || props.project?.name
+    });
+  }, [props.project]);
+
   // Update attachments when props change
   useEffect(() => {
+    console.log('[Chat] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
       setMessageAttachments(props.attachments);
     }
@@ -225,8 +234,8 @@ export default function Chat(props: {
     const messageId = `msg-${Date.now()}`;
     const responseId = `response-${Date.now()}`;
 
-    const effectiveProjectId = props.project?.id || generalProjectId || 'general';
-    console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId, 'General ID:', generalProjectId);
+    const effectiveProjectId = props.project?.id;
+    console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
     // Use attachments from messageAttachments state
     const currentAttachments = [...messageAttachments];
@@ -291,9 +300,13 @@ export default function Chat(props: {
 
       let fullText = '';
 
-      // Use project_assistant when a project is selected, otherwise general_assistant
-      const assistantType = props.project?.id ? 'project_assistant' : 'general_assistant';
-      const projectId = props.project?.id ? String(props.project.id) : (generalProjectId || 'general');
+      const projectId = props.project?.id ? String(props.project.id) : undefined;
+
+      console.log('[Chat sendMessage] Current project:', {
+        projectId: projectId,
+        projectObject: props.project,
+        conversationId: props.conversation.id
+      });
 
       // Prepare the message object with optional attachments and project_id
       const messageObject: any = {
@@ -303,19 +316,17 @@ export default function Chat(props: {
 
       // Add attachments if they exist
       if (currentAttachments.length > 0) {
+        console.log('[Chat sendMessage] Adding attachments to message:', currentAttachments);
         messageObject.attachments = currentAttachments;
       }
 
-      // Add project_id to message
-      messageObject.project_id = projectId;
+      console.log('[Chat sendMessage] Final message object:', messageObject);
 
       // Create streaming chat completion with custom fields
       const stream = await openai.chat.completions.create({
         model: 'slp-model-001',
         messages: [messageObject],
         stream: true,
-        assistant_type: assistantType,
-        project_id: projectId,
         conversation_id: props.conversation.id
       } as any) as any;
 
@@ -439,9 +450,6 @@ export default function Chat(props: {
           storedProjectId = `general_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
           localStorage.setItem(storageKey, storedProjectId);
         }
-
-        console.log('General project ID set:', storedProjectId);
-        setGeneralProjectId(storedProjectId);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -468,7 +476,7 @@ export default function Chat(props: {
   useEffect(() => {
     const conversationId = props.conversation?.id;
     if (conversationId) {
-      const currentProjectId = props.project?.id || generalProjectId || 'general';
+      const currentProjectId = props.project?.id;
 
       // Reload if the project ID or conversation ID changed
       if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
@@ -492,7 +500,7 @@ export default function Chat(props: {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.conversation, generalProjectId, props.project?.id]);
+  }, [props.conversation, props.project?.id]);
 
   useEffect(() => {
     // Show tips if no messages and no initial message is being sent
@@ -973,18 +981,20 @@ export default function Chat(props: {
                               __html: marked(msg.payload.text)
                             }}>
                             </div>
-                            {msg.attachments && msg.attachments.length > 0 && (
+                            {msg.attachments && msg.attachments.filter((attachment: any) => attachment.file_id?.startsWith('file-')).length > 0 && (
                               <Box className="mt-3 pt-3 border-t border-gray-700">
                                 <Box className="flex flex-wrap gap-2">
-                                  {msg.attachments.map((attachment: any, idx: number) => (
-                                    <Box
-                                      key={idx}
-                                      className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-gray-700"
-                                    >
-                                      <InsertDriveFileIcon sx={{ fontSize: 14 }} />
-                                      <span>{attachment.name || 'Document attached'}</span>
-                                    </Box>
-                                  ))}
+                                  {msg.attachments
+                                    .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
+                                    .map((attachment: any, idx: number) => (
+                                      <Box
+                                        key={idx}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-gray-700"
+                                      >
+                                        <InsertDriveFileIcon sx={{ fontSize: 14 }} />
+                                        <span>{attachment.name || 'Document attached'}</span>
+                                      </Box>
+                                    ))}
                                 </Box>
                               </Box>
                             )}
