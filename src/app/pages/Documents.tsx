@@ -2,7 +2,7 @@ import '@/app/styles/documents.css';
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Box, IconButton, Chip, Dialog, DialogContent, DialogTitle, TextField, Typography, CircularProgress, Menu, MenuItem, Tooltip } from '@mui/material';
+import { Box, IconButton, Chip, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Tooltip } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderIcon from '@mui/icons-material/Folder';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -22,6 +22,7 @@ import { projectService } from '@/app/services/project.service';
 import { API_ENDPOINT } from '@/app/constants';
 import Sidebar from '@/app/components/sidebar';
 import { useAuth } from '@/app/hooks/useAuth';
+import { dialogStyles } from '@/app/shared/utils';
 
 function DocumentsListContent() {
   const [user, setUser] = useAuth();
@@ -657,32 +658,35 @@ function DocumentsListContent() {
             onClose={handleCloseDeleteDialog}
             maxWidth="sm"
             fullWidth
-            sx={{
-              '& .MuiPaper-root': {
-                backgroundColor: '#282828',
-                color: '#eee'
-              },
+            PaperProps={{
+              sx: dialogStyles.paper
+            }}
+            BackdropProps={{
+              sx: dialogStyles.backdrop
             }}
           >
-            <DialogTitle sx={{ m: 0, p: 3, bgcolor: '#0a0a0a', borderBottom: '1px solid #1a1a1a' }}>
-              <Box className="flex items-center justify-between">
-                <span className="text-white text-xl font-semibold">Delete Document</span>
-                <IconButton
-                  aria-label="close"
-                  onClick={handleCloseDeleteDialog}
-                  sx={{
-                    color: '#6b7280',
-                    '&:hover': {
-                      color: 'white',
-                      bgcolor: '#1a1a1a'
-                    },
-                  }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </Box>
-            </DialogTitle>
-            <DialogContent sx={{ bgcolor: '#0a0a0a', p: 3 }}>
+            <Box className="relative p-6">
+              {/* Close Button */}
+              <IconButton
+                onClick={handleCloseDeleteDialog}
+                sx={{
+                  position: 'absolute',
+                  right: 12,
+                  top: 12,
+                  color: '#6b7280',
+                  '&:hover': {
+                    color: '#fff',
+                    bgcolor: '#1a1a1a',
+                  },
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
+
+              {/* Title */}
+              <h3 className="text-white font-semibold text-lg mb-6">
+                Delete Document
+              </h3>
               <form onSubmit={handleDeleteDocument}>
                 <Box className="space-y-4">
                   <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
@@ -765,7 +769,7 @@ function DocumentsListContent() {
                   </Box>
                 </Box>
               </form>
-            </DialogContent>
+            </Box>
           </Dialog>
 
           {/* Upload Document Dialog */}

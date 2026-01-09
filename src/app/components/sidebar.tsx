@@ -424,9 +424,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           }}
           PaperProps={{
             sx: {
-              bgcolor: 'rgba(26, 26, 26, 0.98)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              bgcolor: 'rgba(0, 0, 0, 0.98)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: '8px',
               width: searchAnchorEl?.offsetWidth || '248px',
@@ -853,9 +853,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
             PaperProps={{
               sx: {
-                bgcolor: 'rgba(26, 26, 26, 0.98)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
+                bgcolor: 'rgba(0, 0, 0, 0.98)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '8px',
                 minWidth: '200px',
@@ -922,8 +922,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           width: '280px',
           height: '100vh',
           bgcolor: 'rgba(18, 18, 18, 0.95)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
           borderRight: '1px solid rgba(255, 255, 255, 0.06)',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
@@ -964,8 +964,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               bottom: 0,
               width: '280px',
               bgcolor: 'rgba(18, 18, 18, 0.98)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
               borderRight: '1px solid rgba(255, 255, 255, 0.06)',
               display: { xs: 'flex', md: 'none' },
               flexDirection: 'column',

@@ -804,10 +804,12 @@ export default function Home() {
                         setMessage('');
                         setSelectedProject(null);
                         setConversation(null);
+                        setMessageAttachments([]);
                         setUploadFiles([]);
                         setUploadedDocument(null);
                         setIsProcessing(false);
                         setUploadError('');
+                        setClearAttachmentTrigger(prev => prev + 1);
                       }}
                       className="text-gray-400 hover:text-white transition-colors"
                       title="Back to home"

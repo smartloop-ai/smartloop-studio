@@ -68,6 +68,7 @@ export default function Project() {
   const [memory, setMemory]: any = useState(true);
   const [isSavingRules, setIsSavingRules] = useState(false);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedRulesRef = useRef<string>("");
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
@@ -259,6 +260,11 @@ export default function Project() {
   }
 
   const autoSaveProjectRules = async (rules: string) => {
+    // Skip if the value hasn't changed from last save
+    if (rules === lastSavedRulesRef.current) {
+      return;
+    }
+
     setIsSavingRules(true);
 
     const url = `${API_ENDPOINT}/projects/${current.id}/config`;
@@ -289,6 +295,9 @@ export default function Project() {
       if (response.status !== 200) {
         throw result.detail || result.message;
       }
+
+      // Track the last saved value
+      lastSavedRulesRef.current = rules;
     } catch (ex: any) {
       console.error('❌ Error saving project rules:', ex);
     } finally {
@@ -346,7 +355,9 @@ export default function Project() {
       }
 
       // Load project rules from config
-      setProjectRules(project.config?.rules || '');
+      const initialRules = project.config?.rules || '';
+      setProjectRules(initialRules);
+      lastSavedRulesRef.current = initialRules;
       if (typeof project.config?.memory !== 'undefined') {
         setMemory(project.config.memory);
       }
@@ -907,7 +918,7 @@ export default function Project() {
 
                                               autoSaveTimerRef.current = setTimeout(() => {
                                                 autoSaveProjectRules(value);
-                                              }, 2000);
+                                              }, 3000);
                                             }}
                                             options={editorOptions}
                                           />

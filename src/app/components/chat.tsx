@@ -96,6 +96,7 @@ export default function Chat(props: {
     message: "",
   });
   const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
+  const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
   const [messages, setMessages]: any = useState([]);
@@ -151,6 +152,9 @@ export default function Chat(props: {
     console.log('[Chat] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
       setMessageAttachments(props.attachments);
+      messageAttachmentsRef.current = props.attachments;
+    } else {
+      messageAttachmentsRef.current = [];
     }
   }, [props.attachments]);
 
@@ -215,7 +219,9 @@ export default function Chat(props: {
   }
 
   const handleFileAttached = (documentId: string, fileName: string) => {
-    setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
+    const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
+    setMessageAttachments(newAttachments);
+    messageAttachmentsRef.current = newAttachments;
   };
 
   const sendMessage = async (_: any, messageOverride?: string) => {
@@ -237,8 +243,8 @@ export default function Chat(props: {
     const effectiveProjectId = props.project?.id;
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
-    // Use attachments from messageAttachments state
-    const currentAttachments = [...messageAttachments];
+    // Use attachments from ref (more reliable for async operations)
+    const currentAttachments = [...messageAttachmentsRef.current];
 
     // Use conversation from props
     if (!props.conversation?.id) {
@@ -267,6 +273,7 @@ export default function Chat(props: {
     saveMessagesToStorage(updatedMessages);
     setFormData({ message: "" });
     setMessageAttachments([]); // Clear attachments after sending
+    messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
     if (props.onAttachmentsClear) {
       props.onAttachmentsClear();
@@ -342,6 +349,28 @@ export default function Chat(props: {
         if (content) {
           fullText += content;
 
+          // Check if the response contains a memory/context limit error
+          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit'))) {
+            // Display a clean error message instead of the raw error
+            const cleanErrorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
+            setMessages((prevMessages: any) =>
+              prevMessages.map((msg: any) =>
+                msg.id === responseId ? {
+                  ...msg,
+                  is_new: false,
+                  isError: true,
+                  errorIconType: 'warning',
+                  payload: {
+                    ...msg.payload,
+                    text: cleanErrorMessage,
+                    html: marked(cleanErrorMessage) as string
+                  }
+                } : msg
+              )
+            );
+            break; // Stop processing the stream
+          }
+
           setMessages((prevMessages: any) =>
             prevMessages.map((msg: any) =>
               msg.id === responseId ? {
@@ -397,6 +426,9 @@ export default function Chat(props: {
         if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
           errorIconType = 'warning';
           errorMessage = 'You have exceeded your usage limit or are out of credits. Please upgrade your account or reach out to us at support@smartloop.ai';
+        } else if (error.message?.includes('allocated memory') || error.message?.includes('exceeded the limit') || error.message?.includes('context length')) {
+          errorIconType = 'warning';
+          errorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
         } else if (error.status === 401 || error.status === 403) {
           errorIconType = 'lock';
           errorMessage = 'Authentication error. Please log in again.';
@@ -1027,6 +1059,7 @@ export default function Chat(props: {
             onFileAttached={handleFileAttached}
             onAttachmentClear={() => {
               setMessageAttachments([]);
+              messageAttachmentsRef.current = [];
               if (props.onAttachmentsClear) {
                 props.onAttachmentsClear();
               }
