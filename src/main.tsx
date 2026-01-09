@@ -15,7 +15,25 @@ const theme = createTheme({
     },
     background: {
       default: '#000000',
-      paper: '#0a0a0a',
+      paper: '#000000',
+    },
+  },
+  components: {
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: '#000000',
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#000000',
+          backgroundImage: 'none',
+        },
+      },
     },
   },
 });

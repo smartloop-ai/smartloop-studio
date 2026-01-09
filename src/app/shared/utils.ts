@@ -129,4 +129,32 @@ export const OAuthUtils: OAuthUtilsType = {
   },
 }
 
+// Shared dialog/modal styles for consistent UI across the app
+export const dialogStyles = {
+  // Standard dialog paper props
+  paper: {
+    bgcolor: '#000000',
+    backgroundColor: '#000000',
+    backgroundImage: 'none',
+    border: '1px solid #1a1a1a',
+    borderRadius: '12px',
+    maxWidth: '480px',
+  },
+  // Darker backdrop
+  backdrop: {
+    backdropFilter: 'blur(2px)',
+    bgcolor: 'rgba(0, 0, 0, 0.4)',
+  },
+  // Wide dialog paper props (for larger dialogs)
+  paperWide: {
+    bgcolor: '#000000',
+    backgroundColor: '#000000',
+    backgroundImage: 'none',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(236, 72, 153, 0.3)',
+    borderRadius: '16px',
+    maxWidth: '600px',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+  },
+};
 

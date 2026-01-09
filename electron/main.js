@@ -3,8 +3,12 @@ const path = require('path');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
-  require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
-  require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+  try {
+    require('dotenv').config({ path: path.join(__dirname, '..', '.env.local') });
+    require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+  } catch (error) {
+    console.log('dotenv not available, skipping .env file loading');
+  }
 }
 
 let mainWindow;

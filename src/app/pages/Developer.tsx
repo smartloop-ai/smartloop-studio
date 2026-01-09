@@ -42,7 +42,7 @@ export default function Developers() {
       });
 
       if (response && response.ok) {
-        var tokenData = await response.json();
+        const tokenData = await response.json();
 
         if (Array.isArray(tokenData)) {
           setTokens(tokenData);
@@ -151,12 +151,6 @@ export default function Developers() {
           <Box className="min-h-screen bg-black text-white" sx={{ marginLeft: { xs: 0, md: '280px' } }}>
             <Box className="px-4 md:px-8 pb-6 md:pb-8 pt-4">
               <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                <Breadcrumb items={[
-                  { label: 'Home', path: '/' },
-                  { label: 'Developer' }
-                ]} />
-              </Box>
               <Box className="welcome-page mt-10">
                 <Box className="welcome-page__container">
                   <Box className="welcome-page__body max-w-4xl mx-auto">

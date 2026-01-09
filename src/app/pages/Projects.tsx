@@ -13,8 +13,8 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
 import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
-import Breadcrumb from '@/app/components/breadcrumb';
 import { useAuth } from '@/app/hooks/useAuth';
+import { dialogStyles } from '@/app/shared/utils';
 
 export default function ProjectsList() {
   const [user, setUser] = useAuth();
@@ -168,11 +168,6 @@ export default function ProjectsList() {
         const updatedUser = await userService.get();
         setUser(updatedUser);
         handleCloseCreateDialog();
-
-        // Navigate to the new project
-        if (result.data.id) {
-          navigate(`/project/${result.data.id}?tab=0`);
-        }
       } else {
         setErrorMessage(result.error || 'Failed to create project');
       }
@@ -195,12 +190,6 @@ export default function ProjectsList() {
             <Box className="p-4">
               {/* MobileNav is now rendered in App.tsx for persistence across routes */}
               {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-              <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                <Breadcrumb items={[
-                  { label: 'Home', path: '/' },
-                  { label: 'Projects' }
-                ]} />
-              </Box>
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
               {/* Header */}
               <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
@@ -445,7 +434,7 @@ export default function ProjectsList() {
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleOpenProject(project, 2);
+                              handleOpenProject(project, 1);
                             }}
                             sx={{
                               color: '#9ca3af',
@@ -489,25 +478,10 @@ export default function ProjectsList() {
                     </Box>
                   ))
                 ) : (
-                  <Box className="flex items-center justify-center py-20 w-full">
-                    <Box className="text-center">
-                      <Box className="mb-4 flex justify-center">
-                        <FolderIcon sx={{ fontSize: 64, color: '#4b5563' }} />
-                      </Box>
-                      <Box className="text-gray-500 text-lg mb-2">
-                        {searchQuery ? 'No projects found' : 'No projects yet'}
-                      </Box>
-                      <Box className="text-gray-600 text-sm mb-6">
-                        {searchQuery ? 'Try adjusting your search terms' : 'Create your first project to get started'}
-                      </Box>
-                      {!searchQuery && (
-                        <button
-                          onClick={handleOpenCreateDialog}
-                          className="flex items-center gap-2 px-6 py-3 bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 rounded-xl transition-colors font-medium mx-auto"
-                        >
-                          <AddIcon /> Create Project
-                        </button>
-                      )}
+                  <Box className="text-center py-20">
+                    <Box className="text-gray-500 text-lg mb-2">No projects yet</Box>
+                    <Box className="text-gray-600 text-sm">
+                      Create your first project by clicking the <strong className="text-pink-100">+ New Project</strong> button above.
                     </Box>
                   </Box>
                 )}
@@ -522,18 +496,10 @@ export default function ProjectsList() {
             maxWidth="sm"
             fullWidth
             PaperProps={{
-              sx: {
-                bgcolor: '#0a0a0a',
-                border: '1px solid #1a1a1a',
-                borderRadius: '12px',
-                maxWidth: '480px',
-              }
+              sx: dialogStyles.paper
             }}
             BackdropProps={{
-              sx: {
-                backdropFilter: 'blur(4px)',
-                bgcolor: 'rgba(0, 0, 0, 0.6)',
-              }
+              sx: dialogStyles.backdrop
             }}
           >
             <Box className="relative p-6">
@@ -650,18 +616,10 @@ export default function ProjectsList() {
             maxWidth="sm"
             fullWidth
             PaperProps={{
-              sx: {
-                bgcolor: '#0a0a0a',
-                border: '1px solid #1a1a1a',
-                borderRadius: '12px',
-                maxWidth: '480px',
-              }
+              sx: dialogStyles.paper
             }}
             BackdropProps={{
-              sx: {
-                backdropFilter: 'blur(4px)',
-                bgcolor: 'rgba(0, 0, 0, 0.6)',
-              }
+              sx: dialogStyles.backdrop
             }}
           >
             <Box className="relative p-6">

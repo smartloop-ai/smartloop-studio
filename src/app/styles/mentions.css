@@ -50,15 +50,15 @@
 
 /* Mention suggestions dropdown */
 .mentions__suggestions {
-  background-color: #0a0a0a !important;
-  border: 1px solid #2a2a2a !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
-  max-height: 240px !important;
+  background-color: #000000 !important;
+  border: 1px solid #1a1a1a !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  max-height: 200px !important;
   overflow-y: auto !important;
   margin-top: 4px !important;
   z-index: 10000 !important;
-  padding: 4px !important;
+  padding: 2px !important;
 }
 
 .mentions__suggestions__list {
@@ -68,13 +68,13 @@
 }
 
 .mentions__suggestions__item {
-  padding: 10px 12px !important;
+  padding: 5px 8px !important;
   cursor: pointer !important;
-  transition: all 0.15s ease-in-out !important;
-  color: white !important;
-  font-size: 13px !important;
-  border-radius: 6px !important;
-  margin-bottom: 2px !important;
+  transition: background-color 0.1s ease !important;
+  color: #9ca3af !important;
+  font-size: 12px !important;
+  border-radius: 4px !important;
+  margin-bottom: 1px !important;
   background-color: transparent !important;
 }
 
@@ -97,14 +97,15 @@
   position: relative;
   z-index: 1;
   color: #ec4899 !important;
-  background-color: rgba(236, 72, 153, 0.12) !important;
-  border-radius: 5px !important;
-  padding: 3px 6px !important;
-  margin: 0 2px !important;
+  background-color: rgba(236, 72, 153, 0.18) !important;
+  border: 1px solid rgba(236, 72, 153, 0.35) !important;
+  border-radius: 3px !important;
+  padding: 1px 5px !important;
+  margin: 0 1px !important;
   font-weight: 500 !important;
+  font-size: 0.95em !important;
   text-shadow: none !important;
   pointer-events: none !important;
-  transition: background-color 0.2s ease !important;
 }
 
 /* Custom scrollbar for dropdown */
@@ -136,8 +137,8 @@
 
 .mention-project-icon {
   flex-shrink: 0;
-  color: #ec4899;
-  font-size: 16px !important;
+  color: #6b7280;
+  font-size: 14px !important;
 }
 
 .mention-project-info {
@@ -145,13 +146,13 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .mention-project-name {
   color: inherit !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -159,24 +160,18 @@
 }
 
 .mention-project-docs {
-  color: #6b7280 !important;
-  font-size: 11px !important;
+  color: #4b5563 !important;
+  font-size: 10px !important;
   line-height: 1.2;
 }
 
 /* Override any conflicting styles */
-.mentions__suggestions__item--focused .mention-project-icon {
-  color: #ec4899 !important;
-}
-
-.mentions__suggestions__item--focused .mention-project-name {
-  color: #ec4899 !important;
-}
-
+.mentions__suggestions__item--focused .mention-project-icon,
 .mentions__suggestions__item:hover .mention-project-icon {
   color: #ec4899 !important;
 }
 
+.mentions__suggestions__item--focused .mention-project-name,
 .mentions__suggestions__item:hover .mention-project-name {
   color: #ec4899 !important;
 }

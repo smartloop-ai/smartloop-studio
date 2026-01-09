@@ -81,12 +81,6 @@ export default function Profile() {
                     <Box className="min-h-screen bg-black text-white" >
                         <Box className="p-4">
                             <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-                            <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                                <Breadcrumb items={[
-                                    { label: 'Home', path: '/' },
-                                    { label: 'Profile' }
-                                ]} />
-                            </Box>
 
                             {loading ? (
                                 <Box className="flex justify-center items-center" sx={{ minHeight: '400px' }}>

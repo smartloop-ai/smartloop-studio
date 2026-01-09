@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress } from '@mui/material';
+import { conversationService } from '../services/conversation.service';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
@@ -10,9 +11,11 @@ import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import { userService } from '@/app/services/user.service';
+import { dialogStyles } from '@/app/shared/utils';
 import { APP_URL } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
@@ -30,12 +33,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [liveUser, setLiveUser] = useState(user);
   const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Update live user when prop changes
   useEffect(() => {
     setLiveUser(user);
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
   }, [user]);
+
+  // Refresh user data on mount to ensure conversations are loaded
+  useEffect(() => {
+    refreshUserData();
+  }, []);
 
   // Refresh user data on demand
   const refreshUserData = async () => {
@@ -56,8 +67,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshUserData();
     };
 
+    const handleConversationCreated = () => {
+      refreshUserData();
+    };
+
     window.addEventListener('refreshUserTokens', handleRefresh);
-    return () => window.removeEventListener('refreshUserTokens', handleRefresh);
+    window.addEventListener('conversationCreated', handleConversationCreated);
+
+    return () => {
+      window.removeEventListener('refreshUserTokens', handleRefresh);
+      window.removeEventListener('conversationCreated', handleConversationCreated);
+    };
   }, []);
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
@@ -95,48 +115,85 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     { icon: <DescriptionIcon fontSize="small" />, label: 'Documents', path: '/documents' },
   ];
 
-  // Get recent chats from user projects
-  const getRecentChats = () => {
-    if (!liveUser || !liveUser.projects || liveUser.projects.length === 0) return [];
+  // Delete conversation handler
+  const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent navigation when clicking delete
+    setConversationToDelete(conversationId);
+    setDeleteDialogOpen(true);
+  };
 
-    // Get session ID from sessionStorage using the user's email
-    const sessionKey = `chat_session_${liveUser.email}`;
-    const sessionId = sessionStorage.getItem(sessionKey);
-    if (!sessionId) return [];
+  const confirmDeleteConversation = async () => {
+    if (!conversationToDelete) return;
 
-    // Get the most recent projects that have chat history
-    const recentProjects = liveUser.projects
-      .map((project: any) => {
-        // Check if this project has chat messages in localStorage
-        const key = `chat_${sessionId}_${project.id}`;
-        const stored = localStorage.getItem(key);
-        let messageCount = 0;
+    setIsDeleting(true);
 
-        if (stored) {
-          try {
-            const messages = JSON.parse(stored);
-            messageCount = Array.isArray(messages) ? messages.length : 0;
-          } catch (e) {
-            messageCount = 0;
-          }
+    try {
+      const result = await conversationService.deleteConversation(conversationToDelete);
+
+      if (result.success) {
+        // Refresh user data to update sidebar
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setLiveUser(updatedUser);
         }
 
+        // Clear localStorage for this conversation
+        localStorage.removeItem(`chat_${conversationToDelete}`);
+
+        // Dispatch event for other components to react to conversation deletion
+        window.dispatchEvent(new CustomEvent('conversationDeleted', {
+          detail: { conversationId: conversationToDelete }
+        }));
+
+        // If currently viewing this conversation, navigate to home
+        const currentPath = location.pathname + location.search;
+        if (currentPath.includes(conversationToDelete)) {
+          navigate('/');
+        }
+
+        // Close dialog
+        setDeleteDialogOpen(false);
+        setConversationToDelete(null);
+      } else {
+        console.error('Failed to delete conversation:', result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Get recent conversations from user
+  const getRecentChats = () => {
+    if (!liveUser || !liveUser.conversations || liveUser.conversations.length === 0) return [];
+
+    // Get conversations and enrich with localStorage chat data
+    const recentConversations = liveUser.conversations
+      .map((conversation: any) => {
+        // Check for chat history in localStorage for this conversation
+        let messageCount = 0;
+        let hasMessages = false;
+        let lastMessageTime = conversation.created_at || new Date();
+
         return {
-          id: project.id,
-          name: project.title || project.name || 'Untitled Project',
-          lastMessage: project.last_message || project.lastMessage || null,
-          updatedAt: project.updated_at || project.updatedAt || project.created_at || project.createdAt || new Date(),
+          id: conversation.id,
+          name: conversation.title || 'Untitled Conversation',
+          projectId: conversation.project_id || null,
+          lastMessage: conversation.last_message || null,
+          createdAt: lastMessageTime,
           messageCount,
+          hasMessages: hasMessages || messageCount > 0,
         };
       })
-      // Filter to only projects with at least 1 chat message (changed from > 1 to >= 1)
-      .filter((project: any) => project.messageCount >= 1)
-      // Sort by most recently updated
-      .sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      // Limit to 5 most recent
-      .slice(0, 5);
+      // Filter to show all conversations (with or without messages)
+      .filter((conv: any) => conv.id)
+      // Sort by most recently updated (using message timestamps from localStorage)
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      // Limit to 3 most recent
+      .slice(0, 3);
 
-    return recentProjects;
+    return recentConversations;
   };
 
   const recentChats = getRecentChats();
@@ -205,7 +262,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         event.preventDefault();
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
         break;
-      case 'Enter':
+      case 'Enter': {
         event.preventDefault();
         const selected = searchResults.allItems[selectedIndex];
         if (selected) {
@@ -216,6 +273,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           }
         }
         break;
+      }
       case 'Escape':
         event.preventDefault();
         setSearchQuery('');
@@ -366,9 +424,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           }}
           PaperProps={{
             sx: {
-              bgcolor: 'rgba(26, 26, 26, 0.98)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              bgcolor: 'rgba(0, 0, 0, 0.98)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: '8px',
               width: searchAnchorEl?.offsetWidth || '248px',
@@ -527,13 +585,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           px: 1.5,
           letterSpacing: '0.5px',
           textTransform: 'uppercase',
-        }}>Recent Chats</Box>
+        }}>Conversations</Box>
         {recentChats.length > 0 ? (
           recentChats.map((chat: any) => (
             <Box
               key={chat.id}
               onClick={() => {
-                navigate(`/project/${chat.id}?tab=1`);
+                  navigate(`/?conversation=${chat.id}`);
                 onMobileClose?.();
               }}
               sx={{
@@ -545,15 +603,38 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 color: 'rgba(255, 255, 255, 0.6)',
                 borderRadius: '6px',
                 transition: 'all 0.12s ease',
+                position: 'relative',
                 '&:hover': {
                   color: 'white',
                   bgcolor: 'rgba(255, 255, 255, 0.06)',
                 },
+                '&:hover .delete-icon': {
+                  opacity: 1,
+                },
               }}
             >
-              <Box className="flex items-center gap-2">
-                <ChatBubbleOutlineIcon sx={{ fontSize: 16, flexShrink: 0 }} />
-                <span className="text-sm font-medium truncate">{chat.name}</span>
+              <Box className="flex items-center gap-2 justify-between">
+                <Box className="flex items-center gap-2 flex-1 min-w-0">
+                  <ChatBubbleOutlineIcon sx={{ fontSize: 16, flexShrink: 0 }} />
+                  <span className="text-sm font-medium truncate">{chat.name}</span>
+                </Box>
+                <IconButton
+                  className="delete-icon"
+                  size="small"
+                  onClick={(e) => handleDeleteConversation(chat.id, e)}
+                  sx={{
+                    opacity: 0,
+                    transition: 'opacity 0.2s ease',
+                    padding: '4px',
+                    color: 'rgba(255, 255, 255, 0.6)',
+                    '&:hover': {
+                      color: '#ec4899',
+                      bgcolor: 'rgba(236, 72, 153, 0.1)',
+                    },
+                  }}
+                >
+                  <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                </IconButton>
               </Box>
               <span className="text-xs text-gray-600 ml-6 truncate">
                 {chat.lastMessage
@@ -566,7 +647,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           ))
         ) : (
           <Box className="text-xs text-gray-600 px-2">
-            No recent chats
+            No conversations yet
           </Box>
         )}
       </Box>
@@ -772,9 +853,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
             PaperProps={{
               sx: {
-                bgcolor: 'rgba(26, 26, 26, 0.98)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
+                bgcolor: 'rgba(0, 0, 0, 0.98)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '8px',
                 minWidth: '200px',
@@ -841,8 +922,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           width: '280px',
           height: '100vh',
           bgcolor: 'rgba(18, 18, 18, 0.95)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
           borderRight: '1px solid rgba(255, 255, 255, 0.06)',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
@@ -883,8 +964,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               bottom: 0,
               width: '280px',
               bgcolor: 'rgba(18, 18, 18, 0.98)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
               borderRight: '1px solid rgba(255, 255, 255, 0.06)',
               display: { xs: 'flex', md: 'none' },
               flexDirection: 'column',
@@ -897,6 +978,106 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           </Box>
         </>
       )}
+
+      {/* Delete Conversation Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !isDeleting && setDeleteDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: dialogStyles.paper
+        }}
+        BackdropProps={{
+          sx: dialogStyles.backdrop
+        }}
+      >
+        <Box className="relative p-6">
+          {/* Close Button */}
+          <IconButton
+            onClick={() => setDeleteDialogOpen(false)}
+            disabled={isDeleting}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: '#6b7280',
+              '&:hover': {
+                color: '#fff',
+                bgcolor: '#1a1a1a',
+              },
+              '&:disabled': {
+                color: '#3f3f3f',
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+
+          {/* Icon and Title */}
+          <Box className="flex items-start gap-3 mb-4">
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '40px',
+                height: '40px',
+                flexShrink: 0,
+                borderRadius: '10px',
+                bgcolor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+              }}
+            >
+              <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24 }} />
+            </Box>
+            <Box className="flex-1">
+              <h3 className="text-white font-semibold text-lg mb-1">
+                Delete Conversation
+              </h3>
+              <p className="text-gray-400 text-sm leading-relaxed">
+                Are you sure you want to delete this conversation? This action cannot be undone.
+              </p>
+            </Box>
+          </Box>
+
+          {/* Warning */}
+          <Box className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
+            <Box className="text-red-400 text-sm">
+              <strong>Warning:</strong> All messages in this conversation will be permanently deleted.
+            </Box>
+          </Box>
+
+          {/* Action Buttons */}
+          <Box className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeleting}
+              className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDeleteConversation}
+              disabled={isDeleting}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDeleting ? (
+                <>
+                  <CircularProgress size={18} sx={{ color: 'white' }} />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <DeleteOutlineIcon fontSize="small" />
+                  Delete Conversation
+                </>
+              )}
+            </button>
+          </Box>
+        </Box>
+      </Dialog>
     </>
   );
 }

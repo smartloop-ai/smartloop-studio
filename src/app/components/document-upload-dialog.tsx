@@ -8,6 +8,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import CheckIcon from '@mui/icons-material/Check';
 import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
+import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT } from '@/app/constants';
 
 interface DocumentUploadDialogProps {
@@ -213,18 +214,10 @@ export default function DocumentUploadDialog({
       maxWidth="sm"
       fullWidth
       PaperProps={{
-        sx: {
-          bgcolor: '#0a0a0a',
-          border: '1px solid #1a1a1a',
-          borderRadius: '12px',
-          maxWidth: '480px',
-        }
+        sx: dialogStyles.paper
       }}
       BackdropProps={{
-        sx: {
-          backdropFilter: 'blur(4px)',
-          bgcolor: 'rgba(0, 0, 0, 0.6)',
-        }
+        sx: dialogStyles.backdrop
       }}
     >
       <Box className="relative p-6">
