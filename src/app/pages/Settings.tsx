@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, Switch, Slider, CircularProgress } from '@mui/material';
 import Sidebar from '@/app/components/sidebar';
-import Breadcrumb from '@/app/components/breadcrumb';
 import { useAuth } from '@/app/hooks/useAuth';
 import { userService } from '@/app/services/user.service';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';

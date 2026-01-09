@@ -95,7 +95,6 @@ export default function Chat(props: {
   const [formData, setFormData] = useState({
     message: "",
   });
-  const [messageAttachments, setMessageAttachments] = useState<Attachment[]>([]);
   const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
@@ -151,7 +150,6 @@ export default function Chat(props: {
   useEffect(() => {
     console.log('[Chat] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
-      setMessageAttachments(props.attachments);
       messageAttachmentsRef.current = props.attachments;
     } else {
       messageAttachmentsRef.current = [];
@@ -220,7 +218,6 @@ export default function Chat(props: {
 
   const handleFileAttached = (documentId: string, fileName: string) => {
     const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
-    setMessageAttachments(newAttachments);
     messageAttachmentsRef.current = newAttachments;
   };
 
@@ -272,7 +269,6 @@ export default function Chat(props: {
     setMessages(updatedMessages);
     saveMessagesToStorage(updatedMessages);
     setFormData({ message: "" });
-    setMessageAttachments([]); // Clear attachments after sending
     messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
     if (props.onAttachmentsClear) {
@@ -1058,7 +1054,6 @@ export default function Chat(props: {
             conversation={props.conversation}
             onFileAttached={handleFileAttached}
             onAttachmentClear={() => {
-              setMessageAttachments([]);
               messageAttachmentsRef.current = [];
               if (props.onAttachmentsClear) {
                 props.onAttachmentsClear();

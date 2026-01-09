@@ -3,7 +3,6 @@ import { userService } from '@/app/services/user.service';
 import { OAuthUtils } from '@/app/shared/utils'; // Add this import
 
 import { API_ENDPOINT } from '@/app/constants';
-import Breadcrumb from '@/app/components/breadcrumb';
 import Sidebar from '@/app/components/sidebar';
 import { useAuth } from '@/app/hooks/useAuth';
 import { CircularProgress, Box } from '@mui/material';

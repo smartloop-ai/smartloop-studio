@@ -1,10 +1,11 @@
 import { StrictMode } from 'react';
-import {createRoot } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import './app/globals.css';
 import App from './App';
+import ErrorBoundary from './app/components/error-boundary';
 
 // Create a dark theme for Material-UI
 const theme = createTheme({
@@ -40,12 +41,14 @@ const theme = createTheme({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ThemeProvider>
+    </ErrorBoundary>
   </StrictMode>
 );
 

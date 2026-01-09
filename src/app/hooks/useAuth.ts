@@ -43,9 +43,8 @@ export function useAuth(): [any, (user: any) => void] {
 
         if (!u) {
           // Token is invalid or expired (401 handled in userService)
-          console.log('useAuth: Failed to fetch user, likely invalid/expired token');
-          // userService.get() already handles logout and redirect on 401
-          // But we'll ensure redirect happens
+          console.log('useAuth: Failed to fetch user, redirecting to login');
+          userService.logout();
           navigate('/login', { replace: true });
         } else if (u.verified === false) {
           // User exists but not verified
@@ -58,25 +57,7 @@ export function useAuth(): [any, (user: any) => void] {
       } catch (error: any) {
         console.error('useAuth: Error during authentication check:', error);
 
-        // Handle different error types
-        if (error.message === 'Network error') {
-          // Network error - could be offline
-          console.error('useAuth: Network error, unable to verify token');
-          // Try to load cached user from localStorage as fallback
-          try {
-            const cachedUser = localStorage.getItem('u');
-            if (cachedUser) {
-              const parsedUser = JSON.parse(cachedUser);
-              console.log('useAuth: Using cached user data due to network error');
-              setUser(parsedUser);
-              return;
-            }
-          } catch (e) {
-            console.error('useAuth: Error parsing cached user:', e);
-          }
-        }
-
-        // For any other error or if no cached user, redirect to login
+        // Always redirect to login on any error to prevent white screens
         console.log('useAuth: Redirecting to login due to error');
         userService.logout();
         navigate('/login', { replace: true });

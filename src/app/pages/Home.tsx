@@ -40,16 +40,12 @@ export default function Home() {
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [uploadedDocument, setUploadedDocument] = useState<any>(null);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
   const [conversation, setConversation] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) {
@@ -723,7 +719,6 @@ export default function Home() {
                       if (!selectedProject || uploadFiles.length === 0) return;
 
                       setIsUploading(true);
-                      setUploadError('');
 
                       try {
                         const formData = new FormData();
@@ -755,12 +750,11 @@ export default function Home() {
 
                         setShowFileUploadDialog(false);
                         setUploadFiles([]);
-                        setUploadError('');
 
                         // Navigate to project
                         navigate(`/project/${selectedProject.id}?tab=0`);
                       } catch (error: any) {
-                        setUploadError(error.message || 'Failed to upload document');
+                        console.error('Upload error:', error.message || 'Failed to upload document');
                       } finally {
                         setIsUploading(false);
                       }
@@ -806,9 +800,6 @@ export default function Home() {
                         setConversation(null);
                         setMessageAttachments([]);
                         setUploadFiles([]);
-                        setUploadedDocument(null);
-                        setIsProcessing(false);
-                        setUploadError('');
                         setClearAttachmentTrigger(prev => prev + 1);
                       }}
                       className="text-gray-400 hover:text-white transition-colors"
@@ -833,7 +824,6 @@ export default function Home() {
                     conversation={conversation}
                     onAttachmentsClear={() => {
                       setMessageAttachments([]);
-                      setUploadedDocument(null);
                       setUploadFiles([]);
                       // Don't clear conversation - it should persist during chat session
                     }}

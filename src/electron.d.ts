@@ -4,6 +4,10 @@ export interface ElectronAPI {
   oauthLogin: () => Promise<{ status: string }>;
   validateToken: (token: string) => Promise<{ valid: boolean; user?: any; error?: string }>;
   onOAuthCallback: (callback: (data: { accessToken?: string; error?: string }) => void) => void;
+  storageGet: (key: string) => Promise<string | null>;
+  storageSet: (key: string, value: string) => Promise<void>;
+  storageRemove: (key: string) => Promise<void>;
+  storageClear: () => Promise<void>;
   isElectron: boolean;
   platform: string;
   versions: {
@@ -19,5 +23,5 @@ declare global {
   }
 }
 
-export {};
+export { };
 

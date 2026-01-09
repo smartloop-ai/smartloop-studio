@@ -15,7 +15,6 @@ import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import MobileNav from '@/app/components/mobile-nav';
 import { useAuth } from '@/app/hooks/useAuth';
 import Sidebar from '@/app/components/sidebar';
-import Breadcrumb from '@/app/components/breadcrumb';
 
 export default function Profile() {
     const navigate = useNavigate();

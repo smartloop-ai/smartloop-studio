@@ -39,14 +39,14 @@ export default function Login() {
 
               // Store user data if provided
               if (validation.user) {
-                localStorage.setItem('user', JSON.stringify(validation.user));
+                localStorage.setItem('u', JSON.stringify(validation.user));
               }
 
               setStatusMessage("Success! Redirecting...");
 
-              // Navigate to home
+              // Navigate to home - use replace to avoid back button issues
               setTimeout(() => {
-                navigate('/');
+                navigate('/', { replace: true });
               }, 500);
             } else {
               setErrorMessage(validation.error || 'Token validation failed. Please try again.');
@@ -67,15 +67,15 @@ export default function Login() {
       if (isElectron && window.electronAPI) {
         window.electronAPI.validateToken(token).then((validation) => {
           if (validation.valid) {
-            navigate('/');
+            navigate('/', { replace: true });
           } else {
             // Token is invalid, clear it
             localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            localStorage.removeItem('u');
           }
         });
       } else {
-        navigate('/');
+        navigate('/', { replace: true });
       }
     }
   }, [navigate, isElectron]);
@@ -190,7 +190,7 @@ export default function Login() {
               href="#"
               onClick={(e) => {
                 e.preventDefault();
-                window.open('https://docgpt.smartloop.ai/signup?mode=native', '_blank');
+                window.open('https://app.smartloop.ai/signup?mode=native', '_blank');
               }}
               className="text-pink-500 hover:text-pink-400 font-medium cursor-pointer"
             >

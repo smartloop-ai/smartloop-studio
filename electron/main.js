@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -16,8 +17,53 @@ let splashWindow;
 
 const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
-const APP_URL = process.env.VITE_APP_URL || 'https://docgpt.smartloop.ai';
+const APP_URL = process.env.VITE_APP_URL || 'https://app.smartloop.ai';
 const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
+
+// Storage file path
+const userDataPath = app.getPath('userData');
+const storagePath = path.join(userDataPath, 'storage.json');
+
+// Initialize storage file
+let storageData = {};
+try {
+  if (fs.existsSync(storagePath)) {
+    const data = fs.readFileSync(storagePath, 'utf8');
+    storageData = JSON.parse(data);
+  }
+} catch (error) {
+  console.error('Error loading storage:', error);
+  storageData = {};
+}
+
+// Save storage to disk
+function saveStorage() {
+  try {
+    fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2));
+  } catch (error) {
+    console.error('Error saving storage:', error);
+  }
+}
+
+// Storage IPC handlers
+ipcMain.handle('storage-get', (event, key) => {
+  return storageData[key] || null;
+});
+
+ipcMain.handle('storage-set', (event, key, value) => {
+  storageData[key] = value;
+  saveStorage();
+});
+
+ipcMain.handle('storage-remove', (event, key) => {
+  delete storageData[key];
+  saveStorage();
+});
+
+ipcMain.handle('storage-clear', () => {
+  storageData = {};
+  saveStorage();
+});
 
 // Register custom protocol for OAuth callback
 const PROTOCOL = 'smartloop';

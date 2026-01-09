@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOAuthCallback: (callback) => {
     ipcRenderer.on('oauth-callback', (event, data) => callback(data));
   },
+  // Storage methods - native Electron storage
+  storageGet: (key) => ipcRenderer.invoke('storage-get', key),
+  storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),
+  storageRemove: (key) => ipcRenderer.invoke('storage-remove', key),
+  storageClear: () => ipcRenderer.invoke('storage-clear'),
   // Check if running in Electron
   isElectron: true,
   // System info
