@@ -108,7 +108,6 @@ export default function Chat(props: {
   const [copied, setCopied]: any = useState("");
   const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
@@ -543,7 +542,7 @@ export default function Chat(props: {
 
   // Auto-send initial message when provided
   useEffect(() => {
-    if (props.initialMessage && !messageSent && !isLoading && userId) {
+    if (props.initialMessage && !messageSent && !isLoading) {
       // Small delay to ensure component is ready (and generalProjectId to be set)
       setTimeout(() => {
         sendMessage({} as any, props.initialMessage || undefined);
@@ -551,7 +550,7 @@ export default function Chat(props: {
       }, 800);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.initialMessage, messageSent, isLoading, userId]);
+  }, [props.initialMessage, messageSent, isLoading]);
 
   // Save messages to localStorage whenever they change (backup save)
   useEffect(() => {

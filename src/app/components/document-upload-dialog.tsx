@@ -5,7 +5,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import FolderIcon from '@mui/icons-material/Folder';
-import CheckIcon from '@mui/icons-material/Check';
 import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
 import { dialogStyles } from '@/app/shared/utils';
