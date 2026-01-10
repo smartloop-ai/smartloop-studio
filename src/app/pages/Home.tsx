@@ -19,6 +19,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FileAttacher from '@/app/components/file-attacher';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
@@ -46,6 +47,9 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) {
@@ -100,20 +104,33 @@ export default function Home() {
     if (urlConversationId && user) {
       console.log('Conversation ID from URL:', urlConversationId);
 
-      // If we already have this conversation loaded, don't reload it
-      if (conversation && conversation.id === urlConversationId) {
-        console.log('Conversation already loaded, skipping reload');
-        if (!showChat) {
-          console.log('Setting showChat to true');
-          setShowChat(true);
-        }
-        return;
-      }
-
       // Find the conversation in user's conversations (always available in desktop app)
       const foundConversation = user.conversations?.find((c: any) => c.id === urlConversationId);
 
       if (foundConversation) {
+        // If we already have this conversation loaded, only update project if needed
+        if (conversation && conversation.id === urlConversationId) {
+          console.log('Conversation already loaded, checking project');
+
+          // Update project if it's different or missing
+          if (foundConversation.project_id) {
+            const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
+            if (project && (!selectedProject || selectedProject.id !== project.id)) {
+              console.log('[Home URL Effect] Updating selected project:', project.title || project.name);
+              setSelectedProject(project);
+            }
+          } else if (selectedProject) {
+            console.log('[Home URL Effect] Clearing selected project (no project_id)');
+            setSelectedProject(null);
+          }
+
+          if (!showChat) {
+            console.log('Setting showChat to true');
+            setShowChat(true);
+          }
+          return;
+        }
+
         console.log('[Home URL Effect] Loading conversation from user data:', {
           conversationId: foundConversation.id,
           conversationTitle: foundConversation.title,
@@ -134,9 +151,11 @@ export default function Home() {
             setSelectedProject(project);
           } else {
             console.warn('[Home URL Effect] Project not found in user.projects for project_id:', foundConversation.project_id, 'Available projects:', user.projects?.map((p: any) => ({ id: p.id, name: p.title || p.name })));
+            setSelectedProject(null);
           }
         } else {
           console.log('[Home URL Effect] Conversation has no project_id');
+          setSelectedProject(null);
         }
       } else {
         console.warn('Invalid conversation ID in URL:', urlConversationId, 'Available conversations:', user.conversations?.map((c: any) => c.id));
@@ -322,6 +341,49 @@ export default function Home() {
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
     setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!conversation) return;
+
+    setIsDeleting(true);
+
+    try {
+      const result = await conversationService.deleteConversation(conversation.id);
+
+      if (result.success) {
+        // Clear localStorage for this conversation
+        localStorage.removeItem(`chat_${conversation.id}`);
+
+        // Refresh user data to update sidebar
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+
+        // Dispatch event for sidebar to refresh
+        window.dispatchEvent(new CustomEvent('conversationDeleted', {
+          detail: { conversationId: conversation.id }
+        }));
+
+        // Close dialog
+        setShowDeleteDialog(false);
+
+        // Navigate to home
+        navigate('/');
+        setShowChat(false);
+        setConversation(null);
+        setChatMessage(null);
+        setMessage('');
+        setSelectedProject(null);
+      } else {
+        console.error('Failed to delete conversation:', result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const features = [
@@ -776,6 +838,52 @@ export default function Home() {
             </Box>
           </Dialog>
 
+          {/* Delete Conversation Confirmation Dialog */}
+          <Dialog
+            open={showDeleteDialog}
+            onClose={() => !isDeleting && setShowDeleteDialog(false)}
+            maxWidth="xs"
+            fullWidth
+            PaperProps={{
+              sx: dialogStyles.paper
+            }}
+            BackdropProps={{
+              sx: dialogStyles.backdrop
+            }}
+          >
+            <Box className="p-6">
+              <h3 className="text-white font-semibold text-lg mb-3">
+                Delete Conversation?
+              </h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Are you sure you want to delete this conversation? This action cannot be undone.
+              </p>
+              <Box className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowDeleteDialog(false)}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConversation}
+                  disabled={isDeleting}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeleting ? (
+                    <CircularProgress size={18} sx={{ color: 'white' }} />
+                  ) : (
+                    <>
+                      <DeleteOutlineIcon fontSize="small" />
+                      Delete
+                    </>
+                  )}
+                </button>
+              </Box>
+            </Box>
+          </Dialog>
+
           <Box className="min-h-screen bg-black text-white">
             {(() => {
               return showChat && conversation;
@@ -786,32 +894,57 @@ export default function Home() {
                 <Box className="flex-none px-4 py-4 md:py-6 border-b border-gray-900">
                   {/* MobileNav is now rendered in App.tsx for persistence across routes */}
                   {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-                  <Box className="flex items-center gap-4">
-                    <button
-                      onClick={() => {
-                        // Navigate to home without conversation parameter
-                        navigate('/');
+                  <Box className="flex items-center justify-between gap-4">
+                    <Box className="flex items-center gap-4 flex-1 min-w-0">
+                      <button
+                        onClick={() => {
+                          // Navigate to home without conversation parameter
+                          navigate('/');
 
-                        // Clear all states
-                        setShowChat(false);
-                        setChatMessage(null);
-                        setMessage('');
-                        setSelectedProject(null);
-                        setConversation(null);
-                        setMessageAttachments([]);
-                        setUploadFiles([]);
-                        setClearAttachmentTrigger(prev => prev + 1);
+                          // Clear all states
+                          setShowChat(false);
+                          setChatMessage(null);
+                          setMessage('');
+                          setSelectedProject(null);
+                          setConversation(null);
+                          setMessageAttachments([]);
+                          setUploadFiles([]);
+                          setClearAttachmentTrigger(prev => prev + 1);
+                        }}
+                        className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                        title="Back to home"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                      </button>
+                      <Box className="flex-1 min-w-0">
+                        <div className="text-xl md:text-2xl font-bold text-white truncate">
+                          {conversation.title}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1 text-sm text-gray-400">
+                          <span>Conversation with</span>
+                          {selectedProject ? (
+                            <span className="text-pink-400 font-medium">@{selectedProject.title || selectedProject.name}</span>
+                          ) : (
+                            <span className="text-pink-400 font-medium">@general</span>
+                          )}
+                        </div>
+                      </Box>
+                    </Box>
+                    <IconButton
+                      onClick={() => setShowDeleteDialog(true)}
+                      sx={{
+                        color: '#9ca3af',
+                        '&:hover': {
+                          color: '#ef4444',
+                          bgcolor: 'rgba(239, 68, 68, 0.1)',
+                        },
                       }}
-                      className="text-gray-400 hover:text-white transition-colors"
-                      title="Back to home"
+                      title="Delete conversation"
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                      </svg>
-                    </button>
-                    <div className="text-xl md:text-2xl font-bold text-white">
-                      {conversation.title}
-                    </div>
+                      <DeleteOutlineIcon />
+                    </IconButton>
                   </Box>
                 </Box>
 

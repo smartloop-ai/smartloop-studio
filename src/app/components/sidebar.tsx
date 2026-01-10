@@ -71,12 +71,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshUserData();
     };
 
+    const handleConversationDeleted = () => {
+      refreshUserData();
+    };
+
     window.addEventListener('refreshUserTokens', handleRefresh);
     window.addEventListener('conversationCreated', handleConversationCreated);
+    window.addEventListener('conversationDeleted', handleConversationDeleted);
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
       window.removeEventListener('conversationCreated', handleConversationCreated);
+      window.removeEventListener('conversationDeleted', handleConversationDeleted);
     };
   }, []);
 
@@ -591,7 +597,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <Box
               key={chat.id}
               onClick={() => {
-                  navigate(`/?conversation=${chat.id}`);
+                navigate(`/?conversation=${chat.id}`);
                 onMobileClose?.();
               }}
               sx={{

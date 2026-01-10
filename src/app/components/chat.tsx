@@ -974,13 +974,13 @@ export default function Chat(props: {
                                 setCopied(msg.id);
                                 setTimeout(() => setCopied(""), 1000);
                               }}>
-                              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 rounded-lg text-xs text-gray-400 hover:text-gray-300 transition-colors">
+                              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-xs text-gray-400 hover:text-gray-300 transition-colors">
                                 <ContentCopyIcon sx={{ fontSize: 14 }} />
                                 <span>{copied === msg.id ? "Copied!" : "Copy"}</span>
                               </button>
                             </CopyToClipboard>
                             <button
-                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors"
+                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-gray-400 hover:text-white transition-colors"
                               onClick={() => sendPositiveFeedback(msg)}
                             >
                               {
@@ -990,7 +990,7 @@ export default function Chat(props: {
                               }
                             </button>
                             <button
-                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors"
+                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-gray-400 hover:text-white transition-colors"
                               onClick={() => sendNegativeFeedback(msg)}
                             >
                               {
@@ -1004,29 +1004,48 @@ export default function Chat(props: {
                       </Box>
                       : <Box key={msg.id} className="flex justify-end">
                         <Box className="flex items-start gap-3 max-w-3xl">
-                          <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
-                            <div className="text-wrap break-words" dangerouslySetInnerHTML={{
-                              __html: marked(msg.payload.text)
-                            }}>
-                            </div>
+                          <Box className="flex flex-col gap-2 flex-1">
+                            {/* Attachments bubble - shown above message if present */}
                             {msg.attachments && msg.attachments.filter((attachment: any) => attachment.file_id?.startsWith('file-')).length > 0 && (
-                              <Box className="mt-3 pt-3 border-t border-gray-700">
-                                <Box className="flex flex-wrap gap-2">
+                              <div className="border border-pink-500/30 rounded-sm overflow-hidden bg-pink-500/10">
+                                <Box className="flex flex-wrap">
                                   {msg.attachments
                                     .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
                                     .map((attachment: any, idx: number) => (
                                       <Box
                                         key={idx}
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-gray-700"
+                                        className="flex items-center gap-2 p-3 text-xs bg-pink-500/20 border border-pink-500/30 rounded-sm"
                                       >
-                                        <InsertDriveFileIcon sx={{ fontSize: 14 }} />
-                                        <span>{attachment.name || 'Document attached'}</span>
+                                        <Box
+                                          sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: '32px',
+                                            height: '32px',
+                                            borderRadius: '50%',
+                                            bgcolor: 'rgba(236, 72, 153, 0.2)',
+                                            border: '1px solid rgba(236, 72, 153, 0.4)',
+                                          }}
+                                        >
+                                          <InsertDriveFileIcon sx={{ fontSize: 14, color: '#ec4899' }} />
+                                        </Box>
+                                        <span className="text-pink-300">{attachment.name || 'Document attached'}</span>
                                       </Box>
                                     ))}
                                 </Box>
-                              </Box>
+                              </div>
                             )}
-                          </div>
+
+                            {/* Message bubble */}
+                            <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
+                              <div className="text-wrap break-words" dangerouslySetInnerHTML={{
+                                __html: marked(msg.payload.text)
+                              }}>
+                              </div>
+                            </div>
+                          </Box>
+
                           <Box className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
                             <Box className="w-3 h-3 rounded-full bg-pink-500"></Box>
                           </Box>
