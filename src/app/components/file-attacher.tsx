@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Box, IconButton, CircularProgress } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -38,12 +38,14 @@ export default function FileAttacher({
   const isSmall = size === 'small';
 
   // Handle external clear trigger
-  if (clearTrigger !== prevClearTrigger.current) {
-    prevClearTrigger.current = clearTrigger;
-    setSelectedFile(null);
-    setUploadError('');
-    setIsUploading(false);
-  }
+  useEffect(() => {
+    if (clearTrigger !== prevClearTrigger.current) {
+      prevClearTrigger.current = clearTrigger;
+      setSelectedFile(null);
+      setUploadError('');
+      setIsUploading(false);
+    }
+  }, [clearTrigger]);
 
   const validateFile = (file: File): string | null => {
     const allowedTypes = [

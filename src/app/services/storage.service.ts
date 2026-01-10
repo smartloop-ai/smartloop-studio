@@ -1,27 +1,18 @@
 /**
  * Storage Service
- * Provides a unified interface for storage that uses:
- * - Electron's native storage (via IPC) when running in Electron
- * - Browser localStorage as fallback for web
+ * Uses electron-store for persistent storage in Electron app
  */
 
 class StorageService {
-  private isElectron: boolean;
-
-  constructor() {
-    this.isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
-  }
-
   /**
    * Get an item from storage
    */
-  async getItem(key: string): Promise<string | null> {
+  async getItem(key: string): Promise<any> {
     try {
-      if (this.isElectron && window.electronAPI?.storageGet) {
+      if (window.electronAPI?.storageGet) {
         return await window.electronAPI.storageGet(key);
       }
-      // Fallback to localStorage
-      return localStorage.getItem(key);
+      throw new Error('Electron storage not available');
     } catch (error) {
       console.error(`Error getting item ${key} from storage:`, error);
       return null;
@@ -31,13 +22,12 @@ class StorageService {
   /**
    * Set an item in storage
    */
-  async setItem(key: string, value: string): Promise<void> {
+  async setItem(key: string, value: any): Promise<void> {
     try {
-      if (this.isElectron && window.electronAPI?.storageSet) {
+      if (window.electronAPI?.storageSet) {
         await window.electronAPI.storageSet(key, value);
       } else {
-        // Fallback to localStorage
-        localStorage.setItem(key, value);
+        throw new Error('Electron storage not available');
       }
     } catch (error) {
       console.error(`Error setting item ${key} in storage:`, error);
@@ -49,11 +39,10 @@ class StorageService {
    */
   async removeItem(key: string): Promise<void> {
     try {
-      if (this.isElectron && window.electronAPI?.storageRemove) {
+      if (window.electronAPI?.storageRemove) {
         await window.electronAPI.storageRemove(key);
       } else {
-        // Fallback to localStorage
-        localStorage.removeItem(key);
+        throw new Error('Electron storage not available');
       }
     } catch (error) {
       console.error(`Error removing item ${key} from storage:`, error);
@@ -65,11 +54,10 @@ class StorageService {
    */
   async clear(): Promise<void> {
     try {
-      if (this.isElectron && window.electronAPI?.storageClear) {
+      if (window.electronAPI?.storageClear) {
         await window.electronAPI.storageClear();
       } else {
-        // Fallback to localStorage
-        localStorage.clear();
+        throw new Error('Electron storage not available');
       }
     } catch (error) {
       console.error('Error clearing storage:', error);
@@ -77,31 +65,32 @@ class StorageService {
   }
 
   /**
-   * Synchronous methods for backward compatibility (uses localStorage)
-   * These should be migrated to async versions gradually
+   * Check if a key exists in storage
    */
-  getItemSync(key: string): string | null {
+  async has(key: string): Promise<boolean> {
     try {
-      return localStorage.getItem(key);
+      if (window.electronAPI?.storageHas) {
+        return await window.electronAPI.storageHas(key);
+      }
+      throw new Error('Electron storage not available');
     } catch (error) {
-      console.error(`Error getting item ${key} from storage (sync):`, error);
-      return null;
+      console.error(`Error checking if ${key} exists in storage:`, error);
+      return false;
     }
   }
 
-  setItemSync(key: string, value: string): void {
+  /**
+   * Get all storage data
+   */
+  async getAll(): Promise<Record<string, any>> {
     try {
-      localStorage.setItem(key, value);
+      if (window.electronAPI?.storageGetAll) {
+        return await window.electronAPI.storageGetAll();
+      }
+      throw new Error('Electron storage not available');
     } catch (error) {
-      console.error(`Error setting item ${key} in storage (sync):`, error);
-    }
-  }
-
-  removeItemSync(key: string): void {
-    try {
-      localStorage.removeItem(key);
-    } catch (error) {
-      console.error(`Error removing item ${key} from storage (sync):`, error);
+      console.error('Error getting all storage data:', error);
+      return {};
     }
   }
 }

@@ -87,6 +87,7 @@ export default function Chat(props: {
   onTokenUpdate?: () => void,
   attachments?: Attachment[],
   onAttachmentsClear?: () => void,
+  onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
   onConversationCreated?: (conversation: any) => void
 }) {
@@ -148,12 +149,15 @@ export default function Chat(props: {
 
   // Update attachments when props change
   useEffect(() => {
-    console.log('[Chat] Attachments prop updated:', props.attachments);
+    console.log('[Chat useEffect] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
+      console.log('[Chat useEffect] Setting ref to:', props.attachments);
       messageAttachmentsRef.current = props.attachments;
     } else {
+      console.log('[Chat useEffect] Clearing ref');
       messageAttachmentsRef.current = [];
     }
+    console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
 
   const scrollToBottom = () => {
@@ -218,7 +222,15 @@ export default function Chat(props: {
 
   const handleFileAttached = (documentId: string, fileName: string) => {
     const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
+    console.log('[Chat handleFileAttached] Setting attachments:', newAttachments);
     messageAttachmentsRef.current = newAttachments;
+    console.log('[Chat handleFileAttached] Ref after update:', messageAttachmentsRef.current);
+
+    // Notify parent component if callback provided
+    if (props.onFileAttached) {
+      console.log('[Chat handleFileAttached] Notifying parent');
+      props.onFileAttached(documentId, fileName);
+    }
   };
 
   const sendMessage = async (_: any, messageOverride?: string) => {
@@ -241,7 +253,9 @@ export default function Chat(props: {
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
     // Use attachments from ref (more reliable for async operations)
+    console.log('[Chat sendMessage] messageAttachmentsRef.current:', messageAttachmentsRef.current);
     const currentAttachments = [...messageAttachmentsRef.current];
+    console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
 
     // Use conversation from props
     if (!props.conversation?.id) {
@@ -264,6 +278,9 @@ export default function Chat(props: {
       },
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined
     };
+
+    console.log('[Chat sendMessage] Created userMsg:', userMsg);
+    console.log('[Chat sendMessage] userMsg.attachments:', userMsg.attachments);
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);

@@ -340,7 +340,10 @@ export default function Home() {
   };
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
-    setMessageAttachments([{ file_id: `file-${documentId}`, name: fileName }]);
+    console.log('[Home handleFileAttached] Called with:', documentId, fileName);
+    const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
+    console.log('[Home handleFileAttached] Setting messageAttachments to:', newAttachments);
+    setMessageAttachments(newAttachments);
   };
 
   const handleDeleteConversation = async () => {
@@ -955,6 +958,7 @@ export default function Home() {
                     initialMessage={chatMessage}
                     attachments={messageAttachments}
                     conversation={conversation}
+                    onFileAttached={handleFileAttached}
                     onAttachmentsClear={() => {
                       setMessageAttachments([]);
                       setUploadFiles([]);

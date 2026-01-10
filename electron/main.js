@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
-const fs = require('fs');
+const Store = require('electron-store');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -20,49 +20,35 @@ const port = process.env.PORT || 5000;
 const APP_URL = process.env.VITE_APP_URL || 'https://app.smartloop.ai';
 const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
 
-// Storage file path
-const userDataPath = app.getPath('userData');
-const storagePath = path.join(userDataPath, 'storage.json');
-
-// Initialize storage file
-let storageData = {};
-try {
-  if (fs.existsSync(storagePath)) {
-    const data = fs.readFileSync(storagePath, 'utf8');
-    storageData = JSON.parse(data);
-  }
-} catch (error) {
-  console.error('Error loading storage:', error);
-  storageData = {};
-}
-
-// Save storage to disk
-function saveStorage() {
-  try {
-    fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2));
-  } catch (error) {
-    console.error('Error saving storage:', error);
-  }
-}
+// Initialize electron-store
+const store = new Store({
+  name: 'smartloop-storage',
+  encryptionKey: 'smartloop-secure-key', // Optional: encrypt sensitive data
+});
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
-  return storageData[key] || null;
+  return store.get(key, null);
 });
 
 ipcMain.handle('storage-set', (event, key, value) => {
-  storageData[key] = value;
-  saveStorage();
+  store.set(key, value);
 });
 
 ipcMain.handle('storage-remove', (event, key) => {
-  delete storageData[key];
-  saveStorage();
+  store.delete(key);
 });
 
 ipcMain.handle('storage-clear', () => {
-  storageData = {};
-  saveStorage();
+  store.clear();
+});
+
+ipcMain.handle('storage-has', (event, key) => {
+  return store.has(key);
+});
+
+ipcMain.handle('storage-get-all', () => {
+  return store.store;
 });
 
 // Register custom protocol for OAuth callback
