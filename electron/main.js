@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
-const Store = require('electron-store');
+const Store = require('electron-store').default || require('electron-store');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {

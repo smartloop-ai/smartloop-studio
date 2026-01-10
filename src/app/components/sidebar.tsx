@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
+import { storageService } from '../services/storage.service';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
@@ -36,6 +37,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [conversations, setConversations] = useState<any[]>([]);
 
   // Update live user when prop changes
   useEffect(() => {
@@ -43,10 +45,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
   }, [user]);
 
-  // Refresh user data on mount to ensure conversations are loaded
+  // Load conversations from local storage on mount
   useEffect(() => {
-    refreshUserData();
+    loadConversationsFromStorage();
   }, []);
+
+  // Load conversations from local storage
+  const loadConversationsFromStorage = async () => {
+    try {
+      const conversations = await storageService.getConversations();
+      setConversations(conversations || []);
+    } catch (error) {
+      console.error('Error loading conversations from storage:', error);
+    }
+  };
 
   // Refresh user data on demand
   const refreshUserData = async () => {
@@ -68,11 +80,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
 
     const handleConversationCreated = () => {
-      refreshUserData();
+      loadConversationsFromStorage();
     };
 
     const handleConversationDeleted = () => {
-      refreshUserData();
+      loadConversationsFromStorage();
     };
 
     window.addEventListener('refreshUserTokens', handleRefresh);
@@ -137,14 +149,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const result = await conversationService.deleteConversation(conversationToDelete);
 
       if (result.success) {
-        // Refresh user data to update sidebar
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setLiveUser(updatedUser);
-        }
-
-        // Clear localStorage for this conversation
-        localStorage.removeItem(`chat_${conversationToDelete}`);
+        // Reload conversations from local storage
+        await loadConversationsFromStorage();
 
         // Dispatch event for other components to react to conversation deletion
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
@@ -172,29 +178,22 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Get recent conversations from user
   const getRecentChats = () => {
-    if (!liveUser || !liveUser.conversations || liveUser.conversations.length === 0) return [];
+    if (!conversations || conversations.length === 0) return [];
 
-    // Get conversations and enrich with localStorage chat data
-    const recentConversations = liveUser.conversations
+    // Get conversations from local storage
+    const recentConversations = conversations
       .map((conversation: any) => {
-        // Check for chat history in localStorage for this conversation
-        let messageCount = 0;
-        let hasMessages = false;
-        let lastMessageTime = conversation.created_at || new Date();
-
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
           projectId: conversation.project_id || null,
           lastMessage: conversation.last_message || null,
-          createdAt: lastMessageTime,
-          messageCount,
-          hasMessages: hasMessages || messageCount > 0,
+          createdAt: conversation.created_at || new Date(),
         };
       })
-      // Filter to show all conversations (with or without messages)
+      // Filter to show all conversations
       .filter((conv: any) => conv.id)
-      // Sort by most recently updated (using message timestamps from localStorage)
+      // Sort by most recently updated
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       // Limit to 3 most recent
       .slice(0, 3);

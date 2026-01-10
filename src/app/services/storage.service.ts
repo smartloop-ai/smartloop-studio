@@ -93,6 +93,121 @@ class StorageService {
       return {};
     }
   }
+
+  /**
+   * Save conversations to storage
+   */
+  async saveConversations(conversations: any[]): Promise<void> {
+    try {
+      await this.setItem('conversations', conversations);
+      console.log(`[Storage] Saved ${conversations.length} conversations`);
+    } catch (error) {
+      console.error('Error saving conversations:', error);
+    }
+  }
+
+  /**
+   * Get all conversations from storage
+   */
+  async getConversations(): Promise<any[]> {
+    try {
+      const conversations = await this.getItem('conversations');
+      return conversations || [];
+    } catch (error) {
+      console.error('Error getting conversations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Save a single conversation to storage
+   */
+  async saveConversation(conversation: any): Promise<void> {
+    try {
+      const conversations = await this.getConversations();
+      const existingIndex = conversations.findIndex((c: any) => c.id === conversation.id);
+      
+      if (existingIndex >= 0) {
+        conversations[existingIndex] = conversation;
+      } else {
+        conversations.push(conversation);
+      }
+      
+      await this.saveConversations(conversations);
+    } catch (error) {
+      console.error('Error saving conversation:', error);
+    }
+  }
+
+  /**
+   * Get a single conversation by ID
+   */
+  async getConversation(conversationId: string): Promise<any | null> {
+    try {
+      const conversations = await this.getConversations();
+      return conversations.find((c: any) => c.id === conversationId) || null;
+    } catch (error) {
+      console.error('Error getting conversation:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete a conversation from storage
+   */
+  async deleteConversation(conversationId: string): Promise<void> {
+    try {
+      const conversations = await this.getConversations();
+      const filtered = conversations.filter((c: any) => c.id !== conversationId);
+      await this.saveConversations(filtered);
+      
+      // Also delete messages for this conversation
+      await this.deleteMessages(conversationId);
+      console.log(`[Storage] Deleted conversation ${conversationId}`);
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+    }
+  }
+
+  /**
+   * Save messages for a conversation
+   */
+  async saveMessages(conversationId: string, messages: any[]): Promise<void> {
+    try {
+      const key = `messages_${conversationId}`;
+      await this.setItem(key, messages);
+      console.log(`[Storage] Saved ${messages.length} messages for conversation ${conversationId}`);
+    } catch (error) {
+      console.error(`Error saving messages for conversation ${conversationId}:`, error);
+    }
+  }
+
+  /**
+   * Get messages for a conversation
+   */
+  async getMessages(conversationId: string): Promise<any[]> {
+    try {
+      const key = `messages_${conversationId}`;
+      const messages = await this.getItem(key);
+      return messages || [];
+    } catch (error) {
+      console.error(`Error getting messages for conversation ${conversationId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete messages for a conversation
+   */
+  async deleteMessages(conversationId: string): Promise<void> {
+    try {
+      const key = `messages_${conversationId}`;
+      await this.removeItem(key);
+      console.log(`[Storage] Deleted messages for conversation ${conversationId}`);
+    } catch (error) {
+      console.error(`Error deleting messages for conversation ${conversationId}:`, error);
+    }
+  }
 }
 
 export const storageService = new StorageService();

@@ -20,6 +20,7 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import FileAttacher from '@/app/components/file-attacher';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
@@ -49,6 +50,7 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -104,66 +106,72 @@ export default function Home() {
     if (urlConversationId && user) {
       console.log('Conversation ID from URL:', urlConversationId);
 
-      // Find the conversation in user's conversations (always available in desktop app)
-      const foundConversation = user.conversations?.find((c: any) => c.id === urlConversationId);
+      // Load the conversation from local storage
+      const loadConversation = async () => {
+        const result = await conversationService.getConversation(urlConversationId);
 
-      if (foundConversation) {
-        // If we already have this conversation loaded, only update project if needed
-        if (conversation && conversation.id === urlConversationId) {
-          console.log('Conversation already loaded, checking project');
+        if (result.success && result.data) {
+          const foundConversation = result.data;
 
-          // Update project if it's different or missing
+          // If we already have this conversation loaded, only update project if needed
+          if (conversation && conversation.id === urlConversationId) {
+            console.log('Conversation already loaded, checking project');
+
+            // Update project if it's different or missing
+            if (foundConversation.project_id) {
+              const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
+              if (project && (!selectedProject || selectedProject.id !== project.id)) {
+                console.log('[Home URL Effect] Updating selected project:', project.title || project.name);
+                setSelectedProject(project);
+              }
+            } else if (selectedProject) {
+              console.log('[Home URL Effect] Clearing selected project (no project_id)');
+              setSelectedProject(null);
+            }
+
+            if (!showChat) {
+              console.log('Setting showChat to true');
+              setShowChat(true);
+            }
+            return;
+          }
+
+          console.log('[Home URL Effect] Loading conversation from storage:', {
+            conversationId: foundConversation.id,
+            conversationTitle: foundConversation.title,
+            conversationProjectId: foundConversation.project_id
+          });
+          setConversation(foundConversation);
+          setShowChat(true);
+
+          // Set the selected project based on the conversation's project_id
           if (foundConversation.project_id) {
             const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-            if (project && (!selectedProject || selectedProject.id !== project.id)) {
-              console.log('[Home URL Effect] Updating selected project:', project.title || project.name);
+            if (project) {
+              console.log('[Home URL Effect] Setting selected project from conversation:', {
+                projectId: project.id,
+                projectName: project.title || project.name,
+                conversationProjectId: foundConversation.project_id
+              });
               setSelectedProject(project);
+            } else {
+              console.warn('[Home URL Effect] Project not found in user.projects for project_id:', foundConversation.project_id, 'Available projects:', user.projects?.map((p: any) => ({ id: p.id, name: p.title || p.name })));
+              setSelectedProject(null);
             }
-          } else if (selectedProject) {
-            console.log('[Home URL Effect] Clearing selected project (no project_id)');
-            setSelectedProject(null);
-          }
-
-          if (!showChat) {
-            console.log('Setting showChat to true');
-            setShowChat(true);
-          }
-          return;
-        }
-
-        console.log('[Home URL Effect] Loading conversation from user data:', {
-          conversationId: foundConversation.id,
-          conversationTitle: foundConversation.title,
-          conversationProjectId: foundConversation.project_id
-        });
-        setConversation(foundConversation);
-        setShowChat(true);
-
-        // Set the selected project based on the conversation's project_id
-        if (foundConversation.project_id) {
-          const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-          if (project) {
-            console.log('[Home URL Effect] Setting selected project from conversation:', {
-              projectId: project.id,
-              projectName: project.title || project.name,
-              conversationProjectId: foundConversation.project_id
-            });
-            setSelectedProject(project);
           } else {
-            console.warn('[Home URL Effect] Project not found in user.projects for project_id:', foundConversation.project_id, 'Available projects:', user.projects?.map((p: any) => ({ id: p.id, name: p.title || p.name })));
+            console.log('[Home URL Effect] Conversation has no project_id');
             setSelectedProject(null);
           }
         } else {
-          console.log('[Home URL Effect] Conversation has no project_id');
-          setSelectedProject(null);
+          console.warn('Invalid conversation ID in URL:', urlConversationId, 'Error:', result.error);
+          // Don't navigate away if we already have the conversation loaded
+          if (!conversation || conversation.id !== urlConversationId) {
+            navigate('/');
+          }
         }
-      } else {
-        console.warn('Invalid conversation ID in URL:', urlConversationId, 'Available conversations:', user.conversations?.map((c: any) => c.id));
-        // Don't navigate away if we already have the conversation loaded
-        if (!conversation || conversation.id !== urlConversationId) {
-          navigate('/');
-        }
-      }
+      };
+
+      loadConversation();
     }
     // Don't clear showChat when URL param is missing - it's managed explicitly
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,16 +310,7 @@ export default function Home() {
             setConversation(newConversation);
             setShowChat(true); // Set showChat immediately after creating conversation
 
-            // Dispatch event for sidebar to refresh conversations
-            window.dispatchEvent(new CustomEvent('conversationCreated', {
-              detail: { conversationId: newConversation.id }
-            }));
-
-            // Refresh user data to get updated conversations
-            const updatedUser = await userService.get();
-            if (updatedUser) {
-              setUser(updatedUser);
-            }
+            // Note: conversationCreated event is already dispatched by conversationService.createConversation()
 
             // Set chat message with attachments and navigate after all state updates
             setMessageAttachments(attachmentsToSend);
@@ -355,19 +354,8 @@ export default function Home() {
       const result = await conversationService.deleteConversation(conversation.id);
 
       if (result.success) {
-        // Clear localStorage for this conversation
-        localStorage.removeItem(`chat_${conversation.id}`);
-
-        // Refresh user data to update sidebar
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-        }
-
-        // Dispatch event for sidebar to refresh
-        window.dispatchEvent(new CustomEvent('conversationDeleted', {
-          detail: { conversationId: conversation.id }
-        }));
+        // Note: conversationDeleted event is already dispatched by conversationService.deleteConversation()
+        // and the sidebar will automatically refresh from local storage
 
         // Close dialog
         setShowDeleteDialog(false);
@@ -917,9 +905,7 @@ export default function Home() {
                         className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
                         title="Back to home"
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                        </svg>
+                        <ArrowBackIosIcon fontSize="small" />
                       </button>
                       <Box className="flex-1 min-w-0">
                         <div className="text-xl md:text-2xl font-bold text-white truncate">
@@ -977,7 +963,7 @@ export default function Home() {
                 {/* MobileNav is now rendered in App.tsx for persistence across routes */}
                 {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
                 <Box className="flex items-center justify-center mt-12 md:mt-20">
-                  <Box className="max-w-4xl w-full">
+                  <Box className="max-w-6xl w-full">
                     {/* Greeting */}
                     <Box className="mb-8">
                       <Box className="hidden md:flex items-center mb-4">

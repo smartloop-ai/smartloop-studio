@@ -598,7 +598,7 @@ function DocumentsListContent() {
                           <Tooltip title="Project Settings" arrow>
                             <IconButton
                               size="small"
-                              onClick={() => navigate(`/project/${doc.projectId}?tab=2`)}
+                              onClick={() => navigate(`/project/${doc.projectId}?tab=1`)}
                               sx={{
                                 color: '#9ca3af',
                                 bgcolor: 'rgba(59, 130, 246, 0.1)',
@@ -780,7 +780,8 @@ function DocumentsListContent() {
             user={user}
             setUser={setUser}
             preselectedProjectId={projectId || undefined}
-            disableProjectSelection={true}
+            disableProjectSelection={false}
+            allowProjectCreation={false}
           />
           </Box>
         </>

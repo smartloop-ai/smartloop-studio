@@ -19,6 +19,7 @@ interface DocumentUploadDialogProps {
   setUser: (user: any) => void;
   preselectedProjectId?: string;
   disableProjectSelection?: boolean;
+  allowProjectCreation?: boolean;
 }
 
 export default function DocumentUploadDialog({
@@ -28,7 +29,8 @@ export default function DocumentUploadDialog({
   user,
   setUser,
   preselectedProjectId,
-  disableProjectSelection = false
+  disableProjectSelection = false,
+  allowProjectCreation = true
 }: DocumentUploadDialogProps) {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [projectInputValue, setProjectInputValue] = useState('');
@@ -247,9 +249,11 @@ export default function DocumentUploadDialog({
           {/* Project Selection */}
           {!disableProjectSelection && (
             <Box>
-              <Typography className="text-gray-300 text-sm font-medium mb-3">
-                Select or Create Project
-              </Typography>
+              {allowProjectCreation && (
+                <Typography className="text-gray-300 text-sm font-medium mb-3">
+                  Select or Create Project
+                </Typography>
+              )}
 
               {!showCreateNew ? (
                 <Box>
@@ -346,7 +350,7 @@ export default function DocumentUploadDialog({
                   )}
                 />
 
-                {!disableProjectSelection && (
+                {!disableProjectSelection && allowProjectCreation && (
                   <Box className="mt-3 flex items-center justify-center">
                     <button
                       onClick={() => setShowCreateNew(true)}
@@ -405,15 +409,6 @@ export default function DocumentUploadDialog({
                 >
                   ← Back to project list
                 </button>
-              </Box>
-            )}
-
-            {selectedProject && (
-              <Box className="flex items-center gap-2 mt-3 p-2 bg-green-500/10 border border-green-500/30 rounded-lg">
-                <CheckIcon sx={{ color: '#10b981', fontSize: 16 }} />
-                <Typography className="text-green-400 text-xs">
-                  Selected: {selectedProject.title || selectedProject.name}
-                </Typography>
               </Box>
             )}
             </Box>

@@ -483,11 +483,7 @@ export default function Project() {
                     <Box className="flex items-center gap-2 md:gap-4">
                       <button
                         onClick={() => {
-                          if (value === 0) {
-                            navigate('/projects');
-                          } else {
-                            selectTab(0);
-                          }
+                          navigate(-1);
                         }}
                         className="text-gray-400 hover:text-white transition-colors"
                       >
@@ -513,29 +509,8 @@ export default function Project() {
 
                 <Box className="projects-page__body w-full" >
                   <Box className="projects-tabs relative flex flex-col">
-                    <Box className="flex items-center justify-between mb-4 md:mb-6">
-                      <nav className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => selectTab(0)}
-                          className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${value === 0
-                            ? 'bg-white text-black'
-                            : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
-                            }`}
-                        >
-                          Source
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => selectTab(1)}
-                          className={`px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${value === 1
-                            ? 'bg-white text-black'
-                            : 'bg-gray-900 text-gray-400 hover:bg-gray-800'
-                            }`}
-                        >
-                          Settings
-                        </button>
-                      </nav>
+                    <Box className="px-2 flex items-center justify-between mb-4 md:mb-6">
+
 
                       {value === 0 && (
                         <button
@@ -862,19 +837,15 @@ export default function Project() {
                           </DialogContent>
                         </Dialog>
                         <Box className="h-full overflow-auto">
-                          <div className="py-5 flex flex-col gap-6 px-2">
-                            <Box
-                              sx={{
-                                bgcolor: '#0a0a0a',
-                                border: '1px solid #1a1a1a',
-                                borderRadius: '12px',
-                                padding: '24px',
-                              }}
-                            >
-                              <Typography className="text-white text-xl font-semibold mb-2">
+                          <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
+                            <Box className="mb-6 md:mb-8">
+                              <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">
                                 Configuration
-                              </Typography>
-                              <p className="text-sm text-gray-400 mb-6">Use the configuration below to adjust project settings</p>
+                              </h1>
+                              <p className="text-sm md:text-base text-gray-400">Use the configuration below to adjust project settings</p>
+                            </Box>
+
+                            <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                               <form className="popup__form" onSubmit={updateProject}>
                                 {
                                   current && current.config &&
@@ -952,18 +923,11 @@ export default function Project() {
                               </form>
                             </Box>
 
-                            <Box
-                              sx={{
-                                bgcolor: '#0a0a0a',
-                                border: '1px solid #1a1a1a',
-                                borderRadius: '12px',
-                                padding: '24px',
-                              }}
-                            >
-                              <h2 className="text-white text-xl font-semibold mb-2">
+                            <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                              <h2 className="text-lg md:text-xl font-semibold text-white mb-2">
                                 Danger Zone
                               </h2>
-                              <p className="text-gray-400 text-sm mb-6">Deleting the project will remove all the documents and histories and can not be undone</p>
+                              <p className="text-sm text-gray-400 mb-6">Deleting the project will remove all the documents and histories and can not be undone</p>
 
                               <button
                                 onClick={handleProjectDelete}
@@ -975,7 +939,7 @@ export default function Project() {
 
                             <div className="py-5"></div>
 
-                          </div>
+                          </Box>
                         </Box>
 
                       </ProjectSection>

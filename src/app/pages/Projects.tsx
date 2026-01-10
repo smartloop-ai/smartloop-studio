@@ -83,8 +83,12 @@ export default function ProjectsList() {
     });
   };
 
-  const handleOpenProject = (project: any, tab: number = 0) => {
-    navigate(`/project/${project.id}?tab=${tab}`);
+  const handleOpenProject = (project: any, _: number = 0) => {
+    navigate(`/documents?project=${project.id}`);
+  };
+
+  const handleOpenSettings = (project: any) => {
+    navigate(`/project/${project.id}?tab=${1}`);
   };
 
   const handleOpenDeleteDialog = (project: any) => {
@@ -434,7 +438,7 @@ export default function ProjectsList() {
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleOpenProject(project, 1);
+                              handleOpenSettings(project);
                             }}
                             sx={{
                               color: '#9ca3af',

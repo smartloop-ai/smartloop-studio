@@ -1,5 +1,6 @@
 
 import { userService } from '@/app/services/user.service';
+import { storageService } from '@/app/services/storage.service';
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
@@ -111,29 +112,18 @@ export default function Chat(props: {
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
-  // Save messages to localStorage
-  const saveMessagesToStorage = (msgs: any[]) => {
+  // Save messages to electron-store
+  const saveMessagesToStorage = async (msgs: any[]) => {
     if (props.conversation?.id) {
-      const key = `chat_${props.conversation.id}`;
-      console.log(`[Storage] Saving ${msgs.length} messages for conversation ${props.conversation.id}`);
-      localStorage.setItem(key, JSON.stringify(msgs));
+      await storageService.saveMessages(props.conversation.id, msgs);
     }
   };
 
-  // Load messages from localStorage
-  const loadMessagesFromStorage = () => {
+  // Load messages from electron-store
+  const loadMessagesFromStorage = async () => {
     if (props.conversation?.id) {
-      const key = `chat_${props.conversation.id}`;
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          console.log(`[Storage] Loaded ${parsed.length} messages for conversation ${props.conversation.id}`);
-          return parsed;
-        } catch (e) {
-          console.error('Error parsing stored messages:', e);
-        }
-      }
+      const stored = await storageService.getMessages(props.conversation.id);
+      return stored;
     }
     return [];
   };
@@ -252,9 +242,12 @@ export default function Chat(props: {
     const effectiveProjectId = props.project?.id;
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
-    // Use attachments from ref (more reliable for async operations)
+    // Use attachments from props if available, fallback to ref
+    console.log('[Chat sendMessage] props.attachments:', props.attachments);
     console.log('[Chat sendMessage] messageAttachmentsRef.current:', messageAttachmentsRef.current);
-    const currentAttachments = [...messageAttachmentsRef.current];
+    const currentAttachments = props.attachments && props.attachments.length > 0
+      ? [...props.attachments]
+      : [...messageAttachmentsRef.current];
     console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
 
     // Use conversation from props
@@ -328,15 +321,15 @@ export default function Chat(props: {
         conversationId: props.conversation.id
       });
 
-      // Prepare the message object with optional attachments and project_id
+      // Prepare the message object with attachments
       const messageObject: any = {
         role: 'user',
         content: userMessage
       };
 
-      // Add attachments if they exist
+      // Add attachments to the message object if they exist
       if (currentAttachments.length > 0) {
-        console.log('[Chat sendMessage] Adding attachments to message:', currentAttachments);
+        console.log('[Chat sendMessage] Adding attachments to message object:', currentAttachments);
         messageObject.attachments = currentAttachments;
       }
 
@@ -480,26 +473,6 @@ export default function Chat(props: {
     }
   }
 
-  // Load userId on mount and generate general project ID and session ID
-  useEffect(() => {
-    userService.get().then(u => {
-      if (u && u.email) {
-        setUserId(u.email);
-
-        // Generate or retrieve a consistent project ID for general assistant
-        const storageKey = `general_assistant_project_${u.email}`;
-        let storedProjectId = localStorage.getItem(storageKey);
-
-        if (!storedProjectId) {
-          // Generate a random project ID for this user's general assistant
-          storedProjectId = `general_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          localStorage.setItem(storageKey, storedProjectId);
-        }
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Update when conversation prop changes
   useEffect(() => {
     const newConversationId = props.conversation?.id;
@@ -517,7 +490,7 @@ export default function Chat(props: {
     }
   }, [props.conversation]);
 
-  // Load messages from localStorage when conversation is available or project changes
+  // Load messages from electron-store when conversation is available or project changes
   useEffect(() => {
     const conversationId = props.conversation?.id;
     if (conversationId) {
@@ -532,16 +505,17 @@ export default function Chat(props: {
         // Clear messages first to ensure clean state
         setMessages([]);
 
-        // Load messages for the new conversation
-        const storedMessages = loadMessagesFromStorage();
-        console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
-        if (storedMessages.length > 0) {
-          setMessages(storedMessages);
-          setShowTips(false);
-        } else {
-          setMessages([]);
-          setShowTips(true);
-        }
+        // Load messages for the new conversation (async)
+        loadMessagesFromStorage().then(storedMessages => {
+          console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
+          if (storedMessages.length > 0) {
+            setMessages(storedMessages);
+            setShowTips(false);
+          } else {
+            setMessages([]);
+            setShowTips(true);
+          }
+        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1031,7 +1005,7 @@ export default function Chat(props: {
                                     .map((attachment: any, idx: number) => (
                                       <Box
                                         key={idx}
-                                        className="flex items-center gap-2 p-3 text-xs bg-pink-500/20 border border-pink-500/30 rounded-sm"
+                                        className="w-full flex items-center gap-2 p-3 text-xs bg-pink-500/20 border border-pink-500/30 rounded-sm"
                                       >
                                         <Box
                                           sx={{
@@ -1090,10 +1064,12 @@ export default function Chat(props: {
             conversation={props.conversation}
             onFileAttached={handleFileAttached}
             onAttachmentClear={() => {
-              messageAttachmentsRef.current = [];
-              if (props.onAttachmentsClear) {
-                props.onAttachmentsClear();
-              }
+              setTimeout(() => {
+                messageAttachmentsRef.current = [];
+                if (props.onAttachmentsClear) {
+                  props.onAttachmentsClear();
+                }
+              }, 100);
             }}
             clearAttachmentTrigger={clearAttachmentTrigger}
             showDragDrop={true}

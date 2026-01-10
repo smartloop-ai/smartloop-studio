@@ -1,9 +1,10 @@
 import { API_ENDPOINT } from "@/app/constants";
 import { userService } from "./user.service";
+import { storageService } from "./storage.service";
 
 /**
  * Conversation Service
- * Handles conversation creation and management
+ * Handles conversation creation and management with local storage
  */
 
 interface CreateConversationParams {
@@ -64,6 +65,17 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
 
     if (response.status === 200 || response.status === 201) {
       const conversation = await response.json();
+      
+      // Save to local storage
+      await storageService.saveConversation(conversation);
+      
+      // Dispatch event for sidebar to refresh
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('conversationCreated', {
+          detail: { conversationId: conversation.id }
+        }));
+      }
+      
       return {
         success: true,
         data: conversation
@@ -175,6 +187,10 @@ const updateConversation = async (conversationId: string, title: string): Promis
 
     if (response.ok) {
       const conversation = await response.json();
+      
+      // Update in local storage
+      await storageService.saveConversation(conversation);
+      
       return {
         success: true,
         data: conversation
@@ -222,6 +238,16 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
     }
 
     if (response.status === 200 || response.status === 204) {
+      // Delete from local storage
+      await storageService.deleteConversation(conversationId);
+      
+      // Dispatch event for sidebar to refresh
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('conversationDeleted', {
+          detail: { conversationId }
+        }));
+      }
+      
       return {
         success: true
       };
@@ -242,7 +268,7 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
 };
 
 /**
- * Get a conversation by ID
+ * Get a conversation by ID from local storage
  * @param conversationId - ID of the conversation
  * @returns Promise with conversation data or error
  */
@@ -255,33 +281,18 @@ const getConversation = async (conversationId: string): Promise<ConversationServ
       };
     }
 
-    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
-    const response = await userService.makeAuthenticatedRequest(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
-    if (response.status === 200) {
-      const conversation = await response.json();
+    // Get from local storage
+    const localConversation = await storageService.getConversation(conversationId);
+    if (localConversation) {
       return {
         success: true,
-        data: conversation
+        data: localConversation
       };
     }
 
-    const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to fetch conversation'
+      error: 'Conversation not found in local storage'
     };
   } catch (error: any) {
     console.error('Error fetching conversation:', error);
@@ -292,10 +303,31 @@ const getConversation = async (conversationId: string): Promise<ConversationServ
   }
 };
 
+/**
+ * Get all conversations from local storage
+ * @returns Promise with array of conversations
+ */
+const getAllConversations = async (): Promise<ConversationServiceResponse> => {
+  try {
+    const conversations = await storageService.getConversations();
+    return {
+      success: true,
+      data: conversations
+    };
+  } catch (error: any) {
+    console.error('Error getting conversations:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while getting conversations'
+    };
+  }
+};
+
 export const conversationService = {
   createConversation,
   updateConversation,
   getDocumentStatus,
   deleteConversation,
-  getConversation
+  getConversation,
+  getAllConversations
 };
