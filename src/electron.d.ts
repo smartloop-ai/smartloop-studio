@@ -10,6 +10,7 @@ export interface ElectronAPI {
   storageClear: () => Promise<void>;
   storageHas: (key: string) => Promise<boolean>;
   storageGetAll: () => Promise<Record<string, any>>;
+  getMachineId: () => Promise<string | null>;
   isElectron: boolean;
   platform: string;
   versions: {

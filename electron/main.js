@@ -1,6 +1,8 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 const Store = require('electron-store').default || require('electron-store');
+const { machineId, machineIdSync } = require('node-machine-id');
+
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -20,11 +22,19 @@ const port = process.env.PORT || 5000;
 const APP_URL = process.env.VITE_APP_URL || 'https://app.smartloop.ai';
 const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
 
-// Initialize electron-store
-const store = new Store({
-  name: 'smartloop-storage',
-  encryptionKey: 'smartloop-secure-key', // Optional: encrypt sensitive data
+// Machine ID IPC handler
+ipcMain.handle('get-machine-id', async () => {
+  try {
+    const id = await machineId();
+    return id;
+  } catch (error) {
+    console.error('[MachineID] Error getting machine ID:', error);
+    return null;
+  }
 });
+
+// Initialize electron-store
+const store = new Store({ name: 'smartloop', encryptionKey: machineIdSync() });
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {

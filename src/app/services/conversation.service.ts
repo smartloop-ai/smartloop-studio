@@ -65,17 +65,17 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
 
     if (response.status === 200 || response.status === 201) {
       const conversation = await response.json();
-      
+
       // Save to local storage
       await storageService.saveConversation(conversation);
-      
+
       // Dispatch event for sidebar to refresh
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('conversationCreated', {
           detail: { conversationId: conversation.id }
         }));
       }
-      
+
       return {
         success: true,
         data: conversation
@@ -187,10 +187,10 @@ const updateConversation = async (conversationId: string, title: string): Promis
 
     if (response.ok) {
       const conversation = await response.json();
-      
+
       // Update in local storage
       await storageService.saveConversation(conversation);
-      
+
       return {
         success: true,
         data: conversation
@@ -240,14 +240,14 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
     if (response.status === 200 || response.status === 204) {
       // Delete from local storage
       await storageService.deleteConversation(conversationId);
-      
+
       // Dispatch event for sidebar to refresh
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
           detail: { conversationId }
         }));
       }
-      
+
       return {
         success: true
       };
@@ -323,11 +323,281 @@ const getAllConversations = async (): Promise<ConversationServiceResponse> => {
   }
 };
 
+/**
+ * Sync conversations from the server
+ * Fetches all conversations with their messages from the API and updates local storage
+ * @returns Promise with synced conversations or error
+ */
+const syncConversationsFromServer = async (): Promise<ConversationServiceResponse> => {
+  try {
+    const url = `${API_ENDPOINT}/conversations`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'GET'
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.ok) {
+      const conversations = await response.json();
+
+      // Save all conversations to local storage
+      await storageService.saveConversations(conversations);
+
+      console.log(`[ConversationService] Synced ${conversations.length} conversations from server`);
+
+      return {
+        success: true,
+        data: conversations
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to sync conversations'
+    };
+  } catch (error: any) {
+    console.error('Error syncing conversations from server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while syncing conversations'
+    };
+  }
+};
+
+/**
+ * Get a conversation with messages from the server
+ * @param conversationId - ID of the conversation
+ * @returns Promise with conversation data including messages or error
+ */
+const getConversationFromServer = async (conversationId: string): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'GET'
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.ok) {
+      const conversation = await response.json();
+
+      // Save to local storage
+      await storageService.saveConversation(conversation);
+
+      // Save messages if they exist
+      if (conversation.messages && Array.isArray(conversation.messages)) {
+        await storageService.saveMessages(conversationId, conversation.messages);
+      }
+
+      return {
+        success: true,
+        data: conversation
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to get conversation'
+    };
+  } catch (error: any) {
+    console.error('Error getting conversation from server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while getting the conversation'
+    };
+  }
+};
+
+/**
+ * Update conversation with new message
+ * Adds a message to the conversation's message list in local storage
+ * Prevents duplicate messages and ensures proper user/assistant alternation
+ * @param conversationId - ID of the conversation
+ * @param message - The message object to add
+ * @returns Promise indicating success or failure
+ */
+const addMessageToConversation = async (conversationId: string, message: any): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    // Get existing messages
+    const messages = await storageService.getMessages(conversationId);
+
+    // Check if message already exists (by id)
+    const messageExists = messages.some((m: any) => m.id === message.id);
+    if (messageExists) {
+      console.log(`[ConversationService] Message ${message.id} already exists, skipping duplicate`);
+      return {
+        success: true,
+        data: messages
+      };
+    }
+
+    // Check if last message has the same role (prevent consecutive messages with same role)
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === message.role) {
+      console.warn(`[ConversationService] Skipping duplicate ${message.role} message. Last message role: ${lastMessage.role}`);
+      return {
+        success: true,
+        data: messages
+      };
+    }
+
+    // Add new message
+    const updatedMessages = [...messages, message];
+
+    // Save back to storage
+    await storageService.saveMessages(conversationId, updatedMessages);
+
+    // Update conversation's message count/timestamp
+    const conversation = await storageService.getConversation(conversationId);
+    if (conversation) {
+      conversation.updated_at = new Date().toISOString();
+      await storageService.saveConversation(conversation);
+    }
+
+    return {
+      success: true,
+      data: updatedMessages
+    };
+  } catch (error: any) {
+    console.error('Error adding message to conversation:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while adding the message'
+    };
+  }
+};
+
+/**
+ * Sync conversation messages to server
+ * Updates the conversation on the server with all messages from local storage
+ * @param conversationId - ID of the conversation
+ * @returns Promise indicating success or failure
+ */
+const syncMessagesToServer = async (conversationId: string): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    // Get messages from local storage (already in API format with role & content)
+    const messages = await storageService.getMessages(conversationId);
+
+    console.log(`[ConversationService] Syncing ${messages.length} messages to server`);
+    if (messages.length > 0) {
+      console.log('[ConversationService] Sample message:', messages[0]);
+    }
+
+    // Send to server using PATCH
+    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ messages })
+    });
+
+    if (!response) {
+      console.warn('[ConversationService] No response from server when syncing messages');
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.ok) {
+      console.log(`[ConversationService] Successfully synced ${messages.length} messages to server for conversation ${conversationId}`);
+      return {
+        success: true,
+        data: messages
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    console.warn('[ConversationService] Failed to sync messages to server:', errorData);
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to sync messages to server'
+    };
+  } catch (error: any) {
+    console.error('Error syncing messages to server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while syncing messages'
+    };
+  }
+};
+
+/**
+ * Add message and sync to server
+ * Adds a message locally and immediately syncs to server
+ * @param conversationId - ID of the conversation
+ * @param message - The message object to add
+ * @returns Promise indicating success or failure
+ */
+const addMessageAndSync = async (conversationId: string, message: any): Promise<ConversationServiceResponse> => {
+  try {
+    // Add message locally first
+    const addResult = await addMessageToConversation(conversationId, message);
+
+    if (!addResult.success) {
+      return addResult;
+    }
+
+    // Sync to server (don't block on failure)
+    syncMessagesToServer(conversationId).catch(error => {
+      console.warn('[ConversationService] Failed to sync messages to server (non-blocking):', error);
+    });
+
+    return addResult;
+  } catch (error: any) {
+    console.error('Error adding message and syncing:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while adding message'
+    };
+  }
+};
+
 export const conversationService = {
   createConversation,
   updateConversation,
   getDocumentStatus,
   deleteConversation,
   getConversation,
-  getAllConversations
+  getAllConversations,
+  syncConversationsFromServer,
+  getConversationFromServer,
+  addMessageToConversation,
+  syncMessagesToServer,
+  addMessageAndSync
 };

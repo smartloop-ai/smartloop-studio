@@ -1,6 +1,7 @@
 
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
+import { conversationService } from '@/app/services/conversation.service';
 import { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
@@ -110,6 +111,7 @@ export default function Chat(props: {
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
+  const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
 
   // Save messages to electron-store
   const saveMessagesToStorage = async (msgs: any[]) => {
@@ -201,14 +203,6 @@ export default function Chat(props: {
     sendFeedback(msg);
   }
 
-  const handleKeyDown = (e: any) => {
-    if (e.keyCode === 13 && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(e);
-      scrollToBottom();
-    }
-  }
-
   const handleFileAttached = (documentId: string, fileName: string) => {
     const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
     console.log('[Chat handleFileAttached] Setting attachments:', newAttachments);
@@ -223,8 +217,9 @@ export default function Chat(props: {
   };
 
   const sendMessage = async (_: any, messageOverride?: string) => {
-    if (isLoading) {
-      console.log('Already loading, skipping message send');
+    // Prevent duplicate sends
+    if (isLoading || sendingMessageRef.current) {
+      console.log('[Chat] Already sending a message, skipping duplicate send');
       return;
     }
 
@@ -234,6 +229,9 @@ export default function Chat(props: {
       console.log('Empty message, skipping');
       return;
     }
+
+    // Mark as sending
+    sendingMessageRef.current = true;
 
     const messageId = `msg-${Date.now()}`;
     const responseId = `response-${Date.now()}`;
@@ -258,16 +256,11 @@ export default function Chat(props: {
 
     console.log('Using conversation ID:', props.conversation.id);
 
-    // Add user message to the chat
+    // Add user message to the chat (OpenAI format)
     const userMsg = {
       id: messageId,
-      direction: 'in',
-      payload: {
-        type: 'text',
-        text: userMessage,
-        html: marked(userMessage),
-        is_new: false
-      },
+      role: 'user',
+      content: userMessage,
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined
     };
 
@@ -276,7 +269,12 @@ export default function Chat(props: {
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
-    saveMessagesToStorage(updatedMessages);
+
+    // Add message to conversation locally (don't sync yet - wait for response)
+    if (props.conversation?.id) {
+      await conversationService.addMessageToConversation(props.conversation.id, userMsg);
+    }
+
     setFormData({ message: "" });
     messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
@@ -291,13 +289,9 @@ export default function Chat(props: {
     // Create initial response message for streaming
     const responseMsg = {
       id: responseId,
-      direction: 'out',
-      is_new: true,
-      payload: {
-        type: 'text',
-        text: '',
-        html: ''
-      }
+      role: 'assistant',
+      content: '',
+      is_new: true
     };
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
@@ -365,11 +359,7 @@ export default function Chat(props: {
                   is_new: false,
                   isError: true,
                   errorIconType: 'warning',
-                  payload: {
-                    ...msg.payload,
-                    text: cleanErrorMessage,
-                    html: marked(cleanErrorMessage) as string
-                  }
+                  content: cleanErrorMessage
                 } : msg
               )
             );
@@ -381,11 +371,7 @@ export default function Chat(props: {
               msg.id === responseId ? {
                 ...msg,
                 is_new: true,
-                payload: {
-                  ...msg.payload,
-                  text: fullText,
-                  html: marked(fullText) as string
-                }
+                content: fullText
               } : msg
             )
           );
@@ -409,7 +395,22 @@ export default function Chat(props: {
             is_new: false
           } : msg
         );
-        saveMessagesToStorage(finalMessages);
+
+        // Add the completed response message to conversation and sync entire conversation to server
+        const responseMessage = finalMessages.find((msg: any) => msg.id === responseId);
+        if (responseMessage && props.conversation?.id) {
+          conversationService.addMessageToConversation(props.conversation.id, responseMessage).then(() => {
+            // Now sync the entire conversation (both user message + assistant response) once
+            conversationService.syncMessagesToServer(props.conversation.id).then(() => {
+              console.log('[Chat] Synced conversation after complete exchange');
+              // Dispatch event to update sidebar
+              window.dispatchEvent(new CustomEvent('conversationUpdated', {
+                detail: { conversationId: props.conversation.id }
+              }));
+            });
+          });
+        }
+
         return finalMessages;
       });
 
@@ -452,11 +453,7 @@ export default function Chat(props: {
               is_new: false,
               isError: true,
               errorIconType: errorIconType,
-              payload: {
-                ...msg.payload,
-                text: errorMessage,
-                html: marked(errorMessage) as string
-              }
+              content: errorMessage
             } : msg
           );
           saveMessagesToStorage(updatedMessages);
@@ -465,6 +462,7 @@ export default function Chat(props: {
       }
     } finally {
       setIsLoading(false);
+      sendingMessageRef.current = false;  // Reset sending flag
       abortControllerRef.current = null;
       setTimeout(() => {
         scrollToBottom();
@@ -903,7 +901,7 @@ export default function Chat(props: {
               {displayMessages && displayMessages.map((msg: any) => {
                 return (
                   <>
-                    {msg.direction === 'out' ?
+                    {msg.role === 'assistant' ?
                       <Box key={msg.id} className="flex items-start gap-3 max-w-3xl">
                         <Box className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 relative">
                           <Box
@@ -929,7 +927,7 @@ export default function Chat(props: {
                                   {msg.errorIconType === 'error' && <ErrorOutlineIcon sx={{ fontSize: 18, color: '#ef4444' }} />}
                                 </Box>
                               )}
-                              {(!msg.payload.text || msg.payload.text.trim() === '') && msg.is_new ? (
+                              {(!msg.content || msg.content.trim() === '') && msg.is_new ? (
                                 <span
                                   className="inline-block bg-white"
                                   style={{
@@ -941,7 +939,7 @@ export default function Chat(props: {
                               ) : (
                                 <>
                                   <div dangerouslySetInnerHTML={{
-                                    __html: msg.payload.html || marked(msg.payload.text || '')
+                                    __html: marked(msg.content || '')
                                   }} />
                                   {msg.is_new && (
                                     <span
@@ -960,7 +958,7 @@ export default function Chat(props: {
                           </div>
                           <Box className="flex gap-2 mt-2">
                             <CopyToClipboard
-                              text={msg.payload.text} onCopy={() => {
+                              text={msg.content} onCopy={() => {
                                 setCopied(msg.id);
                                 setTimeout(() => setCopied(""), 1000);
                               }}>
@@ -1029,8 +1027,8 @@ export default function Chat(props: {
 
                             {/* Message bubble */}
                             <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
-                              <div className="text-wrap break-words" dangerouslySetInnerHTML={{
-                                __html: marked(msg.payload.text)
+                              <div className="text-wrap break-words py-3" dangerouslySetInnerHTML={{
+                                __html: marked(msg.content)
                               }}>
                               </div>
                             </div>
@@ -1055,7 +1053,6 @@ export default function Chat(props: {
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
             onSend={() => sendMessage(null)}
-            onKeyDown={handleKeyDown}
             placeholder="Enter your prompt..."
             disabled={false}
             isLoading={isLoading}

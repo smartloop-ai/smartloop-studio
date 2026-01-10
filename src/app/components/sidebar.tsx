@@ -38,6 +38,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [_, setIsSyncing] = useState(false);
 
   // Update live user when prop changes
   useEffect(() => {
@@ -45,10 +46,33 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
   }, [user]);
 
-  // Load conversations from local storage on mount
+  // Sync conversations from server and load from local storage on mount
   useEffect(() => {
-    loadConversationsFromStorage();
+    syncConversations();
   }, []);
+
+  // Sync conversations from server
+  const syncConversations = async () => {
+    setIsSyncing(true);
+    try {
+      // First try to sync from server
+      const syncResult = await conversationService.syncConversationsFromServer();
+      if (syncResult.success && syncResult.data) {
+        setConversations(syncResult.data);
+        console.log('[Sidebar] Synced conversations from server:', syncResult.data.length);
+      } else {
+        // If sync fails, load from local storage
+        console.warn('[Sidebar] Failed to sync from server, loading from local storage');
+        await loadConversationsFromStorage();
+      }
+    } catch (error) {
+      console.error('Error syncing conversations:', error);
+      // Fallback to local storage
+      await loadConversationsFromStorage();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Load conversations from local storage
   const loadConversationsFromStorage = async () => {
@@ -87,14 +111,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       loadConversationsFromStorage();
     };
 
+    const handleConversationUpdated = () => {
+      loadConversationsFromStorage();
+    };
+
     window.addEventListener('refreshUserTokens', handleRefresh);
     window.addEventListener('conversationCreated', handleConversationCreated);
     window.addEventListener('conversationDeleted', handleConversationDeleted);
+    window.addEventListener('conversationUpdated', handleConversationUpdated);
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
       window.removeEventListener('conversationCreated', handleConversationCreated);
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
+      window.removeEventListener('conversationUpdated', handleConversationUpdated);
     };
   }, []);
 

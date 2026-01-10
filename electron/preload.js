@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storageClear: () => ipcRenderer.invoke('storage-clear'),
   storageHas: (key) => ipcRenderer.invoke('storage-has', key),
   storageGetAll: () => ipcRenderer.invoke('storage-get-all'),
+  // Machine ID
+  getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Check if running in Electron
   isElectron: true,
   // System info

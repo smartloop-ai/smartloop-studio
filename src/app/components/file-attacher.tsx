@@ -52,12 +52,21 @@ export default function FileAttacher({
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
-      'text/csv'
+      'text/csv',
+      'application/json'
     ];
+
+    // Also check file extension as fallback (especially for JSON files)
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json'];
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+
     const maxSizeBytes = maxFileSize * 1024 * 1024;
 
-    if (!allowedTypes.includes(file.type)) {
-      return 'Invalid file type. Supported: PDF, DOCX, TXT, CSV';
+    // Check by MIME type OR by file extension
+    const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
+
+    if (!isValidType) {
+      return 'Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON';
     }
     if (file.size > maxSizeBytes) {
       return `File size exceeds ${maxFileSize}MB limit`;
@@ -233,7 +242,7 @@ export default function FileAttacher({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,.txt,.csv"
+        accept=".pdf,.docx,.txt,.csv,.json"
         onChange={handleFileInputChange}
         className="hidden"
       />
