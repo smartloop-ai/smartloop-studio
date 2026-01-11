@@ -189,8 +189,20 @@ export default function DocumentUploadDialog({
         throw new Error(result.detail || result.message || 'Upload failed');
       }
 
-      const updatedUser = await userService.get();
-      if (updatedUser) {
+      // Get the uploaded document from response
+      const uploadedDocument = await response.json();
+
+      // Update user state incrementally - only update the specific project
+      if (user) {
+        const updatedProjects = user.projects.map((p: any) => {
+          if (p.id === targetProject.id) {
+            const updatedDocs = [...(p.documents || []), uploadedDocument];
+            return { ...p, documents: updatedDocs };
+          }
+          return p;
+        });
+
+        const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
       }
 

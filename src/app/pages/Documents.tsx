@@ -12,8 +12,6 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import AddIcon from '@mui/icons-material/Add';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import WarningIcon from '@mui/icons-material/Warning';
 import MobileNav from '@/app/components/mobile-nav';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
@@ -38,7 +36,6 @@ function DocumentsListContent() {
   const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openUploadDialog, setOpenUploadDialog] = useState(false);
-  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('project');
@@ -454,41 +451,10 @@ function DocumentsListContent() {
                             <span>{doc.projectName || 'Unknown Project'}</span>
                           </Box>
 
-                          <Box className="text-gray-600 text-xs mb-3">
-                            Uploaded on {formatDate(doc.updated_at || doc.created_at)}
-                          </Box>
-
-                          <Box className="flex items-center gap-2">
-                            <Chip
-                              icon={<MonetizationOnIcon sx={{ fontSize: '14px !important', color: '#ec4899 !important' }} />}
-                              label="Credits"
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                bgcolor: 'transparent',
-                                color: '#ec4899',
-                                fontSize: '11px',
-                                height: '22px',
-                                fontWeight: 500,
-                                border: '1px solid rgba(236, 72, 153, 0.3)',
-                                borderRadius: '4px',
-                              }}
-                            />
+                          <Box className="text-gray-600 text-xs mb-3 flex items-center gap-2">
+                            <span>Uploaded on {formatDate(doc.updated_at || doc.created_at)}</span>
                             {doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                              <Chip
-                                label={`-${Math.ceil(doc.num_of_tokens / 100)}`}
-                                size="small"
-                                variant="outlined"
-                                sx={{
-                                  bgcolor: 'transparent',
-                                  color: '#ec4899',
-                                  fontSize: '11px',
-                                  height: '22px',
-                                  fontWeight: 600,
-                                  border: '1px solid rgba(236, 72, 153, 0.3)',
-                                  borderRadius: '4px',
-                                }}
-                              />
+                              <span className="text-pink-400">| Credits: -{Math.ceil(doc.num_of_tokens / 100)}</span>
                             ) : doc.is_processing ? (
                               <Chip
                                 label="Processing..."
@@ -525,55 +491,6 @@ function DocumentsListContent() {
 
                         {/* Action Icons */}
                         <Box className="flex items-center gap-2">
-                          <Tooltip title="View Document" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={async () => {
-                                try {
-                                  setDownloadingDocId(doc.id);
-                                  const url = `${API_ENDPOINT}/projects/${doc.projectId}/documents/${doc.id}/download`;
-                                  const response = await userService.makeAuthenticatedRequest(url, {
-                                    method: 'GET',
-                                  });
-
-                                  if (response && response.ok) {
-                                    const blob = await response.blob();
-                                    const blobUrl = URL.createObjectURL(blob);
-                                    window.open(blobUrl, '_blank');
-                                  }
-                                } catch (error) {
-                                  console.error('Error opening document:', error);
-                                } finally {
-                                  setDownloadingDocId(null);
-                                }
-                              }}
-                              disabled={!doc.num_of_tokens || doc.num_of_tokens === 0 || downloadingDocId === doc.id}
-                              sx={{
-                                color: '#9ca3af',
-                                bgcolor: 'rgba(96, 165, 250, 0.1)',
-                                border: '1px solid rgba(96, 165, 250, 0.2)',
-                                '&:hover': {
-                                  color: '#60a5fa',
-                                  bgcolor: 'rgba(96, 165, 250, 0.2)',
-                                  borderColor: 'rgba(96, 165, 250, 0.4)',
-                                  transform: 'scale(1.05)',
-                                },
-                                transition: 'all 0.2s',
-                                '&:disabled': {
-                                  color: '#4b5563',
-                                  bgcolor: 'rgba(75, 85, 99, 0.1)',
-                                  border: '1px solid rgba(75, 85, 99, 0.2)',
-                                },
-                              }}
-                            >
-                              {downloadingDocId === doc.id ? (
-                                <CircularProgress size={16} className="text-pink-500" />
-                              ) : (
-                                <VisibilityIcon fontSize="small" />
-                              )}
-                            </IconButton>
-                          </Tooltip>
-
                           <Tooltip title="Open Project" arrow>
                             <IconButton
                               size="small"
@@ -622,12 +539,12 @@ function DocumentsListContent() {
                               onClick={() => handleOpenDeleteDialog(doc)}
                               sx={{
                                 color: '#9ca3af',
-                                bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                bgcolor: 'rgba(236, 72, 153, 0.1)',
+                                border: '1px solid rgba(236, 72, 153, 0.2)',
                                 '&:hover': {
-                                  color: '#ef4444',
-                                  bgcolor: 'rgba(239, 68, 68, 0.2)',
-                                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                                  color: '#ec4899',
+                                  bgcolor: 'rgba(236, 72, 153, 0.2)',
+                                  borderColor: 'rgba(236, 72, 153, 0.4)',
                                   transform: 'scale(1.05)',
                                 },
                                 transition: 'all 0.2s',

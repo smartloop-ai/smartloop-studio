@@ -113,6 +113,7 @@ export default function Chat(props: {
   const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
+  const syncingRef = useRef<boolean>(false);  // Track if currently syncing to prevent duplicates
 
   // Save messages to electron-store
   const saveMessagesToStorage = async (msgs: any[], convId?: string) => {
@@ -142,15 +143,15 @@ export default function Chat(props: {
   }, [props.project]);
 
   // Update attachments when props change
+  // Only update ref if props.attachments is provided and not empty
+  // Don't clear ref if props.attachments is empty - it might be cleared after message is sent
   useEffect(() => {
     console.log('[Chat useEffect] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
       console.log('[Chat useEffect] Setting ref to:', props.attachments);
-      messageAttachmentsRef.current = props.attachments;
-    } else {
-      console.log('[Chat useEffect] Clearing ref');
-      messageAttachmentsRef.current = [];
+      messageAttachmentsRef.current = [...props.attachments];
     }
+    // Don't clear ref when props.attachments is empty - preserve attachments until message is sent
     console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
 
@@ -243,14 +244,38 @@ export default function Chat(props: {
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
     // Use attachments from props if available, fallback to ref
+    // IMPORTANT: Check props first (most up-to-date), then ref (from previous props update)
+    // This ensures attachments from welcome screen are used correctly
     console.log('[Chat sendMessage] props.attachments:', props.attachments);
     console.log('[Chat sendMessage] messageAttachmentsRef.current:', messageAttachmentsRef.current);
     let currentAttachments = props.attachments && props.attachments.length > 0
-      ? [...props.attachments]
-      : [...messageAttachmentsRef.current];
+      ? [...props.attachments]  // Use props first - most current
+      : (messageAttachmentsRef.current.length > 0
+          ? [...messageAttachmentsRef.current]  // Fallback to ref
+          : []);
 
-    // Add project as attachment if project is selected
-    if (props.project?.id) {
+    // Create conversation if it doesn't exist (first message)
+    // Use ref as primary source of truth (updated immediately when conversation is created)
+    // Fallback to props.conversation?.id only for initial load
+    let conversationId = currentConversationIdRef.current || props.conversation?.id;
+
+    // If conversation already exists, check if this is the first message
+    // For the first message, we should still include project attachment even if conversation exists
+    // (because conversation was just created and this is the first message being sent)
+    const isFirstMessage = !messages || messages.length === 0;
+
+    if (conversationId && !isFirstMessage) {
+      // Filter out project attachments only for subsequent messages
+      // Backend uses memory and project_id, so no need to send project attachment again
+      currentAttachments = currentAttachments.filter(
+        (att: any) => !att.file_id || !att.file_id.startsWith('project-')
+      );
+      console.log('[Chat sendMessage] Filtered out project attachments for existing conversation (not first message):', conversationId);
+    }
+
+    // Always add project attachment for first message if project is selected and attachment doesn't exist
+    // This handles the case when sending from welcome screen where attachments might not be passed correctly
+    if (isFirstMessage && props.project?.id) {
       const projectAttachment = {
         file_id: `project-${props.project.id}`,
         name: props.project.title || props.project.name || 'Project'
@@ -261,13 +286,12 @@ export default function Chat(props: {
       );
       if (!hasProjectAttachment) {
         currentAttachments.push(projectAttachment);
-        console.log('[Chat sendMessage] Added project as attachment:', projectAttachment);
+        console.log('[Chat sendMessage] Added project as attachment (first message, project selected):', projectAttachment);
+      } else {
+        console.log('[Chat sendMessage] Project attachment already exists in currentAttachments');
       }
     }
     console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
-
-    // Create conversation if it doesn't exist (first message)
-    let conversationId = props.conversation?.id;
 
     if (!conversationId) {
       console.log('[Chat] No conversation exists, creating new one...');
@@ -287,6 +311,9 @@ export default function Chat(props: {
         if (conversationResult.success && conversationResult.data) {
           conversationId = conversationResult.data.id;
           console.log('[Chat] Created new conversation:', conversationId);
+
+          // Update the ref immediately so subsequent messages know the conversation exists
+          currentConversationIdRef.current = conversationId;
 
           // Notify parent component
           if (props.onConversationCreated) {
@@ -330,11 +357,16 @@ export default function Chat(props: {
     }
 
     setFormData({ message: "" });
-    messageAttachmentsRef.current = [];
+    // Clear attachments AFTER they've been used in the message
+    // Don't clear immediately - let them be used first
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
     if (props.onAttachmentsClear) {
       props.onAttachmentsClear();
     }
+    // Clear ref after a small delay to ensure message was sent with attachments
+    setTimeout(() => {
+      messageAttachmentsRef.current = [];
+    }, 100);
     setIsLoading(true);
 
     // Create abort controller for this request
@@ -452,16 +484,22 @@ export default function Chat(props: {
 
         // Add the completed response message to conversation and sync entire conversation to server
         const responseMessage = finalMessages.find((msg: any) => msg.id === responseId);
-        if (responseMessage && conversationId) {
+        if (responseMessage && conversationId && !syncingRef.current) {
+          syncingRef.current = true; // Prevent duplicate syncs
           conversationService.addMessageToConversation(conversationId, responseMessage).then(() => {
             // Now sync the entire conversation (both user message + assistant response) once
             conversationService.syncMessagesToServer(conversationId).then(() => {
               console.log('[Chat] Synced conversation after complete exchange');
+              syncingRef.current = false; // Reset sync flag
               // Dispatch event to update sidebar
               window.dispatchEvent(new CustomEvent('conversationUpdated', {
                 detail: { conversationId: conversationId }
               }));
+            }).catch(() => {
+              syncingRef.current = false; // Reset on error
             });
+          }).catch(() => {
+            syncingRef.current = false; // Reset on error
           });
         }
 
@@ -524,34 +562,42 @@ export default function Chat(props: {
     }
   }
 
-  // Update when conversation prop changes
+  // Update when conversation prop changes - just log for debugging
   useEffect(() => {
     const newConversationId = props.conversation?.id;
+    const oldConversationId = currentConversationIdRef.current;
 
-    if (newConversationId) {
-      console.log('Conversation ID updated from props:', newConversationId);
-      console.log('Current conversationId ref:', currentConversationIdRef.current);
+    console.log('[Chat useEffect 1] Conversation ID changed:', {
+      newConversationId,
+      oldConversationId,
+      willTriggerReload: oldConversationId !== newConversationId
+    });
 
-      // Clear messages immediately when conversation changes (use ref for accurate comparison)
-      if (currentConversationIdRef.current && currentConversationIdRef.current !== newConversationId) {
-        console.log('Clearing messages for conversation switch from', currentConversationIdRef.current, 'to', newConversationId);
-        setMessages([]);
-        setShowTips(false);
-      }
-    }
-  }, [props.conversation]);
+    // Don't update ref here - let the message loading useEffect handle it
+    // This ensures proper change detection
+  }, [props.conversation?.id]); // Changed dependency to id instead of whole object
 
   // Load messages from electron-store when conversation is available or project changes
   useEffect(() => {
     const conversationId = props.conversation?.id;
     const currentProjectId = props.project?.id;
+    const oldConversationId = currentConversationIdRef.current;
+    const oldProjectId = currentProjectIdRef.current;
+
+    console.log('[Chat useEffect 2] Dependencies changed:', {
+      conversationId,
+      currentProjectId,
+      oldConversationId,
+      oldProjectId,
+      willReload: oldProjectId !== currentProjectId || oldConversationId !== conversationId
+    });
 
     // Reload if the project ID or conversation ID changed
-    if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
+    if (oldProjectId !== currentProjectId || oldConversationId !== conversationId) {
       console.log('Conversation or project changed, clearing and loading new messages', {
-        oldProjectId: currentProjectIdRef.current,
+        oldProjectId: oldProjectId,
         newProjectId: currentProjectId,
-        oldConversationId: currentConversationIdRef.current,
+        oldConversationId: oldConversationId,
         newConversationId: conversationId
       });
 
@@ -567,13 +613,18 @@ export default function Chat(props: {
       if (conversationId) {
         loadMessagesFromStorage(conversationId).then(storedMessages => {
           console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
-          if (storedMessages.length > 0) {
-            setMessages(storedMessages);
-            setShowTips(false);
+          // Double-check that we're still on the same conversation (user might have switched again)
+          if (currentConversationIdRef.current === conversationId) {
+            if (storedMessages.length > 0) {
+              setMessages(storedMessages);
+              setShowTips(false);
+            } else {
+              setMessages([]);
+              // Only show tips if conversation exists but has no messages
+              setShowTips(true);
+            }
           } else {
-            setMessages([]);
-            // Only show tips if conversation exists but has no messages
-            setShowTips(true);
+            console.log('Conversation changed while loading messages, ignoring old messages');
           }
         });
       } else if (props.project?.id || props.isGeneral) {
@@ -585,7 +636,7 @@ export default function Chat(props: {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.conversation, props.project?.id, props.isGeneral]);
+  }, [props.conversation?.id, props.project?.id, props.isGeneral]); // Changed to depend on IDs
 
   useEffect(() => {
     // Show tips only if there are no messages (tied to number of messages)
@@ -611,15 +662,23 @@ export default function Chat(props: {
 
   // Auto-send initial message when provided
   useEffect(() => {
-    if (props.initialMessage && !messageSent && !isLoading) {
-      // Small delay to ensure component is ready (and generalProjectId to be set)
+    // Only auto-send if we have initialMessage, haven't sent it yet, not currently loading,
+    // AND we have a conversation (to prevent creating duplicate conversations)
+    if (props.initialMessage && !messageSent && !isLoading && props.conversation?.id) {
+      // Small delay to ensure component is ready, conversation prop is set, and attachments are available
       setTimeout(() => {
+        // Ensure attachments ref is updated from props before sending (for fallback)
+        if (props.attachments && props.attachments.length > 0) {
+          messageAttachmentsRef.current = [...props.attachments];
+          console.log('[Chat auto-send] Updated attachments ref from props:', messageAttachmentsRef.current);
+        }
+        console.log('[Chat auto-send] About to send - props.attachments:', props.attachments, 'ref:', messageAttachmentsRef.current);
         sendMessage({} as any, props.initialMessage || undefined);
         setMessageSent(true);
       }, 800);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.initialMessage, messageSent, isLoading]);
+  }, [props.initialMessage, props.conversation?.id, props.attachments, messageSent, isLoading]);
 
   // Save messages to localStorage whenever they change (backup save)
   useEffect(() => {

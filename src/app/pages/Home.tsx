@@ -5,7 +5,7 @@ import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, Switch, TextField, Tooltip } from '@mui/material';
+import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, Switch, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -23,12 +23,9 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import AddBoxIcon from '@mui/icons-material/AddBox';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import WarningIcon from '@mui/icons-material/Warning';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import DeleteIcon from '@mui/icons-material/Delete';
 import FileAttacher from '@/app/components/file-attacher';
-import DocumentUploadDialog from '@/app/components/document-upload-dialog';
+import DocumentPolling from '@/app/components/document-polling';
+import DocumentsTab from '@/app/components/documents-tab';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -67,22 +64,17 @@ export default function Home() {
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
-  const [openDocumentUploadDialog, setOpenDocumentUploadDialog] = useState(false);
   const [projectRules, setProjectRules] = useState('');
   const [projectMemory, setProjectMemory] = useState(true);
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRulesRef = useRef<string>('');
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
-  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
-  const [openDeleteDocDialog, setOpenDeleteDocDialog] = useState(false);
-  const [documentToDelete, setDocumentToDelete] = useState<any>(null);
-  const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
-  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
-  const [deleteDocError, setDeleteDocError] = useState('');
+  const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
+  const previousProjectIdRef = useRef<string | null>(null); // Track previous project ID to prevent unnecessary tab switches
+  const previousConversationIdRef = useRef<string | null>(null); // Track previous conversation ID to detect actual conversation switches
 
 
   const getGreeting = () => {
@@ -96,50 +88,6 @@ export default function Home() {
     }
   };
 
-  // Document polling for processing status
-  const startDocumentPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-    }
-
-    const interval = setInterval(async () => {
-      try {
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser({ ...updatedUser });
-
-          // Check if all documents are processed
-          let hasProcessing = false;
-          (updatedUser.projects || []).forEach((project: any) => {
-            if (!selectedProject || project.id === selectedProject.id) {
-              (project.documents || []).forEach((doc: any) => {
-                if (doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0)) {
-                  hasProcessing = true;
-                }
-              });
-            }
-          });
-
-          // Stop polling if nothing is processing
-          if (!hasProcessing) {
-            clearInterval(interval);
-            setPollingInterval(null);
-          }
-        }
-      } catch (error) {
-        console.error('Error polling for document status:', error);
-      }
-    }, 3000);
-
-    setPollingInterval(interval);
-  };
-
-  const stopDocumentPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
-    }
-  };
 
   useEffect(() => {
     if (user) {
@@ -154,17 +102,69 @@ export default function Home() {
 
   // Listen for conversation deletion events
   useEffect(() => {
-    const handleConversationDeleted = (event: any) => {
+    const handleConversationDeleted = async (event: any) => {
       const deletedConversationId = event.detail?.conversationId;
 
-      // If the deleted conversation is currently open, navigate back to home
+      // If the deleted conversation is currently open, select the previous conversation from the same project
       if (deletedConversationId && conversation?.id === deletedConversationId) {
-        console.log('Currently opened conversation was deleted, navigating to home');
-        navigate('/');
-        setShowChat(false);
-        setConversation(null);
-        setChatMessage(null);
-        setMessage('');
+        console.log('Currently opened conversation was deleted');
+
+        // Get remaining conversations from storage
+        const remaining = await storageService.getConversations();
+
+        if (remaining && remaining.length > 0) {
+          // Filter conversations by current project (or general if no project)
+          const currentProjectId = selectedProject?.id;
+          const projectConversations = remaining.filter((conv: any) => {
+            if (currentProjectId) {
+              // If we have a project selected, only show conversations from that project
+              return conv.project_id === currentProjectId;
+            } else {
+              // If no project selected (general mode), only show conversations without project_id
+              return !conv.project_id;
+            }
+          });
+
+          if (projectConversations.length > 0) {
+            // Sort by created_at descending and select the most recent from the same project
+            const lastConversation = projectConversations.sort((a: any, b: any) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )[0];
+
+            console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
+
+            // Navigate to the previous conversation, keeping the same project
+            if (currentProjectId) {
+              navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
+            } else {
+              navigate(`/?conversation=${lastConversation.id}&general=true`);
+            }
+          } else {
+            // No conversations left in the current project, navigate to project/general home
+            console.log('No conversations remaining in current project, navigating to project/general home');
+            if (currentProjectId) {
+              navigate(`/?project=${currentProjectId}`);
+            } else {
+              navigate('/?general=true');
+            }
+            setShowChat(false);
+            setConversation(null);
+            setChatMessage(null);
+            setMessage('');
+          }
+        } else {
+          // No conversations left at all, navigate to home
+          console.log('No conversations remaining, navigating to home');
+          if (selectedProject) {
+            navigate(`/?project=${selectedProject.id}`);
+          } else {
+            navigate('/?general=true');
+          }
+          setShowChat(false);
+          setConversation(null);
+          setChatMessage(null);
+          setMessage('');
+        }
       }
     };
 
@@ -173,44 +173,20 @@ export default function Home() {
     return () => {
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
     };
-  }, [conversation, navigate]);
+  }, [conversation, navigate, selectedProject]);
 
-  // Listen for document upload events to trigger polling
-  useEffect(() => {
-    const handleDocumentUploaded = async () => {
-      try {
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          startDocumentPolling();
-        }
-      } catch (error) {
-        console.error('Error refreshing after document upload:', error);
-      }
-    };
-
-    window.addEventListener('documentUploaded', handleDocumentUploaded);
-
-    return () => {
-      window.removeEventListener('documentUploaded', handleDocumentUploaded);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-    };
-  }, [pollingInterval]);
 
   // Handle conversation ID from URL parameter
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
 
-    console.log('[useEffect] URL conversation:', urlConversationId, 'showChat:', showChat, 'current conversation:', conversation?.id);
+    console.log('[Home URL Effect] TRIGGERED:', {
+      urlConversationId,
+      currentConversationId: conversation?.id,
+      previousConversationId: previousConversationIdRef.current,
+      showChat,
+      user: !!user
+    });
 
     if (urlConversationId && user) {
       console.log('Conversation ID from URL:', urlConversationId);
@@ -222,38 +198,29 @@ export default function Home() {
         if (result.success && result.data) {
           const foundConversation = result.data;
 
-          // If we already have this conversation loaded, only update project if needed
-          if (conversation && conversation.id === urlConversationId) {
-            console.log('Conversation already loaded, checking project');
-
-            // Update project if it's different or missing
-            if (foundConversation.project_id) {
-              const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-              if (project && (!selectedProject || selectedProject.id !== project.id)) {
-                console.log('[Home URL Effect] Updating selected project:', project.title || project.name);
-                setSelectedProject(project);
-              }
-            } else if (selectedProject) {
-              console.log('[Home URL Effect] Clearing selected project (no project_id)');
-              setSelectedProject(null);
-            }
-
-            if (!showChat) {
-              console.log('Setting showChat to true');
-              setShowChat(true);
-            }
-            setActiveTab(0); // Switch to Chat tab when conversation is selected
-            return;
-          }
+          // Check if we're actually switching to a different conversation or just updating the same one
+          const isSwitchingConversation = previousConversationIdRef.current !== urlConversationId;
 
           console.log('[Home URL Effect] Loading conversation from storage:', {
             conversationId: foundConversation.id,
             conversationTitle: foundConversation.title,
-            conversationProjectId: foundConversation.project_id
+            conversationProjectId: foundConversation.project_id,
+            isSwitchingConversation: isSwitchingConversation,
+            previousConversationId: previousConversationIdRef.current
           });
-          setConversation(foundConversation);
+
+          // Always update conversation state with a NEW object reference to trigger Chat update
+          // This ensures React detects the change even if the IDs are the same
+          setConversation({ ...foundConversation });
           setShowChat(true);
-          setActiveTab(0); // Switch to Chat tab when conversation is selected
+
+          // Only switch to Chat tab if we're actually switching to a different conversation
+          if (isSwitchingConversation) {
+            setActiveTab(0); // Switch to Chat tab when switching conversations
+          }
+
+          // Update the ref to track this conversation
+          previousConversationIdRef.current = urlConversationId;
 
           // Set the selected project based on the conversation's project_id
           if (foundConversation.project_id) {
@@ -294,10 +261,13 @@ export default function Home() {
       if (chatMessage) {
         setChatMessage(null);
       }
+      // Clear the conversation ref when no conversation in URL
+      previousConversationIdRef.current = null;
     }
     // Don't clear showChat when URL param is missing - it's managed explicitly
+    // Only run when searchParams changes, not when user data updates (e.g., document add/delete)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, user]);
+  }, [searchParams]);
 
   // Clear chatMessage after it's been passed to Chat component
   useEffect(() => {
@@ -319,43 +289,56 @@ export default function Home() {
       const isGeneral = searchParams.get('general') === 'true' || (!projectId && !urlConversationId);
 
       // Always reset conversation when switching channels (project/general)
-      const previousProjectId = selectedProject?.id || (isGeneral ? 'general' : null);
-      const currentProjectId = projectId || (isGeneral ? 'general' : null);
+      const previousProjectId = previousProjectIdRef.current;
 
       if (projectId && projectId !== 'general') {
         const project = user.projects?.find((p: any) => p.id === projectId);
         if (project) {
-          // Reset state when switching projects
-          if (!selectedProject || selectedProject.id !== project.id) {
+          // Only reset state and switch tabs when actually switching to a different project
+          // Don't switch tabs if it's the same project (just updating project data)
+          if (previousProjectId !== project.id) {
             setSelectedProject(project);
-            setActiveTab(0); // Reset to Chat tab
+            setActiveTab(0); // Reset to Chat tab only when switching projects
             setShowChat(false);
             setConversation(null);
             setChatMessage(null);
             setMessage('');
             setMessageAttachments([]);
+            previousProjectIdRef.current = project.id;
 
             // If no conversation in URL, don't show chat - let user type first
+          } else {
+            // Same project, just update the project object (e.g., document updates)
+            // Don't switch tabs - keep current tab
+            setSelectedProject(project);
           }
         } else {
           setSelectedProject(null);
+          previousProjectIdRef.current = null;
         }
       } else if (isGeneral) {
         // General channel - reset state when switching from project
-        if (selectedProject || previousProjectId !== 'general') {
+        // Only switch tabs if actually switching from a project to general
+        if (previousProjectId !== 'general' && previousProjectId !== null) {
           setSelectedProject(null);
-          setActiveTab(0); // Reset to Chat tab
+          setActiveTab(0); // Reset to Chat tab only when switching to general
           setShowChat(false);
           setConversation(null);
           setChatMessage(null);
           setMessage('');
           setMessageAttachments([]);
+          previousProjectIdRef.current = 'general';
 
           // If no conversation in URL, don't auto-select or show chat - let user choose from list or type
+        } else if (previousProjectId === null) {
+          // First time loading general, don't switch tabs
+          setSelectedProject(null);
+          previousProjectIdRef.current = 'general';
         }
       }
     }
-  }, [searchParams, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Load project data when selected
   useEffect(() => {
@@ -521,83 +504,6 @@ export default function Home() {
     }
   };
 
-  const handleOpenUploadDocumentDialog = () => {
-    setOpenDocumentUploadDialog(true);
-  };
-
-  const handleCloseUploadDocumentDialog = () => {
-    setOpenDocumentUploadDialog(false);
-  };
-
-  const handleOpenDeleteDocDialog = (doc: any) => {
-    setDocumentToDelete(doc);
-    setDeleteDocConfirm('');
-    setDeleteDocError('');
-    setOpenDeleteDocDialog(true);
-  };
-
-  const handleCloseDeleteDocDialog = () => {
-    setOpenDeleteDocDialog(false);
-    setDocumentToDelete(null);
-    setDeleteDocConfirm('');
-    setDeleteDocError('');
-  };
-
-  const handleDeleteDocument = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (deleteDocConfirm.toLowerCase() !== 'delete') {
-      return;
-    }
-
-    if (!documentToDelete || !selectedProject) return;
-
-    setIsDeletingDoc(true);
-    setDeleteDocError('');
-
-    try {
-      // Check if this is the only document in the project
-      const project = user?.projects?.find((p: any) => p.id === selectedProject.id);
-      const isOnlyDocument = project && project.documents && project.documents.length === 1;
-
-      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
-      const response = await userService.makeAuthenticatedRequest(url, {
-        method: 'DELETE',
-      });
-
-      if (response && (response.status === 200 || response.status === 204)) {
-        // If this was the only document, delete the project as well
-        if (isOnlyDocument) {
-          const deleteResult = await projectService.deleteProject(selectedProject.id, user?.email);
-
-          if (deleteResult.success) {
-            const updatedUser = await userService.get();
-            if (updatedUser) {
-              setUser(updatedUser);
-            }
-            // Navigate away since project is deleted
-            navigate('/');
-            setSelectedProject(null);
-          }
-        } else {
-          // Just refresh user data for document deletion
-          const updatedUser = await userService.get();
-          if (updatedUser) {
-            setUser(updatedUser);
-          }
-        }
-
-        handleCloseDeleteDocDialog();
-      } else {
-        setDeleteDocError('Failed to delete document. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      setDeleteDocError('An error occurred while deleting the document.');
-    } finally {
-      setIsDeletingDoc(false);
-    }
-  };
 
   const autoSaveProjectRules = async (rules: string) => {
     if (!selectedProject || !rules) return;
@@ -640,37 +546,6 @@ export default function Home() {
     }
   };
 
-  const handleMemoryToggle = async (newMemoryValue: boolean) => {
-    setProjectMemory(newMemoryValue);
-
-    if (!selectedProject) return;
-
-    const url = `${API_ENDPOINT}/projects/${selectedProject.id}/config`;
-    const payload = {
-      rules: projectRules || '',
-      memory: newMemoryValue
-    };
-
-    try {
-      await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userService.token()}`
-        },
-        body: JSON.stringify(payload),
-      });
-
-      // Refresh user data
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setUser(updatedUser);
-      }
-    } catch (ex: any) {
-      console.error('Error updating memory setting:', ex);
-    }
-  };
-
   const handleMentionChange = (_event: any, newValue: string, _newPlainTextValue: string, mentions: any[]) => {
     setMessage(newValue);
 
@@ -683,14 +558,26 @@ export default function Home() {
       })
       .filter(Boolean);
 
-    // Always use the last mentioned project as the selected one
-    // Don't set URL params - just set the project state so user stays on welcome screen
+    // Check if current and previous messages contain mention markup: /[display](id)
+    const hasMentionMarkup = /\/\[([^\]]+)\]\([^)]+\)/.test(newValue);
+    const previousHadMentionMarkup = /\/\[([^\]]+)\]\([^)]+\)/.test(previousMessageRef.current);
+
+    // Simple logic:
+    // 1. If mentions exist → set project (typing /project adds the project)
     if (projectMentions.length > 0) {
       const project = projectMentions[projectMentions.length - 1];
+      console.log('[handleMentionChange] Project selected via mention:', project.title || project.name, project.id);
       setSelectedProject(project);
-    } else {
+    }
+    // 2. If no mentions but previous message had mention markup → clear project (explicit removal)
+    else if (previousHadMentionMarkup && !hasMentionMarkup) {
+      console.log('[handleMentionChange] Project removed - mention markup was explicitly deleted');
       setSelectedProject(null);
     }
+    // 3. Otherwise → keep current project (user is just typing normally)
+
+    // Update previous message ref for next comparison
+    previousMessageRef.current = newValue;
   };
 
   const handleSendMessage = async () => {
@@ -706,23 +593,25 @@ export default function Home() {
       const titleWords = words.slice(0, 5).join(' ');
       const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
-      // Prepare attachments array including project if selected
+      // Prepare attachments array
       const attachmentsToSend = [...messageAttachments];
-      if (selectedProject?.id) {
-        console.log('[handleSendMessage] Adding project as attachment:', {
-          projectId: selectedProject.id,
-          projectName: selectedProject.title || selectedProject.name,
-          file_id: `project-${selectedProject.id}`
-        });
-        attachmentsToSend.push({
-          file_id: `project-${selectedProject.id}`,
-          name: selectedProject.title || selectedProject.name || 'Project'
-        });
-      }
-      console.log('[handleSendMessage] Final attachments to send:', attachmentsToSend);
 
       // Create or update conversation
       if (!activeConversationId) {
+        // Only add project as attachment when creating a new conversation (first message)
+        // Once conversation exists, backend uses memory and project_id, so no need to send attachment again
+        if (selectedProject?.id) {
+          console.log('[handleSendMessage] Adding project as attachment (first message only):', {
+            projectId: selectedProject.id,
+            projectName: selectedProject.title || selectedProject.name,
+            file_id: `project-${selectedProject.id}`
+          });
+          attachmentsToSend.push({
+            file_id: `project-${selectedProject.id}`,
+            name: selectedProject.title || selectedProject.name || 'Project'
+          });
+        }
+        console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
         // Create a new conversation with the selected project
         try {
           // Ensure project_id is set if project is selected (not general)
@@ -735,22 +624,23 @@ export default function Home() {
           if (conversationResult.success && conversationResult.data) {
             const newConversation = conversationResult.data;
             activeConversationId = newConversation.id;
+
+            // Set all state updates together before navigation to avoid race conditions
             setConversation(newConversation);
             setShowChat(true); // Set showChat immediately after creating conversation
-
-            // Note: conversationCreated event is already dispatched by conversationService.createConversation()
-
-            // Set chat message with attachments and navigate after all state updates
             setMessageAttachments(attachmentsToSend);
             setChatMessage(cleanMessage);
             setMessage('');
             setClearAttachmentTrigger(prev => prev + 1);
 
+            // Note: conversationCreated event is already dispatched by conversationService.createConversation()
+
             // Navigate to conversation page with project if selected
+            // Use replace: true to avoid adding to history and ensure URL is updated immediately
             if (projectId) {
-              navigate(`/?conversation=${activeConversationId}&project=${projectId}`);
+              navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
             } else {
-              navigate(`/?conversation=${activeConversationId}&general=true`);
+              navigate(`/?conversation=${activeConversationId}&general=true`, { replace: true });
             }
           } else {
             console.error('Failed to create conversation');
@@ -761,8 +651,12 @@ export default function Home() {
           return;
         }
       } else {
-        // Existing conversation - just send the message with attachments
-        setMessageAttachments(attachmentsToSend);
+        // Existing conversation - filter out project attachments (backend uses memory and project_id)
+        const attachmentsWithoutProject = attachmentsToSend.filter(
+          (att: any) => !att.file_id || !att.file_id.startsWith('project-')
+        );
+        console.log('[handleSendMessage] Existing conversation - filtered attachments (no project):', attachmentsWithoutProject);
+        setMessageAttachments(attachmentsWithoutProject);
         setChatMessage(cleanMessage);
         setMessage('');
         setClearAttachmentTrigger(prev => prev + 1);
@@ -788,17 +682,13 @@ export default function Home() {
       if (result.success) {
         // Note: conversationDeleted event is already dispatched by conversationService.deleteConversation()
         // and the sidebar will automatically refresh from local storage
+        // The handleConversationDeleted event handler will handle navigation to the previous conversation
 
         // Close dialog
         setShowDeleteDialog(false);
 
-        // Navigate to home
-        navigate('/');
-        setShowChat(false);
-        setConversation(null);
-        setChatMessage(null);
-        setMessage('');
-        setSelectedProject(null);
+        // Don't navigate here - let the handleConversationDeleted event handler do it
+        // This ensures we select the previous conversation from the same project
       } else {
         console.error('Failed to delete conversation:', result.error);
       }
@@ -819,17 +709,9 @@ export default function Home() {
         // Update local list
         setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
 
-        // If the deleted conversation was the current one, navigate away
-        if (conversation?.id === convId) {
-          if (selectedProject) {
-            navigate(`/?project=${selectedProject.id}`);
-          } else {
-            navigate('/?general=true');
-          }
-          setConversation(null);
-          setChatMessage(null);
-          setMessage('');
-        }
+        // Note: conversationDeleted event is already dispatched by conversationService.deleteConversation()
+        // If the deleted conversation was the current one, the handleConversationDeleted event handler
+        // will handle navigation to the previous conversation from the same project
       } else {
         console.error('Failed to delete conversation:', result.error);
       }
@@ -885,6 +767,27 @@ export default function Home() {
     } else {
       navigate(`/?general=true`);
     }
+  };
+
+  const handleConversationCreated = (newConversation: any) => {
+    console.log('[Home] Conversation created:', newConversation);
+
+    // Determine project ID from conversation or selected project
+    const projectId = newConversation.project_id || selectedProject?.id;
+
+    // Navigate to the new conversation URL FIRST to ensure it's selected
+    // This prevents tab switching from changing the conversation
+    // The URL change will trigger the useEffect that loads the conversation
+    if (projectId) {
+      navigate(`/?conversation=${newConversation.id}&project=${projectId}`, { replace: true });
+    } else {
+      navigate(`/?conversation=${newConversation.id}&general=true`, { replace: true });
+    }
+
+    // Also set state immediately to avoid any race conditions
+    setConversation(newConversation);
+    setShowChat(true);
+    setActiveTab(0); // Switch to Chat tab
   };
 
   const handleDeleteProject = async (e: React.FormEvent) => {
@@ -979,6 +882,13 @@ export default function Home() {
 
   return (
     <>
+      <DocumentPolling
+        user={user}
+        setUser={setUser}
+        selectedProject={selectedProject}
+        setCurrentProjectData={setCurrentProjectData}
+        setSelectedProject={setSelectedProject}
+      />
       {user && (
         <>
           {/* Sidebar is now rendered in App.tsx for persistence across routes */}
@@ -1369,9 +1279,28 @@ export default function Home() {
                           throw new Error(result.detail || result.message || 'Upload failed');
                         }
 
-                        const updatedUser = await userService.get();
-                        if (updatedUser) {
+                        // Get the uploaded document from response
+                        const uploadedDocument = await response.json();
+
+                        // Update user state incrementally - only update the specific project
+                        if (user && selectedProject) {
+                          const updatedProjects = user.projects.map((p: any) => {
+                            if (p.id === selectedProject.id) {
+                              const updatedDocs = [...(p.documents || []), uploadedDocument];
+                              return { ...p, documents: updatedDocs };
+                            }
+                            return p;
+                          });
+
+                          const updatedUser = { ...user, projects: updatedProjects };
                           setUser(updatedUser);
+
+                          // Update current project data
+                          const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
+                          if (updatedProject) {
+                            setCurrentProjectData(updatedProject);
+                            setSelectedProject(updatedProject);
+                          }
                         }
 
                         // Dispatch event for other components
@@ -1382,8 +1311,8 @@ export default function Home() {
                         setShowFileUploadDialog(false);
                         setUploadFiles([]);
 
-                        // Navigate to project
-                        navigate(`/project/${selectedProject.id}?tab=0`);
+                        // Stay on Documents tab
+                        setActiveTab(1);
                       } catch (error: any) {
                         console.error('Upload error:', error.message || 'Failed to upload document');
                       } finally {
@@ -1406,26 +1335,6 @@ export default function Home() {
               </Box>
             </Box>
           </Dialog>
-
-          {/* Document Upload Dialog */}
-          <DocumentUploadDialog
-            open={openDocumentUploadDialog}
-            onClose={handleCloseUploadDocumentDialog}
-            onSuccess={() => {
-              // Refresh user data
-              const refreshUser = async () => {
-                const updatedUser = await userService.get();
-                if (updatedUser) {
-                  setUser(updatedUser);
-                }
-              };
-              refreshUser();
-            }}
-            user={user}
-            setUser={setUser}
-            preselectedProjectId={selectedProject?.id}
-            disableProjectSelection={true}
-          />
 
           {/* Delete Conversation Confirmation Dialog */}
           <Dialog
@@ -1583,115 +1492,6 @@ export default function Home() {
             </Box>
           </Dialog>
 
-          {/* Delete Document Confirmation Dialog */}
-          <Dialog
-            open={openDeleteDocDialog}
-            onClose={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paper
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="p-6">
-              <Box className="flex items-center justify-between mb-4">
-                <h3 className="text-white text-xl font-semibold">Delete Document</h3>
-                <IconButton
-                  onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
-                  sx={{
-                    color: '#6b7280',
-                    '&:hover': {
-                      color: 'white',
-                      bgcolor: '#1a1a1a'
-                    },
-                  }}
-                >
-                  <CloseIcon />
-                </IconButton>
-              </Box>
-
-              <form onSubmit={handleDeleteDocument}>
-                <Box className="space-y-4">
-                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
-                    <Box>
-                      <Typography className="text-red-400 font-medium mb-1">
-                        Warning: This action cannot be undone
-                      </Typography>
-                      <Typography className="text-gray-300 text-sm">
-                        Deleting "{documentToDelete?.filename || documentToDelete?.name || 'this document'}" will permanently remove it from your project.
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
-                    </Typography>
-                    <TextField
-                      autoComplete="off"
-                      fullWidth
-                      value={deleteDocConfirm}
-                      onChange={(e) => {
-                        setDeleteDocConfirm(e.target.value);
-                        setDeleteDocError('');
-                      }}
-                      placeholder="Type 'delete' to confirm"
-                      disabled={isDeletingDoc}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'rgba(17, 24, 39, 0.6)',
-                          '& fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.1)',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.2)',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: '#ec4899',
-                          },
-                        },
-                      }}
-                    />
-                    {deleteDocError && (
-                      <Typography className="text-red-400 text-sm mt-2">
-                        {deleteDocError}
-                      </Typography>
-                    )}
-                  </Box>
-
-                  <Box className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleCloseDeleteDocDialog}
-                      disabled={isDeletingDoc}
-                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isDeletingDoc || deleteDocConfirm.toLowerCase() !== 'delete'}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isDeletingDoc ? (
-                        <CircularProgress size={18} sx={{ color: 'white' }} />
-                      ) : (
-                        <>
-                          <DeleteOutlineIcon fontSize="small" />
-                          Delete Document
-                        </>
-                      )}
-                    </button>
-                  </Box>
-                </Box>
-              </form>
-            </Box>
-          </Dialog>
 
           <Box className="min-h-screen bg-black text-white">
             {(() => {
@@ -1766,7 +1566,20 @@ export default function Home() {
                             }}
                             title={selectedProject ? 'Click to rename' : undefined}
                           >
-                            {selectedProject ? (selectedProject.title || selectedProject.name) : 'General'}
+                            {(() => {
+                              if (selectedProject) {
+                                return selectedProject.title || selectedProject.name;
+                              }
+                              // Check URL param for project to handle race condition
+                              const urlProjectId = searchParams.get('project');
+                              if (urlProjectId && user) {
+                                const project = user.projects?.find((p: any) => p.id === urlProjectId);
+                                if (project) {
+                                  return project.title || project.name;
+                                }
+                              }
+                              return 'General';
+                            })()}
                           </div>
                         )}
                       </Box>
@@ -1797,7 +1610,7 @@ export default function Home() {
                 </Box>
 
                 {/* Tabs - only show when project is selected */}
-                {selectedProject && (
+                {(selectedProject || searchParams.get('project')) && (
                   <Box className="flex-none border-b border-gray-900 px-4">
                     <Tabs
                       value={activeTab}
@@ -1844,153 +1657,18 @@ export default function Home() {
                         onTokenUpdate={() => {
                           window.dispatchEvent(new Event('refreshUserTokens'));
                         }}
+                        onConversationCreated={handleConversationCreated}
                       />
                     ) : activeTab === 1 ? (
-                      <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
-                        {/* Documents Tab */}
-                        <Box className="max-w-4xl mx-auto">
-                        <Box className="flex items-center justify-between mb-4">
-                          <span className="text-sm text-gray-400">
-                            {currentProjectData?.documents?.length || 0} document{(currentProjectData?.documents?.length || 0) !== 1 ? 's' : ''}
-                          </span>
-                          <button
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 rounded-md border border-gray-700/50 transition-all"
-                            onClick={handleOpenUploadDocumentDialog}
-                          >
-                            <AddBoxIcon sx={{ fontSize: 16 }} />
-                            <span>Add</span>
-                          </button>
-                        </Box>
-
-                        {currentProjectData && (currentProjectData.documents || []).length > 0 ? (
-                          <Box className="space-y-1">
-                            {currentProjectData.documents.map((doc: any, i: number) => (
-                              <Box
-                                key={`doc-${i}`}
-                                sx={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  padding: '12px 14px',
-                                  borderRadius: '8px',
-                                  bgcolor: 'transparent',
-                                  transition: 'all 0.15s ease',
-                                  '&:hover': {
-                                    bgcolor: 'rgba(255, 255, 255, 0.04)',
-                                  },
-                                }}
-                              >
-                                <Box className="flex items-center gap-3 flex-1 min-w-0">
-                                  <InsertDriveFileIcon sx={{ fontSize: 20, color: '#ec4899' }} />
-                                  <Box className="flex-1 min-w-0">
-                                    <div className="text-sm text-white truncate">
-                                      {doc.filename || doc.name || 'Untitled Document'}
-                                    </div>
-                                    <div className="text-xs text-gray-500 mt-0.5">
-                                      {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}
-                                    </div>
-                                  </Box>
-                                </Box>
-                                <Box className="flex items-center gap-2">
-                                  {doc.is_processing ? (
-                                    <Box className="flex items-center gap-1.5 text-xs text-gray-400">
-                                      <CircularProgress size={12} sx={{ color: '#9ca3af' }} />
-                                      <span>Processing</span>
-                                    </Box>
-                                  ) : doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                                    <Chip
-                                      label={`-${Math.ceil(doc.num_of_tokens / 100)}`}
-                                      size="small"
-                                      variant="outlined"
-                                      sx={{
-                                        bgcolor: 'transparent',
-                                        color: '#ec4899',
-                                        fontSize: '11px',
-                                        height: '22px',
-                                        fontWeight: 600,
-                                        border: '1px solid rgba(236, 72, 153, 0.3)',
-                                        borderRadius: '4px',
-                                      }}
-                                    />
-                                  ) : null}
-                                  {doc.is_token_limit_reached && (
-                                    <WarningIcon sx={{ fontSize: 16, color: '#f59e0b' }} />
-                                  )}
-                                  {/* View Document Button */}
-                                  <Tooltip title="View Document" arrow>
-                                    <IconButton
-                                      size="small"
-                                      onClick={async () => {
-                                        try {
-                                          setDownloadingDocId(doc.id);
-                                          const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${doc.id}/download`;
-                                          const response = await userService.makeAuthenticatedRequest(url, {
-                                            method: 'GET',
-                                          });
-
-                                          if (response && response.ok) {
-                                            const blob = await response.blob();
-                                            const blobUrl = URL.createObjectURL(blob);
-                                            window.open(blobUrl, '_blank');
-                                          }
-                                        } catch (error) {
-                                          console.error('Error opening document:', error);
-                                        } finally {
-                                          setDownloadingDocId(null);
-                                        }
-                                      }}
-                                      disabled={!doc.num_of_tokens || doc.num_of_tokens === 0 || downloadingDocId === doc.id}
-                                      sx={{
-                                        color: '#9ca3af',
-                                        bgcolor: 'rgba(96, 165, 250, 0.1)',
-                                        border: '1px solid rgba(96, 165, 250, 0.2)',
-                                        '&:hover': {
-                                          color: '#60a5fa',
-                                          bgcolor: 'rgba(96, 165, 250, 0.2)',
-                                          borderColor: 'rgba(96, 165, 250, 0.4)',
-                                        },
-                                        transition: 'all 0.2s',
-                                        '&:disabled': {
-                                          color: '#4b5563',
-                                          bgcolor: 'rgba(75, 85, 99, 0.1)',
-                                          border: '1px solid rgba(75, 85, 99, 0.2)',
-                                        },
-                                      }}
-                                    >
-                                      {downloadingDocId === doc.id ? (
-                                        <CircularProgress size={16} sx={{ color: '#ec4899' }} />
-                                      ) : (
-                                        <VisibilityIcon sx={{ fontSize: 16 }} />
-                                      )}
-                                    </IconButton>
-                                  </Tooltip>
-                                  {/* Delete Document Button */}
-                                  <Tooltip title="Delete Document" arrow>
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleOpenDeleteDocDialog(doc)}
-                                      sx={{
-                                        color: '#9ca3af',
-                                        bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                        border: '1px solid rgba(239, 68, 68, 0.2)',
-                                        '&:hover': {
-                                          color: '#ef4444',
-                                          bgcolor: 'rgba(239, 68, 68, 0.2)',
-                                          borderColor: 'rgba(239, 68, 68, 0.4)',
-                                        },
-                                        transition: 'all 0.2s',
-                                      }}
-                                    >
-                                      <DeleteIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                  </Tooltip>
-                                </Box>
-                              </Box>
-                            ))}
-                          </Box>
-                        ) : null}
-                        </Box>
-                      </Box>
+                      <DocumentsTab
+                        user={user}
+                        setUser={setUser}
+                        selectedProject={selectedProject}
+                        setSelectedProject={setSelectedProject}
+                        currentProjectData={currentProjectData}
+                        setCurrentProjectData={setCurrentProjectData}
+                        setActiveTab={setActiveTab}
+                      />
                     ) : (
                       <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
                         {/* Configuration Tab */}
@@ -1998,8 +1676,10 @@ export default function Home() {
                           {currentProjectData && (
                             <Box className="space-y-6">
                               <div className="space-y-3">
-                                <Box className="flex items-center justify-between mb-2">
-                                  <label className="text-white text-sm font-medium">Project Rules</label>
+                                <Box className="flex items-center justify-between mb-2 py-2">
+                                  <Box className="flex flex-col">
+                                      <h4 className="text-sm text-gray-400">Project Rules:</h4>
+                                  </Box>
                                   <span className="text-xs text-gray-500">
                                     {projectRules.length}/300
                                   </span>
@@ -2039,30 +1719,8 @@ export default function Home() {
                                       />
                                   </Box>
                                 </Box>
+                                <p className="text-gray-400 text-xs">* Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
                               </div>
-
-                              <Box className="flex items-center justify-between p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
-                                <Box>
-                                  <Typography className="text-white text-sm font-medium mb-1">
-                                    Memory
-                                  </Typography>
-                                  <Typography className="text-gray-400 text-xs">
-                                    Enable conversation memory for this project
-                                  </Typography>
-                                </Box>
-                                <Switch
-                                  checked={projectMemory}
-                                  onChange={(e) => handleMemoryToggle(e.target.checked)}
-                                  sx={{
-                                    '& .MuiSwitch-switchBase.Mui-checked': {
-                                      color: '#ec4899',
-                                    },
-                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                                      backgroundColor: '#ec4899',
-                                    },
-                                  }}
-                                />
-                              </Box>
                             </Box>
                           )}
                         </Box>
@@ -2109,11 +1767,19 @@ export default function Home() {
                                 <Box
                                   key={conv.id}
                                   onClick={() => {
-                                    if (selectedProject) {
-                                      navigate(`/?conversation=${conv.id}&project=${selectedProject.id}`);
-                                    } else {
-                                      navigate(`/?conversation=${conv.id}&general=true`);
-                                    }
+                                    console.log('[Home Sidebar] Clicked conversation:', {
+                                      convId: conv.id,
+                                      convTitle: conv.title,
+                                      currentConversationId: conversation?.id,
+                                      selectedProject: selectedProject?.id
+                                    });
+
+                                    const newUrl = selectedProject
+                                      ? `/?conversation=${conv.id}&project=${selectedProject.id}`
+                                      : `/?conversation=${conv.id}&general=true`;
+
+                                    console.log('[Home Sidebar] Navigating to:', newUrl);
+                                    navigate(newUrl);
                                   }}
                                   sx={{
                                     display: 'flex',
@@ -2184,22 +1850,19 @@ export default function Home() {
                       {/* Greeting */}
                       <Box className="mb-8">
                         <Box className="hidden md:flex items-center mb-4">
-                          <Box className="w-12 h-12 rounded-full flex">
-                            <svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M13.4663 24.5027C19.6795 24.5027 24.7163 19.6266 24.7163 13.6117C24.7163 7.5968 19.6795 2.72075 13.4663 2.72075C7.25311 2.72075 2.21631 7.5968 2.21631 13.6117C2.21631 19.6266 7.25311 24.5027 13.4663 24.5027Z" stroke="url(#paint0_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M8.11121 17.9681C9.29246 19.6126 11.2725 20.6908 13.5 20.6908C15.7275 20.6908 17.6962 19.6126 18.8887 17.9681" stroke="url(#paint1_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                              <defs>
-                                <linearGradient id="paint0_linear_160_831" x1="13.4663" y1="2.72075" x2="13.4663" y2="24.5027" gradientUnits="userSpaceOnUse">
-                                  <stop stopColor="#D3F3FF" />
-                                  <stop offset="1" stopColor="white" />
-                                </linearGradient>
-                                <linearGradient id="paint1_linear_160_831" x1="13.5" y1="17.9681" x2="13.5" y2="20.6908" gradientUnits="userSpaceOnUse">
-                                  <stop stopColor="#D3F3FF" />
-                                  <stop offset="1" stopColor="white" />
-                                </linearGradient>
-                              </defs>
-                            </svg>
-                          </Box>
+                              <Box className="w-12 h-12 flex">
+                                <svg width="48" height="48" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <g clip-path="url(#clip0_1_62)">
+                                    <path d="M23 66.9683C23 84.0784 36.9216 98 54.0317 98L83.124 98C84.1946 98 85.0635 97.1311 85.0635 96.0605L85.0635 66.9683C85.0635 49.8581 71.1419 35.9365 54.0317 35.9365C36.9216 35.9365 23 49.8581 23 66.9683Z" fill="white" />
+                                    <circle cx="85.4286" cy="47.254" r="18.254" fill="#FF3478" />
+                                  </g>
+                                  <defs>
+                                    <clipPath id="clip0_1_62">
+                                      <rect width="128" height="128" fill="white" />
+                                    </clipPath>
+                                  </defs>
+                                </svg>
+                              </Box>
                         </Box>
                         <h1 className="text-2xl md:text-4xl font-light mb-2">
                           <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
@@ -2280,6 +1943,8 @@ export default function Home() {
                                 setSelectedProject(project);
                                 // Clear the /command from message after selection
                                 setMessage('');
+                                // Reset previous message ref so typing doesn't trigger mention removal logic
+                                previousMessageRef.current = '';
                               }
                             }}
                             style={{
@@ -2307,6 +1972,7 @@ export default function Home() {
                                 size="small"
                                 onDelete={() => {
                                   setSelectedProject(null);
+                                  previousMessageRef.current = ''; // Reset previous message tracking
                                   navigate('/');
                                 }}
                                 sx={{
