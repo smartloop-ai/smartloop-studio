@@ -5,7 +5,7 @@ import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, Switch, TextField } from '@mui/material';
+import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -55,7 +55,7 @@ export default function Home() {
   const [conversation, setConversation] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
@@ -480,30 +480,6 @@ export default function Home() {
       maxHeight: "400px",
     } as any;
   }, []);
-
-  const handleProjectChange = (projectId: string | null) => {
-    // Reset chat state when switching projects
-    setShowChat(false);
-    setConversation(null);
-    setChatMessage(null);
-    setMessage('');
-    setMessageAttachments([]);
-    setActiveTab(0); // Reset to Chat tab
-
-    if (projectId === null || projectId === 'general') {
-      setSelectedProject(null);
-      setSearchParams({ general: 'true' });
-      // Don't show chat immediately - let user type first
-    } else {
-      const project = user?.projects?.find((p: any) => p.id === projectId);
-      if (project) {
-        setSelectedProject(project);
-        setSearchParams({ project: projectId });
-        // Don't show chat immediately - let user type first
-      }
-    }
-  };
-
 
   const autoSaveProjectRules = async (rules: string) => {
     if (!selectedProject || !rules) return;
