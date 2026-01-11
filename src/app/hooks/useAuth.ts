@@ -42,8 +42,24 @@ export function useAuth(): [any, (user: any) => void] {
         const u = await userService.get();
 
         if (!u) {
-          // Token is invalid or expired (401 handled in userService)
-          console.log('useAuth: Failed to fetch user, redirecting to login');
+          // Could be network error or invalid token
+          // Check if we have cached user data
+          const cachedUser = localStorage.getItem('u');
+
+          if (cachedUser) {
+            try {
+              const parsedUser = JSON.parse(cachedUser);
+              console.log('useAuth: Using cached user data due to network error');
+              setUser(parsedUser);
+              // Don't redirect - allow user to continue with cached data
+              return;
+            } catch (e) {
+              console.error('useAuth: Error parsing cached user:', e);
+            }
+          }
+
+          // No cached data or invalid cache - redirect to login
+          console.log('useAuth: Failed to fetch user and no cached data, redirecting to login');
           userService.logout();
           navigate('/login', { replace: true });
         } else if (u.verified === false) {
@@ -57,7 +73,22 @@ export function useAuth(): [any, (user: any) => void] {
       } catch (error: any) {
         console.error('useAuth: Error during authentication check:', error);
 
-        // Always redirect to login on any error to prevent white screens
+        // Check if we have cached user data for network errors
+        if (error.message?.includes('Network error') || error.message?.includes('fetch')) {
+          const cachedUser = localStorage.getItem('u');
+          if (cachedUser) {
+            try {
+              const parsedUser = JSON.parse(cachedUser);
+              console.log('useAuth: Using cached user data due to network error');
+              setUser(parsedUser);
+              return; // Don't redirect on network errors if we have cache
+            } catch (e) {
+              console.error('useAuth: Error parsing cached user:', e);
+            }
+          }
+        }
+
+        // Always redirect to login on other errors to prevent white screens
         console.log('useAuth: Redirecting to login due to error');
         userService.logout();
         navigate('/login', { replace: true });
@@ -68,6 +99,20 @@ export function useAuth(): [any, (user: any) => void] {
 
     checkAuth();
   }, [navigate, location.pathname]);
+
+  // Listen for userUpdated events (e.g., when a project is created)
+  useEffect(() => {
+    const handleUserUpdated = (event: CustomEvent) => {
+      if (event.detail) {
+        setUser(event.detail);
+      }
+    };
+
+    window.addEventListener('userUpdated', handleUserUpdated as EventListener);
+    return () => {
+      window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
+    };
+  }, []);
 
   return [user, setUser];
 }

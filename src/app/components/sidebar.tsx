@@ -1,8 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { storageService } from '../services/storage.service';
+import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
@@ -15,6 +16,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
+import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { APP_URL } from '@/app/constants';
@@ -39,6 +41,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [_, setIsSyncing] = useState(false);
+  const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [createProjectError, setCreateProjectError] = useState('');
 
   // Update live user when prop changes
   useEffect(() => {
@@ -115,16 +121,29 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       loadConversationsFromStorage();
     };
 
+    // Listen for project deletion to refresh user data and conversations
+    const handleProjectDeleted = async () => {
+      // Refresh user data to get updated projects list
+      const updatedUser = await userService.get();
+      if (updatedUser) {
+        setLiveUser(updatedUser);
+      }
+      // Also refresh conversations since project conversations are now deleted
+      await syncConversations();
+    };
+
     window.addEventListener('refreshUserTokens', handleRefresh);
     window.addEventListener('conversationCreated', handleConversationCreated);
     window.addEventListener('conversationDeleted', handleConversationDeleted);
     window.addEventListener('conversationUpdated', handleConversationUpdated);
+    window.addEventListener('projectDeleted', handleProjectDeleted);
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
       window.removeEventListener('conversationCreated', handleConversationCreated);
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
       window.removeEventListener('conversationUpdated', handleConversationUpdated);
+      window.removeEventListener('projectDeleted', handleProjectDeleted);
     };
   }, []);
 
@@ -157,11 +176,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     onMobileClose?.();
   };
 
-  const navItems = [
-    { icon: <ChatBubbleOutlineIcon fontSize="small" />, label: 'Chat', path: '/' },
-    { icon: <FolderOpenIcon fontSize="small" />, label: 'Projects', path: '/projects' },
-    { icon: <DescriptionIcon fontSize="small" />, label: 'Documents', path: '/documents' },
-  ];
+  const navItems: { icon: React.ReactNode, label: string, path: string }[] = [];
 
   // Delete conversation handler
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
@@ -318,12 +333,115 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  const handleProjectClick = (projectId: string) => {
-    navigate(`/project/${projectId}`);
+  const handleProjectClick = async (projectId: string | null) => {
+    if (projectId === null || projectId === 'general') {
+      // Navigate to chat detail page for general (even if no conversations)
+      // Try to find most recent general conversation (no project_id)
+      try {
+        const allConversations = await storageService.getConversations();
+        const generalConversations = (allConversations || []).filter(
+          (conv: any) => !conv.project_id
+        );
+
+        if (generalConversations.length > 0) {
+          // Sort by updated_at (most recent first) and navigate to the most recent
+          const sorted = generalConversations.sort((a: any, b: any) => {
+            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          const mostRecent = sorted[0];
+          navigate(`/?conversation=${mostRecent.id}&general=true`);
+        } else {
+          // No conversations for general, navigate to chat detail page anyway
+          navigate('/?general=true');
+        }
+      } catch (error) {
+        console.error('Error handling general click:', error);
+        navigate('/?general=true');
+      }
+    } else {
+      // For projects, find the most recent conversation and navigate to it
+      try {
+        const allConversations = await storageService.getConversations();
+        const projectConversations = (allConversations || []).filter(
+          (conv: any) => conv.project_id === projectId
+        );
+
+        if (projectConversations.length > 0) {
+          // Sort by updated_at (most recent first) and navigate to the most recent
+          const sorted = projectConversations.sort((a: any, b: any) => {
+            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          const mostRecent = sorted[0];
+          navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
+        } else {
+          // No conversations for this project, navigate to chat detail page anyway
+          navigate(`/?project=${projectId}&new=true`);
+        }
+      } catch (error) {
+        console.error('Error handling project click:', error);
+        navigate(`/?project=${projectId}&new=true`);
+      }
+    }
+
     setSearchQuery('');
     setSearchAnchorEl(null);
     searchInputRef.current?.blur();
     onMobileClose?.();
+  };
+
+  const handleOpenCreateProjectDialog = () => {
+    setNewProjectTitle('');
+    setCreateProjectError('');
+    setOpenCreateProjectDialog(true);
+  };
+
+  const handleCloseCreateProjectDialog = () => {
+    setOpenCreateProjectDialog(false);
+    setNewProjectTitle('');
+    setCreateProjectError('');
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!newProjectTitle.trim()) {
+      setCreateProjectError('Project title is required');
+      return;
+    }
+
+    setIsCreatingProject(true);
+    setCreateProjectError('');
+
+    try {
+      const result = await projectService.createProject({
+        title: newProjectTitle.trim(),
+        temperature: 0.3
+      });
+
+      if (result.success && result.data) {
+        // Refresh user data to get updated projects list
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setLiveUser(updatedUser);
+          // Emit event to refresh user data globally
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+          // Auto-select newly created project
+          navigate(`/?project=${result.data.id}`);
+        }
+        handleCloseCreateProjectDialog();
+      } else {
+        setCreateProjectError(result.error || 'Failed to create project');
+      }
+    } catch (error: any) {
+      console.error('Error creating project:', error);
+      setCreateProjectError('An error occurred while creating the project.');
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
   const handleDocumentClick = (projectId: string, documentId: string) => {
@@ -566,44 +684,148 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
       {/* Navigation */}
       <Box sx={{ flex: 1, overflowY: 'auto', px: 2.5, py: 1 }}>
-        {navItems.map((item, index) => {
-          const isActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path));
+        {/* Compute URL params once for selection logic */}
+        {(() => {
+          const urlParams = new URLSearchParams(location.search);
+          const currentProjectId = urlParams.get('project');
+          const hasGeneralParam = urlParams.get('general') === 'true';
+
+          // General is active only if explicitly set via URL param
+          const isGeneralActive = hasGeneralParam;
 
           return (
-            <Box
-              key={index}
-              onClick={() => {
-                navigate(item.path);
-                onMobileClose?.();
-              }}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                padding: '9px 11px',
-                borderRadius: '7px',
-                cursor: 'pointer',
-                bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
-                fontWeight: isActive ? 600 : 500,
-                fontSize: '13.5px',
-                transition: 'all 0.12s ease',
-                border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
-                '&:hover': {
-                  bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                  color: isActive ? '#ec4899' : 'white',
-                },
-                mb: 0.5,
-              }}
-            >
-              {item.icon}
-              <span style={{ flex: 1 }}>{item.label}</span>
-            </Box>
+            <>
+              {navItems.map((item, index) => {
+                const isActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path));
+
+                return (
+                  <Box
+                    key={index}
+                    onClick={() => {
+                      navigate(item.path);
+                      onMobileClose?.();
+                    }}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      padding: '9px 11px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                      color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                      fontWeight: isActive ? 600 : 500,
+                      fontSize: '13.5px',
+                      transition: 'all 0.12s ease',
+                      border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                      '&:hover': {
+                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                        color: isActive ? '#ec4899' : 'white',
+                      },
+                      mb: 0.5,
+                    }}
+                  >
+                    {item.icon}
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                  </Box>
+                );
+              })}
+
+              {/* #general option */}
+              <Box
+                onClick={() => handleProjectClick(null)}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  padding: '9px 11px',
+                  borderRadius: '7px',
+                  cursor: 'pointer',
+                  bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                  color: isGeneralActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                  fontWeight: isGeneralActive ? 600 : 500,
+                  fontSize: '13.5px',
+                  transition: 'all 0.12s ease',
+                  border: isGeneralActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                  '&:hover': {
+                    bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                    color: isGeneralActive ? '#ec4899' : 'white',
+                  },
+                  mb: 0.5,
+                }}
+              >
+                <span style={{ flex: 1 }}># general</span>
+              </Box>
+
+              {/* Project list */}
+              {liveUser?.projects && liveUser.projects.length > 0 && (
+                liveUser.projects.map((project: any) => {
+                  const isActive = currentProjectId === project.id;
+
+                  return (
+                    <Box
+                      key={project.id}
+                      onClick={() => handleProjectClick(project.id)}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        padding: '9px 11px',
+                        borderRadius: '7px',
+                        cursor: 'pointer',
+                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                        color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                        fontWeight: isActive ? 600 : 500,
+                        fontSize: '13.5px',
+                        transition: 'all 0.12s ease',
+                        border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                        '&:hover': {
+                          bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                          color: isActive ? '#ec4899' : 'white',
+                        },
+                        mb: 0.5,
+                      }}
+                    >
+                      <span style={{ flex: 1 }} className="truncate">
+                        # {project.title || project.name || 'Untitled Project'}
+                      </span>
+                    </Box>
+                  );
+                })
+              )}
+            </>
           );
-        })}
+        })()}
+
+        {/* New Project button */}
+        <Box
+          onClick={handleOpenCreateProjectDialog}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            padding: '9px 11px',
+            borderRadius: '7px',
+            cursor: 'pointer',
+            bgcolor: 'transparent',
+            color: 'rgba(255, 255, 255, 0.45)',
+            fontWeight: 500,
+            fontSize: '13.5px',
+            transition: 'all 0.12s ease',
+            border: '1px solid transparent',
+            '&:hover': {
+              bgcolor: 'rgba(255, 255, 255, 0.06)',
+              color: 'white',
+            },
+            mb: 0.5,
+          }}
+        >
+          <AddIcon sx={{ fontSize: 18 }} />
+          <span style={{ flex: 1 }}>New Project</span>
+        </Box>
       </Box>
 
-      {/* Chats Section */}
+      {/* Recent Conversations Section */}
       <Box sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -620,13 +842,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           px: 1.5,
           letterSpacing: '0.5px',
           textTransform: 'uppercase',
-        }}>Conversations</Box>
+        }}>Recent Conversations</Box>
         {recentChats.length > 0 ? (
           recentChats.map((chat: any) => (
             <Box
               key={chat.id}
               onClick={() => {
-                navigate(`/?conversation=${chat.id}`);
+                if (chat.project_id) {
+                  navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
+                } else {
+                  navigate(`/?conversation=${chat.id}&general=true`);
+                }
                 onMobileClose?.();
               }}
               sx={{
@@ -951,6 +1177,93 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   return (
     <>
+      {/* Create Project Dialog */}
+      <Dialog
+        open={openCreateProjectDialog}
+        onClose={handleCloseCreateProjectDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: dialogStyles.paper
+        }}
+        BackdropProps={{
+          sx: dialogStyles.backdrop
+        }}
+      >
+        <Box className="relative p-6">
+          <IconButton
+            onClick={handleCloseCreateProjectDialog}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: '#6b7280',
+              '&:hover': {
+                color: '#fff',
+                bgcolor: '#1a1a1a',
+              },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+
+          <h3 className="text-white font-semibold text-lg mb-6">
+            Create New Project
+          </h3>
+          <form onSubmit={handleCreateProject}>
+            <Box className="space-y-4">
+              <TextField
+                autoFocus
+                fullWidth
+                placeholder="Project name"
+                value={newProjectTitle}
+                onChange={(e) => setNewProjectTitle(e.target.value)}
+                error={!!createProjectError}
+                helperText={createProjectError}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    color: 'white',
+                    bgcolor: '#000',
+                    '& fieldset': {
+                      borderColor: '#2a2a2a',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: '#3a3a3a',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#ec4899',
+                    },
+                  },
+                  '& .MuiFormHelperText-root': {
+                    color: '#ef4444',
+                  },
+                }}
+              />
+              <Box className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCloseCreateProjectDialog}
+                  className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingProject || !newProjectTitle.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreatingProject ? (
+                    <CircularProgress size={18} sx={{ color: 'white' }} />
+                  ) : (
+                    'Create Project'
+                  )}
+                </button>
+              </Box>
+            </Box>
+          </form>
+        </Box>
+      </Dialog>
+
       {/* Desktop Sidebar */}
       <Box
         sx={{

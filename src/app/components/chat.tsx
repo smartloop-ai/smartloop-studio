@@ -2,7 +2,7 @@
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { conversationService } from '@/app/services/conversation.service';
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
 
@@ -91,7 +91,8 @@ export default function Chat(props: {
   onAttachmentsClear?: () => void,
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
-  onConversationCreated?: (conversation: any) => void
+  onConversationCreated?: (conversation: any) => void,
+  isGeneral?: boolean
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -114,16 +115,18 @@ export default function Chat(props: {
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
 
   // Save messages to electron-store
-  const saveMessagesToStorage = async (msgs: any[]) => {
-    if (props.conversation?.id) {
-      await storageService.saveMessages(props.conversation.id, msgs);
+  const saveMessagesToStorage = async (msgs: any[], convId?: string) => {
+    const conversationId = convId || props.conversation?.id;
+    if (conversationId) {
+      await storageService.saveMessages(conversationId, msgs);
     }
   };
 
   // Load messages from electron-store
-  const loadMessagesFromStorage = async () => {
-    if (props.conversation?.id) {
-      const stored = await storageService.getMessages(props.conversation.id);
+  const loadMessagesFromStorage = async (convId?: string) => {
+    const conversationId = convId || props.conversation?.id;
+    if (conversationId) {
+      const stored = await storageService.getMessages(conversationId);
       return stored;
     }
     return [];
@@ -242,19 +245,70 @@ export default function Chat(props: {
     // Use attachments from props if available, fallback to ref
     console.log('[Chat sendMessage] props.attachments:', props.attachments);
     console.log('[Chat sendMessage] messageAttachmentsRef.current:', messageAttachmentsRef.current);
-    const currentAttachments = props.attachments && props.attachments.length > 0
+    let currentAttachments = props.attachments && props.attachments.length > 0
       ? [...props.attachments]
       : [...messageAttachmentsRef.current];
+
+    // Add project as attachment if project is selected
+    if (props.project?.id) {
+      const projectAttachment = {
+        file_id: `project-${props.project.id}`,
+        name: props.project.title || props.project.name || 'Project'
+      };
+      // Check if project attachment already exists
+      const hasProjectAttachment = currentAttachments.some(
+        (att: any) => att.file_id === projectAttachment.file_id
+      );
+      if (!hasProjectAttachment) {
+        currentAttachments.push(projectAttachment);
+        console.log('[Chat sendMessage] Added project as attachment:', projectAttachment);
+      }
+    }
     console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
 
-    // Use conversation from props
-    if (!props.conversation?.id) {
-      console.error('No conversation provided. Conversation should be created by parent component.');
-      alert('Please create a conversation first before sending messages.');
-      return;
+    // Create conversation if it doesn't exist (first message)
+    let conversationId = props.conversation?.id;
+
+    if (!conversationId) {
+      console.log('[Chat] No conversation exists, creating new one...');
+      // Generate title from first 5 words of message
+      const words = userMessage.split(' ');
+      const titleWords = words.slice(0, 5).join(' ');
+      const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+
+      try {
+        // Ensure project_id is set if project is selected (not general)
+        const projectId = props.project?.id ? props.project.id : undefined;
+        const conversationResult = await conversationService.createConversation({
+          title: conversationTitle,
+          project_id: projectId
+        });
+
+        if (conversationResult.success && conversationResult.data) {
+          conversationId = conversationResult.data.id;
+          console.log('[Chat] Created new conversation:', conversationId);
+
+          // Notify parent component
+          if (props.onConversationCreated) {
+            props.onConversationCreated(conversationResult.data);
+          }
+        } else {
+          console.error('[Chat] Failed to create conversation:', conversationResult.error);
+          alert('Failed to create conversation. Please try again.');
+          sendingMessageRef.current = false;
+          setIsLoading(false);
+          return;
+        }
+      } catch (error: any) {
+        console.error('[Chat] Error creating conversation:', error);
+        alert('Failed to create conversation. Please try again.');
+        sendingMessageRef.current = false;
+        setIsLoading(false);
+        return;
+      }
     }
 
-    console.log('Using conversation ID:', props.conversation.id);
+    console.log('Using conversation ID:', conversationId);
 
     // Add user message to the chat (OpenAI format)
     const userMsg = {
@@ -271,8 +325,8 @@ export default function Chat(props: {
     setMessages(updatedMessages);
 
     // Add message to conversation locally (don't sync yet - wait for response)
-    if (props.conversation?.id) {
-      await conversationService.addMessageToConversation(props.conversation.id, userMsg);
+    if (conversationId) {
+      await conversationService.addMessageToConversation(conversationId, userMsg);
     }
 
     setFormData({ message: "" });
@@ -311,7 +365,7 @@ export default function Chat(props: {
       console.log('[Chat sendMessage] Current project:', {
         projectId: projectId,
         projectObject: props.project,
-        conversationId: props.conversation.id
+        conversationId: conversationId
       });
 
       // Prepare the message object with attachments
@@ -333,7 +387,7 @@ export default function Chat(props: {
         model: 'slp-model-001',
         messages: [messageObject],
         stream: true,
-        conversation_id: props.conversation.id
+        conversation_id: conversationId
       } as any) as any;
 
       // Process the stream
@@ -398,14 +452,14 @@ export default function Chat(props: {
 
         // Add the completed response message to conversation and sync entire conversation to server
         const responseMessage = finalMessages.find((msg: any) => msg.id === responseId);
-        if (responseMessage && props.conversation?.id) {
-          conversationService.addMessageToConversation(props.conversation.id, responseMessage).then(() => {
+        if (responseMessage && conversationId) {
+          conversationService.addMessageToConversation(conversationId, responseMessage).then(() => {
             // Now sync the entire conversation (both user message + assistant response) once
-            conversationService.syncMessagesToServer(props.conversation.id).then(() => {
+            conversationService.syncMessagesToServer(conversationId).then(() => {
               console.log('[Chat] Synced conversation after complete exchange');
               // Dispatch event to update sidebar
               window.dispatchEvent(new CustomEvent('conversationUpdated', {
-                detail: { conversationId: props.conversation.id }
+                detail: { conversationId: conversationId }
               }));
             });
           });
@@ -490,44 +544,61 @@ export default function Chat(props: {
   // Load messages from electron-store when conversation is available or project changes
   useEffect(() => {
     const conversationId = props.conversation?.id;
-    if (conversationId) {
-      const currentProjectId = props.project?.id;
+    const currentProjectId = props.project?.id;
 
-      // Reload if the project ID or conversation ID changed
-      if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
-        console.log('Conversation or project changed, loading new messages');
-        currentProjectIdRef.current = currentProjectId;
-        currentConversationIdRef.current = conversationId;
+    // Reload if the project ID or conversation ID changed
+    if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
+      console.log('Conversation or project changed, clearing and loading new messages', {
+        oldProjectId: currentProjectIdRef.current,
+        newProjectId: currentProjectId,
+        oldConversationId: currentConversationIdRef.current,
+        newConversationId: conversationId
+      });
 
-        // Clear messages first to ensure clean state
-        setMessages([]);
+      // Clear messages immediately when project or conversation changes
+      setMessages([]);
+      setShowTips(false);
 
-        // Load messages for the new conversation (async)
-        loadMessagesFromStorage().then(storedMessages => {
+      // Update refs
+      currentProjectIdRef.current = currentProjectId;
+      currentConversationIdRef.current = conversationId;
+
+      // Load messages for the new conversation (async) only if conversation exists
+      if (conversationId) {
+        loadMessagesFromStorage(conversationId).then(storedMessages => {
           console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
           if (storedMessages.length > 0) {
             setMessages(storedMessages);
             setShowTips(false);
           } else {
             setMessages([]);
+            // Only show tips if conversation exists but has no messages
             setShowTips(true);
           }
         });
+      } else if (props.project?.id || props.isGeneral) {
+        // Project selected or general mode but no conversation - show tips
+        setShowTips(true);
+      } else {
+        // No conversation, no project, and not in general mode - don't show tips
+        setShowTips(false);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.conversation, props.project?.id]);
+  }, [props.conversation, props.project?.id, props.isGeneral]);
 
   useEffect(() => {
-    // Show tips if no messages and no initial message is being sent
-    if (messages.length === 0 && !props.initialMessage && !messageSent) {
+    // Show tips only if there are no messages (tied to number of messages)
+    // Tips should show when: (conversation exists OR project selected OR general mode) AND messages.length === 0
+    if ((props.conversation?.id || props.project?.id || props.isGeneral) && messages.length === 0) {
       setTimeout(() => {
         setShowTips(true);
       }, 100);
-    } else if (messages.length > 0 || props.initialMessage || messageSent) {
+    } else {
+      // Hide tips if there are messages or no conversation/project/general
       setShowTips(false);
     }
-  }, [messages.length, props.initialMessage, messageSent]);
+  }, [messages.length, props.conversation?.id, props.project?.id, props.isGeneral]);
 
   // Cleanup: abort any ongoing requests when component unmounts
   useEffect(() => {
@@ -900,9 +971,9 @@ export default function Chat(props: {
             <div className="flex flex-col gap-6 w-full">
               {displayMessages && displayMessages.map((msg: any) => {
                 return (
-                  <>
+                  <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
-                      <Box key={msg.id} className="flex items-start gap-3 max-w-3xl">
+                      <Box className="flex items-start gap-3 max-w-3xl">
                         <Box className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 relative">
                           <Box
                             className="w-3 h-3 rounded-full bg-gradient-to-br from-pink-500 to-purple-500"
@@ -990,39 +1061,36 @@ export default function Chat(props: {
                           </Box>
                         </Box>
                       </Box>
-                      : <Box key={msg.id} className="flex justify-end">
+                      : <Box className="flex justify-end">
                         <Box className="flex items-start gap-3 max-w-3xl">
                           <Box className="flex flex-col gap-2 flex-1">
-                            {/* Attachments bubble - shown above message if present */}
+                            {/* Attachments - shown above message if present */}
                             {msg.attachments && msg.attachments.filter((attachment: any) => attachment.file_id?.startsWith('file-')).length > 0 && (
-                              <div className="border border-pink-500/30 rounded-sm overflow-hidden bg-pink-500/10">
-                                <Box className="flex flex-wrap">
-                                  {msg.attachments
-                                    .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
-                                    .map((attachment: any, idx: number) => (
+                              <Box className="flex flex-wrap gap-2 mb-2 justify-end">
+                                {msg.attachments
+                                  .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
+                                  .map((attachment: any, idx: number) => (
+                                    <Box
+                                      key={idx}
+                                      className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-gray-800/60 rounded-sm border border-gray-700/50"
+                                    >
                                       <Box
-                                        key={idx}
-                                        className="w-full flex items-center gap-2 p-3 text-xs bg-pink-500/20 border border-pink-500/30 rounded-sm"
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: 24,
+                                          height: 24,
+                                          borderRadius: '50%',
+                                          bgcolor: 'rgba(236, 72, 153, 0.15)',
+                                        }}
                                       >
-                                        <Box
-                                          sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            width: '32px',
-                                            height: '32px',
-                                            borderRadius: '50%',
-                                            bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                            border: '1px solid rgba(236, 72, 153, 0.4)',
-                                          }}
-                                        >
-                                          <InsertDriveFileIcon sx={{ fontSize: 14, color: '#ec4899' }} />
-                                        </Box>
-                                        <span className="text-pink-300">{attachment.name || 'Document attached'}</span>
+                                        <InsertDriveFileIcon sx={{ fontSize: 12, color: '#ec4899' }} />
                                       </Box>
-                                    ))}
-                                </Box>
-                              </div>
+                                      <span className="text-gray-300 truncate max-w-[150px]">{attachment.name || 'Document'}</span>
+                                    </Box>
+                                  ))}
+                              </Box>
                             )}
 
                             {/* Message bubble */}
@@ -1041,7 +1109,7 @@ export default function Chat(props: {
                       </Box>
                     }
 
-                  </>
+                  </React.Fragment>
                 )
               })
               }

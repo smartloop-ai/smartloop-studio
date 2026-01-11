@@ -2,9 +2,10 @@
 
 import '../styles/home.css';
 import '../styles/mentions.css';
-import { useState, useEffect, useRef } from 'react';
+import '../styles/markdown-editor.css';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress } from '@mui/material';
+import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, Switch, TextField, Tooltip } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -21,9 +22,19 @@ import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
+import AddBoxIcon from '@mui/icons-material/AddBox';
+import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import WarningIcon from '@mui/icons-material/Warning';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import DeleteIcon from '@mui/icons-material/Delete';
 import FileAttacher from '@/app/components/file-attacher';
+import DocumentUploadDialog from '@/app/components/document-upload-dialog';
+import SimpleMDE from 'react-simplemde-editor';
+import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
+import { storageService } from '@/app/services/storage.service';
+import { projectService } from '@/app/services/project.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT } from '@/app/constants';
 import Chat from '@/app/components/chat';
@@ -47,9 +58,31 @@ export default function Home() {
   const [conversation, setConversation] = useState<any>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
+  const [deleteProjectError, setDeleteProjectError] = useState('');
+  const [activeTab, setActiveTab] = useState(0);
+  const [projectConversations, setProjectConversations] = useState<any[]>([]);
+  const [openDocumentUploadDialog, setOpenDocumentUploadDialog] = useState(false);
+  const [projectRules, setProjectRules] = useState('');
+  const [projectMemory, setProjectMemory] = useState(true);
+  const [isSavingRules, setIsSavingRules] = useState(false);
+  const [currentProjectData, setCurrentProjectData] = useState<any>(null);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedRulesRef = useRef<string>('');
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
+  const [editedProjectName, setEditedProjectName] = useState('');
+  const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+  const [openDeleteDocDialog, setOpenDeleteDocDialog] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<any>(null);
+  const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+  const [deleteDocError, setDeleteDocError] = useState('');
 
 
   const getGreeting = () => {
@@ -60,6 +93,51 @@ export default function Home() {
       return 'Good Afternoon';
     } else {
       return 'Good Evening';
+    }
+  };
+
+  // Document polling for processing status
+  const startDocumentPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser({ ...updatedUser });
+
+          // Check if all documents are processed
+          let hasProcessing = false;
+          (updatedUser.projects || []).forEach((project: any) => {
+            if (!selectedProject || project.id === selectedProject.id) {
+              (project.documents || []).forEach((doc: any) => {
+                if (doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0)) {
+                  hasProcessing = true;
+                }
+              });
+            }
+          });
+
+          // Stop polling if nothing is processing
+          if (!hasProcessing) {
+            clearInterval(interval);
+            setPollingInterval(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error polling for document status:', error);
+      }
+    }, 3000);
+
+    setPollingInterval(interval);
+  };
+
+  const stopDocumentPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
     }
   };
 
@@ -97,6 +175,37 @@ export default function Home() {
     };
   }, [conversation, navigate]);
 
+  // Listen for document upload events to trigger polling
+  useEffect(() => {
+    const handleDocumentUploaded = async () => {
+      try {
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+          startDocumentPolling();
+        }
+      } catch (error) {
+        console.error('Error refreshing after document upload:', error);
+      }
+    };
+
+    window.addEventListener('documentUploaded', handleDocumentUploaded);
+
+    return () => {
+      window.removeEventListener('documentUploaded', handleDocumentUploaded);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
+
   // Handle conversation ID from URL parameter
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
@@ -133,6 +242,7 @@ export default function Home() {
               console.log('Setting showChat to true');
               setShowChat(true);
             }
+            setActiveTab(0); // Switch to Chat tab when conversation is selected
             return;
           }
 
@@ -143,6 +253,7 @@ export default function Home() {
           });
           setConversation(foundConversation);
           setShowChat(true);
+          setActiveTab(0); // Switch to Chat tab when conversation is selected
 
           // Set the selected project based on the conversation's project_id
           if (foundConversation.project_id) {
@@ -172,6 +283,17 @@ export default function Home() {
       };
 
       loadConversation();
+    } else if (!urlConversationId && user) {
+      // No conversation in URL - always clear conversation state for welcome screen
+      if (conversation) {
+        setConversation(null);
+      }
+      if (showChat) {
+        setShowChat(false);
+      }
+      if (chatMessage) {
+        setChatMessage(null);
+      }
     }
     // Don't clear showChat when URL param is missing - it's managed explicitly
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -188,6 +310,117 @@ export default function Home() {
       return () => clearTimeout(timer);
     }
   }, [chatMessage, showChat, conversation]);
+
+  // Handle project query param from URL
+  useEffect(() => {
+    if (user) {
+      const projectId = searchParams.get('project');
+      const urlConversationId = searchParams.get('conversation');
+      const isGeneral = searchParams.get('general') === 'true' || (!projectId && !urlConversationId);
+
+      // Always reset conversation when switching channels (project/general)
+      const previousProjectId = selectedProject?.id || (isGeneral ? 'general' : null);
+      const currentProjectId = projectId || (isGeneral ? 'general' : null);
+
+      if (projectId && projectId !== 'general') {
+        const project = user.projects?.find((p: any) => p.id === projectId);
+        if (project) {
+          // Reset state when switching projects
+          if (!selectedProject || selectedProject.id !== project.id) {
+            setSelectedProject(project);
+            setActiveTab(0); // Reset to Chat tab
+            setShowChat(false);
+            setConversation(null);
+            setChatMessage(null);
+            setMessage('');
+            setMessageAttachments([]);
+
+            // If no conversation in URL, don't show chat - let user type first
+          }
+        } else {
+          setSelectedProject(null);
+        }
+      } else if (isGeneral) {
+        // General channel - reset state when switching from project
+        if (selectedProject || previousProjectId !== 'general') {
+          setSelectedProject(null);
+          setActiveTab(0); // Reset to Chat tab
+          setShowChat(false);
+          setConversation(null);
+          setChatMessage(null);
+          setMessage('');
+          setMessageAttachments([]);
+
+          // If no conversation in URL, don't auto-select or show chat - let user choose from list or type
+        }
+      }
+    }
+  }, [searchParams, user]);
+
+  // Load project data when selected
+  useEffect(() => {
+    if (selectedProject && user) {
+      const project = user.projects?.find((p: any) => p.id === selectedProject.id);
+      if (project) {
+        setCurrentProjectData(project);
+        setProjectRules(project.config?.rules || '');
+        setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
+        lastSavedRulesRef.current = project.config?.rules || '';
+      }
+    } else {
+      setCurrentProjectData(null);
+      setProjectRules('');
+      setProjectMemory(true);
+    }
+  }, [selectedProject, user]);
+
+  // Filter conversations by selected project - show when project is selected (even without active conversation)
+  useEffect(() => {
+    const loadConversations = async () => {
+      const allConversations = await storageService.getConversations();
+
+      if (!selectedProject) {
+        // Show only conversations for #general (project_id is null or undefined)
+        const generalConversations = (allConversations || []).filter(
+          (conv: any) => !conv.project_id || conv.project_id === null || conv.project_id === undefined
+        );
+        setProjectConversations(generalConversations);
+      } else {
+        // Filter by project - check both project_id and also handle null/undefined
+        const filtered = (allConversations || []).filter(
+          (conv: any) => {
+            // Match if project_id exactly matches selected project
+            return conv.project_id === selectedProject.id;
+          }
+        );
+        console.log('[Home] Filtered conversations for project:', {
+          projectId: selectedProject.id,
+          projectName: selectedProject.title || selectedProject.name,
+          totalConversations: allConversations?.length || 0,
+          filteredCount: filtered.length,
+          allConversations: allConversations?.map((c: any) => ({ id: c.id, project_id: c.project_id, title: c.title }))
+        });
+        setProjectConversations(filtered);
+      }
+    };
+
+    loadConversations();
+
+    // Listen for conversation updates
+    const handleConversationUpdate = () => {
+      loadConversations();
+    };
+
+    window.addEventListener('conversationCreated', handleConversationUpdate);
+    window.addEventListener('conversationUpdated', handleConversationUpdate);
+    window.addEventListener('conversationDeleted', handleConversationUpdate);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleConversationUpdate);
+      window.removeEventListener('conversationUpdated', handleConversationUpdate);
+      window.removeEventListener('conversationDeleted', handleConversationUpdate);
+    };
+  }, [selectedProject]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -217,9 +450,16 @@ export default function Home() {
       return;
     }
 
+    // Show all projects when search is empty (just typed /)
+    // Otherwise filter by search term
+    const searchTerm = search.toLowerCase().trim();
+
     const filteredProjects = user.projects.filter((project: any) => {
       const projectName = (project.title || project.name || '').toLowerCase();
-      return projectName.includes(search.toLowerCase());
+      // If no search term, show all projects
+      if (!searchTerm) return true;
+      // Otherwise filter by search term
+      return projectName.includes(searchTerm);
     });
 
     const suggestions: SuggestionDataItem[] = filteredProjects.map((project: any) => ({
@@ -231,22 +471,206 @@ export default function Home() {
   };
 
   // Render mention suggestions
-  const renderProjectSuggestion = (suggestion: SuggestionDataItem, _search: string, highlightedDisplay: React.ReactNode) => {
-    const project = user?.projects?.find((p: any) => p.id === suggestion.id);
-    const docsCount = project?.documents?.length || 0;
-
+  const renderProjectSuggestion = (_suggestion: SuggestionDataItem, _search: string, highlightedDisplay: React.ReactNode) => {
     return (
       <div className="mention-project-item">
         <FolderOpenIcon className="mention-project-icon" />
-        <div className="mention-project-info">
-          <div className="mention-project-name">{highlightedDisplay}</div>
-          <div className="mention-project-docs">{docsCount} docs</div>
-        </div>
+        <div className="mention-project-name">{highlightedDisplay}</div>
       </div>
     );
   };
 
   // Handle mention changes
+  // SimpleMDE editor options
+  const editorOptions = useMemo(() => {
+    return {
+      spellChecker: false,
+      placeholder: "Add project-specific rules and guidelines that will be included with every message...",
+      status: false,
+      toolbar: [
+        "bold", "italic", "heading", "|",
+        "quote", "unordered-list", "ordered-list", "|",
+        "link", "code", "|",
+        "preview", "guide"
+      ] as any,
+      minHeight: "200px",
+      maxHeight: "400px",
+    } as any;
+  }, []);
+
+  const handleProjectChange = (projectId: string | null) => {
+    // Reset chat state when switching projects
+    setShowChat(false);
+    setConversation(null);
+    setChatMessage(null);
+    setMessage('');
+    setMessageAttachments([]);
+    setActiveTab(0); // Reset to Chat tab
+
+    if (projectId === null || projectId === 'general') {
+      setSelectedProject(null);
+      setSearchParams({ general: 'true' });
+      // Don't show chat immediately - let user type first
+    } else {
+      const project = user?.projects?.find((p: any) => p.id === projectId);
+      if (project) {
+        setSelectedProject(project);
+        setSearchParams({ project: projectId });
+        // Don't show chat immediately - let user type first
+      }
+    }
+  };
+
+  const handleOpenUploadDocumentDialog = () => {
+    setOpenDocumentUploadDialog(true);
+  };
+
+  const handleCloseUploadDocumentDialog = () => {
+    setOpenDocumentUploadDialog(false);
+  };
+
+  const handleOpenDeleteDocDialog = (doc: any) => {
+    setDocumentToDelete(doc);
+    setDeleteDocConfirm('');
+    setDeleteDocError('');
+    setOpenDeleteDocDialog(true);
+  };
+
+  const handleCloseDeleteDocDialog = () => {
+    setOpenDeleteDocDialog(false);
+    setDocumentToDelete(null);
+    setDeleteDocConfirm('');
+    setDeleteDocError('');
+  };
+
+  const handleDeleteDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (deleteDocConfirm.toLowerCase() !== 'delete') {
+      return;
+    }
+
+    if (!documentToDelete || !selectedProject) return;
+
+    setIsDeletingDoc(true);
+    setDeleteDocError('');
+
+    try {
+      // Check if this is the only document in the project
+      const project = user?.projects?.find((p: any) => p.id === selectedProject.id);
+      const isOnlyDocument = project && project.documents && project.documents.length === 1;
+
+      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
+      const response = await userService.makeAuthenticatedRequest(url, {
+        method: 'DELETE',
+      });
+
+      if (response && (response.status === 200 || response.status === 204)) {
+        // If this was the only document, delete the project as well
+        if (isOnlyDocument) {
+          const deleteResult = await projectService.deleteProject(selectedProject.id, user?.email);
+
+          if (deleteResult.success) {
+            const updatedUser = await userService.get();
+            if (updatedUser) {
+              setUser(updatedUser);
+            }
+            // Navigate away since project is deleted
+            navigate('/');
+            setSelectedProject(null);
+          }
+        } else {
+          // Just refresh user data for document deletion
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
+        }
+
+        handleCloseDeleteDocDialog();
+      } else {
+        setDeleteDocError('Failed to delete document. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      setDeleteDocError('An error occurred while deleting the document.');
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
+
+  const autoSaveProjectRules = async (rules: string) => {
+    if (!selectedProject || !rules) return;
+
+    // Skip if the value hasn't changed from last save
+    if (rules === lastSavedRulesRef.current) {
+      return;
+    }
+
+    setIsSavingRules(true);
+
+    const url = `${API_ENDPOINT}/projects/${selectedProject.id}/config`;
+    const payload = {
+      rules: rules,
+      memory: projectMemory
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userService.token()}`
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 200) {
+        lastSavedRulesRef.current = rules;
+        // Refresh user data
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+      }
+    } catch (ex: any) {
+      console.error('Error saving project rules:', ex);
+    } finally {
+      setIsSavingRules(false);
+    }
+  };
+
+  const handleMemoryToggle = async (newMemoryValue: boolean) => {
+    setProjectMemory(newMemoryValue);
+
+    if (!selectedProject) return;
+
+    const url = `${API_ENDPOINT}/projects/${selectedProject.id}/config`;
+    const payload = {
+      rules: projectRules || '',
+      memory: newMemoryValue
+    };
+
+    try {
+      await fetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userService.token()}`
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // Refresh user data
+      const updatedUser = await userService.get();
+      if (updatedUser) {
+        setUser(updatedUser);
+      }
+    } catch (ex: any) {
+      console.error('Error updating memory setting:', ex);
+    }
+  };
+
   const handleMentionChange = (_event: any, newValue: string, _newPlainTextValue: string, mentions: any[]) => {
     setMessage(newValue);
 
@@ -260,8 +684,10 @@ export default function Home() {
       .filter(Boolean);
 
     // Always use the last mentioned project as the selected one
+    // Don't set URL params - just set the project state so user stays on welcome screen
     if (projectMentions.length > 0) {
-      setSelectedProject(projectMentions[projectMentions.length - 1]);
+      const project = projectMentions[projectMentions.length - 1];
+      setSelectedProject(project);
     } else {
       setSelectedProject(null);
     }
@@ -269,9 +695,9 @@ export default function Home() {
 
   const handleSendMessage = async () => {
     if (message.trim()) {
-      // Remove @mention markup before sending the message
-      // The markup format is: @[display](id)
-      const cleanMessage = message.replace(/@\[([^\]]+)\]\([^)]+\)/g, '').trim();
+      // Remove /command markup before sending the message
+      // The markup format is: /[display](id)
+      const cleanMessage = message.replace(/\/\[([^\]]+)\]\([^)]+\)/g, '').trim();
 
       let activeConversationId = conversation?.id;
 
@@ -299,9 +725,11 @@ export default function Home() {
       if (!activeConversationId) {
         // Create a new conversation with the selected project
         try {
+          // Ensure project_id is set if project is selected (not general)
+          const projectId = selectedProject?.id ? selectedProject.id : undefined;
           const conversationResult = await conversationService.createConversation({
             title: conversationTitle,
-            project_id: selectedProject?.id || undefined
+            project_id: projectId
           });
 
           if (conversationResult.success && conversationResult.data) {
@@ -318,8 +746,12 @@ export default function Home() {
             setMessage('');
             setClearAttachmentTrigger(prev => prev + 1);
 
-            // Navigate to conversation page
-            navigate(`/?conversation=${activeConversationId}`);
+            // Navigate to conversation page with project if selected
+            if (projectId) {
+              navigate(`/?conversation=${activeConversationId}&project=${projectId}`);
+            } else {
+              navigate(`/?conversation=${activeConversationId}&general=true`);
+            }
           } else {
             console.error('Failed to create conversation');
             return;
@@ -374,6 +806,152 @@ export default function Home() {
       console.error('Error deleting conversation:', error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation(); // Prevent navigation when clicking delete
+
+    try {
+      const result = await conversationService.deleteConversation(convId);
+
+      if (result.success) {
+        // Update local list
+        setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+
+        // If the deleted conversation was the current one, navigate away
+        if (conversation?.id === convId) {
+          if (selectedProject) {
+            navigate(`/?project=${selectedProject.id}`);
+          } else {
+            navigate('/?general=true');
+          }
+          setConversation(null);
+          setChatMessage(null);
+          setMessage('');
+        }
+      } else {
+        console.error('Failed to delete conversation:', result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+    }
+  };
+
+  const handleRenameProject = async () => {
+    if (!selectedProject || !editedProjectName.trim()) {
+      setIsEditingProjectName(false);
+      return;
+    }
+
+    const newName = editedProjectName.trim();
+    if (newName === (selectedProject.title || selectedProject.name)) {
+      setIsEditingProjectName(false);
+      return;
+    }
+
+    try {
+      const result = await projectService.updateProject(selectedProject.id, { title: newName });
+
+      if (result.success) {
+        // Update local state
+        setSelectedProject({ ...selectedProject, title: newName, name: newName });
+
+        // Refresh user data to sync with sidebar
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+      } else {
+        console.error('Failed to rename project:', result.error);
+      }
+    } catch (error) {
+      console.error('Error renaming project:', error);
+    }
+
+    setIsEditingProjectName(false);
+  };
+
+  const handleStartNewConversation = () => {
+    // Clear current conversation to start fresh
+    setConversation(null);
+    setChatMessage(null);
+    setMessage('');
+
+    // Update URL to remove conversation param but keep project/general context
+    if (selectedProject) {
+      navigate(`/?project=${selectedProject.id}`);
+    } else {
+      navigate(`/?general=true`);
+    }
+  };
+
+  const handleDeleteProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedProject) return;
+
+    if (deleteProjectConfirm.toLowerCase() !== 'delete') {
+      setDeleteProjectError('Please type "delete" to confirm');
+      return;
+    }
+
+    setIsDeletingProject(true);
+    setDeleteProjectError('');
+
+    try {
+      // Delete all conversations for this project first
+      const allConversations = await storageService.getConversations();
+      const projectConversations = (allConversations || []).filter(
+        (conv: any) => conv.project_id === selectedProject.id
+      );
+
+      // Delete each conversation
+      for (const conv of projectConversations) {
+        try {
+          await conversationService.deleteConversation(conv.id);
+        } catch (error) {
+          console.error(`Error deleting conversation ${conv.id}:`, error);
+        }
+      }
+
+      // Delete the project using project service (this also cleans up local storage)
+      const result = await projectService.deleteProject(selectedProject.id, user?.email);
+
+      if (result.success) {
+        // Refresh user data
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
+
+        // Dispatch projectDeleted event to update sidebar
+        window.dispatchEvent(new CustomEvent('projectDeleted', {
+          detail: { projectId: selectedProject.id }
+        }));
+
+        // Close dialog
+        setShowDeleteProjectDialog(false);
+        setDeleteProjectConfirm('');
+
+        // Navigate to home and reset all state
+        navigate('/');
+        setShowChat(false);
+        setConversation(null);
+        setChatMessage(null);
+        setMessage('');
+        setSelectedProject(null);
+        setMessageAttachments([]);
+        setUploadFiles([]);
+      } else {
+        setDeleteProjectError(result.error || 'Failed to delete project. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      setDeleteProjectError(error.message || 'An error occurred while deleting the project.');
+    } finally {
+      setIsDeletingProject(false);
     }
   };
 
@@ -829,6 +1407,26 @@ export default function Home() {
             </Box>
           </Dialog>
 
+          {/* Document Upload Dialog */}
+          <DocumentUploadDialog
+            open={openDocumentUploadDialog}
+            onClose={handleCloseUploadDocumentDialog}
+            onSuccess={() => {
+              // Refresh user data
+              const refreshUser = async () => {
+                const updatedUser = await userService.get();
+                if (updatedUser) {
+                  setUser(updatedUser);
+                }
+              };
+              refreshUser();
+            }}
+            user={user}
+            setUser={setUser}
+            preselectedProjectId={selectedProject?.id}
+            disableProjectSelection={true}
+          />
+
           {/* Delete Conversation Confirmation Dialog */}
           <Dialog
             open={showDeleteDialog}
@@ -875,28 +1473,245 @@ export default function Home() {
             </Box>
           </Dialog>
 
+          {/* Delete Project Confirmation Dialog */}
+          <Dialog
+            open={showDeleteProjectDialog}
+            onClose={() => !isDeletingProject && setShowDeleteProjectDialog(false)}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{
+              sx: dialogStyles.paper
+            }}
+            BackdropProps={{
+              sx: dialogStyles.backdrop
+            }}
+          >
+            <Box className="p-6">
+              <Box className="flex items-center justify-between mb-4">
+                <h3 className="text-white text-xl font-semibold">Delete Project</h3>
+                <IconButton
+                  onClick={() => !isDeletingProject && setShowDeleteProjectDialog(false)}
+                  sx={{
+                    color: '#6b7280',
+                    '&:hover': {
+                      color: 'white',
+                      bgcolor: '#1a1a1a'
+                    },
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+
+              <form onSubmit={handleDeleteProject}>
+                <Box className="space-y-4">
+                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <Box>
+                      <Typography className="text-red-400 font-medium mb-1">
+                        Warning: This action cannot be undone
+                      </Typography>
+                      <Typography className="text-gray-300 text-sm">
+                        Deleting "{selectedProject?.title || selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box>
+                    <Typography className="text-gray-300 text-sm mb-3">
+                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
+                    </Typography>
+                    <TextField
+                      autoComplete="off"
+                      fullWidth
+                      value={deleteProjectConfirm}
+                      onChange={(e) => {
+                        setDeleteProjectConfirm(e.target.value);
+                        setDeleteProjectError('');
+                      }}
+                      placeholder="Type 'delete' to confirm"
+                      disabled={isDeletingProject}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          color: 'white',
+                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          '& fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#ec4899',
+                          },
+                        },
+                      }}
+                    />
+                    {deleteProjectError && (
+                      <Typography className="text-red-400 text-sm mt-2">
+                        {deleteProjectError}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Box className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteProjectDialog(false)}
+                      disabled={isDeletingProject}
+                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDeletingProject || deleteProjectConfirm.toLowerCase() !== 'delete'}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDeletingProject ? (
+                        <CircularProgress size={18} sx={{ color: 'white' }} />
+                      ) : (
+                        <>
+                          <DeleteOutlineIcon fontSize="small" />
+                          Delete Project
+                        </>
+                      )}
+                    </button>
+                  </Box>
+                </Box>
+              </form>
+            </Box>
+          </Dialog>
+
+          {/* Delete Document Confirmation Dialog */}
+          <Dialog
+            open={openDeleteDocDialog}
+            onClose={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{
+              sx: dialogStyles.paper
+            }}
+            BackdropProps={{
+              sx: dialogStyles.backdrop
+            }}
+          >
+            <Box className="p-6">
+              <Box className="flex items-center justify-between mb-4">
+                <h3 className="text-white text-xl font-semibold">Delete Document</h3>
+                <IconButton
+                  onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
+                  sx={{
+                    color: '#6b7280',
+                    '&:hover': {
+                      color: 'white',
+                      bgcolor: '#1a1a1a'
+                    },
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+
+              <form onSubmit={handleDeleteDocument}>
+                <Box className="space-y-4">
+                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <Box>
+                      <Typography className="text-red-400 font-medium mb-1">
+                        Warning: This action cannot be undone
+                      </Typography>
+                      <Typography className="text-gray-300 text-sm">
+                        Deleting "{documentToDelete?.filename || documentToDelete?.name || 'this document'}" will permanently remove it from your project.
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box>
+                    <Typography className="text-gray-300 text-sm mb-3">
+                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
+                    </Typography>
+                    <TextField
+                      autoComplete="off"
+                      fullWidth
+                      value={deleteDocConfirm}
+                      onChange={(e) => {
+                        setDeleteDocConfirm(e.target.value);
+                        setDeleteDocError('');
+                      }}
+                      placeholder="Type 'delete' to confirm"
+                      disabled={isDeletingDoc}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          color: 'white',
+                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          '& fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#ec4899',
+                          },
+                        },
+                      }}
+                    />
+                    {deleteDocError && (
+                      <Typography className="text-red-400 text-sm mt-2">
+                        {deleteDocError}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Box className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCloseDeleteDocDialog}
+                      disabled={isDeletingDoc}
+                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDeletingDoc || deleteDocConfirm.toLowerCase() !== 'delete'}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDeletingDoc ? (
+                        <CircularProgress size={18} sx={{ color: 'white' }} />
+                      ) : (
+                        <>
+                          <DeleteOutlineIcon fontSize="small" />
+                          Delete Document
+                        </>
+                      )}
+                    </button>
+                  </Box>
+                </Box>
+              </form>
+            </Box>
+          </Dialog>
+
           <Box className="min-h-screen bg-black text-white">
             {(() => {
-              return showChat && conversation;
+              // Show chat detail view when: showChat is true, we have a conversation, or project selected from sidebar (URL param)
+              const urlConversationId = searchParams.get('conversation');
+              const urlProjectId = searchParams.get('project');
+              return showChat || conversation || urlConversationId || urlProjectId;
             })() ? (
-              // Chat View
+              // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
-                <Box className="flex-none px-4 py-4 md:py-6 border-b border-gray-900">
-                  {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-                  {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
+                <Box className="flex-none px-4 md:px-8 lg:px-12 py-4 md:py-6 border-b border-gray-900">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
                       <button
                         onClick={() => {
-                          // Navigate to home without conversation parameter
                           navigate('/');
-
-                          // Clear all states
                           setShowChat(false);
                           setChatMessage(null);
                           setMessage('');
-                          setSelectedProject(null);
                           setConversation(null);
                           setMessageAttachments([]);
                           setUploadFiles([]);
@@ -908,218 +1723,656 @@ export default function Home() {
                         <ArrowBackIosIcon fontSize="small" />
                       </button>
                       <Box className="flex-1 min-w-0">
-                        <div className="text-xl md:text-2xl font-bold text-white truncate">
-                          {conversation.title}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1 text-sm text-gray-400">
-                          <span>Conversation with</span>
-                          {selectedProject ? (
-                            <span className="text-pink-400 font-medium">@{selectedProject.title || selectedProject.name}</span>
-                          ) : (
-                            <span className="text-pink-400 font-medium">@general</span>
-                          )}
-                        </div>
+                        {isEditingProjectName && selectedProject ? (
+                          <TextField
+                            autoFocus
+                            value={editedProjectName}
+                            onChange={(e) => setEditedProjectName(e.target.value)}
+                            onBlur={handleRenameProject}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleRenameProject();
+                              } else if (e.key === 'Escape') {
+                                setIsEditingProjectName(false);
+                              }
+                            }}
+                            size="small"
+                            sx={{
+                              '& .MuiOutlinedInput-root': {
+                                color: 'white',
+                                fontSize: '1.25rem',
+                                fontWeight: 'bold',
+                                bgcolor: 'transparent',
+                                '& fieldset': {
+                                  borderColor: '#ec4899',
+                                },
+                                '&:hover fieldset': {
+                                  borderColor: '#ec4899',
+                                },
+                                '&.Mui-focused fieldset': {
+                                  borderColor: '#ec4899',
+                                },
+                              },
+                            }}
+                          />
+                        ) : (
+                          <div
+                            className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
+                            onClick={() => {
+                              if (selectedProject) {
+                                setEditedProjectName(selectedProject.title || selectedProject.name || '');
+                                setIsEditingProjectName(true);
+                              }
+                            }}
+                            title={selectedProject ? 'Click to rename' : undefined}
+                          >
+                            {selectedProject ? (selectedProject.title || selectedProject.name) : 'General'}
+                          </div>
+                        )}
                       </Box>
                     </Box>
-                    <IconButton
-                      onClick={() => setShowDeleteDialog(true)}
-                      sx={{
-                        color: '#9ca3af',
-                        '&:hover': {
-                          color: '#ef4444',
-                          bgcolor: 'rgba(239, 68, 68, 0.1)',
-                        },
-                      }}
-                      title="Delete conversation"
-                    >
-                      <DeleteOutlineIcon />
-                    </IconButton>
+                    <Box className="flex items-center gap-2">
+                      {/* Single Delete Button - deletes project and all conversations when project is selected */}
+                      {selectedProject && (
+                        <IconButton
+                          onClick={() => {
+                            setDeleteProjectConfirm('');
+                            setDeleteProjectError('');
+                            setShowDeleteProjectDialog(true);
+                          }}
+                          sx={{
+                            color: '#9ca3af',
+                            '&:hover': {
+                              color: '#ef4444',
+                              bgcolor: 'rgba(239, 68, 68, 0.1)',
+                            },
+                          }}
+                          title="Delete project and all conversations"
+                        >
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      )}
+                    </Box>
                   </Box>
                 </Box>
 
-                {/* Chat Component - full height */}
-                <Box className="flex-1 overflow-hidden" style={{ height: 'calc(100vh - 89px)' }}>
-                  <Chat
-                    project={selectedProject}
-                    initialMessage={chatMessage}
-                    attachments={messageAttachments}
-                    conversation={conversation}
-                    onFileAttached={handleFileAttached}
-                    onAttachmentsClear={() => {
-                      setMessageAttachments([]);
-                      setUploadFiles([]);
-                      // Don't clear conversation - it should persist during chat session
-                    }}
-                    onTokenUpdate={() => {
-                      // Trigger sidebar refresh via custom event
-                      window.dispatchEvent(new Event('refreshUserTokens'));
-                    }}
-                  />
+                {/* Tabs - only show when project is selected */}
+                {selectedProject && (
+                  <Box className="flex-none border-b border-gray-900 px-4">
+                    <Tabs
+                      value={activeTab}
+                      onChange={(_, newValue) => setActiveTab(newValue)}
+                      sx={{
+                        '& .MuiTab-root': {
+                          color: 'rgba(255, 255, 255, 0.6)',
+                          textTransform: 'none',
+                          fontSize: '14px',
+                          fontWeight: 500,
+                          minHeight: '48px',
+                          '&.Mui-selected': {
+                            color: '#ec4899',
+                          },
+                        },
+                        '& .MuiTabs-indicator': {
+                          backgroundColor: '#ec4899',
+                        },
+                      }}
+                    >
+                      <Tab label="Chat" />
+                      <Tab label="Documents" />
+                      <Tab label="Configuration" />
+                    </Tabs>
+                  </Box>
+                )}
+
+                {/* Main Content Area - 2 columns */}
+                <Box className="flex-1 overflow-hidden flex" style={{ height: selectedProject ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                  {/* Left Column - Chat/Documents/Settings */}
+                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
+                    {!selectedProject || activeTab === 0 ? (
+                      <Chat
+                        project={selectedProject}
+                        initialMessage={chatMessage}
+                        attachments={messageAttachments}
+                        conversation={conversation}
+                        isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
+                        onFileAttached={handleFileAttached}
+                        onAttachmentsClear={() => {
+                          setMessageAttachments([]);
+                          setUploadFiles([]);
+                        }}
+                        onTokenUpdate={() => {
+                          window.dispatchEvent(new Event('refreshUserTokens'));
+                        }}
+                      />
+                    ) : activeTab === 1 ? (
+                      <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
+                        {/* Documents Tab */}
+                        <Box className="max-w-4xl mx-auto">
+                        <Box className="flex items-center justify-between mb-4">
+                          <span className="text-sm text-gray-400">
+                            {currentProjectData?.documents?.length || 0} document{(currentProjectData?.documents?.length || 0) !== 1 ? 's' : ''}
+                          </span>
+                          <button
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-800/50 hover:bg-gray-700/50 rounded-md border border-gray-700/50 transition-all"
+                            onClick={handleOpenUploadDocumentDialog}
+                          >
+                            <AddBoxIcon sx={{ fontSize: 16 }} />
+                            <span>Add</span>
+                          </button>
+                        </Box>
+
+                        {currentProjectData && (currentProjectData.documents || []).length > 0 ? (
+                          <Box className="space-y-1">
+                            {currentProjectData.documents.map((doc: any, i: number) => (
+                              <Box
+                                key={`doc-${i}`}
+                                sx={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '12px 14px',
+                                  borderRadius: '8px',
+                                  bgcolor: 'transparent',
+                                  transition: 'all 0.15s ease',
+                                  '&:hover': {
+                                    bgcolor: 'rgba(255, 255, 255, 0.04)',
+                                  },
+                                }}
+                              >
+                                <Box className="flex items-center gap-3 flex-1 min-w-0">
+                                  <InsertDriveFileIcon sx={{ fontSize: 20, color: '#ec4899' }} />
+                                  <Box className="flex-1 min-w-0">
+                                    <div className="text-sm text-white truncate">
+                                      {doc.filename || doc.name || 'Untitled Document'}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                      {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}
+                                    </div>
+                                  </Box>
+                                </Box>
+                                <Box className="flex items-center gap-2">
+                                  {doc.is_processing ? (
+                                    <Box className="flex items-center gap-1.5 text-xs text-gray-400">
+                                      <CircularProgress size={12} sx={{ color: '#9ca3af' }} />
+                                      <span>Processing</span>
+                                    </Box>
+                                  ) : doc.num_of_tokens && doc.num_of_tokens > 0 ? (
+                                    <Chip
+                                      label={`-${Math.ceil(doc.num_of_tokens / 100)}`}
+                                      size="small"
+                                      variant="outlined"
+                                      sx={{
+                                        bgcolor: 'transparent',
+                                        color: '#ec4899',
+                                        fontSize: '11px',
+                                        height: '22px',
+                                        fontWeight: 600,
+                                        border: '1px solid rgba(236, 72, 153, 0.3)',
+                                        borderRadius: '4px',
+                                      }}
+                                    />
+                                  ) : null}
+                                  {doc.is_token_limit_reached && (
+                                    <WarningIcon sx={{ fontSize: 16, color: '#f59e0b' }} />
+                                  )}
+                                  {/* View Document Button */}
+                                  <Tooltip title="View Document" arrow>
+                                    <IconButton
+                                      size="small"
+                                      onClick={async () => {
+                                        try {
+                                          setDownloadingDocId(doc.id);
+                                          const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${doc.id}/download`;
+                                          const response = await userService.makeAuthenticatedRequest(url, {
+                                            method: 'GET',
+                                          });
+
+                                          if (response && response.ok) {
+                                            const blob = await response.blob();
+                                            const blobUrl = URL.createObjectURL(blob);
+                                            window.open(blobUrl, '_blank');
+                                          }
+                                        } catch (error) {
+                                          console.error('Error opening document:', error);
+                                        } finally {
+                                          setDownloadingDocId(null);
+                                        }
+                                      }}
+                                      disabled={!doc.num_of_tokens || doc.num_of_tokens === 0 || downloadingDocId === doc.id}
+                                      sx={{
+                                        color: '#9ca3af',
+                                        bgcolor: 'rgba(96, 165, 250, 0.1)',
+                                        border: '1px solid rgba(96, 165, 250, 0.2)',
+                                        '&:hover': {
+                                          color: '#60a5fa',
+                                          bgcolor: 'rgba(96, 165, 250, 0.2)',
+                                          borderColor: 'rgba(96, 165, 250, 0.4)',
+                                        },
+                                        transition: 'all 0.2s',
+                                        '&:disabled': {
+                                          color: '#4b5563',
+                                          bgcolor: 'rgba(75, 85, 99, 0.1)',
+                                          border: '1px solid rgba(75, 85, 99, 0.2)',
+                                        },
+                                      }}
+                                    >
+                                      {downloadingDocId === doc.id ? (
+                                        <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                                      ) : (
+                                        <VisibilityIcon sx={{ fontSize: 16 }} />
+                                      )}
+                                    </IconButton>
+                                  </Tooltip>
+                                  {/* Delete Document Button */}
+                                  <Tooltip title="Delete Document" arrow>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleOpenDeleteDocDialog(doc)}
+                                      sx={{
+                                        color: '#9ca3af',
+                                        bgcolor: 'rgba(239, 68, 68, 0.1)',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        '&:hover': {
+                                          color: '#ef4444',
+                                          bgcolor: 'rgba(239, 68, 68, 0.2)',
+                                          borderColor: 'rgba(239, 68, 68, 0.4)',
+                                        },
+                                        transition: 'all 0.2s',
+                                      }}
+                                    >
+                                      <DeleteIcon sx={{ fontSize: 16 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              </Box>
+                            ))}
+                          </Box>
+                        ) : null}
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
+                        {/* Configuration Tab */}
+                        <Box className="max-w-4xl mx-auto">
+                          {currentProjectData && (
+                            <Box className="space-y-6">
+                              <div className="space-y-3">
+                                <Box className="flex items-center justify-between mb-2">
+                                  <label className="text-white text-sm font-medium">Project Rules</label>
+                                  <span className="text-xs text-gray-500">
+                                    {projectRules.length}/300
+                                  </span>
+                                </Box>
+                                  <Box className="relative">
+                                    {isSavingRules && (
+                                      <Box
+                                        sx={{
+                                          position: 'absolute',
+                                          top: '12px',
+                                          right: '12px',
+                                          zIndex: 10,
+                                          bgcolor: 'rgba(0, 0, 0, 0.7)',
+                                          borderRadius: '50%',
+                                          padding: '4px',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                        }}
+                                      >
+                                        <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                                      </Box>
+                                    )}
+                                    <Box className="markdown-editor-container">
+                                      <SimpleMDE
+                                        value={projectRules}
+                                        onChange={(value: any) => {
+                                          setProjectRules(value);
+                                          if (autoSaveTimerRef.current) {
+                                            clearTimeout(autoSaveTimerRef.current);
+                                          }
+                                          autoSaveTimerRef.current = setTimeout(() => {
+                                            autoSaveProjectRules(value);
+                                          }, 3000);
+                                        }}
+                                        options={editorOptions}
+                                      />
+                                  </Box>
+                                </Box>
+                              </div>
+
+                              <Box className="flex items-center justify-between p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                                <Box>
+                                  <Typography className="text-white text-sm font-medium mb-1">
+                                    Memory
+                                  </Typography>
+                                  <Typography className="text-gray-400 text-xs">
+                                    Enable conversation memory for this project
+                                  </Typography>
+                                </Box>
+                                <Switch
+                                  checked={projectMemory}
+                                  onChange={(e) => handleMemoryToggle(e.target.checked)}
+                                  sx={{
+                                    '& .MuiSwitch-switchBase.Mui-checked': {
+                                      color: '#ec4899',
+                                    },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                                      backgroundColor: '#ec4899',
+                                    },
+                                  }}
+                                />
+                              </Box>
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+
+                  {/* Right Column - Conversations (show when project or general is selected) */}
+                  {(selectedProject || searchParams.get('general') === 'true') && (
+                    <Box
+                      className="border-l border-gray-900 overflow-y-auto"
+                      sx={{
+                        width: { xs: '0', md: '30%' },
+                        display: { xs: 'none', md: 'block' }
+                      }}
+                    >
+                      <Box className="p-4">
+                        <Box className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-semibold text-white">
+                            Conversations
+                          </span>
+                          <IconButton
+                            onClick={handleStartNewConversation}
+                            size="small"
+                            sx={{
+                              color: '#9ca3af',
+                              padding: '4px',
+                              '&:hover': {
+                                color: '#ec4899',
+                                bgcolor: 'rgba(236, 72, 153, 0.1)',
+                              },
+                            }}
+                            title="New conversation"
+                          >
+                            <AddBoxIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                        {projectConversations.length > 0 ? (
+                          <Box className="space-y-1">
+                            {projectConversations.map((conv: any) => {
+                              const isActive = conversation && conversation.id === conv.id;
+
+                              return (
+                                <Box
+                                  key={conv.id}
+                                  onClick={() => {
+                                    if (selectedProject) {
+                                      navigate(`/?conversation=${conv.id}&project=${selectedProject.id}`);
+                                    } else {
+                                      navigate(`/?conversation=${conv.id}&general=true`);
+                                    }
+                                  }}
+                                  sx={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '10px 12px',
+                                    cursor: 'pointer',
+                                    borderRadius: '6px',
+                                    bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                                    color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.6)',
+                                    '&:hover': {
+                                      bgcolor: 'rgba(255, 255, 255, 0.06)',
+                                      color: 'white',
+                                    },
+                                    '&:hover .delete-btn': {
+                                      opacity: 1,
+                                    },
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <div className="text-sm font-medium truncate">{conv.title || 'Untitled'}</div>
+                                    {conv.updated_at && (
+                                      <div className="text-xs text-gray-500 mt-1">
+                                        {new Date(conv.updated_at).toLocaleDateString()}
+                                      </div>
+                                    )}
+                                  </Box>
+                                  <Box
+                                    className="delete-btn"
+                                    onClick={(e) => handleDeleteConversationFromList(e, conv.id)}
+                                    sx={{
+                                      opacity: 0,
+                                      padding: '4px',
+                                      borderRadius: '4px',
+                                      color: 'rgba(255, 255, 255, 0.4)',
+                                      transition: 'all 0.15s ease',
+                                      '&:hover': {
+                                        color: '#ef4444',
+                                        bgcolor: 'rgba(239, 68, 68, 0.1)',
+                                      },
+                                    }}
+                                  >
+                                    <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                  </Box>
+                                </Box>
+                              );
+                            })}
+                          </Box>
+                        ) : (
+                          <Box className="text-gray-500 text-sm py-4 text-center">
+                            No conversations yet
+                          </Box>
+                        )}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               </Box>
             ) : (
               // Welcome Screen
-              <Box className="p-4">
-                {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-                {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-                <Box className="flex items-center justify-center mt-12 md:mt-20">
-                  <Box className="max-w-6xl w-full">
-                    {/* Greeting */}
-                    <Box className="mb-8">
-                      <Box className="hidden md:flex items-center mb-4">
-                        <Box className="w-12 h-12 rounded-full flex">
-                          <svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M13.4663 24.5027C19.6795 24.5027 24.7163 19.6266 24.7163 13.6117C24.7163 7.5968 19.6795 2.72075 13.4663 2.72075C7.25311 2.72075 2.21631 7.5968 2.21631 13.6117C2.21631 19.6266 7.25311 24.5027 13.4663 24.5027Z" stroke="url(#paint0_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M8.11121 17.9681C9.29246 19.6126 11.2725 20.6908 13.5 20.6908C15.7275 20.6908 17.6962 19.6126 18.8887 17.9681" stroke="url(#paint1_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            <defs>
-                              <linearGradient id="paint0_linear_160_831" x1="13.4663" y1="2.72075" x2="13.4663" y2="24.5027" gradientUnits="userSpaceOnUse">
-                                <stop stopColor="#D3F3FF" />
-                                <stop offset="1" stopColor="white" />
-                              </linearGradient>
-                              <linearGradient id="paint1_linear_160_831" x1="13.5" y1="17.9681" x2="13.5" y2="20.6908" gradientUnits="userSpaceOnUse">
-                                <stop stopColor="#D3F3FF" />
-                                <stop offset="1" stopColor="white" />
-                              </linearGradient>
-                            </defs>
-                          </svg>
+              <Box className="h-screen flex flex-col bg-black">
+                <Box className="flex-1 overflow-hidden flex">
+                  {/* Welcome/Input Area */}
+                  <Box className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-12 py-4" sx={{ width: '100%' }}>
+                    <Box className="flex items-center justify-center mt-12 md:mt-20">
+                      <Box className="max-w-4xl w-full">
+                      {/* Greeting */}
+                      <Box className="mb-8">
+                        <Box className="hidden md:flex items-center mb-4">
+                          <Box className="w-12 h-12 rounded-full flex">
+                            <svg width="27" height="27" viewBox="0 0 27 27" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M13.4663 24.5027C19.6795 24.5027 24.7163 19.6266 24.7163 13.6117C24.7163 7.5968 19.6795 2.72075 13.4663 2.72075C7.25311 2.72075 2.21631 7.5968 2.21631 13.6117C2.21631 19.6266 7.25311 24.5027 13.4663 24.5027Z" stroke="url(#paint0_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M8.11121 17.9681C9.29246 19.6126 11.2725 20.6908 13.5 20.6908C15.7275 20.6908 17.6962 19.6126 18.8887 17.9681" stroke="url(#paint1_linear_160_831)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              <defs>
+                                <linearGradient id="paint0_linear_160_831" x1="13.4663" y1="2.72075" x2="13.4663" y2="24.5027" gradientUnits="userSpaceOnUse">
+                                  <stop stopColor="#D3F3FF" />
+                                  <stop offset="1" stopColor="white" />
+                                </linearGradient>
+                                <linearGradient id="paint1_linear_160_831" x1="13.5" y1="17.9681" x2="13.5" y2="20.6908" gradientUnits="userSpaceOnUse">
+                                  <stop stopColor="#D3F3FF" />
+                                  <stop offset="1" stopColor="white" />
+                                </linearGradient>
+                              </defs>
+                            </svg>
+                          </Box>
                         </Box>
-                      </Box>
-                      <h1 className="text-2xl md:text-4xl font-light mb-2">
-                        <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                        <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                      </h1>
-                    </Box>
-
-                    {/* Pro Plan Banner - Only show if user is not paid */}
-                    {!user?.is_paid && (
-                      <Box
-                        className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
-                        onClick={() => navigate('/pricing')}
-                      >
-                        <Box className="flex items-center gap-2 text-sm">
-                          <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
-                          <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
-                        </Box>
-                      </Box>
-                    )}
-
-
-
-                    {/* Main Input Area */}
-                    <Box
-                      className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
-                    >
-
-                      <MentionsInput
-                        value={message}
-                        onChange={handleMentionChange}
-                        placeholder="Enter your prompt here (e.g. what are the places to visit in Madrid)"
-                        className="mentions"
-                        allowSuggestionsAboveCursor={true}
-                        style={{
-                          control: {
-                            minHeight: '100px',
-                            border: 'none',
-                            outline: 'none',
-                            boxShadow: 'none',
-                          },
-                          input: {
-                            color: 'white',
-                            minHeight: '100px',
-                            border: 'none',
-                            outline: 'none',
-                            boxShadow: 'none',
-                          },
-                          highlighter: {
-                            minHeight: '100px',
-                            border: 'none',
-                            outline: 'none',
-                            boxShadow: 'none',
-                          },
-                          suggestions: {
-                            backgroundColor: '#0a0a0a',
-                            border: '1px solid #2a2a2a',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
-                            zIndex: 10000,
-                          },
-                        }}
-                        inputRef={textareaRef}
-                        onKeyDown={(e: any) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                      >
-                        <Mention
-                          trigger="@"
-                          data={fetchProjects}
-                          renderSuggestion={renderProjectSuggestion}
-                          displayTransform={(_id: string, display: string) => `@${display}`}
-                          markup="@[__display__](__id__)"
-                          isLoading={false}
-                          onAdd={() => null}
-                          style={{
-                            backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                          }}
-                        />
-                      </MentionsInput>
-
-                      <Box className="flex items-center justify-between mt-4">
-                        {/* Left side - File attachment */}
-                        <Box className="flex items-center gap-2">
-                          <FileAttacher
-                            conversation={conversation}
-                            onSuccess={handleFileAttached}
-                            onError={(error) => console.error('File upload error:', error)}
-                            size="small"
-                            showDragDrop={true}
-                            clearTrigger={clearAttachmentTrigger}
-                          />
-                        </Box>
-
-                        <button
-                          disabled={message.trim().length <= 1}
-                          className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                          onClick={handleSendMessage}
-
-                        >
-                          <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
-                        </button>
+                        <h1 className="text-2xl md:text-4xl font-light mb-2">
+                          <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                          <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                        </h1>
                       </Box>
 
-                      {/* Helper Text */}
-                      <Box className="mt-4 pt-4 border-t border-gray-800">
-                        <Box className="text-xs text-gray-500">
-                          💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@name</span> to mention a project (e.g., <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">@myproject</span>). Use ↑↓ to navigate, Enter to confirm.
-                        </Box>
-                      </Box>
-                    </Box>
-
-                    {/* Feature Cards */}
-                    <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
-                      {features.map((feature, index) => (
+                      {/* Pro Plan Banner - Only show if user is not paid */}
+                      {!user?.is_paid && (
                         <Box
-                          key={index}
-                          className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
+                          className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
+                          onClick={() => navigate('/pricing')}
                         >
-                          <Box className="mb-4">
-                            <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
-                          </Box>
-                          <Box className="flex items-center gap-2 text-gray-400">
-                            {feature.icon}
-                            <span className="text-sm">{feature.subtitle}</span>
+                          <Box className="flex items-center gap-2 text-sm">
+                            <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
+                            <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
                           </Box>
                         </Box>
-                      ))}
-                    </Box>
+                      )}
 
-                    {/* Bottom Text */}
-                    <Box className="text-center text-gray-400 text-sm">
-                      Ready to assist you with anything you need.
+                      {/* Main Input Area */}
+                      <Box
+                        className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
+                      >
+                        <MentionsInput
+                          value={message}
+                          onChange={handleMentionChange}
+                          placeholder="Type your message or /project to select a project"
+                          className="mentions"
+                          allowSuggestionsAboveCursor={true}
+                          style={{
+                            control: {
+                              minHeight: '100px',
+                              border: 'none',
+                              outline: 'none',
+                              boxShadow: 'none',
+                            },
+                            input: {
+                              color: 'white',
+                              minHeight: '100px',
+                              border: 'none',
+                              outline: 'none',
+                              boxShadow: 'none',
+                            },
+                            highlighter: {
+                              minHeight: '100px',
+                              border: 'none',
+                              outline: 'none',
+                              boxShadow: 'none',
+                            },
+                            suggestions: {
+                              backgroundColor: '#0a0a0a',
+                              border: '1px solid #2a2a2a',
+                              borderRadius: '8px',
+                              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+                              zIndex: 10000,
+                            },
+                          }}
+                          inputRef={textareaRef}
+                          onKeyDown={(e: any) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                        >
+                          <Mention
+                            trigger="/"
+                            data={fetchProjects}
+                            renderSuggestion={renderProjectSuggestion}
+                            displayTransform={(_id: string, _display: string) => ''}
+                            markup="/[__display__](__id__)"
+                            isLoading={false}
+                            onAdd={(id: string | number) => {
+                              // Handle project selection when user explicitly selects from dropdown
+                              const project = user?.projects?.find((p: any) => p.id === id);
+                              if (project) {
+                                setSelectedProject(project);
+                                // Clear the /command from message after selection
+                                setMessage('');
+                              }
+                            }}
+                            style={{
+                              backgroundColor: 'transparent',
+                            }}
+                          />
+                        </MentionsInput>
+
+                        <Box className="flex items-center justify-between mt-4">
+                          {/* Left side - File attachment and project label */}
+                          <Box className="flex items-center gap-2">
+                            <FileAttacher
+                              conversation={conversation}
+                              onSuccess={handleFileAttached}
+                              onError={(error) => console.error('File upload error:', error)}
+                              size="small"
+                              showDragDrop={true}
+                              clearTrigger={clearAttachmentTrigger}
+                            />
+                            {/* Selected project label */}
+                            {selectedProject && (
+                              <Chip
+                                icon={<FolderOpenIcon sx={{ fontSize: 14 }} />}
+                                label={selectedProject.title || selectedProject.name}
+                                size="small"
+                                onDelete={() => {
+                                  setSelectedProject(null);
+                                  navigate('/');
+                                }}
+                                sx={{
+                                  height: '28px',
+                                  borderRadius: '1px',
+                                  bgcolor: 'rgba(236, 72, 153, 0.1)',
+                                  color: '#ec4899',
+                                  border: '1px solid rgba(236, 72, 153, 0.3)',
+                                  fontSize: '12px',
+                                  '& .MuiChip-icon': {
+                                    color: '#ec4899',
+                                  },
+                                  '& .MuiChip-deleteIcon': {
+                                    color: 'rgba(236, 72, 153, 0.6)',
+                                    fontSize: '14px',
+                                    '&:hover': {
+                                      color: '#ec4899',
+                                    },
+                                  },
+                                }}
+                              />
+                            )}
+                          </Box>
+
+                          <button
+                            disabled={message.trim().length <= 1}
+                            className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
+                            onClick={handleSendMessage}
+                          >
+                            <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
+                          </button>
+                        </Box>
+
+                        {/* Helper Text */}
+                        <Box className="mt-4 pt-4 border-t border-gray-800">
+                          <Box className="text-xs text-gray-500">
+                            💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">/</span> to select a project. Use ↑↓ to navigate, Enter to confirm.
+                          </Box>
+                        </Box>
+                      </Box>
+
+                      {/* Feature Cards */}
+                      <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+                        {features.map((feature, index) => (
+                          <Box
+                            key={index}
+                            className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
+                          >
+                            <Box className="mb-4">
+                              <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
+                            </Box>
+                            <Box className="flex items-center gap-2 text-gray-400">
+                              {feature.icon}
+                              <span className="text-sm">{feature.subtitle}</span>
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+
+                      {/* Bottom Text */}
+                      <Box className="text-center text-gray-400 text-sm">
+                        Ready to assist you with anything you need.
+                      </Box>
                     </Box>
                   </Box>
+                </Box>
                 </Box>
               </Box>
             )}

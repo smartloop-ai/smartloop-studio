@@ -108,9 +108,16 @@ const getUser = async () => {
     }
   } catch (error) {
     console.error("UserService: Error fetching user:", error);
+
+    // Handle network errors (offline, CORS, connection refused, etc.)
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error("Network error");
+      console.error("UserService: Network error - unable to reach server");
+      // Return null instead of throwing to allow graceful handling
+      // The app can continue with cached user data if available
+      return null;
     }
+
+    // Handle other errors
     throw error;
   }
 };

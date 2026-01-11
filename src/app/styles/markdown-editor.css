@@ -6,7 +6,7 @@
     background-color: #000;
     color: #fff;
     border: 1px solid #2a2a2a;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 13px;
     font-family: monospace;
     min-height: 200px;
@@ -28,7 +28,7 @@
     background-color: #1a1a1a;
     border: 1px solid #2a2a2a;
     border-bottom: none;
-    border-radius: 8px 8px 0 0;
+    border-radius: 4px 4px 0 0;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button {
