@@ -19,7 +19,6 @@ import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
-import { get } from 'http';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -1271,7 +1270,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               {/* Color Label Selector */}
               <Box>
                 <Typography className="text-gray-400 text-sm mb-2">
-                  Color Label
+                  Label
                 </Typography>
                 <Box className="flex flex-wrap gap-1.5">
                   {PROJECT_COLORS.map((color) => (

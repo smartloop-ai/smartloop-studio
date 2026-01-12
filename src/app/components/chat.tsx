@@ -135,15 +135,6 @@ export default function Chat(props: {
     console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
 
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        inline: 'nearest',
-        behavior: 'smooth',
-        block: 'end',
-      });
-    }
-  }
 
   const sendFeedback = async (msg: any) => {
     const url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
@@ -439,9 +430,6 @@ export default function Chat(props: {
             )
           );
 
-          setTimeout(() => {
-            scrollToBottom();
-          }, 10);
         }
 
         // Check for finish
@@ -523,9 +511,6 @@ export default function Chat(props: {
       setIsLoading(false);
       sendingMessageRef.current = false;  // Reset sending flag
       abortControllerRef.current = null;
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
     }
   }
 
@@ -551,10 +536,6 @@ export default function Chat(props: {
     // Update conversation ref
     currentConversationIdRef.current = props.conversation?.id || null;
 
-    // Scroll to bottom
-    if (conversationMessages.length > 0) {
-      setTimeout(() => scrollToBottom(), 100);
-    }
   }, [props.conversation, isLoading]);
 
   // Cleanup: abort any ongoing requests when component unmounts
@@ -599,11 +580,6 @@ export default function Chat(props: {
       setFilteredMessages(filtered);
     }
   }, [searchQuery, messages]);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   // Messages are stored in the database via conversation, no localStorage needed
   // The backend handles persistence

@@ -15,7 +15,7 @@ import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
 import { useAuth } from '@/app/hooks/useAuth';
 import { dialogStyles } from '@/app/shared/utils';
-import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/components/sidebar';
+import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 export default function ProjectsList() {
   const [user, setUser] = useAuth();

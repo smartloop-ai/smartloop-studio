@@ -14,19 +14,19 @@ export const APP_DESCRIPTION = (
   </>
 );
 
-// Available color options for project labels
+// Available color options for project labels (ordered by priority: critical to normal)
 export const PROJECT_COLORS = [
-  { name: 'Pink', value: 'rgba(244, 114, 182, 0.6)' },
-  { name: 'Red', value: 'rgba(236, 153, 153, 0.6)' },
-  { name: 'Orange', value: 'rgba(251, 146, 60, 0.6)' },
-  { name: 'Yellow', value: 'rgba(251, 191, 36, 0.6)' },
-  { name: 'Green', value: 'rgba(167, 243, 208, 0.6)' },
-  { name: 'Teal', value: 'rgba(94, 234, 212, 0.6)' },
-  { name: 'Blue', value: 'rgba(147, 197, 253, 0.6)' },
-  { name: 'Indigo', value: 'rgba(129, 140, 248, 0.6)' },
-  { name: 'Purple', value: 'rgba(196, 181, 253, 0.6)' },
-  { name: 'Amber', value: 'rgba(252, 211, 77, 0.6)' },
+  { name: 'Red', value: '#EC999999' },      // Critical
+  { name: 'Orange', value: '#FB923C99' },    // High priority
+  { name: 'Pink', value: '#F472B699' },     // High priority
+  { name: 'Yellow', value: '#FBBF2499' },    // Medium priority
+  { name: 'Amber', value: '#FCD34D99' },     // Medium priority
+  { name: 'Purple', value: '#C4B5FD99' },   // Normal
+  { name: 'Indigo', value: '#818CF899' },   // Normal
+  { name: 'Blue', value: '#93C5FD99' },     // Normal
+  { name: 'Teal', value: '#5EEAD499' },      // Low priority
+  { name: 'Green', value: '#A7F3D099' },    // Low priority
 ];
 
 // Default color (pink)
-export const DEFAULT_COLOR = 'rgba(244, 114, 182, 0.6)';
+export const DEFAULT_COLOR = '#F472B699';

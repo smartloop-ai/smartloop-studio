@@ -32,7 +32,7 @@ import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { projectService } from '@/app/services/project.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { API_ENDPOINT } from '@/app/constants';
+import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import { useAuth } from '@/app/hooks/useAuth';
@@ -806,6 +806,10 @@ export default function Home() {
     }
   };
 
+  const getProjectColor = (project: any) => {
+    return project?.color || DEFAULT_COLOR;
+  };  
+
   const features = [
     {
       title: 'Instantly extract information',
@@ -1454,24 +1458,16 @@ export default function Home() {
                 <Box className="flex-none p-4 border-b border-gray-900">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
-                      <button
-                        onClick={() => {
-                          navigate('/');
-                          setShowChat(false);
-                          setChatMessage(null);
-                          setMessage('');
-                          setConversation(null);
-                          setMessageAttachments([]);
-                          setSelectedProject(null);
-                          setUploadFiles([]);
-                          setClearAttachmentTrigger(prev => prev + 1);
-                        }}
-                        className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
-                        title="Back to home"
-                      >
-                        <ArrowBackIosIcon fontSize="small" />
-                      </button>
-                      <Box className="flex-1 min-w-0">
+                       <Box
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: '2px',
+                            bgcolor: getProjectColor(selectedProject),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Box className="flex-1 min-w-0">
                         {isEditingProjectName && selectedProject ? (
                           <TextField
                             autoFocus
