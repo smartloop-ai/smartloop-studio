@@ -245,6 +245,7 @@ export default function Home() {
         setConversation(null);
         setShowChat(false);
         setChatMessage(null);
+        setSelectedProject(null);
       }
     }
   }, [searchParams, user?.conversations, user?.projects]);

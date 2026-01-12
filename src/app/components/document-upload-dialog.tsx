@@ -6,7 +6,6 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import FolderIcon from '@mui/icons-material/Folder';
 import { userService } from '@/app/services/user.service';
-import { projectService } from '@/app/services/project.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT } from '@/app/constants';
 
@@ -18,7 +17,6 @@ interface DocumentUploadDialogProps {
   setUser: (user: any) => void;
   preselectedProjectId?: string;
   disableProjectSelection?: boolean;
-  allowProjectCreation?: boolean;
 }
 
 export default function DocumentUploadDialog({
@@ -28,17 +26,14 @@ export default function DocumentUploadDialog({
   user,
   setUser,
   preselectedProjectId,
-  disableProjectSelection = false,
-  allowProjectCreation = true
+  disableProjectSelection = false
 }: DocumentUploadDialogProps) {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [projectInputValue, setProjectInputValue] = useState('');
-  const [newProjectName, setNewProjectName] = useState('');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [showCreateNew, setShowCreateNew] = useState(false);
 
   // Set preselected project when dialog opens
   useEffect(() => {
@@ -54,11 +49,9 @@ export default function DocumentUploadDialog({
   const handleClose = () => {
     setSelectedProject(null);
     setProjectInputValue('');
-    setNewProjectName('');
     setUploadFiles([]);
     setUploadError('');
     setIsDragging(false);
-    setShowCreateNew(false);
     onClose();
   };
 
@@ -107,33 +100,6 @@ export default function DocumentUploadDialog({
     }
   };
 
-  const handleCreateProject = async () => {
-    if (!newProjectName.trim()) {
-      setUploadError('Please enter a project name');
-      return;
-    }
-
-    try {
-      const result = await projectService.createProject({ title: newProjectName.trim() });
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to create project');
-      }
-
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setUser(updatedUser);
-
-        const newProject = updatedUser.projects.find((p: any) => p.title === newProjectName.trim());
-        setSelectedProject(newProject);
-        setNewProjectName('');
-        setUploadError('');
-      }
-    } catch (error: any) {
-      setUploadError(error.message || 'Failed to create project');
-    }
-  };
-
   const handleUploadDocument = async () => {
     if (uploadFiles.length === 0) {
       setUploadError('Please select a file to upload');
@@ -144,33 +110,11 @@ export default function DocumentUploadDialog({
     setUploadError('');
 
     try {
-      let targetProject = selectedProject;
-
-      // Auto-create project if none selected
-      if (!targetProject) {
-        const fileName = uploadFiles[0].name;
-        const projectName = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-
-        const result = await projectService.createProject({ title: projectName.trim() });
-
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to create project');
-        }
-
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          const newProject = updatedUser.projects.find((p: any) => p.title === projectName.trim());
-          if (newProject) {
-            targetProject = newProject;
-            setSelectedProject(newProject);
-          } else {
-            throw new Error('Failed to find created project');
-          }
-        }
-      }      if (!targetProject) {
-        throw new Error('No project available for upload');
+      if (!selectedProject) {
+        throw new Error('Please select a project to upload the document');
       }
+
+      const targetProject = selectedProject;
 
       const formData = new FormData();
       formData.append('file', uploadFiles[0]);
@@ -260,128 +204,38 @@ export default function DocumentUploadDialog({
           {/* Project Selection */}
           {!disableProjectSelection && (
             <Box>
-              {allowProjectCreation && (
-                <Typography className="text-gray-300 text-sm font-medium mb-3">
-                  Select or Create Project
-                </Typography>
-              )}
-
-              {!showCreateNew ? (
-                <Box>
-                  <Autocomplete
-                    disabled={disableProjectSelection}
-                    value={selectedProject}
-                  onChange={(_, newValue) => {
-                    if (newValue && typeof newValue === 'object') {
-                      setSelectedProject(newValue);
-                      setProjectInputValue(newValue.title || newValue.name);
-                    } else {
-                      setSelectedProject(null);
-                      setProjectInputValue('');
-                    }
-                  }}
-                  inputValue={projectInputValue}
-                  onInputChange={(_, newInputValue) => {
-                    setProjectInputValue(newInputValue);
-                  }}
-                  options={user?.projects || []}
-                  getOptionLabel={(option) => option.title || option.name}
-                  renderOption={(props, option) => (
-                    <Box component="li" {...props} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                      <FolderIcon sx={{ color: '#ec4899', fontSize: 20 }} />
-                      <span>{option.title || option.name}</span>
-                    </Box>
-                  )}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Type to search or select project..."
-                      size="small"
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: '#000',
-                          borderRadius: '8px',
-                          '& fieldset': {
-                            borderColor: '#2a2a2a',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: '#3a3a3a',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: '#ec4899',
-                          },
-                        },
-                        '& .MuiInputBase-input::placeholder': {
-                          color: '#6b7280',
-                          opacity: 1,
-                        },
-                        '& .MuiAutocomplete-popupIndicator': {
-                          color: '#6b7280',
-                        },
-                      }}
-                    />
-                  )}
-                  sx={{
-                    '& .MuiAutocomplete-paper': {
-                      bgcolor: '#1a1a1a',
-                      color: 'white',
-                    },
-                    '& .MuiAutocomplete-listbox': {
-                      bgcolor: '#1a1a1a',
-                      '& .MuiAutocomplete-option': {
-                        color: 'white',
-                        '&:hover': {
-                          bgcolor: '#2a2a2a',
-                        },
-                        '&[aria-selected="true"]': {
-                          bgcolor: '#2a2a2a',
-                        },
-                      },
-                    },
-                  }}
-                  ListboxProps={{
-                    sx: {
-                      bgcolor: '#1a1a1a',
-                      '& .MuiAutocomplete-option': {
-                        color: 'white',
-                        '&:hover': {
-                          bgcolor: '#2a2a2a',
-                        },
-                        '&[aria-selected="true"]': {
-                          bgcolor: '#2a2a2a',
-                        },
-                      },
-                    },
-                  }}
-                  PaperComponent={({ children }) => (
-                    <Box sx={{ bgcolor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px' }}>
-                      {children}
-                    </Box>
-                  )}
-                />
-
-                {!disableProjectSelection && allowProjectCreation && (
-                  <Box className="mt-3 flex items-center justify-center">
-                    <button
-                      onClick={() => setShowCreateNew(true)}
-                      className="text-pink-500 hover:text-pink-400 text-xs underline"
-                    >
-                      + Create New Project
-                    </button>
+              <Typography className="text-gray-300 text-sm font-medium mb-3">
+                Select Project
+              </Typography>
+              <Autocomplete
+                disabled={disableProjectSelection}
+                value={selectedProject}
+                onChange={(_, newValue) => {
+                  if (newValue && typeof newValue === 'object') {
+                    setSelectedProject(newValue);
+                    setProjectInputValue(newValue.title || newValue.name);
+                  } else {
+                    setSelectedProject(null);
+                    setProjectInputValue('');
+                  }
+                }}
+                inputValue={projectInputValue}
+                onInputChange={(_, newInputValue) => {
+                  setProjectInputValue(newInputValue);
+                }}
+                options={user?.projects || []}
+                getOptionLabel={(option) => option.title || option.name}
+                renderOption={(props, option) => (
+                  <Box component="li" {...props} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                    <FolderIcon sx={{ color: '#ec4899', fontSize: 20 }} />
+                    <span>{option.title || option.name}</span>
                   </Box>
                 )}
-              </Box>
-            ) : (
-              <Box className="space-y-3">
-                <Box className="flex gap-2">
+                renderInput={(params) => (
                   <TextField
-                    placeholder="Enter new project name"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    fullWidth
+                    {...params}
+                    placeholder="Type to search or select project..."
                     size="small"
-                    autoFocus
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         color: 'white',
@@ -401,27 +255,50 @@ export default function DocumentUploadDialog({
                         color: '#6b7280',
                         opacity: 1,
                       },
+                      '& .MuiAutocomplete-popupIndicator': {
+                        color: '#6b7280',
+                      },
                     }}
                   />
-                  <button
-                    onClick={handleCreateProject}
-                    disabled={!newProjectName.trim()}
-                    className="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    Create
-                  </button>
-                </Box>
-                <button
-                  onClick={() => {
-                    setShowCreateNew(false);
-                    setNewProjectName('');
-                  }}
-                  className="text-gray-400 hover:text-white text-xs underline"
-                >
-                  ← Back to project list
-                </button>
-              </Box>
-            )}
+                )}
+                sx={{
+                  '& .MuiAutocomplete-paper': {
+                    bgcolor: '#1a1a1a',
+                    color: 'white',
+                  },
+                  '& .MuiAutocomplete-listbox': {
+                    bgcolor: '#1a1a1a',
+                    '& .MuiAutocomplete-option': {
+                      color: 'white',
+                      '&:hover': {
+                        bgcolor: '#2a2a2a',
+                      },
+                      '&[aria-selected="true"]': {
+                        bgcolor: '#2a2a2a',
+                      },
+                    },
+                  },
+                }}
+                ListboxProps={{
+                  sx: {
+                    bgcolor: '#1a1a1a',
+                    '& .MuiAutocomplete-option': {
+                      color: 'white',
+                      '&:hover': {
+                        bgcolor: '#2a2a2a',
+                      },
+                      '&[aria-selected="true"]': {
+                        bgcolor: '#2a2a2a',
+                      },
+                    },
+                  },
+                }}
+                PaperComponent={({ children }) => (
+                  <Box sx={{ bgcolor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px' }}>
+                    {children}
+                  </Box>
+                )}
+              />
             </Box>
           )}
 

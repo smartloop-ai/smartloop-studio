@@ -698,7 +698,6 @@ function DocumentsListContent() {
             setUser={setUser}
             preselectedProjectId={projectId || undefined}
             disableProjectSelection={false}
-            allowProjectCreation={false}
           />
           </Box>
         </>

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
@@ -22,29 +22,33 @@ import { APP_URL } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-// Generate a consistent soft color based on a string
-const getColorForProject = (name: string): string => {
-  // Soft color palette - pastel colors
-  const softColors = [
-    'rgba(236, 153, 153, 0.6)',   // Soft red
-    'rgba(251, 191, 36, 0.6)',    // Soft yellow
-    'rgba(147, 197, 253, 0.6)',   // Soft blue
-    'rgba(167, 243, 208, 0.6)',   // Soft green
-    'rgba(196, 181, 253, 0.6)',   // Soft purple
-    'rgba(251, 146, 60, 0.6)',    // Soft orange
-    'rgba(244, 114, 182, 0.6)',   // Soft pink
-    'rgba(94, 234, 212, 0.6)',    // Soft teal
-    'rgba(252, 211, 77, 0.6)',    // Soft amber
-    'rgba(129, 140, 248, 0.6)',   // Soft indigo
-  ];
+// Available color options for project labels
+export const PROJECT_COLORS = [
+  { name: 'Pink', value: 'rgba(244, 114, 182, 0.6)' },
+  { name: 'Red', value: 'rgba(236, 153, 153, 0.6)' },
+  { name: 'Orange', value: 'rgba(251, 146, 60, 0.6)' },
+  { name: 'Yellow', value: 'rgba(251, 191, 36, 0.6)' },
+  { name: 'Green', value: 'rgba(167, 243, 208, 0.6)' },
+  { name: 'Teal', value: 'rgba(94, 234, 212, 0.6)' },
+  { name: 'Blue', value: 'rgba(147, 197, 253, 0.6)' },
+  { name: 'Indigo', value: 'rgba(129, 140, 248, 0.6)' },
+  { name: 'Purple', value: 'rgba(196, 181, 253, 0.6)' },
+  { name: 'Amber', value: 'rgba(252, 211, 77, 0.6)' },
+];
 
-  // Simple hash function to get consistent index
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+// Default color (pink)
+export const DEFAULT_COLOR = 'rgba(244, 114, 182, 0.6)';
+
+// Get color for project - use project's color if exists, otherwise default to pink
+const getColorForProject = (project: any): string => {
+  if (project?.color) {
+    return project.color;
   }
-  const index = Math.abs(hash) % softColors.length;
-  return softColors[index];
+  // Fallback for string name (backward compatibility)
+  if (typeof project === 'string') {
+    return DEFAULT_COLOR;
+  }
+  return DEFAULT_COLOR;
 };
 
 export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void }) {
@@ -66,6 +70,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [conversations, setConversations] = useState<any[]>([]);
   const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [createProjectError, setCreateProjectError] = useState('');
 
@@ -416,6 +421,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleOpenCreateProjectDialog = () => {
     setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
     setOpenCreateProjectDialog(true);
   };
@@ -423,6 +429,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const handleCloseCreateProjectDialog = () => {
     setOpenCreateProjectDialog(false);
     setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
   };
 
@@ -440,7 +447,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     try {
       const result = await projectService.createProject({
         title: newProjectTitle.trim(),
-        temperature: 0.3
+        temperature: 0.3,
+        color: selectedColor
       });
 
       if (result.success && result.data) {
@@ -780,7 +788,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     width: 12,
                     height: 12,
                     borderRadius: '2px',
-                    bgcolor: getColorForProject('general'),
+                    bgcolor: DEFAULT_COLOR,
                     flexShrink: 0,
                   }}
                 />
@@ -822,7 +830,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           width: 12,
                           height: 12,
                           borderRadius: '2px',
-                          bgcolor: getColorForProject(projectName),
+                          bgcolor: getColorForProject(project),
                           flexShrink: 0,
                         }}
                       />
@@ -1279,6 +1287,37 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   },
                 }}
               />
+
+              {/* Color Label Selector */}
+              <Box>
+                <Typography className="text-gray-400 text-sm mb-2">
+                  Color Label
+                </Typography>
+                <Box className="flex flex-wrap gap-1.5">
+                  {PROJECT_COLORS.map((color) => (
+                    <Box
+                      key={color.value}
+                      onClick={() => setSelectedColor(color.value)}
+                      sx={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        bgcolor: color.value,
+                        cursor: 'pointer',
+                        border: selectedColor === color.value ? '2px solid #ec4899' : '2px solid transparent',
+                        boxShadow: selectedColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.2)' : 'none',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          transform: 'scale(1.1)',
+                          boxShadow: '0 0 0 2px rgba(236, 72, 153, 0.3)',
+                        },
+                      }}
+                      title={color.name}
+                    />
+                  ))}
+                </Box>
+              </Box>
+
               <Box className="flex gap-3 pt-2">
                 <button
                   type="button"
