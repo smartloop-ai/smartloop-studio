@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useLocation, replace } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
@@ -21,6 +21,31 @@ import { dialogStyles } from '@/app/shared/utils';
 import { APP_URL } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+
+// Generate a consistent soft color based on a string
+const getColorForProject = (name: string): string => {
+  // Soft color palette - pastel colors
+  const softColors = [
+    'rgba(236, 153, 153, 0.6)',   // Soft red
+    'rgba(251, 191, 36, 0.6)',    // Soft yellow
+    'rgba(147, 197, 253, 0.6)',   // Soft blue
+    'rgba(167, 243, 208, 0.6)',   // Soft green
+    'rgba(196, 181, 253, 0.6)',   // Soft purple
+    'rgba(251, 146, 60, 0.6)',    // Soft orange
+    'rgba(244, 114, 182, 0.6)',   // Soft pink
+    'rgba(94, 234, 212, 0.6)',    // Soft teal
+    'rgba(252, 211, 77, 0.6)',    // Soft amber
+    'rgba(129, 140, 248, 0.6)',   // Soft indigo
+  ];
+
+  // Simple hash function to get consistent index
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % softColors.length;
+  return softColors[index];
+};
 
 export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void }) {
   const navigate = useNavigate();
@@ -85,8 +110,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshUserData();
     };
 
+    const handleUserUpdated = (event: CustomEvent) => {
+      // Update user and conversations from the event detail (no need to fetch)
+      if (event.detail) {
+        setLiveUser(event.detail);
+        const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
+        setConversations(conversations);
+      }
+    };
+
     const handleConversationCreated = () => {
-      refreshConversations();
+      // No longer need to refresh - userUpdated event will handle it
+      // But keep this for backward compatibility if other code depends on it
     };
 
     const handleConversationDeleted = () => {
@@ -108,6 +143,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
 
     window.addEventListener('refreshUserTokens', handleRefresh);
+    window.addEventListener('userUpdated', handleUserUpdated as EventListener);
     window.addEventListener('conversationCreated', handleConversationCreated);
     window.addEventListener('conversationDeleted', handleConversationDeleted);
     window.addEventListener('conversationUpdated', handleConversationUpdated);
@@ -115,6 +151,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
+      window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
       window.removeEventListener('conversationCreated', handleConversationCreated);
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
       window.removeEventListener('conversationUpdated', handleConversationUpdated);
@@ -310,12 +347,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleProjectClick = async (projectId: string | null) => {
+    // Refresh conversations first to ensure we have the latest data including newly created ones
+    await refreshConversations();
+
+    // Use the conversations state which is now up-to-date
+    const allConversations = (conversations && Array.isArray(conversations)) ? conversations : [];
+
     // Auto-select the most recent conversation for the project/general
     if (projectId === null || projectId === 'general') {
       // Navigate to general - auto-select most recent general conversation
       try {
-        // Ensure conversations is always an array, never null or undefined
-        const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
         const generalConversations = allConversations.filter(
           (conv: any) => !conv.project_id
         );
@@ -342,8 +383,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     } else {
       // For projects, auto-select the most recent conversation
       try {
-        // Ensure conversations is always an array, never null or undefined
-        const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
         const projectConversations = allConversations.filter(
           (conv: any) => conv.project_id === projectId
         );
@@ -736,13 +775,23 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   mb: 0.5,
                 }}
               >
-                <span style={{ flex: 1 }}># general</span>
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '2px',
+                    bgcolor: getColorForProject('general'),
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1 }}>general</span>
               </Box>
 
               {/* Project list */}
               {liveUser?.projects && liveUser.projects.length > 0 && (
                 liveUser.projects.map((project: any) => {
                   const isActive = currentProjectId === project.id;
+                  const projectName = project.title || project.name || 'Untitled Project';
 
                   return (
                     <Box
@@ -768,8 +817,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         mb: 0.5,
                       }}
                     >
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '2px',
+                          bgcolor: getColorForProject(projectName),
+                          flexShrink: 0,
+                        }}
+                      />
                       <span style={{ flex: 1 }} className="truncate">
-                        # {project.title || project.name || 'Untitled Project'}
+                        {projectName}
                       </span>
                     </Box>
                   );

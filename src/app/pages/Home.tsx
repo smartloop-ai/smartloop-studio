@@ -72,6 +72,7 @@ export default function Home() {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
+  const previousUrlParamsRef = useRef<string>(''); // Track previous URL params to avoid unnecessary tab changes
 
 
   const getGreeting = () => {
@@ -176,6 +177,12 @@ export default function Home() {
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
+    const isGeneral = searchParams.get('general') === 'true';
+
+    // Create a string representation of current URL params to detect actual URL changes
+    const currentUrlParams = `${urlConversationId || ''}-${urlProjectId || ''}-${isGeneral}`;
+    const urlParamsChanged = previousUrlParamsRef.current !== currentUrlParams;
+    previousUrlParamsRef.current = currentUrlParams;
 
     if (!user) return;
 
@@ -186,35 +193,61 @@ export default function Home() {
       const foundConversation = conversations.find((c: any) => c.id === urlConversationId);
 
       if (foundConversation) {
-        console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
-        setConversation({ ...foundConversation });
-        setShowChat(true);
-        setActiveTab(0);
+        // Only update conversation if it's different from current or URL changed
+        if (!conversation || conversation.id !== foundConversation.id) {
+          console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
+          setConversation({ ...foundConversation });
+          setShowChat(true);
+          // Only change tab if URL actually changed
+          if (urlParamsChanged) {
+            setActiveTab(0);
+          }
+        }
 
-        // Set project from conversation
-        if (foundConversation.project_id) {
+        // Set project from conversation or general flag
+        if (isGeneral) {
+          setSelectedProject(null);
+        } else if (foundConversation.project_id) {
           const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
           setSelectedProject(project || null);
         } else {
           setSelectedProject(null);
         }
       }
+    } else if (isGeneral) {
+      // General mode - no project selected
+      // Only update if URL actually changed (not just user data update)
+      if (urlParamsChanged) {
+        setConversation(null);
+        setShowChat(true);
+        setActiveTab(0);
+        setSelectedProject(null);
+      }
     } else if (urlProjectId) {
-      setConversation(null);
-      setShowChat(true);
-      setActiveTab(0);
+      // Only update if URL actually changed (not just user data update)
+      if (urlParamsChanged || !selectedProject || selectedProject.id !== urlProjectId) {
+        setConversation(null);
+        setShowChat(true);
+        // Only change tab if URL actually changed
+        if (urlParamsChanged) {
+          setActiveTab(0);
+        }
 
-      // Project selected but no conversation - clear conversation, set project
-      const project = user.projects?.find((p: any) => p.id === urlProjectId);
-      setSelectedProject(project || null);
+        // Project selected but no conversation - clear conversation, set project
+        const project = user.projects?.find((p: any) => p.id === urlProjectId);
+        setSelectedProject(project || null);
+      }
 
     } else {
       // No conversation or project - clear state
-      setConversation(null);
-      setShowChat(false);
-      setChatMessage(null);
+      // Only clear if URL actually changed
+      if (urlParamsChanged) {
+        setConversation(null);
+        setShowChat(false);
+        setChatMessage(null);
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, user?.conversations, user?.projects]);
 
   // Clear chatMessage after it's been passed to Chat component
   useEffect(() => {
@@ -266,7 +299,7 @@ export default function Home() {
       );
       setProjectConversations(filtered);
     }
-  }, [selectedProject]);
+  }, [user?.conversations, selectedProject]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -657,7 +690,9 @@ export default function Home() {
       const updatedUser = await userService.get();
       if (updatedUser) {
         setUser(updatedUser);
-        // Dispatch event to update sidebar and right column
+        // Dispatch userUpdated event to update sidebar with the refreshed user object
+        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        // Also dispatch conversationCreated for other components that might need it
         window.dispatchEvent(new CustomEvent('conversationCreated', {
           detail: { conversation: newConversation }
         }));
@@ -1529,18 +1564,34 @@ export default function Home() {
                       value={activeTab}
                       onChange={(_, newValue) => setActiveTab(newValue)}
                       sx={{
+                        position: 'relative',
+                        minHeight: '36px',
                         '& .MuiTab-root': {
-                          color: 'rgba(255, 255, 255, 0.6)',
+                          color: 'rgba(255, 255, 255, 0.65)',
                           textTransform: 'none',
-                          fontSize: '14px',
-                          fontWeight: 500,
-                          minHeight: '48px',
+                          fontSize: '13px',
+                          fontWeight: 400,
+                          minHeight: '36px',
+                          padding: '8px 16px',
+                          marginRight: '4px',
+                          borderRadius: '6px 6px 0 0',
+                          transition: 'color 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                          position: 'relative',
+                          zIndex: 1,
+                          '&:hover': {
+                            color: 'rgba(255, 255, 255, 0.9)',
+                          },
                           '&.Mui-selected': {
                             color: '#ec4899',
+                            fontWeight: 500,
                           },
                         },
                         '& .MuiTabs-indicator': {
-                          backgroundColor: '#ec4899',
+                          height: '100%',
+                          backgroundColor: 'rgba(236, 72, 153, 0.12)',
+                          borderRadius: 0,
+                          transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+                          zIndex: 0,
                         },
                       }}
                     >
