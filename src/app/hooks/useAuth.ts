@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { userService } from '@/app/services/user.service';
+import { storageService } from '../services/storage.service';
 
 /**
  * Custom hook for authentication
@@ -44,11 +45,14 @@ export function useAuth(): [any, (user: any) => void] {
         if (!u) {
           // Could be network error or invalid token
           // Check if we have cached user data
-          const cachedUser = localStorage.getItem('u');
-
+          const cachedUser = await storageService.getItem('u');
           if (cachedUser) {
             try {
               const parsedUser = JSON.parse(cachedUser);
+              // Ensure conversations is always an array, never null
+              if (!parsedUser.conversations || !Array.isArray(parsedUser.conversations)) {
+                parsedUser.conversations = [];
+              }
               console.log('useAuth: Using cached user data due to network error');
               setUser(parsedUser);
               // Don't redirect - allow user to continue with cached data
@@ -62,11 +66,8 @@ export function useAuth(): [any, (user: any) => void] {
           console.log('useAuth: Failed to fetch user and no cached data, redirecting to login');
           userService.logout();
           navigate('/login', { replace: true });
-        } else if (u.verified === false) {
-          // User exists but not verified
-          console.log('useAuth: User not verified, redirecting to verify');
-          navigate('/verify', { replace: true });
-        } else {
+        }
+        else {
           // User is authenticated and verified
           setUser(u);
         }
@@ -75,10 +76,14 @@ export function useAuth(): [any, (user: any) => void] {
 
         // Check if we have cached user data for network errors
         if (error.message?.includes('Network error') || error.message?.includes('fetch')) {
-          const cachedUser = localStorage.getItem('u');
+          const cachedUser = await storageService.getItem('u');
           if (cachedUser) {
             try {
               const parsedUser = JSON.parse(cachedUser);
+              // Ensure conversations is always an array, never null
+              if (!parsedUser.conversations || !Array.isArray(parsedUser.conversations)) {
+                parsedUser.conversations = [];
+              }
               console.log('useAuth: Using cached user data due to network error');
               setUser(parsedUser);
               return; // Don't redirect on network errors if we have cache

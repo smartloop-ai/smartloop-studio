@@ -176,6 +176,7 @@ function createWindow() {
   // Show main window when ready and close splash
   mainWindow.once('ready-to-show', () => {
     setTimeout(() => {
+      // close splash window
       if (splashWindow) {
         splashWindow.close();
         splashWindow = null;

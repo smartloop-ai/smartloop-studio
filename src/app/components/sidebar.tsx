@@ -1,8 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, replace } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
-import { storageService } from '../services/storage.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
@@ -40,7 +39,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
-  const [_, setIsSyncing] = useState(false);
   const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
@@ -49,42 +47,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   // Update live user when prop changes
   useEffect(() => {
     setLiveUser(user);
+    // Ensure conversations is always an array, never null or undefined
+    const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+    setConversations(conversations);
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
   }, [user]);
 
-  // Sync conversations from server and load from local storage on mount
-  useEffect(() => {
-    syncConversations();
-  }, []);
-
-  // Sync conversations from server
-  const syncConversations = async () => {
-    setIsSyncing(true);
-    try {
-      // First try to sync from server
-      const syncResult = await conversationService.syncConversationsFromServer();
-      if (syncResult.success && syncResult.data) {
-        setConversations(syncResult.data);
-        console.log('[Sidebar] Synced conversations from server:', syncResult.data.length);
-      } else {
-        // If sync fails, load from local storage
-        console.warn('[Sidebar] Failed to sync from server, loading from local storage');
-        await loadConversationsFromStorage();
-      }
-    } catch (error) {
-      console.error('Error syncing conversations:', error);
-      // Fallback to local storage
-      await loadConversationsFromStorage();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   // Load conversations from local storage
-  const loadConversationsFromStorage = async () => {
+  const refreshConversations = async () => {
     try {
-      const conversations = await storageService.getConversations();
-      setConversations(conversations || []);
+      const user = await userService.get();
+      // Ensure conversations is always an array, never null or undefined
+      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      setConversations(conversations);
     } catch (error) {
       console.error('Error loading conversations from storage:', error);
     }
@@ -110,15 +86,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
 
     const handleConversationCreated = () => {
-      loadConversationsFromStorage();
+      refreshConversations();
     };
 
     const handleConversationDeleted = () => {
-      loadConversationsFromStorage();
+      refreshConversations();
     };
 
     const handleConversationUpdated = () => {
-      loadConversationsFromStorage();
+      refreshConversations();
     };
 
     // Listen for project deletion to refresh user data and conversations
@@ -127,9 +103,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const updatedUser = await userService.get();
       if (updatedUser) {
         setLiveUser(updatedUser);
+        setConversations(updatedUser.conversations || []);
       }
-      // Also refresh conversations since project conversations are now deleted
-      await syncConversations();
     };
 
     window.addEventListener('refreshUserTokens', handleRefresh);
@@ -195,7 +170,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
       if (result.success) {
         // Reload conversations from local storage
-        await loadConversationsFromStorage();
+        await refreshConversations();
 
         // Dispatch event for other components to react to conversation deletion
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
@@ -223,7 +198,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Get recent conversations from user
   const getRecentChats = () => {
-    if (!conversations || conversations.length === 0) return [];
+    // Ensure conversations is always an array before iterating
+    if (!conversations || !Array.isArray(conversations) || conversations.length === 0) return [];
 
     // Get conversations from local storage
     const recentConversations = conversations
@@ -334,12 +310,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleProjectClick = async (projectId: string | null) => {
+    // Auto-select the most recent conversation for the project/general
     if (projectId === null || projectId === 'general') {
-      // Navigate to chat detail page for general (even if no conversations)
-      // Try to find most recent general conversation (no project_id)
+      // Navigate to general - auto-select most recent general conversation
       try {
-        const allConversations = await storageService.getConversations();
-        const generalConversations = (allConversations || []).filter(
+        // Ensure conversations is always an array, never null or undefined
+        const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+        const generalConversations = allConversations.filter(
           (conv: any) => !conv.project_id
         );
 
@@ -351,9 +328,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             return dateB - dateA;
           });
           const mostRecent = sorted[0];
+          console.log('[Sidebar] Auto-selecting most recent general conversation:', mostRecent.id);
           navigate(`/?conversation=${mostRecent.id}&general=true`);
         } else {
-          // No conversations for general, navigate to chat detail page anyway
+          // No conversations for general, navigate to welcome screen
+          console.log('[Sidebar] No general conversations, showing welcome screen');
           navigate('/?general=true');
         }
       } catch (error) {
@@ -361,10 +340,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         navigate('/?general=true');
       }
     } else {
-      // For projects, find the most recent conversation and navigate to it
+      // For projects, auto-select the most recent conversation
       try {
-        const allConversations = await storageService.getConversations();
-        const projectConversations = (allConversations || []).filter(
+        // Ensure conversations is always an array, never null or undefined
+        const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+        const projectConversations = allConversations.filter(
           (conv: any) => conv.project_id === projectId
         );
 
@@ -376,14 +356,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             return dateB - dateA;
           });
           const mostRecent = sorted[0];
+          console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
           navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
         } else {
-          // No conversations for this project, navigate to chat detail page anyway
-          navigate(`/?project=${projectId}&new=true`);
+          // No conversations for this project, navigate to welcome screen
+          console.log('[Sidebar] No conversations for project, showing welcome screen');
+          navigate(`/?project=${projectId}`);
         }
       } catch (error) {
         console.error('Error handling project click:', error);
-        navigate(`/?project=${projectId}&new=true`);
+        navigate(`/?project=${projectId}`);
       }
     }
 

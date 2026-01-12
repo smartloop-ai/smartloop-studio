@@ -1,6 +1,5 @@
 
 import { userService } from '@/app/services/user.service';
-import { storageService } from '@/app/services/storage.service';
 import { conversationService } from '@/app/services/conversation.service';
 import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
@@ -92,6 +91,7 @@ export default function Chat(props: {
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
   onConversationCreated?: (conversation: any) => void,
+  onConversationUpdate?: (conversation: any) => void,
   isGeneral?: boolean
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
@@ -110,28 +110,8 @@ export default function Chat(props: {
   const [copied, setCopied]: any = useState("");
   const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
-  const syncingRef = useRef<boolean>(false);  // Track if currently syncing to prevent duplicates
-
-  // Save messages to electron-store
-  const saveMessagesToStorage = async (msgs: any[], convId?: string) => {
-    const conversationId = convId || props.conversation?.id;
-    if (conversationId) {
-      await storageService.saveMessages(conversationId, msgs);
-    }
-  };
-
-  // Load messages from electron-store
-  const loadMessagesFromStorage = async (convId?: string) => {
-    const conversationId = convId || props.conversation?.id;
-    if (conversationId) {
-      const stored = await storageService.getMessages(conversationId);
-      return stored;
-    }
-    return [];
-  };
 
   // Log project prop for debugging
   useEffect(() => {
@@ -251,8 +231,8 @@ export default function Chat(props: {
     let currentAttachments = props.attachments && props.attachments.length > 0
       ? [...props.attachments]  // Use props first - most current
       : (messageAttachmentsRef.current.length > 0
-          ? [...messageAttachmentsRef.current]  // Fallback to ref
-          : []);
+        ? [...messageAttachmentsRef.current]  // Fallback to ref
+        : []);
 
     // Create conversation if it doesn't exist (first message)
     // Use ref as primary source of truth (updated immediately when conversation is created)
@@ -351,10 +331,7 @@ export default function Chat(props: {
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
 
-    // Add message to conversation locally (don't sync yet - wait for response)
-    if (conversationId) {
-      await conversationService.addMessageToConversation(conversationId, userMsg);
-    }
+    // Messages are now managed via conversation state - synced via onConversationUpdate callback
 
     setFormData({ message: "" });
     // Clear attachments AFTER they've been used in the message
@@ -482,25 +459,16 @@ export default function Chat(props: {
           } : msg
         );
 
-        // Add the completed response message to conversation and sync entire conversation to server
-        const responseMessage = finalMessages.find((msg: any) => msg.id === responseId);
-        if (responseMessage && conversationId && !syncingRef.current) {
-          syncingRef.current = true; // Prevent duplicate syncs
-          conversationService.addMessageToConversation(conversationId, responseMessage).then(() => {
-            // Now sync the entire conversation (both user message + assistant response) once
-            conversationService.syncMessagesToServer(conversationId).then(() => {
-              console.log('[Chat] Synced conversation after complete exchange');
-              syncingRef.current = false; // Reset sync flag
-              // Dispatch event to update sidebar
-              window.dispatchEvent(new CustomEvent('conversationUpdated', {
-                detail: { conversationId: conversationId }
-              }));
-            }).catch(() => {
-              syncingRef.current = false; // Reset on error
-            });
-          }).catch(() => {
-            syncingRef.current = false; // Reset on error
-          });
+        // Notify parent with updated conversation (including new messages)
+        if (conversationId && props.onConversationUpdate) {
+          const updatedConversation = {
+            ...props.conversation,
+            id: conversationId,
+            messages: finalMessages,
+            updated_at: new Date().toISOString()
+          };
+          console.log('[Chat] Calling onConversationUpdate with messages:', finalMessages.length);
+          props.onConversationUpdate(updatedConversation);
         }
 
         return finalMessages;
@@ -548,7 +516,6 @@ export default function Chat(props: {
               content: errorMessage
             } : msg
           );
-          saveMessagesToStorage(updatedMessages);
           return updatedMessages;
         });
       }
@@ -562,94 +529,33 @@ export default function Chat(props: {
     }
   }
 
-  // Update when conversation prop changes - just log for debugging
+  // Load messages when conversation changes - simple and direct
   useEffect(() => {
-    const newConversationId = props.conversation?.id;
-    const oldConversationId = currentConversationIdRef.current;
+    // Don't overwrite messages while actively sending (new conversation scenario)
+    if (sendingMessageRef.current || isLoading) {
+      console.log('[Chat] Skipping message load - currently sending');
+      return;
+    }
 
-    console.log('[Chat useEffect 1] Conversation ID changed:', {
-      newConversationId,
-      oldConversationId,
-      willTriggerReload: oldConversationId !== newConversationId
+    const conversationMessages = props.conversation?.messages || [];
+
+    console.log('[Chat] Conversation changed:', {
+      id: props.conversation?.id,
+      messagesCount: conversationMessages.length
     });
 
-    // Don't update ref here - let the message loading useEffect handle it
-    // This ensures proper change detection
-  }, [props.conversation?.id]); // Changed dependency to id instead of whole object
+    // Update messages from conversation
+    setMessages(conversationMessages);
+    setShowTips(conversationMessages.length === 0);
 
-  // Load messages from electron-store when conversation is available or project changes
-  useEffect(() => {
-    const conversationId = props.conversation?.id;
-    const currentProjectId = props.project?.id;
-    const oldConversationId = currentConversationIdRef.current;
-    const oldProjectId = currentProjectIdRef.current;
+    // Update conversation ref
+    currentConversationIdRef.current = props.conversation?.id || null;
 
-    console.log('[Chat useEffect 2] Dependencies changed:', {
-      conversationId,
-      currentProjectId,
-      oldConversationId,
-      oldProjectId,
-      willReload: oldProjectId !== currentProjectId || oldConversationId !== conversationId
-    });
-
-    // Reload if the project ID or conversation ID changed
-    if (oldProjectId !== currentProjectId || oldConversationId !== conversationId) {
-      console.log('Conversation or project changed, clearing and loading new messages', {
-        oldProjectId: oldProjectId,
-        newProjectId: currentProjectId,
-        oldConversationId: oldConversationId,
-        newConversationId: conversationId
-      });
-
-      // Clear messages immediately when project or conversation changes
-      setMessages([]);
-      setShowTips(false);
-
-      // Update refs
-      currentProjectIdRef.current = currentProjectId;
-      currentConversationIdRef.current = conversationId;
-
-      // Load messages for the new conversation (async) only if conversation exists
-      if (conversationId) {
-        loadMessagesFromStorage(conversationId).then(storedMessages => {
-          console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
-          // Double-check that we're still on the same conversation (user might have switched again)
-          if (currentConversationIdRef.current === conversationId) {
-            if (storedMessages.length > 0) {
-              setMessages(storedMessages);
-              setShowTips(false);
-            } else {
-              setMessages([]);
-              // Only show tips if conversation exists but has no messages
-              setShowTips(true);
-            }
-          } else {
-            console.log('Conversation changed while loading messages, ignoring old messages');
-          }
-        });
-      } else if (props.project?.id || props.isGeneral) {
-        // Project selected or general mode but no conversation - show tips
-        setShowTips(true);
-      } else {
-        // No conversation, no project, and not in general mode - don't show tips
-        setShowTips(false);
-      }
+    // Scroll to bottom
+    if (conversationMessages.length > 0) {
+      setTimeout(() => scrollToBottom(), 100);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.conversation?.id, props.project?.id, props.isGeneral]); // Changed to depend on IDs
-
-  useEffect(() => {
-    // Show tips only if there are no messages (tied to number of messages)
-    // Tips should show when: (conversation exists OR project selected OR general mode) AND messages.length === 0
-    if ((props.conversation?.id || props.project?.id || props.isGeneral) && messages.length === 0) {
-      setTimeout(() => {
-        setShowTips(true);
-      }, 100);
-    } else {
-      // Hide tips if there are messages or no conversation/project/general
-      setShowTips(false);
-    }
-  }, [messages.length, props.conversation?.id, props.project?.id, props.isGeneral]);
+  }, [props.conversation, isLoading]);
 
   // Cleanup: abort any ongoing requests when component unmounts
   useEffect(() => {
@@ -680,13 +586,8 @@ export default function Chat(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.initialMessage, props.conversation?.id, props.attachments, messageSent, isLoading]);
 
-  // Save messages to localStorage whenever they change (backup save)
-  useEffect(() => {
-    if (messages.length > 0 && props.conversation?.id) {
-      saveMessagesToStorage(messages);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, props.conversation]);
+  // Messages are now managed via conversation service state
+  // No need for backup saves - messages are synced to server after each exchange
 
   useEffect(() => {
     if (searchQuery.trim() === "") {

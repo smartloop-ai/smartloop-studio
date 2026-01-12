@@ -588,6 +588,65 @@ const addMessageAndSync = async (conversationId: string, message: any): Promise<
   }
 };
 
+/**
+ * Update conversation messages directly (without local storage)
+ * Syncs messages directly to the server - used when user.conversations is the source of truth
+ * @param conversationId - ID of the conversation
+ * @param messages - Array of messages to sync
+ * @returns Promise indicating success or failure
+ */
+const updateConversationMessages = async (conversationId: string, messages: any[]): Promise<ConversationServiceResponse> => {
+  try {
+    if (!conversationId) {
+      return {
+        success: false,
+        error: 'Conversation ID is required'
+      };
+    }
+
+    console.log(`[ConversationService] Updating ${messages.length} messages for conversation ${conversationId}`);
+
+    // Send to server using PATCH
+    const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    const response = await userService.makeAuthenticatedRequest(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ messages })
+    });
+
+    if (!response) {
+      console.warn('[ConversationService] No response from server when updating messages');
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.ok) {
+      console.log(`[ConversationService] Successfully updated ${messages.length} messages for conversation ${conversationId}`);
+      return {
+        success: true,
+        data: messages
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    console.warn('[ConversationService] Failed to update messages:', errorData);
+    return {
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to update messages'
+    };
+  } catch (error: any) {
+    console.error('Error updating conversation messages:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while updating messages'
+    };
+  }
+};
+
 export const conversationService = {
   createConversation,
   updateConversation,
@@ -599,5 +658,6 @@ export const conversationService = {
   getConversationFromServer,
   addMessageToConversation,
   syncMessagesToServer,
-  addMessageAndSync
+  addMessageAndSync,
+  updateConversationMessages
 };

@@ -30,7 +30,6 @@ import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
-import { storageService } from '@/app/services/storage.service';
 import { projectService } from '@/app/services/project.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT } from '@/app/constants';
@@ -73,8 +72,6 @@ export default function Home() {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
-  const previousProjectIdRef = useRef<string | null>(null); // Track previous project ID to prevent unnecessary tab switches
-  const previousConversationIdRef = useRef<string | null>(null); // Track previous conversation ID to detect actual conversation switches
 
 
   const getGreeting = () => {
@@ -92,13 +89,11 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       setIsLoading(false);
-
-      // Check if user has been onboarded
       if (!user.onboarded) {
         setShowOnboarding(true);
       }
     }
-  }, [user]);
+  }, []);
 
   // Listen for conversation deletion events
   useEffect(() => {
@@ -110,7 +105,8 @@ export default function Home() {
         console.log('Currently opened conversation was deleted');
 
         // Get remaining conversations from storage
-        const remaining = await storageService.getConversations();
+        // Ensure conversations is always an array, never null or undefined
+        const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
 
         if (remaining && remaining.length > 0) {
           // Filter conversations by current project (or general if no project)
@@ -176,97 +172,48 @@ export default function Home() {
   }, [conversation, navigate, selectedProject]);
 
 
-  // Handle conversation ID from URL parameter
+  // Handle conversation ID from URL parameter - simple lookup from user.conversations
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
+    const urlProjectId = searchParams.get('project');
 
-    console.log('[Home URL Effect] TRIGGERED:', {
-      urlConversationId,
-      currentConversationId: conversation?.id,
-      previousConversationId: previousConversationIdRef.current,
-      showChat,
-      user: !!user
-    });
+    if (!user) return;
 
-    if (urlConversationId && user) {
-      console.log('Conversation ID from URL:', urlConversationId);
+    if (urlConversationId) {
+      // Find conversation in user.conversations (source of truth)
+      // Ensure conversations is always an array before using find
+      const conversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      const foundConversation = conversations.find((c: any) => c.id === urlConversationId);
 
-      // Load the conversation from local storage
-      const loadConversation = async () => {
-        const result = await conversationService.getConversation(urlConversationId);
+      if (foundConversation) {
+        console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
+        setConversation({ ...foundConversation });
+        setShowChat(true);
+        setActiveTab(0);
 
-        if (result.success && result.data) {
-          const foundConversation = result.data;
-
-          // Check if we're actually switching to a different conversation or just updating the same one
-          const isSwitchingConversation = previousConversationIdRef.current !== urlConversationId;
-
-          console.log('[Home URL Effect] Loading conversation from storage:', {
-            conversationId: foundConversation.id,
-            conversationTitle: foundConversation.title,
-            conversationProjectId: foundConversation.project_id,
-            isSwitchingConversation: isSwitchingConversation,
-            previousConversationId: previousConversationIdRef.current
-          });
-
-          // Always update conversation state with a NEW object reference to trigger Chat update
-          // This ensures React detects the change even if the IDs are the same
-          setConversation({ ...foundConversation });
-          setShowChat(true);
-
-          // Only switch to Chat tab if we're actually switching to a different conversation
-          if (isSwitchingConversation) {
-            setActiveTab(0); // Switch to Chat tab when switching conversations
-          }
-
-          // Update the ref to track this conversation
-          previousConversationIdRef.current = urlConversationId;
-
-          // Set the selected project based on the conversation's project_id
-          if (foundConversation.project_id) {
-            const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-            if (project) {
-              console.log('[Home URL Effect] Setting selected project from conversation:', {
-                projectId: project.id,
-                projectName: project.title || project.name,
-                conversationProjectId: foundConversation.project_id
-              });
-              setSelectedProject(project);
-            } else {
-              console.warn('[Home URL Effect] Project not found in user.projects for project_id:', foundConversation.project_id, 'Available projects:', user.projects?.map((p: any) => ({ id: p.id, name: p.title || p.name })));
-              setSelectedProject(null);
-            }
-          } else {
-            console.log('[Home URL Effect] Conversation has no project_id');
-            setSelectedProject(null);
-          }
+        // Set project from conversation
+        if (foundConversation.project_id) {
+          const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
+          setSelectedProject(project || null);
         } else {
-          console.warn('Invalid conversation ID in URL:', urlConversationId, 'Error:', result.error);
-          // Don't navigate away if we already have the conversation loaded
-          if (!conversation || conversation.id !== urlConversationId) {
-            navigate('/');
-          }
+          setSelectedProject(null);
         }
-      };
+      }
+    } else if (urlProjectId) {
+      setConversation(null);
+      setShowChat(true);
+      setActiveTab(0);
 
-      loadConversation();
-    } else if (!urlConversationId && user) {
-      // No conversation in URL - always clear conversation state for welcome screen
-      if (conversation) {
-        setConversation(null);
-      }
-      if (showChat) {
-        setShowChat(false);
-      }
-      if (chatMessage) {
-        setChatMessage(null);
-      }
-      // Clear the conversation ref when no conversation in URL
-      previousConversationIdRef.current = null;
+      // Project selected but no conversation - clear conversation, set project
+      const project = user.projects?.find((p: any) => p.id === urlProjectId);
+      setSelectedProject(project || null);
+
+    } else {
+      // No conversation or project - clear state
+      setConversation(null);
+      setShowChat(false);
+      setChatMessage(null);
     }
-    // Don't clear showChat when URL param is missing - it's managed explicitly
-    // Only run when searchParams changes, not when user data updates (e.g., document add/delete)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   // Clear chatMessage after it's been passed to Chat component
@@ -281,64 +228,6 @@ export default function Home() {
     }
   }, [chatMessage, showChat, conversation]);
 
-  // Handle project query param from URL
-  useEffect(() => {
-    if (user) {
-      const projectId = searchParams.get('project');
-      const urlConversationId = searchParams.get('conversation');
-      const isGeneral = searchParams.get('general') === 'true' || (!projectId && !urlConversationId);
-
-      // Always reset conversation when switching channels (project/general)
-      const previousProjectId = previousProjectIdRef.current;
-
-      if (projectId && projectId !== 'general') {
-        const project = user.projects?.find((p: any) => p.id === projectId);
-        if (project) {
-          // Only reset state and switch tabs when actually switching to a different project
-          // Don't switch tabs if it's the same project (just updating project data)
-          if (previousProjectId !== project.id) {
-            setSelectedProject(project);
-            setActiveTab(0); // Reset to Chat tab only when switching projects
-            setShowChat(false);
-            setConversation(null);
-            setChatMessage(null);
-            setMessage('');
-            setMessageAttachments([]);
-            previousProjectIdRef.current = project.id;
-
-            // If no conversation in URL, don't show chat - let user type first
-          } else {
-            // Same project, just update the project object (e.g., document updates)
-            // Don't switch tabs - keep current tab
-            setSelectedProject(project);
-          }
-        } else {
-          setSelectedProject(null);
-          previousProjectIdRef.current = null;
-        }
-      } else if (isGeneral) {
-        // General channel - reset state when switching from project
-        // Only switch tabs if actually switching from a project to general
-        if (previousProjectId !== 'general' && previousProjectId !== null) {
-          setSelectedProject(null);
-          setActiveTab(0); // Reset to Chat tab only when switching to general
-          setShowChat(false);
-          setConversation(null);
-          setChatMessage(null);
-          setMessage('');
-          setMessageAttachments([]);
-          previousProjectIdRef.current = 'general';
-
-          // If no conversation in URL, don't auto-select or show chat - let user choose from list or type
-        } else if (previousProjectId === null) {
-          // First time loading general, don't switch tabs
-          setSelectedProject(null);
-          previousProjectIdRef.current = 'general';
-        }
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
 
   // Load project data when selected
   useEffect(() => {
@@ -355,54 +244,28 @@ export default function Home() {
       setProjectRules('');
       setProjectMemory(true);
     }
-  }, [selectedProject, user]);
+  }, [selectedProject]);
 
-  // Filter conversations by selected project - show when project is selected (even without active conversation)
+  // Filter conversations by selected project
   useEffect(() => {
-    const loadConversations = async () => {
-      const allConversations = await storageService.getConversations();
+    if (!user) return;
 
-      if (!selectedProject) {
-        // Show only conversations for #general (project_id is null or undefined)
-        const generalConversations = (allConversations || []).filter(
-          (conv: any) => !conv.project_id || conv.project_id === null || conv.project_id === undefined
-        );
-        setProjectConversations(generalConversations);
-      } else {
-        // Filter by project - check both project_id and also handle null/undefined
-        const filtered = (allConversations || []).filter(
-          (conv: any) => {
-            // Match if project_id exactly matches selected project
-            return conv.project_id === selectedProject.id;
-          }
-        );
-        console.log('[Home] Filtered conversations for project:', {
-          projectId: selectedProject.id,
-          projectName: selectedProject.title || selectedProject.name,
-          totalConversations: allConversations?.length || 0,
-          filteredCount: filtered.length,
-          allConversations: allConversations?.map((c: any) => ({ id: c.id, project_id: c.project_id, title: c.title }))
-        });
-        setProjectConversations(filtered);
-      }
-    };
+    // Ensure conversations is always an array, never null
+    const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
 
-    loadConversations();
-
-    // Listen for conversation updates
-    const handleConversationUpdate = () => {
-      loadConversations();
-    };
-
-    window.addEventListener('conversationCreated', handleConversationUpdate);
-    window.addEventListener('conversationUpdated', handleConversationUpdate);
-    window.addEventListener('conversationDeleted', handleConversationUpdate);
-
-    return () => {
-      window.removeEventListener('conversationCreated', handleConversationUpdate);
-      window.removeEventListener('conversationUpdated', handleConversationUpdate);
-      window.removeEventListener('conversationDeleted', handleConversationUpdate);
-    };
+    if (!selectedProject) {
+      // Show general conversations (no project_id)
+      const generalConversations = allConversations.filter(
+        (conv: any) => !conv.project_id
+      );
+      setProjectConversations(generalConversations);
+    } else {
+      // Filter by project
+      const filtered = allConversations.filter(
+        (conv: any) => conv.project_id === selectedProject.id
+      );
+      setProjectConversations(filtered);
+    }
   }, [selectedProject]);
 
   // Clear project selection when component unmounts (navigating away)
@@ -651,20 +514,46 @@ export default function Home() {
     if (!conversation) return;
 
     setIsDeleting(true);
+    const deletedConversationId = conversation.id;
+    const projectId = conversation.project_id;
 
     try {
-      const result = await conversationService.deleteConversation(conversation.id);
+      const result = await conversationService.deleteConversation(deletedConversationId);
 
       if (result.success) {
-        // Note: conversationDeleted event is already dispatched by conversationService.deleteConversation()
-        // and the sidebar will automatically refresh from local storage
-        // The handleConversationDeleted event handler will handle navigation to the previous conversation
-
         // Close dialog
         setShowDeleteDialog(false);
 
-        // Don't navigate here - let the handleConversationDeleted event handler do it
-        // This ensures we select the previous conversation from the same project
+        // Refresh user data to remove deleted conversation
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+
+          // Navigate to another conversation in the same project or clear
+          // Ensure conversations is always an array before filtering
+          const conversations = (updatedUser.conversations && Array.isArray(updatedUser.conversations)) ? updatedUser.conversations : [];
+          const remainingConversations = conversations.filter(
+            (c: any) => projectId ? c.project_id === projectId : !c.project_id
+          );
+
+          if (remainingConversations.length > 0) {
+            const nextConv = remainingConversations[0];
+            if (projectId) {
+              navigate(`/?conversation=${nextConv.id}&project=${projectId}`);
+            } else {
+              navigate(`/?conversation=${nextConv.id}&general=true`);
+            }
+          } else {
+            // No more conversations, go to project/general view
+            if (projectId) {
+              navigate(`/?project=${projectId}`);
+            } else {
+              navigate(`/?general=true`);
+            }
+            setConversation(null);
+            setShowChat(false);
+          }
+        }
       } else {
         console.error('Failed to delete conversation:', result.error);
       }
@@ -745,25 +634,71 @@ export default function Home() {
     }
   };
 
-  const handleConversationCreated = (newConversation: any) => {
+  const handleConversationCreated = async (newConversation: any) => {
     console.log('[Home] Conversation created:', newConversation);
 
     // Determine project ID from conversation or selected project
     const projectId = newConversation.project_id || selectedProject?.id;
 
     // Navigate to the new conversation URL FIRST to ensure it's selected
-    // This prevents tab switching from changing the conversation
-    // The URL change will trigger the useEffect that loads the conversation
     if (projectId) {
       navigate(`/?conversation=${newConversation.id}&project=${projectId}`, { replace: true });
     } else {
       navigate(`/?conversation=${newConversation.id}&general=true`, { replace: true });
     }
 
-    // Also set state immediately to avoid any race conditions
+    // Set state immediately
     setConversation(newConversation);
     setShowChat(true);
-    setActiveTab(0); // Switch to Chat tab
+    setActiveTab(0);
+
+    // Refresh user data to include new conversation and dispatch event
+    try {
+      const updatedUser = await userService.get();
+      if (updatedUser) {
+        setUser(updatedUser);
+        // Dispatch event to update sidebar and right column
+        window.dispatchEvent(new CustomEvent('conversationCreated', {
+          detail: { conversation: newConversation }
+        }));
+      }
+    } catch (error) {
+      console.error('[Home] Failed to refresh user after conversation created:', error);
+    }
+  };
+
+  const handleConversationUpdate = async (updatedConversation: any) => {
+    console.log('[Home] Conversation updated:', {
+      id: updatedConversation.id,
+      messagesCount: updatedConversation.messages?.length || 0
+    });
+
+    // Update local conversation state
+    setConversation(updatedConversation);
+
+    // Sync messages to server using the new method that accepts messages directly
+    if (updatedConversation.id && updatedConversation.messages) {
+      try {
+        // Sync messages directly to server (no local storage)
+        await conversationService.updateConversationMessages(
+          updatedConversation.id,
+          updatedConversation.messages
+        );
+        console.log('[Home] Synced conversation to server');
+
+        // Refresh user data to update user.conversations
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+          // Dispatch event to update sidebar
+          window.dispatchEvent(new CustomEvent('conversationUpdated', {
+            detail: { conversationId: updatedConversation.id }
+          }));
+        }
+      } catch (error) {
+        console.error('[Home] Failed to sync conversation:', error);
+      }
+    }
   };
 
   const handleDeleteProject = async (e: React.FormEvent) => {
@@ -781,8 +716,9 @@ export default function Home() {
 
     try {
       // Delete all conversations for this project first
-      const allConversations = await storageService.getConversations();
-      const projectConversations = (allConversations || []).filter(
+      // Ensure conversations is always an array, never null or undefined
+      const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      const projectConversations = allConversations.filter(
         (conv: any) => conv.project_id === selectedProject.id
       );
 
@@ -1479,7 +1415,7 @@ export default function Home() {
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
-                <Box className="flex-none px-4 md:px-8 lg:px-12 py-4 md:py-6 border-b border-gray-900">
+                <Box className="flex-none p-4 border-b border-gray-900">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
                       <button
@@ -1490,6 +1426,7 @@ export default function Home() {
                           setMessage('');
                           setConversation(null);
                           setMessageAttachments([]);
+                          setSelectedProject(null);
                           setUploadFiles([]);
                           setClearAttachmentTrigger(prev => prev + 1);
                         }}
@@ -1634,6 +1571,7 @@ export default function Home() {
                           window.dispatchEvent(new Event('refreshUserTokens'));
                         }}
                         onConversationCreated={handleConversationCreated}
+                        onConversationUpdate={handleConversationUpdate}
                       />
                     ) : activeTab === 1 ? (
                       <DocumentsTab
@@ -1654,45 +1592,45 @@ export default function Home() {
                               <div className="space-y-3">
                                 <Box className="flex items-center justify-between mb-2 py-2">
                                   <Box className="flex flex-col">
-                                      <h4 className="text-sm text-gray-400">Project Rules:</h4>
+                                    <h4 className="text-sm text-gray-400">Project Rules:</h4>
                                   </Box>
                                   <span className="text-xs text-gray-500">
                                     {projectRules.length}/300
                                   </span>
                                 </Box>
-                                  <Box className="relative">
-                                    {isSavingRules && (
-                                      <Box
-                                        sx={{
-                                          position: 'absolute',
-                                          top: '12px',
-                                          right: '12px',
-                                          zIndex: 10,
-                                          bgcolor: 'rgba(0, 0, 0, 0.7)',
-                                          borderRadius: '50%',
-                                          padding: '4px',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                        }}
-                                      >
-                                        <CircularProgress size={16} sx={{ color: '#ec4899' }} />
-                                      </Box>
-                                    )}
-                                    <Box className="markdown-editor-container">
-                                      <SimpleMDE
-                                        value={projectRules}
-                                        onChange={(value: any) => {
-                                          setProjectRules(value);
-                                          if (autoSaveTimerRef.current) {
-                                            clearTimeout(autoSaveTimerRef.current);
-                                          }
-                                          autoSaveTimerRef.current = setTimeout(() => {
-                                            autoSaveProjectRules(value);
-                                          }, 3000);
-                                        }}
-                                        options={editorOptions}
-                                      />
+                                <Box className="relative">
+                                  {isSavingRules && (
+                                    <Box
+                                      sx={{
+                                        position: 'absolute',
+                                        top: '12px',
+                                        right: '12px',
+                                        zIndex: 10,
+                                        bgcolor: 'rgba(0, 0, 0, 0.7)',
+                                        borderRadius: '50%',
+                                        padding: '4px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                                    </Box>
+                                  )}
+                                  <Box className="markdown-editor-container">
+                                    <SimpleMDE
+                                      value={projectRules}
+                                      onChange={(value: any) => {
+                                        setProjectRules(value);
+                                        if (autoSaveTimerRef.current) {
+                                          clearTimeout(autoSaveTimerRef.current);
+                                        }
+                                        autoSaveTimerRef.current = setTimeout(() => {
+                                          autoSaveProjectRules(value);
+                                        }, 3000);
+                                      }}
+                                      options={editorOptions}
+                                    />
                                   </Box>
                                 </Box>
                                 <p className="text-gray-400 text-xs">* Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
@@ -1823,198 +1761,198 @@ export default function Home() {
                   <Box className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-12 py-4" sx={{ width: '100%' }}>
                     <Box className="flex items-center justify-center mt-12 md:mt-20">
                       <Box className="max-w-4xl w-full">
-                      {/* Greeting */}
-                      <Box className="mb-8">
-                        <Box className="hidden md:flex items-center mb-4">
-                              <Box className="w-12 h-12 flex">
-                                <svg width="48" height="48" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <g clip-path="url(#clip0_1_62)">
-                                    <path d="M23 66.9683C23 84.0784 36.9216 98 54.0317 98L83.124 98C84.1946 98 85.0635 97.1311 85.0635 96.0605L85.0635 66.9683C85.0635 49.8581 71.1419 35.9365 54.0317 35.9365C36.9216 35.9365 23 49.8581 23 66.9683Z" fill="white" />
-                                    <circle cx="85.4286" cy="47.254" r="18.254" fill="#FF3478" />
-                                  </g>
-                                  <defs>
-                                    <clipPath id="clip0_1_62">
-                                      <rect width="128" height="128" fill="white" />
-                                    </clipPath>
-                                  </defs>
-                                </svg>
-                              </Box>
-                        </Box>
-                        <h1 className="text-2xl md:text-4xl font-light mb-2">
-                          <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                          <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                        </h1>
-                      </Box>
-
-                      {/* Pro Plan Banner - Only show if user is not paid */}
-                      {!user?.is_paid && (
-                        <Box
-                          className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
-                          onClick={() => navigate('/pricing')}
-                        >
-                          <Box className="flex items-center gap-2 text-sm">
-                            <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
-                            <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
+                        {/* Greeting */}
+                        <Box className="mb-8">
+                          <Box className="hidden md:flex items-center mb-4">
+                            <Box className="w-12 h-12 flex">
+                              <svg width="48" height="48" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <g clip-path="url(#clip0_1_62)">
+                                  <path d="M23 66.9683C23 84.0784 36.9216 98 54.0317 98L83.124 98C84.1946 98 85.0635 97.1311 85.0635 96.0605L85.0635 66.9683C85.0635 49.8581 71.1419 35.9365 54.0317 35.9365C36.9216 35.9365 23 49.8581 23 66.9683Z" fill="white" />
+                                  <circle cx="85.4286" cy="47.254" r="18.254" fill="#FF3478" />
+                                </g>
+                                <defs>
+                                  <clipPath id="clip0_1_62">
+                                    <rect width="128" height="128" fill="white" />
+                                  </clipPath>
+                                </defs>
+                              </svg>
+                            </Box>
                           </Box>
+                          <h1 className="text-2xl md:text-4xl font-light mb-2">
+                            <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                            <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
+                          </h1>
                         </Box>
-                      )}
 
-                      {/* Main Input Area */}
-                      <Box
-                        className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
-                      >
-                        <MentionsInput
-                          value={message}
-                          onChange={handleMentionChange}
-                          placeholder="Type your message or /project to select a project"
-                          className="mentions"
-                          allowSuggestionsAboveCursor={true}
-                          style={{
-                            control: {
-                              minHeight: '100px',
-                              border: 'none',
-                              outline: 'none',
-                              boxShadow: 'none',
-                            },
-                            input: {
-                              color: 'white',
-                              minHeight: '100px',
-                              border: 'none',
-                              outline: 'none',
-                              boxShadow: 'none',
-                            },
-                            highlighter: {
-                              minHeight: '100px',
-                              border: 'none',
-                              outline: 'none',
-                              boxShadow: 'none',
-                            },
-                            suggestions: {
-                              backgroundColor: '#0a0a0a',
-                              border: '1px solid #2a2a2a',
-                              borderRadius: '8px',
-                              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
-                              zIndex: 10000,
-                            },
-                          }}
-                          inputRef={textareaRef}
-                          onKeyDown={(e: any) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendMessage();
-                            }
-                          }}
+                        {/* Pro Plan Banner - Only show if user is not paid */}
+                        {!user?.is_paid && (
+                          <Box
+                            className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
+                            onClick={() => navigate('/pricing')}
+                          >
+                            <Box className="flex items-center gap-2 text-sm">
+                              <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
+                              <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
+                            </Box>
+                          </Box>
+                        )}
+
+                        {/* Main Input Area */}
+                        <Box
+                          className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
                         >
-                          <Mention
-                            trigger="/"
-                            data={fetchProjects}
-                            renderSuggestion={renderProjectSuggestion}
-                            displayTransform={(_id: string, _display: string) => ''}
-                            markup="/[__display__](__id__)"
-                            isLoading={false}
-                            onAdd={(id: string | number) => {
-                              // Handle project selection when user explicitly selects from dropdown
-                              const project = user?.projects?.find((p: any) => p.id === id);
-                              if (project) {
-                                setSelectedProject(project);
-                                // Clear the /command from message after selection
-                                setMessage('');
-                                // Reset previous message ref so typing doesn't trigger mention removal logic
-                                previousMessageRef.current = '';
+                          <MentionsInput
+                            value={message}
+                            onChange={handleMentionChange}
+                            placeholder="Type your message or /project to select a project"
+                            className="mentions"
+                            allowSuggestionsAboveCursor={true}
+                            style={{
+                              control: {
+                                minHeight: '100px',
+                                border: 'none',
+                                outline: 'none',
+                                boxShadow: 'none',
+                              },
+                              input: {
+                                color: 'white',
+                                minHeight: '100px',
+                                border: 'none',
+                                outline: 'none',
+                                boxShadow: 'none',
+                              },
+                              highlighter: {
+                                minHeight: '100px',
+                                border: 'none',
+                                outline: 'none',
+                                boxShadow: 'none',
+                              },
+                              suggestions: {
+                                backgroundColor: '#0a0a0a',
+                                border: '1px solid #2a2a2a',
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+                                zIndex: 10000,
+                              },
+                            }}
+                            inputRef={textareaRef}
+                            onKeyDown={(e: any) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage();
                               }
                             }}
-                            style={{
-                              backgroundColor: 'transparent',
-                            }}
-                          />
-                        </MentionsInput>
-
-                        <Box className="flex items-center justify-between mt-4">
-                          {/* Left side - File attachment and project label */}
-                          <Box className="flex items-center gap-2">
-                            <FileAttacher
-                              conversation={conversation}
-                              onSuccess={handleFileAttached}
-                              onError={(error) => console.error('File upload error:', error)}
-                              size="small"
-                              showDragDrop={true}
-                              clearTrigger={clearAttachmentTrigger}
+                          >
+                            <Mention
+                              trigger="/"
+                              data={fetchProjects}
+                              renderSuggestion={renderProjectSuggestion}
+                              displayTransform={(_id: string, _display: string) => ''}
+                              markup="/[__display__](__id__)"
+                              isLoading={false}
+                              onAdd={(id: string | number) => {
+                                // Handle project selection when user explicitly selects from dropdown
+                                const project = user?.projects?.find((p: any) => p.id === id);
+                                if (project) {
+                                  setSelectedProject(project);
+                                  // Clear the /command from message after selection
+                                  setMessage('');
+                                  // Reset previous message ref so typing doesn't trigger mention removal logic
+                                  previousMessageRef.current = '';
+                                }
+                              }}
+                              style={{
+                                backgroundColor: 'transparent',
+                              }}
                             />
-                            {/* Selected project label */}
-                            {selectedProject && (
-                              <Chip
-                                icon={<FolderOpenIcon sx={{ fontSize: 14 }} />}
-                                label={selectedProject.title || selectedProject.name}
+                          </MentionsInput>
+
+                          <Box className="flex items-center justify-between mt-4">
+                            {/* Left side - File attachment and project label */}
+                            <Box className="flex items-center gap-2">
+                              <FileAttacher
+                                conversation={conversation}
+                                onSuccess={handleFileAttached}
+                                onError={(error) => console.error('File upload error:', error)}
                                 size="small"
-                                onDelete={() => {
-                                  setSelectedProject(null);
-                                  previousMessageRef.current = ''; // Reset previous message tracking
-                                  navigate('/');
-                                }}
-                                sx={{
-                                  height: '28px',
-                                  borderRadius: '1px',
-                                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                  color: '#ec4899',
-                                  border: '1px solid rgba(236, 72, 153, 0.3)',
-                                  fontSize: '12px',
-                                  '& .MuiChip-icon': {
+                                showDragDrop={true}
+                                clearTrigger={clearAttachmentTrigger}
+                              />
+                              {/* Selected project label */}
+                              {selectedProject && (
+                                <Chip
+                                  icon={<FolderOpenIcon sx={{ fontSize: 14 }} />}
+                                  label={selectedProject.title || selectedProject.name}
+                                  size="small"
+                                  onDelete={() => {
+                                    setSelectedProject(null);
+                                    previousMessageRef.current = ''; // Reset previous message tracking
+                                    navigate('/');
+                                  }}
+                                  sx={{
+                                    height: '28px',
+                                    borderRadius: '1px',
+                                    bgcolor: 'rgba(236, 72, 153, 0.1)',
                                     color: '#ec4899',
-                                  },
-                                  '& .MuiChip-deleteIcon': {
-                                    color: 'rgba(236, 72, 153, 0.6)',
-                                    fontSize: '14px',
-                                    '&:hover': {
+                                    border: '1px solid rgba(236, 72, 153, 0.3)',
+                                    fontSize: '12px',
+                                    '& .MuiChip-icon': {
                                       color: '#ec4899',
                                     },
-                                  },
-                                }}
-                              />
-                            )}
-                          </Box>
-
-                          <button
-                            disabled={message.trim().length <= 1}
-                            className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                            onClick={handleSendMessage}
-                          >
-                            <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
-                          </button>
-                        </Box>
-
-                        {/* Helper Text */}
-                        <Box className="mt-4 pt-4 border-t border-gray-800">
-                          <Box className="text-xs text-gray-500">
-                            💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">/</span> to select a project. Use ↑↓ to navigate, Enter to confirm.
-                          </Box>
-                        </Box>
-                      </Box>
-
-                      {/* Feature Cards */}
-                      <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
-                        {features.map((feature, index) => (
-                          <Box
-                            key={index}
-                            className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
-                          >
-                            <Box className="mb-4">
-                              <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
+                                    '& .MuiChip-deleteIcon': {
+                                      color: 'rgba(236, 72, 153, 0.6)',
+                                      fontSize: '14px',
+                                      '&:hover': {
+                                        color: '#ec4899',
+                                      },
+                                    },
+                                  }}
+                                />
+                              )}
                             </Box>
-                            <Box className="flex items-center gap-2 text-gray-400">
-                              {feature.icon}
-                              <span className="text-sm">{feature.subtitle}</span>
+
+                            <button
+                              disabled={message.trim().length <= 1}
+                              className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
+                              onClick={handleSendMessage}
+                            >
+                              <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
+                            </button>
+                          </Box>
+
+                          {/* Helper Text */}
+                          <Box className="mt-4 pt-4 border-t border-gray-800">
+                            <Box className="text-xs text-gray-500">
+                              💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">/</span> to select a project. Use ↑↓ to navigate, Enter to confirm.
                             </Box>
                           </Box>
-                        ))}
-                      </Box>
+                        </Box>
 
-                      {/* Bottom Text */}
-                      <Box className="text-center text-gray-400 text-sm">
-                        Ready to assist you with anything you need.
+                        {/* Feature Cards */}
+                        <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
+                          {features.map((feature, index) => (
+                            <Box
+                              key={index}
+                              className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
+                            >
+                              <Box className="mb-4">
+                                <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
+                              </Box>
+                              <Box className="flex items-center gap-2 text-gray-400">
+                                {feature.icon}
+                                <span className="text-sm">{feature.subtitle}</span>
+                              </Box>
+                            </Box>
+                          ))}
+                        </Box>
+
+                        {/* Bottom Text */}
+                        <Box className="text-center text-gray-400 text-sm">
+                          Ready to assist you with anything you need.
+                        </Box>
                       </Box>
                     </Box>
                   </Box>
-                </Box>
                 </Box>
               </Box>
             )}
