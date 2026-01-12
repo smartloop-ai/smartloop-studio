@@ -107,7 +107,7 @@ export default function DocumentPolling({
       } catch (error) {
         console.error('Error polling for document status:', error);
       }
-    }, 3000);
+    }, 1000);
 
     pollingIntervalRef.current = interval;
     setPollingInterval(interval);
