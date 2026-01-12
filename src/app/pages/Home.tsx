@@ -94,7 +94,7 @@ export default function Home() {
         setShowOnboarding(true);
       }
     }
-  }, []);
+  }, [user]);
 
   // Listen for conversation deletion events
   useEffect(() => {

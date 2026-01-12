@@ -18,35 +18,15 @@ import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL } from '@/app/constants';
+import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
+import { get } from 'http';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-// Available color options for project labels
-export const PROJECT_COLORS = [
-  { name: 'Pink', value: 'rgba(244, 114, 182, 0.6)' },
-  { name: 'Red', value: 'rgba(236, 153, 153, 0.6)' },
-  { name: 'Orange', value: 'rgba(251, 146, 60, 0.6)' },
-  { name: 'Yellow', value: 'rgba(251, 191, 36, 0.6)' },
-  { name: 'Green', value: 'rgba(167, 243, 208, 0.6)' },
-  { name: 'Teal', value: 'rgba(94, 234, 212, 0.6)' },
-  { name: 'Blue', value: 'rgba(147, 197, 253, 0.6)' },
-  { name: 'Indigo', value: 'rgba(129, 140, 248, 0.6)' },
-  { name: 'Purple', value: 'rgba(196, 181, 253, 0.6)' },
-  { name: 'Amber', value: 'rgba(252, 211, 77, 0.6)' },
-];
-
-// Default color (pink)
-export const DEFAULT_COLOR = 'rgba(244, 114, 182, 0.6)';
-
 // Get color for project - use project's color if exists, otherwise default to pink
 const getColorForProject = (project: any): string => {
-  if (project?.color) {
+  if (project && project?.color) {
     return project.color;
-  }
-  // Fallback for string name (backward compatibility)
-  if (typeof project === 'string') {
-    return DEFAULT_COLOR;
   }
   return DEFAULT_COLOR;
 };
@@ -788,7 +768,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     width: 12,
                     height: 12,
                     borderRadius: '2px',
-                    bgcolor: DEFAULT_COLOR,
+                    bgcolor: getColorForProject(null),
                     flexShrink: 0,
                   }}
                 />
