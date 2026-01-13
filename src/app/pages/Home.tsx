@@ -21,7 +21,6 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import ArrowBackIosIcon from '@mui/icons-material/ArrowBackIos';
 import AddBoxIcon from '@mui/icons-material/AddBox';
 import FileAttacher from '@/app/components/file-attacher';
 import DocumentPolling from '@/app/components/document-polling';
@@ -808,7 +807,7 @@ export default function Home() {
 
   const getProjectColor = (project: any) => {
     return project?.color || DEFAULT_COLOR;
-  };  
+  };
 
   const features = [
     {
