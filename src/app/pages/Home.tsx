@@ -514,6 +514,7 @@ export default function Home() {
 
             // Set all state updates together before navigation to avoid race conditions
             setConversation(newConversation);
+            setActiveTab(0); // Select chat tab 0
             setShowChat(true); // Set showChat immediately after creating conversation
             setMessageAttachments(attachmentsToSend);
             setChatMessage(cleanMessage);
