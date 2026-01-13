@@ -70,6 +70,9 @@ export function useAuth(): [any, (user: any) => void] {
         else {
           // User is authenticated and verified
           setUser(u);
+
+          // Initialize token refresh in the background
+          userService.initializeTokenRefresh();
         }
       } catch (error: any) {
         console.error('useAuth: Error during authentication check:', error);

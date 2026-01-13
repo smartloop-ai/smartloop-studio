@@ -19,11 +19,11 @@ import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
 import { API_ENDPOINT } from '@/app/constants';
 import Sidebar from '@/app/components/sidebar';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
 
 function DocumentsListContent() {
-  const [user, setUser] = useAuth();
+  const [user, setUser] = useAuthContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [allDocuments, setAllDocuments]: any = useState([]);
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);

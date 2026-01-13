@@ -34,10 +34,10 @@ import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 
 export default function Home() {
-  const [user, setUser] = useAuth();
+  const [user, setUser] = useAuthContext();
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [selectedProject, setSelectedProject]: any = useState(null);

@@ -3,7 +3,7 @@ import '../styles/markdown-editor.css';
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { userService } from '@/app/services/user.service';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 
 import CloseIcon from '@mui/icons-material/Close';
 import AddBoxIcon from '@mui/icons-material/AddBox';
@@ -54,7 +54,7 @@ function ProjectSection(props: TabPanelProps) {
 }
 
 export default function Project() {
-  const [user, setUser] = useAuth();
+  const [user, setUser] = useAuthContext();
   const [current, setCurrent]: any = useState({});
   const [openDocumentUploadDialog, setOpenDocumentUploadDialog] = useState(false);
   const [openProjectDeleteDialog, setOpenProjectDeleteDialog] = useState(false);

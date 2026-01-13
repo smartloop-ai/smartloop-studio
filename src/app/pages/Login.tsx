@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Box, CircularProgress } from '@mui/material';
 import { APP_URL, API_BASE_URL } from '@/app/constants';
-import { userService } from '@/app/services/user.service';
+import { storageService } from '@/app/services/storage.service';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -17,6 +17,9 @@ export default function Login() {
   // Listen for OAuth callback in Electron
   useEffect(() => {
     if (isElectron && window.electronAPI) {
+      // Remove any existing listeners first to prevent duplicates
+      window.electronAPI.removeOAuthCallbackListener?.();
+
       window.electronAPI.onOAuthCallback(async ({ accessToken, error }) => {
         console.log('OAuth callback received:', { accessToken: accessToken ? 'present' : 'missing', error });
 
@@ -35,16 +38,20 @@ export default function Login() {
             const validation = await window.electronAPI.validateToken(accessToken);
 
             if (validation.valid) {
-              // Store the access token
+              // Store the access token to both localStorage (for sync access) and storageService (for persistence)
               localStorage.setItem('token', accessToken);
+              await storageService.setItem('token', accessToken);
 
               // Store user data if provided
               if (validation.user) {
-                localStorage.setItem('u', JSON.stringify(validation.user));
+                const userData = JSON.stringify(validation.user);
+                localStorage.setItem('u', userData);
+                await storageService.setItem('u', userData);
               }
 
-              // Initialize token refresh in the background
-              userService.initializeTokenRefresh();
+              // Note: Don't start token refresh here - useAuth will start it
+              // after verifying the token. Starting it here causes a race condition
+              // where the refresh can invalidate the token before navigation completes.
 
               setStatusMessage("Success! Redirecting...");
 
@@ -60,28 +67,37 @@ export default function Login() {
           }
         }
       });
+
+      // Cleanup listener on unmount
+      return () => {
+        window.electronAPI?.removeOAuthCallbackListener?.();
+      };
     }
   }, [isElectron, navigate]);
 
   // Check if already logged in
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // Optionally validate the token before redirecting
-      if (isElectron && window.electronAPI) {
-        window.electronAPI.validateToken(token).then((validation) => {
+    const checkExistingToken = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        // Optionally validate the token before redirecting
+        if (isElectron && window.electronAPI) {
+          const validation = await window.electronAPI.validateToken(token);
           if (validation.valid) {
             navigate('/', { replace: true });
           } else {
-            // Token is invalid, clear it
+            // Token is invalid, clear it from both storage systems
             localStorage.removeItem('token');
             localStorage.removeItem('u');
+            await storageService.removeItem('token');
+            await storageService.removeItem('u');
           }
-        });
-      } else {
-        navigate('/', { replace: true });
+        } else {
+          navigate('/', { replace: true });
+        }
       }
-    }
+    };
+    checkExistingToken();
   }, [navigate, isElectron]);
 
   const handleLogin = async () => {

@@ -1,11 +1,15 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import './app/globals.css';
 import App from './App';
 import ErrorBoundary from './app/components/error-boundary';
+
+// Use HashRouter for Electron (file:// protocol) and BrowserRouter for web
+const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+const Router = isElectron ? HashRouter : BrowserRouter;
 
 // Global handler for network-related errors (chunk loading failures, etc.)
 window.addEventListener('error', (event) => {
@@ -63,9 +67,9 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <BrowserRouter>
+        <Router>
           <App />
-        </BrowserRouter>
+        </Router>
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>

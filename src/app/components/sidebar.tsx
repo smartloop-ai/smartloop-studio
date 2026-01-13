@@ -15,6 +15,7 @@ import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
+import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
@@ -146,10 +147,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setAnchorEl(null);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Only clear auth tokens, keep chat history
     localStorage.removeItem('token');
     localStorage.removeItem('u');
+    await storageService.removeItem('token');
+    await storageService.removeItem('u');
     sessionStorage.clear();
     navigate('/login');
     handleMenuClose();

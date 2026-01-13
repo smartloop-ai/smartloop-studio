@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOAuthCallback: (callback) => {
     ipcRenderer.on('oauth-callback', (event, data) => callback(data));
   },
+  removeOAuthCallbackListener: () => {
+    ipcRenderer.removeAllListeners('oauth-callback');
+  },
   // Token refresh methods
   refreshToken: (token) => ipcRenderer.invoke('refresh-token', token),
   startTokenRefresh: () => ipcRenderer.invoke('start-token-refresh'),

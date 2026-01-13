@@ -13,12 +13,12 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
 import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 export default function ProjectsList() {
-  const [user, setUser] = useAuth();
+  const [user, setUser] = useAuthContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [projectToDelete, setProjectToDelete]: any = useState(null);

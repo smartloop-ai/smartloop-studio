@@ -13,12 +13,12 @@ import FlashOnIcon from '@mui/icons-material/FlashOn';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import MobileNav from '@/app/components/mobile-nav';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import Sidebar from '@/app/components/sidebar';
 
 export default function Profile() {
     const navigate = useNavigate();
-    const [user] = useAuth();
+    const [user] = useAuthContext();
     const [loading, setLoading] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
