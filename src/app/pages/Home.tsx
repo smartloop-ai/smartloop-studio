@@ -203,14 +203,20 @@ export default function Home() {
           }
         }
 
-        // Set project from conversation or general flag
-        if (isGeneral) {
-          setSelectedProject(null);
-        } else if (foundConversation.project_id) {
+        // Set project based on conversation's project_id - conversation is the source of truth
+        if (foundConversation.project_id) {
           const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-          setSelectedProject(project || null);
+          // Always update if project changed or doesn't match
+          if (!selectedProject || selectedProject.id !== foundConversation.project_id) {
+            console.log('[Home] Setting project from conversation:', foundConversation.project_id);
+            setSelectedProject(project || null);
+          }
         } else {
-          setSelectedProject(null);
+          // Conversation has no project - it's a general conversation
+          if (selectedProject !== null) {
+            console.log('[Home] Clearing project for general conversation');
+            setSelectedProject(null);
+          }
         }
       }
     } else if (isGeneral) {
