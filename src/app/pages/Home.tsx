@@ -350,6 +350,7 @@ export default function Home() {
     const suggestions: SuggestionDataItem[] = filteredProjects.map((project: any) => ({
       id: project.id,
       display: project.title || project.name || 'Untitled Project',
+      color: project.color || DEFAULT_COLOR
     }));
 
     callback(suggestions);
@@ -359,7 +360,15 @@ export default function Home() {
   const renderProjectSuggestion = (_suggestion: SuggestionDataItem, _search: string, highlightedDisplay: React.ReactNode) => {
     return (
       <div className="mention-project-item">
-        <FolderOpenIcon className="mention-project-icon" />
+         <Box
+          sx={{
+            width: 12,
+            height: 12,
+            borderRadius: '2px',
+            bgcolor: _suggestion.color,
+            flexShrink: 0,
+          }}
+        />
         <div className="mention-project-name">{highlightedDisplay}</div>
       </div>
     );
@@ -1934,7 +1943,17 @@ export default function Home() {
                               {/* Selected project label */}
                               {selectedProject && (
                                 <Chip
-                                  icon={<FolderOpenIcon sx={{ fontSize: 14 }} />}
+                                  icon={
+                                     <Box
+                                      sx={{
+                                        width: 12,
+                                        height: 12,
+                                        borderRadius: '2px',
+                                        bgcolor: selectedProject.color || DEFAULT_COLOR,
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                  }
                                   label={selectedProject.title || selectedProject.name}
                                   size="small"
                                   onDelete={() => {
