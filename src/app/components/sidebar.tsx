@@ -223,9 +223,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     // Get conversations from local storage
     const recentConversations = conversations
       .map((conversation: any) => {
-        // Get last message from either last_message field or last message in messages array
-        let lastMessage = conversation.last_message;
-        if (!lastMessage && Array.isArray(conversation.messages) && conversation.messages.length > 0) {
+        let lastMessage = null;
+
+        if (Array.isArray(conversation.messages) && conversation.messages.length > 0) {
           const lastMsg = conversation.messages.at(-1);
           lastMessage = lastMsg?.content || null;
         }
