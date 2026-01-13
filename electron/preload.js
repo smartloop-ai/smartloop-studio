@@ -25,6 +25,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOAuthCallback: (callback) => {
     ipcRenderer.on('oauth-callback', (event, data) => callback(data));
   },
+  // Token refresh methods
+  refreshToken: (token) => ipcRenderer.invoke('refresh-token', token),
+  startTokenRefresh: () => ipcRenderer.invoke('start-token-refresh'),
+  stopTokenRefresh: () => ipcRenderer.invoke('stop-token-refresh'),
+  onTokenRefreshed: (callback) => {
+    ipcRenderer.on('token-refreshed', (event, data) => callback(data));
+  },
+  removeTokenRefreshListener: () => {
+    ipcRenderer.removeAllListeners('token-refreshed');
+  },
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),

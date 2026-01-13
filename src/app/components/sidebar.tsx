@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
@@ -1094,11 +1094,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 }}
               >
                 {user.name ? (
-                  <span style={{ color: '#ec4899', fontSize: '13px', fontWeight: 700 }}>
+                  <span className="text-pink-500 text-xs font-bold">
                     {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                   </span>
                 ) : (
-                  <span style={{ color: '#ec4899', fontSize: '13px', fontWeight: 700 }}>U</span>
+                  <span className="text-pink-500 text-xs font-bold">U</span>
                 )}
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -1119,7 +1119,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
                 }}>
-                  {user.email || ''}
+
+                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{ capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
                 </Box>
               </Box>
               <ExpandMoreIcon

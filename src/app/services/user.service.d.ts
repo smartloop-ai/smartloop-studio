@@ -6,6 +6,8 @@ export interface UserService {
   get(): Promise<any>;
   updateSettings(settings: any): Promise<any>;
   makeAuthenticatedRequest(url: string, options?: RequestInit): Promise<Response | null>;
+  initializeTokenRefresh(): void;
+  stopTokenRefresh(): void;
 }
 
 declare const userService: UserService;

@@ -14,7 +14,59 @@ const getToken = () => {
 const logout = () => {
   localStorage.removeItem("token");
   localStorage.removeItem("u");
+
+  // Stop token refresh when logging out
+  stopTokenRefresh();
 }
+
+// Check if running in Electron
+const isElectron = () => {
+  return typeof window !== 'undefined' && window.electronAPI?.isElectron;
+};
+
+// Initialize token refresh (call this after successful login)
+const initializeTokenRefresh = () => {
+  if (!isElectron()) {
+    console.log('[TokenRefresh] Not in Electron, skipping token refresh setup');
+    return;
+  }
+
+  const token = getToken();
+  if (!token) {
+    console.log('[TokenRefresh] No token found, skipping refresh setup');
+    return;
+  }
+
+  console.log('[TokenRefresh] Initializing token refresh...');
+
+  // Set up listener for token refresh events from main process
+  window.electronAPI.onTokenRefreshed((data) => {
+    if (data.success && data.token) {
+      console.log('[TokenRefresh] Received new token from main process');
+      localStorage.setItem('token', data.token);
+
+      // Dispatch event so other parts of the app can react if needed
+      window.dispatchEvent(new CustomEvent('tokenRefreshed', { detail: { token: data.token } }));
+    } else if (data.requiresReauth) {
+      console.log('[TokenRefresh] Token expired, redirecting to login');
+      redirectToLogin();
+    }
+  });
+
+  // Start the background refresh
+  window.electronAPI.startTokenRefresh();
+};
+
+// Stop token refresh
+const stopTokenRefresh = () => {
+  if (!isElectron()) {
+    return;
+  }
+
+  console.log('[TokenRefresh] Stopping token refresh...');
+  window.electronAPI.removeTokenRefreshListener();
+  window.electronAPI.stopTokenRefresh();
+};
 
 const redirectToLogin = () => {
   logout();
@@ -257,5 +309,7 @@ export const userService = {
   makeAuthenticatedRequest: makeAuthenticatedRequest,
   redirectToLogin: redirectToLogin,
   fetchAndStoreUser: fetchAndStoreUser,
-  updateSettings: updateSettings
+  updateSettings: updateSettings,
+  initializeTokenRefresh: initializeTokenRefresh,
+  stopTokenRefresh: stopTokenRefresh
 }

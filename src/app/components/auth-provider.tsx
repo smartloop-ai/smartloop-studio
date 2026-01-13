@@ -52,6 +52,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         } else {
           // User is authenticated and verified
           console.log('AuthProvider: User authenticated successfully');
+
+          // Initialize token refresh in the background
+          userService.initializeTokenRefresh();
         }
       } catch (error: any) {
         console.error('AuthProvider: Error during authentication check:', error);

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Box, CircularProgress } from '@mui/material';
 import { APP_URL, API_BASE_URL } from '@/app/constants';
+import { userService } from '@/app/services/user.service';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -41,6 +42,9 @@ export default function Login() {
               if (validation.user) {
                 localStorage.setItem('u', JSON.stringify(validation.user));
               }
+
+              // Initialize token refresh in the background
+              userService.initializeTokenRefresh();
 
               setStatusMessage("Success! Redirecting...");
 

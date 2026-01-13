@@ -16,6 +16,10 @@ if (process.env.NODE_ENV === 'development') {
 
 let mainWindow;
 let splashWindow;
+let tokenRefreshInterval = null;
+
+// Token refresh configuration
+const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes (before 15-min expiry)
 
 const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
@@ -247,6 +251,129 @@ ipcMain.handle('validate-token', async (event, token) => {
     console.error('[OAuth] Token validation error:', error);
     return { valid: false, error: error.message };
   }
+});
+
+// Handle token refresh
+ipcMain.handle('refresh-token', async (event, token) => {
+  console.log('[TokenRefresh] Refreshing token...');
+
+  try {
+    const refreshUrl = `${BASE_URL}/v1/auth/jwt/refresh`;
+    const response = await fetch(refreshUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log('[TokenRefresh] Token refreshed successfully');
+      return { success: true, token: data.access_token };
+    } else {
+      const errorText = await response.text();
+      console.error('[TokenRefresh] Failed to refresh token:', response.status, errorText);
+      return { success: false, error: errorText, status: response.status };
+    }
+  } catch (error) {
+    console.error('[TokenRefresh] Error refreshing token:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Start periodic token refresh
+ipcMain.handle('start-token-refresh', async (event, token) => {
+  console.log('[TokenRefresh] Starting periodic token refresh');
+
+  // Clear any existing interval
+  if (tokenRefreshInterval) {
+    clearInterval(tokenRefreshInterval);
+    tokenRefreshInterval = null;
+  }
+
+  // Function to perform token refresh
+  const performRefresh = async () => {
+    if (!mainWindow) {
+      console.log('[TokenRefresh] No main window, skipping refresh');
+      return;
+    }
+
+    try {
+      const refreshUrl = `${BASE_URL}/v1/auth/jwt/refresh`;
+
+      // Get the current token from renderer
+      const currentToken = await mainWindow.webContents.executeJavaScript(
+        'localStorage.getItem("token")'
+      );
+
+      if (!currentToken) {
+        console.log('[TokenRefresh] No token found, stopping refresh');
+        stopTokenRefresh();
+        return;
+      }
+
+      const response = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentToken}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[TokenRefresh] Token refreshed successfully (periodic)');
+
+        // Send the new token to the renderer
+        if (mainWindow) {
+          mainWindow.webContents.send('token-refreshed', {
+            success: true,
+            token: data.access_token
+          });
+        }
+      } else {
+        console.error('[TokenRefresh] Failed to refresh token (periodic):', response.status);
+
+        // If 401, token is invalid - notify renderer to re-authenticate
+        if (response.status === 401) {
+          stopTokenRefresh();
+          if (mainWindow) {
+            mainWindow.webContents.send('token-refreshed', {
+              success: false,
+              error: 'Token expired',
+              requiresReauth: true
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[TokenRefresh] Error during periodic refresh:', error);
+    }
+  };
+
+  // Perform initial refresh
+  await performRefresh();
+
+  // Set up periodic refresh
+  tokenRefreshInterval = setInterval(performRefresh, TOKEN_REFRESH_INTERVAL);
+  console.log('[TokenRefresh] Refresh interval set to', TOKEN_REFRESH_INTERVAL / 1000 / 60, 'minutes');
+
+  return { success: true };
+});
+
+// Stop token refresh
+function stopTokenRefresh() {
+  if (tokenRefreshInterval) {
+    clearInterval(tokenRefreshInterval);
+    tokenRefreshInterval = null;
+    console.log('[TokenRefresh] Stopped periodic token refresh');
+  }
+}
+
+ipcMain.handle('stop-token-refresh', async () => {
+  stopTokenRefresh();
+  return { success: true };
 });
 
 // Handle deep linking for OAuth callback
