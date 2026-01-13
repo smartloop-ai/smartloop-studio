@@ -25,7 +25,7 @@ export default function FileAttacher({
   disabled = false,
   size = 'small',
   showDragDrop = false,
-  maxFileSize = 5,
+  maxFileSize = 10,
   clearTrigger = 0,
 }: FileAttacherProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

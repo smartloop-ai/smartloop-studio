@@ -1,12 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
-import DescriptionIcon from '@mui/icons-material/Description';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -37,10 +35,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(anchorEl);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchAnchorEl, setSearchAnchorEl] = useState<null | HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchOpen = Boolean(searchAnchorEl) && searchQuery.trim().length > 0;
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [liveUser, setLiveUser] = useState(user);
   const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -225,11 +220,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     // Get conversations from local storage
     const recentConversations = conversations
       .map((conversation: any) => {
+        // Get last message from either last_message field or last message in messages array
+        let lastMessage = conversation.last_message;
+        if (!lastMessage && Array.isArray(conversation.messages) && conversation.messages.length > 0) {
+          const lastMsg = conversation.messages.at(-1);
+          lastMessage = lastMsg?.content || null;
+        }
+
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
           projectId: conversation.project_id || null,
-          lastMessage: conversation.last_message || null,
+          lastMessage,
           createdAt: conversation.created_at || new Date(),
         };
       })
@@ -245,88 +247,28 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const recentChats = getRecentChats();
 
-  // Search functionality
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim() || !liveUser) return { projects: [], documents: [], allItems: [] };
+  // Search functionality - filter projects only
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim() || !liveUser?.projects) return liveUser?.projects || [];
 
     const query = searchQuery.toLowerCase();
 
-    const projects = (liveUser.projects || []).filter((project: any) => {
+    return (liveUser.projects || []).filter((project: any) => {
       const title = (project.title || project.name || '').toLowerCase();
       return title.includes(query);
     });
-
-    const documents = (liveUser.projects || []).flatMap((project: any) =>
-      (project.documents || [])
-        .filter((doc: any) => {
-          const name = (doc.name || '').toLowerCase();
-          return name.includes(query);
-        })
-        .map((doc: any) => ({
-          ...doc,
-          projectId: project.id,
-          projectName: project.title || project.name || 'Untitled Project'
-        }))
-    );
-
-    // Create a flat list for keyboard navigation
-    const allItems = [
-      ...projects.map((p: any) => ({ type: 'project', data: p })),
-      ...documents.map((d: any) => ({ type: 'document', data: d }))
-    ];
-
-    return { projects, documents, allItems };
   }, [searchQuery, liveUser]);
-
-  const handleSearchFocus = (event: React.FocusEvent<HTMLInputElement>) => {
-    if (searchQuery.trim()) {
-      setSearchAnchorEl(event.currentTarget);
-    }
-  };
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setSearchQuery(value);
-    setSelectedIndex(0);
-    if (value.trim()) {
-      setSearchAnchorEl(event.currentTarget);
-    } else {
-      setSearchAnchorEl(null);
-    }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!searchOpen || searchResults.allItems.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setSelectedIndex((prev) =>
-          prev < searchResults.allItems.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter': {
-        event.preventDefault();
-        const selected = searchResults.allItems[selectedIndex];
-        if (selected) {
-          if (selected.type === 'project') {
-            handleProjectClick(selected.data.id);
-          } else {
-            handleDocumentClick(selected.data.projectId, selected.data.id);
-          }
-        }
-        break;
-      }
-      case 'Escape':
-        event.preventDefault();
-        setSearchQuery('');
-        setSearchAnchorEl(null);
-        searchInputRef.current?.blur();
-        break;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSearchQuery('');
+      searchInputRef.current?.blur();
     }
   };
 
@@ -393,8 +335,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
 
     setSearchQuery('');
-    setSearchAnchorEl(null);
-    searchInputRef.current?.blur();
     onMobileClose?.();
   };
 
@@ -452,17 +392,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  const handleDocumentClick = (projectId: string, documentId: string) => {
-    navigate(`/project/${projectId}?tab=0&doc=${documentId}`);
-    setSearchQuery('');
-    setSearchAnchorEl(null);
-    searchInputRef.current?.blur();
-    onMobileClose?.();
-  };
-
   const clearSearch = () => {
     setSearchQuery('');
-    setSearchAnchorEl(null);
   };
 
   const sidebarContent = (
@@ -536,7 +467,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             placeholder="Search projects"
             value={searchQuery}
             onChange={handleSearchChange}
-            onFocus={handleSearchFocus}
             onKeyDown={handleKeyDown}
             className="bg-transparent border-none outline-none text-white text-sm flex-1 placeholder-gray-500"
           />
@@ -567,127 +497,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             }}>⌘K</Box>
           )}
         </Box>
-
-        {/* Search Results Popover */}
-        <Popover
-          open={searchOpen}
-          anchorEl={searchAnchorEl}
-          onClose={() => { }}
-          disableAutoFocus
-          disableEnforceFocus
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'center',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'center',
-          }}
-          PaperProps={{
-            sx: {
-              bgcolor: 'rgba(0, 0, 0, 0.98)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              width: searchAnchorEl?.offsetWidth || '248px',
-              maxHeight: '400px',
-              overflow: 'auto',
-              mt: 0.5,
-              pointerEvents: 'auto',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            }
-          }}
-          sx={{
-            pointerEvents: 'none',
-          }}
-        >
-          <Box className="p-2">
-            {searchResults.projects.length === 0 && searchResults.documents.length === 0 ? (
-              <Box className="text-gray-500 text-sm p-3 text-center">
-                No results found
-              </Box>
-            ) : (
-              <>
-                {searchResults.projects.length > 0 && (
-                  <Box className="mb-2">
-                    <Box className="text-xs text-gray-500 px-2 py-1 font-medium">
-                      PROJECTS ({searchResults.projects.length})
-                    </Box>
-                    {searchResults.projects.map((project: any, index: number) => {
-                      const isSelected = selectedIndex === index;
-                      return (
-                        <Box
-                          key={project.id}
-                          onClick={() => handleProjectClick(project.id)}
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1.5,
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            color: isSelected ? '#fff' : '#d1d5db',
-                            bgcolor: isSelected ? '#2a2a2a' : 'transparent',
-                            borderRadius: '6px',
-                            '&:hover': {
-                              bgcolor: '#2a2a2a',
-                              color: '#fff',
-                            },
-                          }}
-                        >
-                          <FolderOpenIcon sx={{ fontSize: 16, color: '#ec4899' }} />
-                          <span className="text-sm truncate">
-                            {project.title || project.name || 'Untitled Project'}
-                          </span>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
-
-                {searchResults.documents.length > 0 && (
-                  <Box>
-                    <Box className="text-xs text-gray-500 px-2 py-1 font-medium">
-                      DOCUMENTS ({searchResults.documents.length})
-                    </Box>
-                    {searchResults.documents.map((doc: any, index: number) => {
-                      const globalIndex = searchResults.projects.length + index;
-                      const isSelected = selectedIndex === globalIndex;
-                      return (
-                        <Box
-                          key={doc.id}
-                          onClick={() => handleDocumentClick(doc.projectId, doc.id)}
-                          sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 0.5,
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            color: isSelected ? '#fff' : '#d1d5db',
-                            bgcolor: isSelected ? '#2a2a2a' : 'transparent',
-                            borderRadius: '6px',
-                            '&:hover': {
-                              bgcolor: '#2a2a2a',
-                              color: '#fff',
-                            },
-                          }}
-                        >
-                          <Box className="flex items-center gap-1.5">
-                            <DescriptionIcon sx={{ fontSize: 16, color: '#60a5fa' }} />
-                            <span className="text-sm truncate">{doc.name}</span>
-                          </Box>
-                          <span className="text-xs text-gray-600 ml-6 truncate">
-                            in {doc.projectName}
-                          </span>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
-              </>
-            )}
-          </Box>
-        </Popover>
       </Box>
 
       {/* Navigation */}
@@ -774,9 +583,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 <span style={{ flex: 1 }}>general</span>
               </Box>
 
-              {/* Project list */}
-              {liveUser?.projects && liveUser.projects.length > 0 && (
-                liveUser.projects.map((project: any) => {
+              {/* Project list - filtered by search */}
+              {filteredProjects && filteredProjects.length > 0 && (
+                filteredProjects.map((project: any) => {
                   const isActive = currentProjectId === project.id;
                   const projectName = project.title || project.name || 'Untitled Project';
 
@@ -929,7 +738,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   ? (chat.lastMessage.length > 50
                     ? chat.lastMessage.substring(0, 50) + '...'
                     : chat.lastMessage)
-                  : 'Start a conversation...'}
+                  : 'start a conversation'}
               </span>
             </Box>
           ))
