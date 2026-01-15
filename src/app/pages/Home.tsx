@@ -36,6 +36,11 @@ import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
+// Extend SuggestionDataItem to include color property
+interface ProjectSuggestion extends SuggestionDataItem {
+  color?: string;
+}
+
 export default function Home() {
   const [user, setUser] = useAuthContext();
   const [isLoading, setIsLoading] = useState(true);
@@ -329,7 +334,7 @@ export default function Home() {
   };
 
   // Fetch projects for mentions
-  const fetchProjects = async (search: string, callback: (data: SuggestionDataItem[]) => void) => {
+  const fetchProjects = async (search: string, callback: (data: ProjectSuggestion[]) => void) => {
     if (!user?.projects) {
       callback([]);
       return;
@@ -347,7 +352,7 @@ export default function Home() {
       return projectName.includes(searchTerm);
     });
 
-    const suggestions: SuggestionDataItem[] = filteredProjects.map((project: any) => ({
+    const suggestions: ProjectSuggestion[] = filteredProjects.map((project: any) => ({
       id: project.id,
       display: project.title || project.name || 'Untitled Project',
       color: project.color || DEFAULT_COLOR
@@ -357,10 +362,10 @@ export default function Home() {
   };
 
   // Render mention suggestions
-  const renderProjectSuggestion = (_suggestion: SuggestionDataItem, _search: string, highlightedDisplay: React.ReactNode) => {
+  const renderProjectSuggestion = (_suggestion: ProjectSuggestion, _search: string, highlightedDisplay: React.ReactNode) => {
     return (
       <div className="mention-project-item">
-         <Box
+        <Box
           sx={{
             width: 12,
             height: 12,
@@ -1473,16 +1478,16 @@ export default function Home() {
                 <Box className="flex-none p-4 border-b border-gray-900">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
-                       <Box
-                          sx={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '2px',
-                            bgcolor: getProjectColor(selectedProject),
-                            flexShrink: 0,
-                          }}
-                        />
-                        <Box className="flex-1 min-w-0">
+                      <Box
+                        sx={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '2px',
+                          bgcolor: getProjectColor(selectedProject),
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Box className="flex-1 min-w-0">
                         {isEditingProjectName && selectedProject ? (
                           <TextField
                             autoFocus
@@ -1945,7 +1950,7 @@ export default function Home() {
                               {selectedProject && (
                                 <Chip
                                   icon={
-                                     <Box
+                                    <Box
                                       sx={{
                                         width: 12,
                                         height: 12,
