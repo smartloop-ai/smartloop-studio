@@ -1,12 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Popover, Dialog, CircularProgress } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
-import { storageService } from '../services/storage.service';
+import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
-import DescriptionIcon from '@mui/icons-material/Description';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -15,11 +13,21 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
+import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
+import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL } from '@/app/constants';
+import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+
+// Get color for project - use project's color if exists, otherwise default to pink
+const getColorForProject = (project: any): string => {
+  if (project && project?.color) {
+    return project.color;
+  }
+  return DEFAULT_COLOR;
+};
 
 export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void }) {
   const navigate = useNavigate();
@@ -28,33 +36,36 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(anchorEl);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchAnchorEl, setSearchAnchorEl] = useState<null | HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchOpen = Boolean(searchAnchorEl) && searchQuery.trim().length > 0;
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [liveUser, setLiveUser] = useState(user);
   const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
+  const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [createProjectError, setCreateProjectError] = useState('');
 
   // Update live user when prop changes
   useEffect(() => {
     setLiveUser(user);
+    // Ensure conversations is always an array, never null or undefined
+    const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+    setConversations(conversations);
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
   }, [user]);
 
-  // Load conversations from local storage on mount
-  useEffect(() => {
-    loadConversationsFromStorage();
-  }, []);
 
   // Load conversations from local storage
-  const loadConversationsFromStorage = async () => {
+  const refreshConversations = async () => {
     try {
-      const conversations = await storageService.getConversations();
-      setConversations(conversations || []);
+      const user = await userService.get();
+      // Ensure conversations is always an array, never null or undefined
+      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      setConversations(conversations);
     } catch (error) {
       console.error('Error loading conversations from storage:', error);
     }
@@ -79,22 +90,52 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshUserData();
     };
 
+    const handleUserUpdated = (event: CustomEvent) => {
+      // Update user and conversations from the event detail (no need to fetch)
+      if (event.detail) {
+        setLiveUser(event.detail);
+        const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
+        setConversations(conversations);
+      }
+    };
+
     const handleConversationCreated = () => {
-      loadConversationsFromStorage();
+      // No longer need to refresh - userUpdated event will handle it
+      // But keep this for backward compatibility if other code depends on it
     };
 
     const handleConversationDeleted = () => {
-      loadConversationsFromStorage();
+      refreshConversations();
+    };
+
+    const handleConversationUpdated = () => {
+      refreshConversations();
+    };
+
+    // Listen for project deletion to refresh user data and conversations
+    const handleProjectDeleted = async () => {
+      // Refresh user data to get updated projects list
+      const updatedUser = await userService.get();
+      if (updatedUser) {
+        setLiveUser(updatedUser);
+        setConversations(updatedUser.conversations || []);
+      }
     };
 
     window.addEventListener('refreshUserTokens', handleRefresh);
+    window.addEventListener('userUpdated', handleUserUpdated as EventListener);
     window.addEventListener('conversationCreated', handleConversationCreated);
     window.addEventListener('conversationDeleted', handleConversationDeleted);
+    window.addEventListener('conversationUpdated', handleConversationUpdated);
+    window.addEventListener('projectDeleted', handleProjectDeleted);
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
+      window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
       window.removeEventListener('conversationCreated', handleConversationCreated);
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
+      window.removeEventListener('conversationUpdated', handleConversationUpdated);
+      window.removeEventListener('projectDeleted', handleProjectDeleted);
     };
   }, []);
 
@@ -106,10 +147,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setAnchorEl(null);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Only clear auth tokens, keep chat history
     localStorage.removeItem('token');
     localStorage.removeItem('u');
+    await storageService.removeItem('token');
+    await storageService.removeItem('u');
     sessionStorage.clear();
     navigate('/login');
     handleMenuClose();
@@ -127,11 +170,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     onMobileClose?.();
   };
 
-  const navItems = [
-    { icon: <ChatBubbleOutlineIcon fontSize="small" />, label: 'Chat', path: '/' },
-    { icon: <FolderOpenIcon fontSize="small" />, label: 'Projects', path: '/projects' },
-    { icon: <DescriptionIcon fontSize="small" />, label: 'Documents', path: '/documents' },
-  ];
+  const navItems: { icon: React.ReactNode, label: string, path: string }[] = [];
 
   // Delete conversation handler
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
@@ -150,7 +189,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
       if (result.success) {
         // Reload conversations from local storage
-        await loadConversationsFromStorage();
+        await refreshConversations();
 
         // Dispatch event for other components to react to conversation deletion
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
@@ -178,16 +217,24 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Get recent conversations from user
   const getRecentChats = () => {
-    if (!conversations || conversations.length === 0) return [];
+    // Ensure conversations is always an array before iterating
+    if (!conversations || !Array.isArray(conversations) || conversations.length === 0) return [];
 
     // Get conversations from local storage
     const recentConversations = conversations
       .map((conversation: any) => {
+        let lastMessage = null;
+
+        if (Array.isArray(conversation.messages) && conversation.messages.length > 0) {
+          const lastMsg = conversation.messages.at(-1);
+          lastMessage = lastMsg?.content || null;
+        }
+
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
           projectId: conversation.project_id || null,
-          lastMessage: conversation.last_message || null,
+          lastMessage,
           createdAt: conversation.created_at || new Date(),
         };
       })
@@ -203,110 +250,153 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const recentChats = getRecentChats();
 
-  // Search functionality
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim() || !liveUser) return { projects: [], documents: [], allItems: [] };
+  // Search functionality - filter projects only
+  const filteredProjects = useMemo(() => {
+    if (!searchQuery.trim() || !liveUser?.projects) return liveUser?.projects || [];
 
     const query = searchQuery.toLowerCase();
 
-    const projects = (liveUser.projects || []).filter((project: any) => {
+    return (liveUser.projects || []).filter((project: any) => {
       const title = (project.title || project.name || '').toLowerCase();
       return title.includes(query);
     });
-
-    const documents = (liveUser.projects || []).flatMap((project: any) =>
-      (project.documents || [])
-        .filter((doc: any) => {
-          const name = (doc.name || '').toLowerCase();
-          return name.includes(query);
-        })
-        .map((doc: any) => ({
-          ...doc,
-          projectId: project.id,
-          projectName: project.title || project.name || 'Untitled Project'
-        }))
-    );
-
-    // Create a flat list for keyboard navigation
-    const allItems = [
-      ...projects.map((p: any) => ({ type: 'project', data: p })),
-      ...documents.map((d: any) => ({ type: 'document', data: d }))
-    ];
-
-    return { projects, documents, allItems };
   }, [searchQuery, liveUser]);
-
-  const handleSearchFocus = (event: React.FocusEvent<HTMLInputElement>) => {
-    if (searchQuery.trim()) {
-      setSearchAnchorEl(event.currentTarget);
-    }
-  };
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setSearchQuery(value);
-    setSelectedIndex(0);
-    if (value.trim()) {
-      setSearchAnchorEl(event.currentTarget);
-    } else {
-      setSearchAnchorEl(null);
-    }
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!searchOpen || searchResults.allItems.length === 0) return;
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setSelectedIndex((prev) =>
-          prev < searchResults.allItems.length - 1 ? prev + 1 : prev
-        );
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
-        break;
-      case 'Enter': {
-        event.preventDefault();
-        const selected = searchResults.allItems[selectedIndex];
-        if (selected) {
-          if (selected.type === 'project') {
-            handleProjectClick(selected.data.id);
-          } else {
-            handleDocumentClick(selected.data.projectId, selected.data.id);
-          }
-        }
-        break;
-      }
-      case 'Escape':
-        event.preventDefault();
-        setSearchQuery('');
-        setSearchAnchorEl(null);
-        searchInputRef.current?.blur();
-        break;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSearchQuery('');
+      searchInputRef.current?.blur();
     }
   };
 
-  const handleProjectClick = (projectId: string) => {
-    navigate(`/project/${projectId}`);
+  const handleProjectClick = async (projectId: string | null) => {
+    // Refresh conversations first to ensure we have the latest data including newly created ones
+    await refreshConversations();
+
+    // Use the conversations state which is now up-to-date
+    const allConversations = (conversations && Array.isArray(conversations)) ? conversations : [];
+
+    // Auto-select the most recent conversation for the project/general
+    if (projectId === null || projectId === 'general') {
+      // Navigate to general - auto-select most recent general conversation
+      try {
+        const generalConversations = allConversations.filter(
+          (conv: any) => !conv.project_id
+        );
+
+        if (generalConversations.length > 0) {
+          // Sort by updated_at (most recent first) and navigate to the most recent
+          const sorted = generalConversations.sort((a: any, b: any) => {
+            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          const mostRecent = sorted[0];
+          console.log('[Sidebar] Auto-selecting most recent general conversation:', mostRecent.id);
+          navigate(`/?conversation=${mostRecent.id}&general=true`);
+        } else {
+          // No conversations for general, navigate to welcome screen
+          console.log('[Sidebar] No general conversations, showing welcome screen');
+          navigate('/?general=true');
+        }
+      } catch (error) {
+        console.error('Error handling general click:', error);
+        navigate('/?general=true');
+      }
+    } else {
+      // For projects, auto-select the most recent conversation
+      try {
+        const projectConversations = allConversations.filter(
+          (conv: any) => conv.project_id === projectId
+        );
+
+        if (projectConversations.length > 0) {
+          // Sort by updated_at (most recent first) and navigate to the most recent
+          const sorted = projectConversations.sort((a: any, b: any) => {
+            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          const mostRecent = sorted[0];
+          console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
+          navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
+        } else {
+          // No conversations for this project, navigate to welcome screen
+          console.log('[Sidebar] No conversations for project, showing welcome screen');
+          navigate(`/?project=${projectId}`);
+        }
+      } catch (error) {
+        console.error('Error handling project click:', error);
+        navigate(`/?project=${projectId}`);
+      }
+    }
+
     setSearchQuery('');
-    setSearchAnchorEl(null);
-    searchInputRef.current?.blur();
     onMobileClose?.();
   };
 
-  const handleDocumentClick = (projectId: string, documentId: string) => {
-    navigate(`/project/${projectId}?tab=0&doc=${documentId}`);
-    setSearchQuery('');
-    setSearchAnchorEl(null);
-    searchInputRef.current?.blur();
-    onMobileClose?.();
+  const handleOpenCreateProjectDialog = () => {
+    setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
+    setCreateProjectError('');
+    setOpenCreateProjectDialog(true);
+  };
+
+  const handleCloseCreateProjectDialog = () => {
+    setOpenCreateProjectDialog(false);
+    setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
+    setCreateProjectError('');
+  };
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!newProjectTitle.trim()) {
+      setCreateProjectError('Project title is required');
+      return;
+    }
+
+    setIsCreatingProject(true);
+    setCreateProjectError('');
+
+    try {
+      const result = await projectService.createProject({
+        title: newProjectTitle.trim(),
+        temperature: 0.3,
+        color: selectedColor
+      });
+
+      if (result.success && result.data) {
+        // Refresh user data to get updated projects list
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setLiveUser(updatedUser);
+          // Emit event to refresh user data globally
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+          // Auto-select newly created project
+          navigate(`/?project=${result.data.id}`);
+        }
+        handleCloseCreateProjectDialog();
+      } else {
+        setCreateProjectError(result.error || 'Failed to create project');
+      }
+    } catch (error: any) {
+      console.error('Error creating project:', error);
+      setCreateProjectError('An error occurred while creating the project.');
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
   const clearSearch = () => {
     setSearchQuery('');
-    setSearchAnchorEl(null);
   };
 
   const sidebarContent = (
@@ -380,7 +470,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             placeholder="Search projects"
             value={searchQuery}
             onChange={handleSearchChange}
-            onFocus={handleSearchFocus}
             onKeyDown={handleKeyDown}
             className="bg-transparent border-none outline-none text-white text-sm flex-1 placeholder-gray-500"
           />
@@ -411,169 +500,171 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             }}>⌘K</Box>
           )}
         </Box>
-
-        {/* Search Results Popover */}
-        <Popover
-          open={searchOpen}
-          anchorEl={searchAnchorEl}
-          onClose={() => { }}
-          disableAutoFocus
-          disableEnforceFocus
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'center',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'center',
-          }}
-          PaperProps={{
-            sx: {
-              bgcolor: 'rgba(0, 0, 0, 0.98)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              width: searchAnchorEl?.offsetWidth || '248px',
-              maxHeight: '400px',
-              overflow: 'auto',
-              mt: 0.5,
-              pointerEvents: 'auto',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            }
-          }}
-          sx={{
-            pointerEvents: 'none',
-          }}
-        >
-          <Box className="p-2">
-            {searchResults.projects.length === 0 && searchResults.documents.length === 0 ? (
-              <Box className="text-gray-500 text-sm p-3 text-center">
-                No results found
-              </Box>
-            ) : (
-              <>
-                {searchResults.projects.length > 0 && (
-                  <Box className="mb-2">
-                    <Box className="text-xs text-gray-500 px-2 py-1 font-medium">
-                      PROJECTS ({searchResults.projects.length})
-                    </Box>
-                    {searchResults.projects.map((project: any, index: number) => {
-                      const isSelected = selectedIndex === index;
-                      return (
-                        <Box
-                          key={project.id}
-                          onClick={() => handleProjectClick(project.id)}
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1.5,
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            color: isSelected ? '#fff' : '#d1d5db',
-                            bgcolor: isSelected ? '#2a2a2a' : 'transparent',
-                            borderRadius: '6px',
-                            '&:hover': {
-                              bgcolor: '#2a2a2a',
-                              color: '#fff',
-                            },
-                          }}
-                        >
-                          <FolderOpenIcon sx={{ fontSize: 16, color: '#ec4899' }} />
-                          <span className="text-sm truncate">
-                            {project.title || project.name || 'Untitled Project'}
-                          </span>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
-
-                {searchResults.documents.length > 0 && (
-                  <Box>
-                    <Box className="text-xs text-gray-500 px-2 py-1 font-medium">
-                      DOCUMENTS ({searchResults.documents.length})
-                    </Box>
-                    {searchResults.documents.map((doc: any, index: number) => {
-                      const globalIndex = searchResults.projects.length + index;
-                      const isSelected = selectedIndex === globalIndex;
-                      return (
-                        <Box
-                          key={doc.id}
-                          onClick={() => handleDocumentClick(doc.projectId, doc.id)}
-                          sx={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 0.5,
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            color: isSelected ? '#fff' : '#d1d5db',
-                            bgcolor: isSelected ? '#2a2a2a' : 'transparent',
-                            borderRadius: '6px',
-                            '&:hover': {
-                              bgcolor: '#2a2a2a',
-                              color: '#fff',
-                            },
-                          }}
-                        >
-                          <Box className="flex items-center gap-1.5">
-                            <DescriptionIcon sx={{ fontSize: 16, color: '#60a5fa' }} />
-                            <span className="text-sm truncate">{doc.name}</span>
-                          </Box>
-                          <span className="text-xs text-gray-600 ml-6 truncate">
-                            in {doc.projectName}
-                          </span>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
-              </>
-            )}
-          </Box>
-        </Popover>
       </Box>
 
       {/* Navigation */}
       <Box sx={{ flex: 1, overflowY: 'auto', px: 2.5, py: 1 }}>
-        {navItems.map((item, index) => {
-          const isActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path));
+        {/* Compute URL params once for selection logic */}
+        {(() => {
+          const urlParams = new URLSearchParams(location.search);
+          const currentProjectId = urlParams.get('project');
+          const hasGeneralParam = urlParams.get('general') === 'true';
+
+          // General is active only if explicitly set via URL param
+          const isGeneralActive = hasGeneralParam;
 
           return (
-            <Box
-              key={index}
-              onClick={() => {
-                navigate(item.path);
-                onMobileClose?.();
-              }}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                padding: '9px 11px',
-                borderRadius: '7px',
-                cursor: 'pointer',
-                bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
-                fontWeight: isActive ? 600 : 500,
-                fontSize: '13.5px',
-                transition: 'all 0.12s ease',
-                border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
-                '&:hover': {
-                  bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                  color: isActive ? '#ec4899' : 'white',
-                },
-                mb: 0.5,
-              }}
-            >
-              {item.icon}
-              <span style={{ flex: 1 }}>{item.label}</span>
-            </Box>
+            <>
+              {navItems.map((item, index) => {
+                const isActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path));
+
+                return (
+                  <Box
+                    key={index}
+                    onClick={() => {
+                      navigate(item.path);
+                      onMobileClose?.();
+                    }}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      padding: '9px 11px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                      color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                      fontWeight: isActive ? 600 : 500,
+                      fontSize: '13.5px',
+                      transition: 'all 0.12s ease',
+                      border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                      '&:hover': {
+                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                        color: isActive ? '#ec4899' : 'white',
+                      },
+                      mb: 0.5,
+                    }}
+                  >
+                    {item.icon}
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                  </Box>
+                );
+              })}
+
+              {/* #general option */}
+              <Box
+                onClick={() => handleProjectClick(null)}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  padding: '9px 11px',
+                  borderRadius: '7px',
+                  cursor: 'pointer',
+                  bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                  color: isGeneralActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                  fontWeight: isGeneralActive ? 600 : 500,
+                  fontSize: '13.5px',
+                  transition: 'all 0.12s ease',
+                  border: isGeneralActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                  '&:hover': {
+                    bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                    color: isGeneralActive ? '#ec4899' : 'white',
+                  },
+                  mb: 0.5,
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '2px',
+                    bgcolor: getColorForProject(null),
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1 }}>general</span>
+              </Box>
+
+              {/* Project list - filtered by search */}
+              {filteredProjects && filteredProjects.length > 0 && (
+                filteredProjects.map((project: any) => {
+                  const isActive = currentProjectId === project.id;
+                  const projectName = project.title || project.name || 'Untitled Project';
+
+                  return (
+                    <Box
+                      key={project.id}
+                      onClick={() => handleProjectClick(project.id)}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        padding: '9px 11px',
+                        borderRadius: '7px',
+                        cursor: 'pointer',
+                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
+                        color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                        fontWeight: isActive ? 600 : 500,
+                        fontSize: '13.5px',
+                        transition: 'all 0.12s ease',
+                        border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                        '&:hover': {
+                          bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                          color: isActive ? '#ec4899' : 'white',
+                        },
+                        mb: 0.5,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '2px',
+                          bgcolor: getColorForProject(project),
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ flex: 1 }} className="truncate">
+                        {projectName}
+                      </span>
+                    </Box>
+                  );
+                })
+              )}
+            </>
           );
-        })}
+        })()}
+
+        {/* New Project button */}
+        <Box
+          onClick={handleOpenCreateProjectDialog}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            padding: '9px 11px',
+            borderRadius: '7px',
+            cursor: 'pointer',
+            bgcolor: 'transparent',
+            color: 'rgba(255, 255, 255, 0.45)',
+            fontWeight: 500,
+            fontSize: '13.5px',
+            transition: 'all 0.12s ease',
+            border: '1px solid transparent',
+            '&:hover': {
+              bgcolor: 'rgba(255, 255, 255, 0.06)',
+              color: 'white',
+            },
+            mb: 0.5,
+          }}
+        >
+          <AddIcon sx={{ fontSize: 18 }} />
+          <span style={{ flex: 1 }}>New Project</span>
+        </Box>
       </Box>
 
-      {/* Chats Section */}
+      {/* Recent Conversations Section */}
       <Box sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -590,13 +681,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           px: 1.5,
           letterSpacing: '0.5px',
           textTransform: 'uppercase',
-        }}>Conversations</Box>
+        }}>Recent Conversations</Box>
         {recentChats.length > 0 ? (
           recentChats.map((chat: any) => (
             <Box
               key={chat.id}
               onClick={() => {
-                navigate(`/?conversation=${chat.id}`);
+                if (chat.project_id) {
+                  navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
+                } else {
+                  navigate(`/?conversation=${chat.id}&general=true`);
+                }
                 onMobileClose?.();
               }}
               sx={{
@@ -646,7 +741,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   ? (chat.lastMessage.length > 50
                     ? chat.lastMessage.substring(0, 50) + '...'
                     : chat.lastMessage)
-                  : 'Start a conversation...'}
+                  : 'start a conversation'}
               </span>
             </Box>
           ))
@@ -811,11 +906,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 }}
               >
                 {user.name ? (
-                  <span style={{ color: '#ec4899', fontSize: '13px', fontWeight: 700 }}>
+                  <span className="text-pink-500 text-xs font-bold">
                     {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
                   </span>
                 ) : (
-                  <span style={{ color: '#ec4899', fontSize: '13px', fontWeight: 700 }}>U</span>
+                  <span className="text-pink-500 text-xs font-bold">U</span>
                 )}
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -836,7 +931,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
                 }}>
-                  {user.email || ''}
+
+                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{ capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
                 </Box>
               </Box>
               <ExpandMoreIcon
@@ -921,6 +1017,124 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   return (
     <>
+      {/* Create Project Dialog */}
+      <Dialog
+        open={openCreateProjectDialog}
+        onClose={handleCloseCreateProjectDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: dialogStyles.paper
+        }}
+        BackdropProps={{
+          sx: dialogStyles.backdrop
+        }}
+      >
+        <Box className="relative p-6">
+          <IconButton
+            onClick={handleCloseCreateProjectDialog}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: '#6b7280',
+              '&:hover': {
+                color: '#fff',
+                bgcolor: '#1a1a1a',
+              },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+
+          <h3 className="text-white font-semibold text-lg mb-6">
+            Create New Project
+          </h3>
+          <form onSubmit={handleCreateProject}>
+            <Box className="space-y-4">
+              <TextField
+                autoFocus
+                fullWidth
+                placeholder="Project name"
+                value={newProjectTitle}
+                onChange={(e) => setNewProjectTitle(e.target.value)}
+                error={!!createProjectError}
+                helperText={createProjectError}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    color: 'white',
+                    bgcolor: '#000',
+                    '& fieldset': {
+                      borderColor: '#2a2a2a',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: '#3a3a3a',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#ec4899',
+                    },
+                  },
+                  '& .MuiFormHelperText-root': {
+                    color: '#ef4444',
+                  },
+                }}
+              />
+
+              {/* Color Label Selector */}
+              <Box>
+                <Typography className="text-gray-400 text-sm mb-2">
+                  Label
+                </Typography>
+                <Box className="flex flex-wrap gap-1.5">
+                  {PROJECT_COLORS.map((color) => (
+                    <Box
+                      key={color.value}
+                      onClick={() => setSelectedColor(color.value)}
+                      sx={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '6px',
+                        bgcolor: color.value,
+                        cursor: 'pointer',
+                        border: selectedColor === color.value ? '2px solid #ec4899' : '2px solid transparent',
+                        boxShadow: selectedColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.2)' : 'none',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          transform: 'scale(1.1)',
+                          boxShadow: '0 0 0 2px rgba(236, 72, 153, 0.3)',
+                        },
+                      }}
+                      title={color.name}
+                    />
+                  ))}
+                </Box>
+              </Box>
+
+              <Box className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCloseCreateProjectDialog}
+                  className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingProject || !newProjectTitle.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreatingProject ? (
+                    <CircularProgress size={18} sx={{ color: 'white' }} />
+                  ) : (
+                    'Create Project'
+                  )}
+                </button>
+              </Box>
+            </Box>
+          </form>
+        </Box>
+      </Dialog>
+
       {/* Desktop Sidebar */}
       <Box
         sx={{

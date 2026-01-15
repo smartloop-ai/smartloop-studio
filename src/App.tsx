@@ -4,6 +4,7 @@ import { Box } from '@mui/material';
 import Sidebar from './app/components/sidebar';
 import MobileNav from './app/components/mobile-nav';
 import { useAuth } from './app/hooks/useAuth';
+import { AuthContext } from './app/contexts/AuthContext';
 import Home from './app/pages/Home';
 import Login from './app/pages/Login';
 import Signup from './app/pages/Signup';
@@ -28,11 +29,12 @@ const authRoutes = ['/login', '/signup', '/forgot', '/reset', '/verify', '/resen
 
 function App() {
   const location = useLocation();
-  const [user] = useAuth();
+  const [user, setUser] = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const showSidebar = !authRoutes.includes(location.pathname);
 
   return (
+    <AuthContext.Provider value={{ user, setUser }}>
     <div className="wrapper">
       {showSidebar && user && (
         <>
@@ -74,6 +76,7 @@ function App() {
         </Routes>
       </Box>
     </div>
+    </AuthContext.Provider>
   );
 }
 

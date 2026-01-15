@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Box } from '@mui/material';
 import Sidebar from './sidebar';
 import MobileNav from './mobile-nav';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,7 +10,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, showMobileNav = true }: LayoutProps) {
-  const [user] = useAuth();
+  const [user] = useAuthContext();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (

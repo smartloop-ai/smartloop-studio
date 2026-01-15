@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Box, Switch, Slider, CircularProgress } from '@mui/material';
 import Sidebar from '@/app/components/sidebar';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import MemoryIcon from '@mui/icons-material/Memory';
@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 };
 
 export default function SettingsPage() {
-    const [user, setUser] = useAuth();
+    const [user, setUser] = useAuthContext();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);

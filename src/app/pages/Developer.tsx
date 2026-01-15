@@ -4,7 +4,7 @@ import { OAuthUtils } from '@/app/shared/utils'; // Add this import
 
 import { API_ENDPOINT } from '@/app/constants';
 import Sidebar from '@/app/components/sidebar';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import { CircularProgress, Box } from '@mui/material';
 import AddBoxIcon from '@mui/icons-material/AddBox';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -15,7 +15,7 @@ import MobileNav from '@/app/components/mobile-nav';
 import moment from 'moment';
 
 export default function Developers() {
-  const [user] = useAuth();
+  const [user] = useAuthContext();
   const [, setErrorMessage] = useState("");
   const [, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);

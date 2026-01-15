@@ -25,6 +25,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOAuthCallback: (callback) => {
     ipcRenderer.on('oauth-callback', (event, data) => callback(data));
   },
+  removeOAuthCallbackListener: () => {
+    ipcRenderer.removeAllListeners('oauth-callback');
+  },
+  // Token refresh methods
+  refreshToken: (token) => ipcRenderer.invoke('refresh-token', token),
+  startTokenRefresh: () => ipcRenderer.invoke('start-token-refresh'),
+  stopTokenRefresh: () => ipcRenderer.invoke('stop-token-refresh'),
+  onTokenRefreshed: (callback) => {
+    ipcRenderer.on('token-refreshed', (event, data) => callback(data));
+  },
+  removeTokenRefreshListener: () => {
+    ipcRenderer.removeAllListeners('token-refreshed');
+  },
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),
@@ -32,6 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storageClear: () => ipcRenderer.invoke('storage-clear'),
   storageHas: (key) => ipcRenderer.invoke('storage-has', key),
   storageGetAll: () => ipcRenderer.invoke('storage-get-all'),
+  // Machine ID
+  getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Check if running in Electron
   isElectron: true,
   // System info

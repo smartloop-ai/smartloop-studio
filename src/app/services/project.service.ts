@@ -9,6 +9,7 @@ import { userService } from "./user.service";
 interface CreateProjectParams {
   title: string;
   temperature?: number;
+  color?: string;
 }
 
 interface ProjectServiceResponse {
@@ -19,12 +20,12 @@ interface ProjectServiceResponse {
 
 /**
  * Create a new project
- * @param params - Project creation parameters (title, temperature)
+ * @param params - Project creation parameters (title, temperature, color)
  * @returns Promise with project data or error
  */
 const createProject = async (params: CreateProjectParams): Promise<ProjectServiceResponse> => {
   try {
-    const { title, temperature = 0.3 } = params;
+    const { title, temperature = 0.3, color } = params;
 
     if (!title || !title.trim()) {
       return {
@@ -33,16 +34,23 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
       };
     }
 
+    const requestBody: any = {
+      title: title.trim(),
+      temperature
+    };
+
+    // Include color if provided
+    if (color) {
+      requestBody.color = color;
+    }
+
     const url = `${API_ENDPOINT}/projects`;
     const response = await userService.makeAuthenticatedRequest(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        title: title.trim(),
-        temperature
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response) {

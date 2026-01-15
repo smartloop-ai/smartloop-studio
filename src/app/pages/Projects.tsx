@@ -13,11 +13,12 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
 import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
+import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 export default function ProjectsList() {
-  const [user, setUser] = useAuth();
+  const [user, setUser] = useAuthContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [projectToDelete, setProjectToDelete]: any = useState(null);
@@ -26,6 +27,7 @@ export default function ProjectsList() {
   const [errorMessage, setErrorMessage] = useState('');
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
   const [isCreating, setIsCreating] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Default to grid view
   const [sortBy, setSortBy] = useState<'name' | 'lastUsed'>('lastUsed');
@@ -139,6 +141,7 @@ export default function ProjectsList() {
 
   const handleOpenCreateDialog = () => {
     setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
     setErrorMessage('');
     setOpenCreateDialog(true);
   };
@@ -146,6 +149,7 @@ export default function ProjectsList() {
   const handleCloseCreateDialog = () => {
     setOpenCreateDialog(false);
     setNewProjectTitle('');
+    setSelectedColor(DEFAULT_COLOR);
     setErrorMessage('');
   };
 
@@ -164,7 +168,8 @@ export default function ProjectsList() {
       // Use project service to create project
       const result = await projectService.createProject({
         title: newProjectTitle.trim(),
-        temperature: 0.3
+        temperature: 0.3,
+        color: selectedColor
       });
 
       if (result.success && result.data) {
@@ -683,6 +688,36 @@ export default function ProjectsList() {
                         },
                       }}
                     />
+                  </Box>
+
+                  {/* Color Label Selector */}
+                  <Box>
+                    <Typography className="text-gray-300 text-sm mb-3">
+                      Select a color label:
+                    </Typography>
+                    <Box className="flex flex-wrap gap-1.5">
+                      {PROJECT_COLORS.map((color) => (
+                        <Box
+                          key={color.value}
+                          onClick={() => setSelectedColor(color.value)}
+                          sx={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            bgcolor: color.value,
+                            cursor: 'pointer',
+                            border: selectedColor === color.value ? '2px solid #ec4899' : '2px solid transparent',
+                            boxShadow: selectedColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.2)' : 'none',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: '0 0 0 2px rgba(236, 72, 153, 0.3)',
+                            },
+                          }}
+                          title={color.name}
+                        />
+                      ))}
+                    </Box>
                   </Box>
 
                   {errorMessage.length > 0 && (

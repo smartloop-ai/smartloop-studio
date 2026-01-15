@@ -1,7 +1,7 @@
 
 import { userService } from '@/app/services/user.service';
-import { storageService } from '@/app/services/storage.service';
-import { useEffect, useRef, useState } from "react";
+import { conversationService } from '@/app/services/conversation.service';
+import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
 
@@ -90,7 +90,9 @@ export default function Chat(props: {
   onAttachmentsClear?: () => void,
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
-  onConversationCreated?: (conversation: any) => void
+  onConversationCreated?: (conversation: any) => void,
+  onConversationUpdate?: (conversation: any) => void,
+  isGeneral?: boolean
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -108,25 +110,8 @@ export default function Chat(props: {
   const [copied, setCopied]: any = useState("");
   const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const currentProjectIdRef = useRef<string | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
-
-  // Save messages to electron-store
-  const saveMessagesToStorage = async (msgs: any[]) => {
-    if (props.conversation?.id) {
-      await storageService.saveMessages(props.conversation.id, msgs);
-    }
-  };
-
-  // Load messages from electron-store
-  const loadMessagesFromStorage = async () => {
-    if (props.conversation?.id) {
-      const stored = await storageService.getMessages(props.conversation.id);
-      return stored;
-    }
-    return [];
-  };
+  const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
 
   // Log project prop for debugging
   useEffect(() => {
@@ -138,27 +123,18 @@ export default function Chat(props: {
   }, [props.project]);
 
   // Update attachments when props change
+  // Only update ref if props.attachments is provided and not empty
+  // Don't clear ref if props.attachments is empty - it might be cleared after message is sent
   useEffect(() => {
     console.log('[Chat useEffect] Attachments prop updated:', props.attachments);
     if (props.attachments && props.attachments.length > 0) {
       console.log('[Chat useEffect] Setting ref to:', props.attachments);
-      messageAttachmentsRef.current = props.attachments;
-    } else {
-      console.log('[Chat useEffect] Clearing ref');
-      messageAttachmentsRef.current = [];
+      messageAttachmentsRef.current = [...props.attachments];
     }
+    // Don't clear ref when props.attachments is empty - preserve attachments until message is sent
     console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
 
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        inline: 'nearest',
-        behavior: 'smooth',
-        block: 'end',
-      });
-    }
-  }
 
   const sendFeedback = async (msg: any) => {
     const url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
@@ -202,14 +178,6 @@ export default function Chat(props: {
     sendFeedback(msg);
   }
 
-  const handleKeyDown = (e: any) => {
-    if (e.keyCode === 13 && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(e);
-      scrollToBottom();
-    }
-  }
-
   const handleFileAttached = (documentId: string, fileName: string) => {
     const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
     console.log('[Chat handleFileAttached] Setting attachments:', newAttachments);
@@ -224,8 +192,9 @@ export default function Chat(props: {
   };
 
   const sendMessage = async (_: any, messageOverride?: string) => {
-    if (isLoading) {
-      console.log('Already loading, skipping message send');
+    // Prevent duplicate sends
+    if (isLoading || sendingMessageRef.current) {
+      console.log('[Chat] Already sending a message, skipping duplicate send');
       return;
     }
 
@@ -236,6 +205,9 @@ export default function Chat(props: {
       return;
     }
 
+    // Mark as sending
+    sendingMessageRef.current = true;
+
     const messageId = `msg-${Date.now()}`;
     const responseId = `response-${Date.now()}`;
 
@@ -243,32 +215,104 @@ export default function Chat(props: {
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
 
     // Use attachments from props if available, fallback to ref
+    // IMPORTANT: Check props first (most up-to-date), then ref (from previous props update)
+    // This ensures attachments from welcome screen are used correctly
     console.log('[Chat sendMessage] props.attachments:', props.attachments);
     console.log('[Chat sendMessage] messageAttachmentsRef.current:', messageAttachmentsRef.current);
-    const currentAttachments = props.attachments && props.attachments.length > 0
-      ? [...props.attachments]
-      : [...messageAttachmentsRef.current];
-    console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
+    let currentAttachments = props.attachments && props.attachments.length > 0
+      ? [...props.attachments]  // Use props first - most current
+      : (messageAttachmentsRef.current.length > 0
+        ? [...messageAttachmentsRef.current]  // Fallback to ref
+        : []);
 
-    // Use conversation from props
-    if (!props.conversation?.id) {
-      console.error('No conversation provided. Conversation should be created by parent component.');
-      alert('Please create a conversation first before sending messages.');
-      return;
+    // Create conversation if it doesn't exist (first message)
+    // Use ref as primary source of truth (updated immediately when conversation is created)
+    // Fallback to props.conversation?.id only for initial load
+    let conversationId = currentConversationIdRef.current || props.conversation?.id;
+
+    // If conversation already exists, check if this is the first message
+    // For the first message, we should still include project attachment even if conversation exists
+    // (because conversation was just created and this is the first message being sent)
+    const isFirstMessage = !messages || messages.length === 0;
+
+    if (conversationId && !isFirstMessage) {
+      // Filter out project attachments only for subsequent messages
+      // Backend uses memory and project_id, so no need to send project attachment again
+      currentAttachments = currentAttachments.filter(
+        (att: any) => !att.file_id || !att.file_id.startsWith('project-')
+      );
+      console.log('[Chat sendMessage] Filtered out project attachments for existing conversation (not first message):', conversationId);
     }
 
-    console.log('Using conversation ID:', props.conversation.id);
+    // Always add project attachment for first message if project is selected and attachment doesn't exist
+    // This handles the case when sending from welcome screen where attachments might not be passed correctly
+    if (isFirstMessage && props.project?.id) {
+      const projectAttachment = {
+        file_id: `project-${props.project.id}`,
+        name: props.project.title || props.project.name || 'Project'
+      };
+      // Check if project attachment already exists
+      const hasProjectAttachment = currentAttachments.some(
+        (att: any) => att.file_id === projectAttachment.file_id
+      );
+      if (!hasProjectAttachment) {
+        currentAttachments.push(projectAttachment);
+        console.log('[Chat sendMessage] Added project as attachment (first message, project selected):', projectAttachment);
+      } else {
+        console.log('[Chat sendMessage] Project attachment already exists in currentAttachments');
+      }
+    }
+    console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
 
-    // Add user message to the chat
+    if (!conversationId) {
+      console.log('[Chat] No conversation exists, creating new one...');
+      // Generate title from first 5 words of message
+      const words = userMessage.split(' ');
+      const titleWords = words.slice(0, 5).join(' ');
+      const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+
+      try {
+        // Ensure project_id is set if project is selected (not general)
+        const projectId = props.project?.id ? props.project.id : undefined;
+        const conversationResult = await conversationService.createConversation({
+          title: conversationTitle,
+          project_id: projectId
+        });
+
+        if (conversationResult.success && conversationResult.data) {
+          conversationId = conversationResult.data.id;
+          console.log('[Chat] Created new conversation:', conversationId);
+
+          // Update the ref immediately so subsequent messages know the conversation exists
+          currentConversationIdRef.current = conversationId;
+
+          // Notify parent component
+          if (props.onConversationCreated) {
+            props.onConversationCreated(conversationResult.data);
+          }
+        } else {
+          console.error('[Chat] Failed to create conversation:', conversationResult.error);
+          alert('Failed to create conversation. Please try again.');
+          sendingMessageRef.current = false;
+          setIsLoading(false);
+          return;
+        }
+      } catch (error: any) {
+        console.error('[Chat] Error creating conversation:', error);
+        alert('Failed to create conversation. Please try again.');
+        sendingMessageRef.current = false;
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    console.log('Using conversation ID:', conversationId);
+
+    // Add user message to the chat (OpenAI format)
     const userMsg = {
       id: messageId,
-      direction: 'in',
-      payload: {
-        type: 'text',
-        text: userMessage,
-        html: marked(userMessage),
-        is_new: false
-      },
+      role: 'user',
+      content: userMessage,
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined
     };
 
@@ -277,13 +321,20 @@ export default function Chat(props: {
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
-    saveMessagesToStorage(updatedMessages);
+
+    // Messages are now managed via conversation state - synced via onConversationUpdate callback
+
     setFormData({ message: "" });
-    messageAttachmentsRef.current = [];
+    // Clear attachments AFTER they've been used in the message
+    // Don't clear immediately - let them be used first
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
     if (props.onAttachmentsClear) {
       props.onAttachmentsClear();
     }
+    // Clear ref after a small delay to ensure message was sent with attachments
+    setTimeout(() => {
+      messageAttachmentsRef.current = [];
+    }, 100);
     setIsLoading(true);
 
     // Create abort controller for this request
@@ -292,13 +343,9 @@ export default function Chat(props: {
     // Create initial response message for streaming
     const responseMsg = {
       id: responseId,
-      direction: 'out',
-      is_new: true,
-      payload: {
-        type: 'text',
-        text: '',
-        html: ''
-      }
+      role: 'assistant',
+      content: '',
+      is_new: true
     };
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
@@ -318,7 +365,7 @@ export default function Chat(props: {
       console.log('[Chat sendMessage] Current project:', {
         projectId: projectId,
         projectObject: props.project,
-        conversationId: props.conversation.id
+        conversationId: conversationId
       });
 
       // Prepare the message object with attachments
@@ -340,7 +387,7 @@ export default function Chat(props: {
         model: 'slp-model-001',
         messages: [messageObject],
         stream: true,
-        conversation_id: props.conversation.id
+        conversation_id: conversationId
       } as any) as any;
 
       // Process the stream
@@ -366,11 +413,7 @@ export default function Chat(props: {
                   is_new: false,
                   isError: true,
                   errorIconType: 'warning',
-                  payload: {
-                    ...msg.payload,
-                    text: cleanErrorMessage,
-                    html: marked(cleanErrorMessage) as string
-                  }
+                  content: cleanErrorMessage
                 } : msg
               )
             );
@@ -382,18 +425,11 @@ export default function Chat(props: {
               msg.id === responseId ? {
                 ...msg,
                 is_new: true,
-                payload: {
-                  ...msg.payload,
-                  text: fullText,
-                  html: marked(fullText) as string
-                }
+                content: fullText
               } : msg
             )
           );
 
-          setTimeout(() => {
-            scrollToBottom();
-          }, 10);
         }
 
         // Check for finish
@@ -410,7 +446,19 @@ export default function Chat(props: {
             is_new: false
           } : msg
         );
-        saveMessagesToStorage(finalMessages);
+
+        // Notify parent with updated conversation (including new messages)
+        if (conversationId && props.onConversationUpdate) {
+          const updatedConversation = {
+            ...props.conversation,
+            id: conversationId,
+            messages: finalMessages,
+            updated_at: new Date().toISOString()
+          };
+          console.log('[Chat] Calling onConversationUpdate with messages:', finalMessages.length);
+          props.onConversationUpdate(updatedConversation);
+        }
+
         return finalMessages;
       });
 
@@ -453,84 +501,42 @@ export default function Chat(props: {
               is_new: false,
               isError: true,
               errorIconType: errorIconType,
-              payload: {
-                ...msg.payload,
-                text: errorMessage,
-                html: marked(errorMessage) as string
-              }
+              content: errorMessage
             } : msg
           );
-          saveMessagesToStorage(updatedMessages);
           return updatedMessages;
         });
       }
     } finally {
       setIsLoading(false);
+      sendingMessageRef.current = false;  // Reset sending flag
       abortControllerRef.current = null;
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
     }
   }
 
-  // Update when conversation prop changes
+  // Load messages when conversation changes - simple and direct
   useEffect(() => {
-    const newConversationId = props.conversation?.id;
-
-    if (newConversationId) {
-      console.log('Conversation ID updated from props:', newConversationId);
-      console.log('Current conversationId ref:', currentConversationIdRef.current);
-
-      // Clear messages immediately when conversation changes (use ref for accurate comparison)
-      if (currentConversationIdRef.current && currentConversationIdRef.current !== newConversationId) {
-        console.log('Clearing messages for conversation switch from', currentConversationIdRef.current, 'to', newConversationId);
-        setMessages([]);
-        setShowTips(false);
-      }
+    // Don't overwrite messages while actively sending (new conversation scenario)
+    if (sendingMessageRef.current || isLoading) {
+      console.log('[Chat] Skipping message load - currently sending');
+      return;
     }
-  }, [props.conversation]);
 
-  // Load messages from electron-store when conversation is available or project changes
-  useEffect(() => {
-    const conversationId = props.conversation?.id;
-    if (conversationId) {
-      const currentProjectId = props.project?.id;
+    const conversationMessages = props.conversation?.messages || [];
 
-      // Reload if the project ID or conversation ID changed
-      if (currentProjectIdRef.current !== currentProjectId || currentConversationIdRef.current !== conversationId) {
-        console.log('Conversation or project changed, loading new messages');
-        currentProjectIdRef.current = currentProjectId;
-        currentConversationIdRef.current = conversationId;
+    console.log('[Chat] Conversation changed:', {
+      id: props.conversation?.id,
+      messagesCount: conversationMessages.length
+    });
 
-        // Clear messages first to ensure clean state
-        setMessages([]);
+    // Update messages from conversation
+    setMessages(conversationMessages);
+    setShowTips(conversationMessages.length === 0);
 
-        // Load messages for the new conversation (async)
-        loadMessagesFromStorage().then(storedMessages => {
-          console.log('Loading messages for conversation:', conversationId, 'Count:', storedMessages.length);
-          if (storedMessages.length > 0) {
-            setMessages(storedMessages);
-            setShowTips(false);
-          } else {
-            setMessages([]);
-            setShowTips(true);
-          }
-        });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.conversation, props.project?.id]);
+    // Update conversation ref
+    currentConversationIdRef.current = props.conversation?.id || null;
 
-  useEffect(() => {
-    // Show tips if no messages and no initial message is being sent
-    if (messages.length === 0 && !props.initialMessage && !messageSent) {
-      setTimeout(() => {
-        setShowTips(true);
-      }, 100);
-    } else if (messages.length > 0 || props.initialMessage || messageSent) {
-      setShowTips(false);
-    }
-  }, [messages.length, props.initialMessage, messageSent]);
+  }, [props.conversation, isLoading]);
 
   // Cleanup: abort any ongoing requests when component unmounts
   useEffect(() => {
@@ -543,23 +549,26 @@ export default function Chat(props: {
 
   // Auto-send initial message when provided
   useEffect(() => {
-    if (props.initialMessage && !messageSent && !isLoading && userId) {
-      // Small delay to ensure component is ready (and generalProjectId to be set)
+    // Only auto-send if we have initialMessage, haven't sent it yet, not currently loading,
+    // AND we have a conversation (to prevent creating duplicate conversations)
+    if (props.initialMessage && !messageSent && !isLoading && props.conversation?.id) {
+      // Small delay to ensure component is ready, conversation prop is set, and attachments are available
       setTimeout(() => {
+        // Ensure attachments ref is updated from props before sending (for fallback)
+        if (props.attachments && props.attachments.length > 0) {
+          messageAttachmentsRef.current = [...props.attachments];
+          console.log('[Chat auto-send] Updated attachments ref from props:', messageAttachmentsRef.current);
+        }
+        console.log('[Chat auto-send] About to send - props.attachments:', props.attachments, 'ref:', messageAttachmentsRef.current);
         sendMessage({} as any, props.initialMessage || undefined);
         setMessageSent(true);
       }, 800);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.initialMessage, messageSent, isLoading, userId]);
+  }, [props.initialMessage, props.conversation?.id, props.attachments, messageSent, isLoading]);
 
-  // Save messages to localStorage whenever they change (backup save)
-  useEffect(() => {
-    if (messages.length > 0 && props.conversation?.id) {
-      saveMessagesToStorage(messages);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, props.conversation]);
+  // Messages are now managed via conversation service state
+  // No need for backup saves - messages are synced to server after each exchange
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -571,11 +580,6 @@ export default function Chat(props: {
       setFilteredMessages(filtered);
     }
   }, [searchQuery, messages]);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   // Messages are stored in the database via conversation, no localStorage needed
   // The backend handles persistence
@@ -903,9 +907,9 @@ export default function Chat(props: {
             <div className="flex flex-col gap-6 w-full">
               {displayMessages && displayMessages.map((msg: any) => {
                 return (
-                  <>
-                    {msg.direction === 'out' ?
-                      <Box key={msg.id} className="flex items-start gap-3 max-w-3xl">
+                  <React.Fragment key={msg.id}>
+                    {msg.role === 'assistant' ?
+                      <Box className="flex items-start gap-3 max-w-3xl">
                         <Box className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 relative">
                           <Box
                             className="w-3 h-3 rounded-full bg-gradient-to-br from-pink-500 to-purple-500"
@@ -930,7 +934,7 @@ export default function Chat(props: {
                                   {msg.errorIconType === 'error' && <ErrorOutlineIcon sx={{ fontSize: 18, color: '#ef4444' }} />}
                                 </Box>
                               )}
-                              {(!msg.payload.text || msg.payload.text.trim() === '') && msg.is_new ? (
+                              {(!msg.content || msg.content.trim() === '') && msg.is_new ? (
                                 <span
                                   className="inline-block bg-white"
                                   style={{
@@ -942,7 +946,7 @@ export default function Chat(props: {
                               ) : (
                                 <>
                                   <div dangerouslySetInnerHTML={{
-                                    __html: msg.payload.html || marked(msg.payload.text || '')
+                                    __html: marked(msg.content || '')
                                   }} />
                                   {msg.is_new && (
                                     <span
@@ -961,7 +965,7 @@ export default function Chat(props: {
                           </div>
                           <Box className="flex gap-2 mt-2">
                             <CopyToClipboard
-                              text={msg.payload.text} onCopy={() => {
+                              text={msg.content} onCopy={() => {
                                 setCopied(msg.id);
                                 setTimeout(() => setCopied(""), 1000);
                               }}>
@@ -993,45 +997,42 @@ export default function Chat(props: {
                           </Box>
                         </Box>
                       </Box>
-                      : <Box key={msg.id} className="flex justify-end">
+                      : <Box className="flex justify-end">
                         <Box className="flex items-start gap-3 max-w-3xl">
                           <Box className="flex flex-col gap-2 flex-1">
-                            {/* Attachments bubble - shown above message if present */}
+                            {/* Attachments - shown above message if present */}
                             {msg.attachments && msg.attachments.filter((attachment: any) => attachment.file_id?.startsWith('file-')).length > 0 && (
-                              <div className="border border-pink-500/30 rounded-sm overflow-hidden bg-pink-500/10">
-                                <Box className="flex flex-wrap">
-                                  {msg.attachments
-                                    .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
-                                    .map((attachment: any, idx: number) => (
+                              <Box className="flex flex-wrap gap-2 mb-2 justify-end">
+                                {msg.attachments
+                                  .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
+                                  .map((attachment: any, idx: number) => (
+                                    <Box
+                                      key={idx}
+                                      className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-gray-800/60 rounded-sm border border-gray-700/50"
+                                    >
                                       <Box
-                                        key={idx}
-                                        className="w-full flex items-center gap-2 p-3 text-xs bg-pink-500/20 border border-pink-500/30 rounded-sm"
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          width: 24,
+                                          height: 24,
+                                          borderRadius: '50%',
+                                          bgcolor: 'rgba(236, 72, 153, 0.15)',
+                                        }}
                                       >
-                                        <Box
-                                          sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            width: '32px',
-                                            height: '32px',
-                                            borderRadius: '50%',
-                                            bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                            border: '1px solid rgba(236, 72, 153, 0.4)',
-                                          }}
-                                        >
-                                          <InsertDriveFileIcon sx={{ fontSize: 14, color: '#ec4899' }} />
-                                        </Box>
-                                        <span className="text-pink-300">{attachment.name || 'Document attached'}</span>
+                                        <InsertDriveFileIcon sx={{ fontSize: 12, color: '#ec4899' }} />
                                       </Box>
-                                    ))}
-                                </Box>
-                              </div>
+                                      <span className="text-gray-300 truncate max-w-[150px]">{attachment.name || 'Document'}</span>
+                                    </Box>
+                                  ))}
+                              </Box>
                             )}
 
                             {/* Message bubble */}
                             <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
-                              <div className="text-wrap break-words" dangerouslySetInnerHTML={{
-                                __html: marked(msg.payload.text)
+                              <div className="text-wrap break-words py-3" dangerouslySetInnerHTML={{
+                                __html: marked(msg.content)
                               }}>
                               </div>
                             </div>
@@ -1044,7 +1045,7 @@ export default function Chat(props: {
                       </Box>
                     }
 
-                  </>
+                  </React.Fragment>
                 )
               })
               }
@@ -1056,7 +1057,6 @@ export default function Chat(props: {
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
             onSend={() => sendMessage(null)}
-            onKeyDown={handleKeyDown}
             placeholder="Enter your prompt..."
             disabled={false}
             isLoading={isLoading}

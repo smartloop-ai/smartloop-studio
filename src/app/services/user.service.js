@@ -1,4 +1,5 @@
 import { API_ENDPOINT } from "@/app/constants";
+import { storageService } from "./storage.service";
 
 const getToken = () => {
   if (typeof window !== 'undefined') {
@@ -11,10 +12,79 @@ const getToken = () => {
   return null;
 };
 
-const logout = () => {
+const logout = async () => {
   localStorage.removeItem("token");
   localStorage.removeItem("u");
+
+  // Also clear from storageService for consistency
+  await storageService.removeItem("token");
+  await storageService.removeItem("u");
+
+  // Stop token refresh when logging out
+  stopTokenRefresh();
 }
+
+// Check if running in Electron
+const isElectron = () => {
+  return typeof window !== 'undefined' && window.electronAPI?.isElectron;
+};
+
+// Track if token refresh is already initialized to prevent duplicate calls
+let tokenRefreshInitialized = false;
+
+// Initialize token refresh (call this after successful login)
+const initializeTokenRefresh = () => {
+  if (!isElectron()) {
+    console.log('[TokenRefresh] Not in Electron, skipping token refresh setup');
+    return;
+  }
+
+  // Prevent duplicate initialization - refresh token invalidates the old token
+  // so we should only call this once per session
+  if (tokenRefreshInitialized) {
+    console.log('[TokenRefresh] Already initialized, skipping');
+    return;
+  }
+
+  const token = getToken();
+  if (!token) {
+    console.log('[TokenRefresh] No token found, skipping refresh setup');
+    return;
+  }
+
+  console.log('[TokenRefresh] Initializing token refresh...');
+  tokenRefreshInitialized = true;
+
+  // Set up listener for token refresh events from main process
+  window.electronAPI.onTokenRefreshed(async (data) => {
+    if (data.success && data.token) {
+      console.log('[TokenRefresh] Received new token from main process');
+      localStorage.setItem('token', data.token);
+      await storageService.setItem('token', data.token);
+
+      // Dispatch event so other parts of the app can react if needed
+      window.dispatchEvent(new CustomEvent('tokenRefreshed', { detail: { token: data.token } }));
+    } else if (data.requiresReauth) {
+      console.log('[TokenRefresh] Token expired, redirecting to login');
+      redirectToLogin();
+    }
+  });
+
+  // Start the background refresh
+  window.electronAPI.startTokenRefresh();
+};
+
+// Stop token refresh
+const stopTokenRefresh = () => {
+  if (!isElectron()) {
+    return;
+  }
+
+  console.log('[TokenRefresh] Stopping token refresh...');
+  tokenRefreshInitialized = false; // Reset flag so it can be initialized again after re-login
+  window.electronAPI.removeTokenRefreshListener();
+  window.electronAPI.stopTokenRefresh();
+};
 
 const redirectToLogin = () => {
   logout();
@@ -78,17 +148,22 @@ const getUser = async () => {
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
         projects: result.projects,
 
+        // conversations
+        conversations: result.conversations || [],
+
         // Default settings
         default_temperature: result.default_temperature !== undefined ? result.default_temperature : 0.3,
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
 
-      // Save to localStorage as JSON string
+      // Save to localStorage and storageService for persistence
       try {
-        localStorage.setItem("u", JSON.stringify(user));
+        const userData = JSON.stringify(user);
+        localStorage.setItem("u", userData);
+        await storageService.setItem("u", userData);
       } catch (e) {
-        console.error('Error saving user to localStorage:', e);
+        console.error('Error saving user to storage:', e);
       }
       return Promise.resolve(user);
     } else if (resp.status === 400) {
@@ -108,9 +183,16 @@ const getUser = async () => {
     }
   } catch (error) {
     console.error("UserService: Error fetching user:", error);
+
+    // Handle network errors (offline, CORS, connection refused, etc.)
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      throw new Error("Network error");
+      console.error("UserService: Network error - unable to reach server");
+      // Return null instead of throwing to allow graceful handling
+      // The app can continue with cached user data if available
+      return null;
     }
+
+    // Handle other errors
     throw error;
   }
 };
@@ -173,19 +255,24 @@ const fetchAndStoreUser = async (token) => {
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
         projects: result.projects,
 
+        // conversations
+        conversations: result.conversations || [],
+
         // Default settings
         default_temperature: result.default_temperature !== undefined ? result.default_temperature : 0.3,
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
 
-      // Store user as JSON string
+      // Store user to localStorage and storageService for persistence
       try {
-        localStorage.setItem("u", JSON.stringify(user));
+        const userData = JSON.stringify(user);
+        localStorage.setItem("u", userData);
+        await storageService.setItem("u", userData);
         console.log('User data stored successfully');
         return user;
       } catch (e) {
-        console.error('Error saving user to localStorage:', e);
+        console.error('Error saving user to storage:', e);
         return null;
       }
     } else {
@@ -244,5 +331,7 @@ export const userService = {
   makeAuthenticatedRequest: makeAuthenticatedRequest,
   redirectToLogin: redirectToLogin,
   fetchAndStoreUser: fetchAndStoreUser,
-  updateSettings: updateSettings
+  updateSettings: updateSettings,
+  initializeTokenRefresh: initializeTokenRefresh,
+  stopTokenRefresh: stopTokenRefresh
 }

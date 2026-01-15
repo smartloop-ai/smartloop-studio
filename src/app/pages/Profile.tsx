@@ -13,12 +13,12 @@ import FlashOnIcon from '@mui/icons-material/FlashOn';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import MobileNav from '@/app/components/mobile-nav';
-import { useAuth } from '@/app/hooks/useAuth';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 import Sidebar from '@/app/components/sidebar';
 
 export default function Profile() {
     const navigate = useNavigate();
-    const [user] = useAuth();
+    const [user] = useAuthContext();
     const [loading, setLoading] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -92,12 +92,18 @@ export default function Profile() {
                                         <Box className="flex items-center gap-3 md:gap-4 mb-4">
                                             <Box
                                                 sx={{
-                                                    width: { xs: '60px', md: '80px' },
-                                                    height: { xs: '60px', md: '80px' },
+                                                  width: 60,
+                                                  height: 60,
+                                                  borderRadius: '8px',
+                                                  bgcolor: 'rgba(236, 72, 153, 0.15)',
+                                                  border: '1.5px solid rgba(236, 72, 153, 0.3)',
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  overflow: 'hidden',
                                                 }}
-                                                className="rounded-full bg-gray-700 flex items-center justify-center"
                                             >
-                                                <span className="text-white text-xl md:text-2xl font-bold">
+                                                <span className="text-pink-500 text-xl md:text-2xl font-bold">
                                                     {user.name ? user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U'}
                                                 </span>
                                             </Box>

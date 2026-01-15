@@ -1,4 +1,3 @@
-
 import { Box, IconButton } from '@mui/material';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import AppleIcon from '@mui/icons-material/Apple';
@@ -6,6 +5,7 @@ import { API_ENDPOINT } from '@/app/constants';
 import GoogleIcon from '/img/google-symbol.svg';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { storageService } from '@/app/services/storage.service';
 
 export default function SocialLogin(props: { onError: any, searchParams?: URLSearchParams }) {
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ export default function SocialLogin(props: { onError: any, searchParams?: URLSea
   // Listen for OAuth callback in Electron
   useEffect(() => {
     if (isElectron && window.electronAPI) {
-      window.electronAPI.onOAuthCallback(({ accessToken, error }) => {
+      window.electronAPI.onOAuthCallback(async ({ accessToken, error }) => {
         console.log('OAuth callback received in Electron:', accessToken);
 
         if (error) {
@@ -22,9 +22,10 @@ export default function SocialLogin(props: { onError: any, searchParams?: URLSea
           return;
         }
 
-        // Store the access token
+        // Store the access token to both storage systems
         if (accessToken) {
           localStorage.setItem('token', accessToken);
+          await storageService.setItem('token', accessToken);
 
           // Navigate to home
           navigate('/');
