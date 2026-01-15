@@ -63,7 +63,7 @@ jobs:
           cache: 'npm'
 
       - name: Import Apple Code Signing Certificates
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: secrets.APPLE_CERTIFICATE_BASE64 != ''
         uses: apple-actions/import-codesign-certs@v2
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
