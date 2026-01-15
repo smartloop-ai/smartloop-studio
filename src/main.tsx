@@ -62,16 +62,44 @@ const theme = createTheme({
   },
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Router>
-          <App />
-        </Router>
-      </ThemeProvider>
-    </ErrorBoundary>
-  </StrictMode>
-);
+// Initialize app - load token from persistent storage if in Electron
+async function initializeApp() {
+  // If running in Electron, load token and user data from electron-store to localStorage
+  // This ensures tokens persist across app restarts
+  if (isElectron && window.electronAPI) {
+    try {
+      const storedToken = await window.electronAPI.storageGet('token');
+      const storedUser = await window.electronAPI.storageGet('u');
+
+      if (storedToken) {
+        console.log('[App Init] Loading token from persistent storage');
+        localStorage.setItem('token', storedToken);
+      }
+
+      if (storedUser) {
+        console.log('[App Init] Loading user data from persistent storage');
+        localStorage.setItem('u', storedUser);
+      }
+    } catch (error) {
+      console.error('[App Init] Error loading from persistent storage:', error);
+    }
+  }
+
+  // Render the app
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Router>
+            <App />
+          </Router>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </StrictMode>
+  );
+}
+
+// Start the app
+initializeApp();
 

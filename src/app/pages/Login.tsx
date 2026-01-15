@@ -78,7 +78,24 @@ export default function Login() {
   // Check if already logged in
   useEffect(() => {
     const checkExistingToken = async () => {
-      const token = localStorage.getItem('token');
+      // Check localStorage first (fast)
+      let token = localStorage.getItem('token');
+
+      // If not in localStorage and running in Electron, check persistent storage
+      if (!token && isElectron && window.electronAPI) {
+        token = await storageService.getItem('token');
+        if (token) {
+          console.log('[Login] Found token in persistent storage, loading to localStorage');
+          localStorage.setItem('token', token);
+
+          // Also load user data if available
+          const userData = await storageService.getItem('u');
+          if (userData) {
+            localStorage.setItem('u', userData);
+          }
+        }
+      }
+
       if (token) {
         // Optionally validate the token before redirecting
         if (isElectron && window.electronAPI) {
