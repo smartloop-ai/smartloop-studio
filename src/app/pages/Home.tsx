@@ -5,7 +5,7 @@ import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, TextField } from '@mui/material';
+import { Box, Dialog, IconButton, CircularProgress, Chip, Typography, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -21,10 +21,11 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import AddBoxIcon from '@mui/icons-material/AddBox';
+import AddIcon from '@mui/icons-material/Add';
 import FileAttacher from '@/app/components/file-attacher';
 import DocumentPolling from '@/app/components/document-polling';
 import DocumentsTab from '@/app/components/documents-tab';
+import ProjectTabs from '@/app/components/project-tabs';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -1475,7 +1476,7 @@ export default function Home() {
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
-                <Box className="flex-none p-4 border-b border-gray-900">
+                <Box className="flex-none px-4 py-5 border-gray-900">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
                       <Box
@@ -1549,74 +1550,15 @@ export default function Home() {
                         )}
                       </Box>
                     </Box>
-                    <Box className="flex items-center gap-2">
-                      {/* Single Delete Button - deletes project and all conversations when project is selected */}
-                      {selectedProject && (
-                        <IconButton
-                          onClick={() => {
-                            setDeleteProjectConfirm('');
-                            setDeleteProjectError('');
-                            setShowDeleteProjectDialog(true);
-                          }}
-                          sx={{
-                            color: '#9ca3af',
-                            '&:hover': {
-                              color: '#ef4444',
-                              bgcolor: 'rgba(239, 68, 68, 0.1)',
-                            },
-                          }}
-                          title="Delete project and all conversations"
-                        >
-                          <DeleteOutlineIcon />
-                        </IconButton>
-                      )}
-                    </Box>
                   </Box>
                 </Box>
 
                 {/* Tabs - only show when project is selected */}
                 {(selectedProject || searchParams.get('project')) && (
-                  <Box className="flex-none border-b border-gray-900 px-4">
-                    <Tabs
-                      value={activeTab}
-                      onChange={(_, newValue) => setActiveTab(newValue)}
-                      sx={{
-                        position: 'relative',
-                        minHeight: '36px',
-                        '& .MuiTab-root': {
-                          color: 'rgba(255, 255, 255, 0.65)',
-                          textTransform: 'none',
-                          fontSize: '13px',
-                          fontWeight: 400,
-                          minHeight: '36px',
-                          padding: '8px 16px',
-                          marginRight: '4px',
-                          borderRadius: '6px 6px 0 0',
-                          transition: 'color 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                          position: 'relative',
-                          zIndex: 1,
-                          '&:hover': {
-                            color: 'rgba(255, 255, 255, 0.9)',
-                          },
-                          '&.Mui-selected': {
-                            color: '#ec4899',
-                            fontWeight: 500,
-                          },
-                        },
-                        '& .MuiTabs-indicator': {
-                          height: '100%',
-                          backgroundColor: 'rgba(236, 72, 153, 0.12)',
-                          borderRadius: 0,
-                          transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-                          zIndex: 0,
-                        },
-                      }}
-                    >
-                      <Tab label="Chat" />
-                      <Tab label="Documents" />
-                      <Tab label="Configuration" />
-                    </Tabs>
-                  </Box>
+                  <ProjectTabs
+                    activeTab={activeTab}
+                    onTabChange={(newValue) => setActiveTab(newValue)}
+                  />
                 )}
 
                 {/* Main Content Area - 2 columns */}
@@ -1703,6 +1645,29 @@ export default function Home() {
                                 </Box>
                                 <p className="text-gray-400 text-xs">* Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
                               </div>
+
+                              {/* Delete Section */}
+                              <div className="space-y-3 py-5 mt-6 border-gray-800">
+                                <Box className="border border-red-900/30 rounded-lg px-4 py-6 bg-red-950/20">
+                                  <Box className="flex items-center justify-between gap-4">
+                                    <Box className="flex-1">
+                                      <h5 className="text-sm font-medium text-white mb-1">Delete Project</h5>
+                                      <p className="text-xs text-gray-400">Permanently delete this project and all its conversations. This action cannot be undone.</p>
+                                    </Box>
+                                    <button
+                                      onClick={() => {
+                                        setDeleteProjectConfirm('');
+                                        setDeleteProjectError('');
+                                        setShowDeleteProjectDialog(true);
+                                      }}
+                                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors flex items-center gap-2 whitespace-nowrap"
+                                    >
+                                      <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                                      Delete Project
+                                    </button>
+                                  </Box>
+                                </Box>
+                              </div>
                             </Box>
                           )}
                         </Box>
@@ -1720,25 +1685,10 @@ export default function Home() {
                       }}
                     >
                       <Box className="p-4">
-                        <Box className="flex items-center justify-between mb-3">
+                        <Box className="mb-3">
                           <span className="text-sm font-semibold text-white">
                             Conversations
                           </span>
-                          <IconButton
-                            onClick={handleStartNewConversation}
-                            size="small"
-                            sx={{
-                              color: '#9ca3af',
-                              padding: '4px',
-                              '&:hover': {
-                                color: '#ec4899',
-                                bgcolor: 'rgba(236, 72, 153, 0.1)',
-                              },
-                            }}
-                            title="New conversation"
-                          >
-                            <AddBoxIcon fontSize="small" />
-                          </IconButton>
                         </Box>
                         {projectConversations.length > 0 ? (
                           <Box className="space-y-1">
@@ -1816,6 +1766,15 @@ export default function Home() {
                             No conversations yet
                           </Box>
                         )}
+
+                        {/* New Conversation button */}
+                        <button
+                          onClick={handleStartNewConversation}
+                          className="flex items-center gap-[12px] px-[11px] py-[9px] rounded-[7px] cursor-pointer bg-transparent text-white/45 font-medium text-[13.5px] transition-all duration-[120ms] ease border border-transparent hover:bg-white/[0.06] hover:text-white mt-[4px]"
+                        >
+                          <AddIcon sx={{ fontSize: 18 }} />
+                          <span className="flex-1">New Conversation</span>
+                        </button>
                       </Box>
                     </Box>
                   )}

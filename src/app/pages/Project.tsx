@@ -924,9 +924,6 @@ export default function Project() {
                             </Box>
 
                             <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                              <h2 className="text-lg md:text-xl font-semibold text-white mb-2">
-                                Danger Zone
-                              </h2>
                               <p className="text-sm text-gray-400 mb-6">Deleting the project will remove all the documents and histories and can not be undone</p>
 
                               <button
