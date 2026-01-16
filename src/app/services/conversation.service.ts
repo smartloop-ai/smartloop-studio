@@ -226,11 +226,16 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
     }
 
     const url = `${API_ENDPOINT}/conversations/${conversationId}`;
+    console.log('[ConversationService] Deleting conversation from API:', url);
+
     const response = await userService.makeAuthenticatedRequest(url, {
       method: 'DELETE'
     });
 
+    console.log('[ConversationService] Delete response status:', response?.status);
+
     if (!response) {
+      console.error('[ConversationService] No response from server');
       return {
         success: false,
         error: 'No response from server'
@@ -238,8 +243,11 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
     }
 
     if (response.status === 200 || response.status === 204) {
+      console.log('[ConversationService] Successfully deleted conversation from API');
+
       // Delete from local storage
       await storageService.deleteConversation(conversationId);
+      console.log('[ConversationService] Deleted conversation from local storage');
 
       // Dispatch event for sidebar to refresh
       if (typeof window !== 'undefined') {
@@ -254,12 +262,13 @@ const deleteConversation = async (conversationId: string): Promise<ConversationS
     }
 
     const errorData = await response.json().catch(() => ({}));
+    console.error('[ConversationService] Delete failed with status:', response.status, errorData);
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to delete conversation'
+      error: errorData.detail || errorData.message || `Failed to delete conversation (status: ${response.status})`
     };
   } catch (error: any) {
-    console.error('Error deleting conversation:', error);
+    console.error('[ConversationService] Error deleting conversation:', error);
     return {
       success: false,
       error: error.message || 'An error occurred while deleting the conversation'

@@ -5,9 +5,8 @@ import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Tabs, Tab, Chip, Typography, TextField } from '@mui/material';
+import { Box, Dialog, IconButton, CircularProgress, Chip, Typography, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
@@ -17,14 +16,14 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
+import TuneIcon from '@mui/icons-material/Tune';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddBoxIcon from '@mui/icons-material/AddBox';
 import FileAttacher from '@/app/components/file-attacher';
 import DocumentPolling from '@/app/components/document-polling';
-import DocumentsTab from '@/app/components/documents-tab';
+import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -34,6 +33,7 @@ import { dialogStyles } from '@/app/shared/utils';
 import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
+import ConversationTabs from '@/app/components/conversation-tabs';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 // Extend SuggestionDataItem to include color property
@@ -51,8 +51,6 @@ export default function Home() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showProjectInfoDialog, setShowProjectInfoDialog] = useState(false);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
-  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
   const [conversation, setConversation] = useState<any>(null);
@@ -176,6 +174,39 @@ export default function Home() {
     };
   }, [conversation, navigate, selectedProject]);
 
+  // Listen for conversation creation events to update tab bar
+  useEffect(() => {
+    const handleConversationCreatedEvent = async (event: any) => {
+      const newConversation = event.detail?.conversation;
+
+      if (newConversation) {
+        console.log('[Home] Conversation created event received:', newConversation);
+
+        // Update project conversations list immediately
+        const projectId = selectedProject?.id;
+        const convProjectId = newConversation.project_id;
+
+        // Add to list if it belongs to current context (project or general)
+        if ((projectId && convProjectId === projectId) || (!projectId && !convProjectId)) {
+          setProjectConversations(prev => {
+            // Check if conversation already exists in list
+            if (prev.some((c: any) => c.id === newConversation.id)) {
+              return prev;
+            }
+            // Add new conversation to the beginning
+            return [newConversation, ...prev];
+          });
+        }
+      }
+    };
+
+    window.addEventListener('conversationCreated', handleConversationCreatedEvent);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleConversationCreatedEvent);
+    };
+  }, [selectedProject]);
+
 
   // Handle conversation ID from URL parameter - simple lookup from user.conversations
   useEffect(() => {
@@ -237,11 +268,9 @@ export default function Home() {
       // Only update if URL actually changed (not just user data update)
       if (urlParamsChanged || !selectedProject || selectedProject.id !== urlProjectId) {
         setConversation(null);
-        setShowChat(true);
-        // Only change tab if URL actually changed
-        if (urlParamsChanged) {
-          setActiveTab(0);
-        }
+        // Don't set showChat to true here - let the activeTab state control it
+        // Don't change activeTab automatically - let explicit navigation control it
+        // This prevents the gear icon from switching to tab 0 before going to configuration
 
         // Project selected but no conversation - clear conversation, set project
         const project = user.projects?.find((p: any) => p.id === urlProjectId);
@@ -621,21 +650,101 @@ export default function Home() {
   const handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation(); // Prevent navigation when clicking delete
 
+    console.log('[Home] Deleting conversation:', convId);
+
     try {
+      // Delete the conversation on server FIRST
       const result = await conversationService.deleteConversation(convId);
 
-      if (result.success) {
-        // Update local list
-        setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+      console.log('[Home] Delete API response:', result);
 
-        // Note: conversationDeleted event is already dispatched by conversationService.deleteConversation()
-        // If the deleted conversation was the current one, the handleConversationDeleted event handler
-        // will handle navigation to the previous conversation from the same project
-      } else {
-        console.error('Failed to delete conversation:', result.error);
+      if (!result.success) {
+        console.error('Failed to delete conversation from server:', result.error);
+        alert(`Failed to delete conversation: ${result.error}`);
+        return; // Don't update UI if server delete failed
       }
+
+      console.log('[Home] Successfully deleted conversation from server');
+
+      // Immediately update user.conversations to remove the deleted conversation
+      if (user) {
+        const updatedConversations = (user.conversations || []).filter((c: any) => c.id !== convId);
+        setUser({
+          ...user,
+          conversations: updatedConversations
+        });
+        console.log('[Home] Immediately removed conversation from user.conversations. New count:', updatedConversations.length);
+      }
+
+      // Update local list after server confirmation
+      setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+
+      // If deleting the current conversation, navigate to previous one
+      if (conversation?.id === convId) {
+        // Find the index of current conversation before it was removed
+        const currentIndex = projectConversations.findIndex((c: any) => c.id === convId);
+
+        // Find the previous conversation (prioritize previous, fall back to next)
+        let targetConversation = null;
+        if (currentIndex > 0) {
+          targetConversation = projectConversations[currentIndex - 1];
+        } else if (projectConversations.length > 1) {
+          targetConversation = projectConversations[currentIndex + 1];
+        }
+
+        // Navigate to target conversation or clear if no conversations left
+        if (targetConversation) {
+          const projectId = selectedProject?.id;
+          if (projectId) {
+            navigate(`/?conversation=${targetConversation.id}&project=${projectId}`);
+          } else {
+            navigate(`/?conversation=${targetConversation.id}&general=true`);
+          }
+        } else {
+          // No conversations left, navigate to project/general home
+          const projectId = selectedProject?.id;
+          if (projectId) {
+            navigate(`/?project=${projectId}`);
+          } else {
+            navigate('/?general=true');
+          }
+          setConversation(null);
+          setShowChat(false);
+        }
+      }
+
+      // Refresh user data to sync with server
+      console.log('[Home] Refreshing user data after delete...');
+
+      // Add a small delay to ensure backend has processed the delete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const updatedUser = await userService.get();
+      if (updatedUser.success) {
+        console.log('[Home] User data refreshed. Conversations count:', updatedUser.data?.conversations?.length);
+        console.log('[Home] Conversations after refresh:', updatedUser.data?.conversations?.map((c: any) => ({ id: c.id, title: c.title })));
+        setUser(updatedUser.data);
+
+        // Double check if deleted conversation is still in the list
+        const stillExists = updatedUser.data?.conversations?.some((c: any) => c.id === convId);
+        if (stillExists) {
+          console.error('[Home] WARNING: Deleted conversation still exists in refreshed data!');
+          // Force filter it out from the local state
+          setUser({
+            ...updatedUser.data,
+            conversations: updatedUser.data.conversations.filter((c: any) => c.id !== convId)
+          });
+        }
+      }
+
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { conversationId: convId } }));
+
+      // Dispatch user update event to refresh user data everywhere
+      window.dispatchEvent(new Event('userUpdated'));
     } catch (error) {
       console.error('Error deleting conversation:', error);
+      alert(`Error deleting conversation: ${error}`);
     }
   };
 
@@ -675,10 +784,12 @@ export default function Home() {
   };
 
   const handleStartNewConversation = () => {
-    // Clear current conversation to start fresh
+    // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
     setChatMessage(null);
     setMessage('');
+    setShowChat(true);
+    setActiveTab(0);
 
     // Update URL to remove conversation param but keep project/general context
     if (selectedProject) {
@@ -814,7 +925,6 @@ export default function Home() {
         setMessage('');
         setSelectedProject(null);
         setMessageAttachments([]);
-        setUploadFiles([]);
       } else {
         setDeleteProjectError(result.error || 'Failed to delete project. Please try again.');
       }
@@ -1147,166 +1257,25 @@ export default function Home() {
           </Dialog>
 
           {/* File Upload Dialog */}
-          <Dialog
+          <DocumentUploadDialog
             open={showFileUploadDialog}
             onClose={() => {
               setShowFileUploadDialog(false);
-              setUploadFiles([]);
             }}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paper
+            onSuccess={() => {
+              setShowFileUploadDialog(false);
+              // Refresh user data
+              userService.get().then((result) => {
+                if (result.success) {
+                  setUser(result.data);
+                }
+              });
             }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative p-6">
-              {/* Close Button */}
-              <IconButton
-                onClick={() => {
-                  setShowFileUploadDialog(false);
-                  setUploadFiles([]);
-                }}
-                sx={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  color: '#6b7280',
-                  '&:hover': {
-                    color: '#fff',
-                    bgcolor: '#1a1a1a',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-
-              {/* Title */}
-              <h3 className="text-white font-semibold text-lg mb-6">
-                Upload Document
-              </h3>
-
-              <Box className="space-y-6">
-                {/* Project Info */}
-                {selectedProject && (
-                  <Box className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <CheckCircleIcon sx={{ color: '#10b981', fontSize: 18 }} />
-                    <span className="text-green-400 text-sm">
-                      Uploading to: <span className="font-semibold">{selectedProject.title || selectedProject.name}</span>
-                    </span>
-                  </Box>
-                )}
-
-                {/* File Upload Area */}
-                <Box className="mb-6">
-                  <label className="block text-gray-400 text-sm mb-3">
-                    Select a document to analyze
-                  </label>
-                  <FileAttacher
-                    conversation={conversation}
-                    onSuccess={handleFileAttached}
-                    onError={(error) => console.error('File upload error:', error)}
-                    size="medium"
-                    showDragDrop={true}
-                    clearTrigger={clearAttachmentTrigger}
-                  />
-                </Box>
-
-                {/* Action Buttons */}
-                <Box className="flex items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowFileUploadDialog(false);
-                      setUploadFiles([]);
-                    }}
-                    disabled={isUploading}
-                    className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (!selectedProject || uploadFiles.length === 0) return;
-
-                      setIsUploading(true);
-
-                      try {
-                        const formData = new FormData();
-                        formData.append('file', uploadFiles[0]);
-
-                        const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents`;
-                        const response = await fetch(url, {
-                          method: 'PUT',
-                          headers: {
-                            'Authorization': `Bearer ${userService.token()}`
-                          },
-                          body: formData
-                        });
-
-                        if (!response.ok) {
-                          const result = await response.json();
-                          throw new Error(result.detail || result.message || 'Upload failed');
-                        }
-
-                        // Get the uploaded document from response
-                        const uploadedDocument = await response.json();
-
-                        // Update user state incrementally - only update the specific project
-                        if (user && selectedProject) {
-                          const updatedProjects = user.projects.map((p: any) => {
-                            if (p.id === selectedProject.id) {
-                              const updatedDocs = [...(p.documents || []), uploadedDocument];
-                              return { ...p, documents: updatedDocs };
-                            }
-                            return p;
-                          });
-
-                          const updatedUser = { ...user, projects: updatedProjects };
-                          setUser(updatedUser);
-
-                          // Update current project data
-                          const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
-                          if (updatedProject) {
-                            setCurrentProjectData(updatedProject);
-                            setSelectedProject(updatedProject);
-                          }
-                        }
-
-                        // Dispatch event for other components
-                        window.dispatchEvent(new CustomEvent('documentUploaded', {
-                          detail: { projectId: selectedProject.id }
-                        }));
-
-                        setShowFileUploadDialog(false);
-                        setUploadFiles([]);
-
-                        // Stay on Documents tab
-                        setActiveTab(1);
-                      } catch (error: any) {
-                        console.error('Upload error:', error.message || 'Failed to upload document');
-                      } finally {
-                        setIsUploading(false);
-                      }
-                    }}
-                    disabled={!selectedProject || uploadFiles.length === 0 || isUploading}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isUploading ? (
-                      <CircularProgress size={18} sx={{ color: 'white' }} />
-                    ) : (
-                      <>
-                        <CloudUploadIcon fontSize="small" />
-                        Upload Document
-                      </>
-                    )}
-                  </button>
-                </Box>
-              </Box>
-            </Box>
-          </Dialog>
+            user={user}
+            setUser={setUser}
+            preselectedProjectId={selectedProject?.id}
+            disableProjectSelection={true}
+          />
 
           {/* Delete Conversation Confirmation Dialog */}
           <Dialog
@@ -1475,7 +1444,7 @@ export default function Home() {
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
-                <Box className="flex-none p-4 border-b border-gray-900">
+                <Box className="flex-none p-4">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
                       <Box
@@ -1550,108 +1519,54 @@ export default function Home() {
                       </Box>
                     </Box>
                     <Box className="flex items-center gap-2">
-                      {/* Single Delete Button - deletes project and all conversations when project is selected */}
                       {selectedProject && (
                         <IconButton
-                          onClick={() => {
-                            setDeleteProjectConfirm('');
-                            setDeleteProjectError('');
-                            setShowDeleteProjectDialog(true);
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(1);
+                            setConversation(null);
+                            setShowChat(false);
+                            // Update URL to configuration mode without conversation
+                            navigate(`/?project=${selectedProject.id}`);
                           }}
                           sx={{
-                            color: '#9ca3af',
+                            color: activeTab === 1 ? '#ec4899' : '#9ca3af',
+                            padding: '8px',
                             '&:hover': {
-                              color: '#ef4444',
-                              bgcolor: 'rgba(239, 68, 68, 0.1)',
+                              color: '#ec4899',
+                              bgcolor: 'rgba(236, 72, 153, 0.1)',
                             },
                           }}
-                          title="Delete project and all conversations"
+                          title="Project Configuration"
                         >
-                          <DeleteOutlineIcon />
+                          <TuneIcon />
                         </IconButton>
                       )}
                     </Box>
                   </Box>
                 </Box>
 
-                {/* Tabs - only show when project is selected */}
-                {(selectedProject || searchParams.get('project')) && (
-                  <Box className="flex-none border-b border-gray-900 px-4">
-                    <Tabs
-                      value={activeTab}
-                      onChange={(_, newValue) => setActiveTab(newValue)}
-                      sx={{
-                        position: 'relative',
-                        minHeight: '36px',
-                        '& .MuiTab-root': {
-                          color: 'rgba(255, 255, 255, 0.65)',
-                          textTransform: 'none',
-                          fontSize: '13px',
-                          fontWeight: 400,
-                          minHeight: '36px',
-                          padding: '8px 16px',
-                          marginRight: '4px',
-                          borderRadius: '6px 6px 0 0',
-                          transition: 'color 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                          position: 'relative',
-                          zIndex: 1,
-                          '&:hover': {
-                            color: 'rgba(255, 255, 255, 0.9)',
-                          },
-                          '&.Mui-selected': {
-                            color: '#ec4899',
-                            fontWeight: 500,
-                          },
-                        },
-                        '& .MuiTabs-indicator': {
-                          height: '100%',
-                          backgroundColor: 'rgba(236, 72, 153, 0.12)',
-                          borderRadius: 0,
-                          transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-                          zIndex: 0,
-                        },
-                      }}
-                    >
-                      <Tab label="Chat" />
-                      <Tab label="Documents" />
-                      <Tab label="Configuration" />
-                    </Tabs>
-                  </Box>
+                {/* Tabs - show each conversation as tab plus Configuration */}
+                {(selectedProject || searchParams.get('project') || searchParams.get('general') === 'true') && (
+                  <ConversationTabs
+                    projectConversations={projectConversations}
+                    currentConversation={conversation}
+                    onConversationSelect={(conversationId) => {
+                      const newUrl = selectedProject
+                        ? `/?conversation=${conversationId}&project=${selectedProject.id}`
+                        : `/?conversation=${conversationId}&general=true`;
+                      navigate(newUrl);
+                    }}
+                    onConversationDelete={handleDeleteConversationFromList}
+                    onNewConversation={handleStartNewConversation}
+                  />
                 )}
 
                 {/* Main Content Area - 2 columns */}
-                <Box className="flex-1 overflow-hidden flex" style={{ height: selectedProject ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                  {/* Left Column - Chat/Documents/Settings */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                    {!selectedProject || activeTab === 0 ? (
-                      <Chat
-                        project={selectedProject}
-                        initialMessage={chatMessage}
-                        attachments={messageAttachments}
-                        conversation={conversation}
-                        isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
-                        onFileAttached={handleFileAttached}
-                        onAttachmentsClear={() => {
-                          setMessageAttachments([]);
-                          setUploadFiles([]);
-                        }}
-                        onTokenUpdate={() => {
-                          window.dispatchEvent(new Event('refreshUserTokens'));
-                        }}
-                        onConversationCreated={handleConversationCreated}
-                        onConversationUpdate={handleConversationUpdate}
-                      />
-                    ) : activeTab === 1 ? (
-                      <DocumentsTab
-                        user={user}
-                        setUser={setUser}
-                        selectedProject={selectedProject}
-                        setSelectedProject={setSelectedProject}
-                        currentProjectData={currentProjectData}
-                        setCurrentProjectData={setCurrentProjectData}
-                        setActiveTab={setActiveTab}
-                      />
-                    ) : (
+                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || searchParams.get('general') === 'true') ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                  {/* Left Column - Chat/Conversation List or Configuration */}
+                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: (selectedProject || searchParams.get('general') === 'true') && activeTab !== 1 ? '70%' : '100%' } }}>
+                    {activeTab === 1 && selectedProject ? (
                       <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
                         {/* Configuration Tab */}
                         <Box className="max-w-4xl mx-auto">
@@ -1703,15 +1618,60 @@ export default function Home() {
                                 </Box>
                                 <p className="text-gray-400 text-xs">* Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
                               </div>
+
+                              {/* Delete Section */}
+                              <Box className="pt-4">
+                                <Box className="flex items-start gap-3 p-4 bg-red-500/5 border border-red-500/20 rounded-lg">
+                                  <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 20, mt: 0.5 }} />
+                                  <Box className="flex-1">
+                                    <Typography className="text-white font-medium text-sm mb-1">
+                                      Delete this project
+                                    </Typography>
+                                    <Typography className="text-gray-400 text-xs mb-3">
+                                      Permanently delete this project and all associated data. This action cannot be undone.
+                                    </Typography>
+                                    <button
+                                      onClick={() => {
+                                        setDeleteProjectConfirm('');
+                                        setDeleteProjectError('');
+                                        setShowDeleteProjectDialog(true);
+                                      }}
+                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium transition-colors"
+                                    >
+                                      Delete Project
+                                    </button>
+                                  </Box>
+                                </Box>
+                              </Box>
                             </Box>
                           )}
                         </Box>
                       </Box>
+                    ) : (
+                      // Show Chat component (it handles the case when conversation is null)
+                      activeTab !== 1 && (
+                        <Chat
+                          project={selectedProject}
+                          initialMessage={chatMessage}
+                          attachments={messageAttachments}
+                          conversation={conversation}
+                          isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
+                          onFileAttached={handleFileAttached}
+                          onAttachmentsClear={() => {
+                            setMessageAttachments([]);
+                          }}
+                          onTokenUpdate={() => {
+                            window.dispatchEvent(new Event('refreshUserTokens'));
+                          }}
+                          onConversationCreated={handleConversationCreated}
+                          onConversationUpdate={handleConversationUpdate}
+                        />
+                      )
                     )}
                   </Box>
 
-                  {/* Right Column - Conversations (show when project or general is selected) */}
-                  {(selectedProject || searchParams.get('general') === 'true') && (
+                  {/* Right Column - Documents List Only (only for projects) */}
+                  {selectedProject && activeTab !== 1 && (
                     <Box
                       className="border-l border-gray-900 overflow-y-auto"
                       sx={{
@@ -1719,101 +1679,80 @@ export default function Home() {
                         display: { xs: 'none', md: 'block' }
                       }}
                     >
-                      <Box className="p-4">
+                      <Box className="p-3">
                         <Box className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-semibold text-white">
-                            Conversations
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                            Documents
                           </span>
-                          <IconButton
-                            onClick={handleStartNewConversation}
-                            size="small"
-                            sx={{
-                              color: '#9ca3af',
-                              padding: '4px',
-                              '&:hover': {
-                                color: '#ec4899',
-                                bgcolor: 'rgba(236, 72, 153, 0.1)',
-                              },
-                            }}
-                            title="New conversation"
-                          >
-                            <AddBoxIcon fontSize="small" />
-                          </IconButton>
+                          {selectedProject && (
+                            <IconButton
+                              onClick={() => setShowFileUploadDialog(true)}
+                              size="small"
+                              sx={{
+                                color: '#9ca3af',
+                                padding: '4px',
+                                '&:hover': {
+                                  color: '#ec4899',
+                                  bgcolor: 'rgba(236, 72, 153, 0.1)',
+                                },
+                              }}
+                              title="Add document"
+                            >
+                              <AddBoxIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </Box>
-                        {projectConversations.length > 0 ? (
-                          <Box className="space-y-1">
-                            {projectConversations.map((conv: any) => {
-                              const isActive = conversation && conversation.id === conv.id;
-
-                              return (
+                        {selectedProject && currentProjectData ? (
+                          currentProjectData.documents && currentProjectData.documents.length > 0 ? (
+                            <Box className="space-y-2">
+                              {currentProjectData.documents.map((doc: any, i: number) => (
                                 <Box
-                                  key={conv.id}
-                                  onClick={() => {
-                                    console.log('[Home Sidebar] Clicked conversation:', {
-                                      convId: conv.id,
-                                      convTitle: conv.title,
-                                      currentConversationId: conversation?.id,
-                                      selectedProject: selectedProject?.id
-                                    });
-
-                                    const newUrl = selectedProject
-                                      ? `/?conversation=${conv.id}&project=${selectedProject.id}`
-                                      : `/?conversation=${conv.id}&general=true`;
-
-                                    console.log('[Home Sidebar] Navigating to:', newUrl);
-                                    navigate(newUrl);
-                                  }}
+                                  key={`doc-${i}`}
                                   sx={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    padding: '10px 12px',
-                                    cursor: 'pointer',
+                                    padding: '10px',
                                     borderRadius: '6px',
-                                    bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                                    color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.6)',
+                                    bgcolor: 'rgba(255, 255, 255, 0.02)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    transition: 'all 0.15s ease',
                                     '&:hover': {
-                                      bgcolor: 'rgba(255, 255, 255, 0.06)',
-                                      color: 'white',
+                                      bgcolor: 'rgba(255, 255, 255, 0.04)',
+                                      borderColor: 'rgba(255, 255, 255, 0.08)',
                                     },
-                                    '&:hover .delete-btn': {
-                                      opacity: 1,
-                                    },
-                                    mb: 0.5,
                                   }}
                                 >
-                                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                                    <div className="text-sm font-medium truncate">{conv.title || 'Untitled'}</div>
-                                    {conv.updated_at && (
-                                      <div className="text-xs text-gray-500 mt-1">
-                                        {new Date(conv.updated_at).toLocaleDateString()}
-                                      </div>
-                                    )}
-                                  </Box>
-                                  <Box
-                                    className="delete-btn"
-                                    onClick={(e) => handleDeleteConversationFromList(e, conv.id)}
-                                    sx={{
-                                      opacity: 0,
-                                      padding: '4px',
-                                      borderRadius: '4px',
-                                      color: 'rgba(255, 255, 255, 0.4)',
-                                      transition: 'all 0.15s ease',
-                                      '&:hover': {
-                                        color: '#ef4444',
-                                        bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                      },
-                                    }}
-                                  >
-                                    <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                                  </Box>
+                                  <div className="flex items-start justify-between gap-2 mb-1">
+                                    <span className="text-xs text-white font-medium truncate flex-1">
+                                      {doc.filename || doc.name || 'Untitled'}
+                                    </span>
+                                    {doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0) ? (
+                                      <CircularProgress size={10} sx={{ color: '#9ca3af' }} />
+                                    ) : null}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}
+                                    {doc.num_of_tokens && doc.num_of_tokens > 0 ? (
+                                      <span className="ml-2">
+                                        • <span style={{ color: '#ec4899' }}>{Math.ceil(doc.num_of_tokens / 100)} credits</span>
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </Box>
-                              );
-                            })}
-                          </Box>
+                              ))}
+                            </Box>
+                          ) : (
+                            <Box className="text-center py-8">
+                              <Box className="text-gray-500 text-xs mb-3">No documents yet</Box>
+                              <button
+                                onClick={() => setShowFileUploadDialog(true)}
+                                className="text-xs px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white rounded transition-colors"
+                              >
+                                Add Document
+                              </button>
+                            </Box>
+                          )
                         ) : (
-                          <Box className="text-gray-500 text-sm py-4 text-center">
-                            No conversations yet
+                          <Box className="text-gray-500 text-xs py-4 text-center">
+                            Select a project to view documents
                           </Box>
                         )}
                       </Box>
