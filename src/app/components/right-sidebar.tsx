@@ -1,14 +1,14 @@
-import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
+import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment } from '@mui/material';
 import AddBoxIcon from '@mui/icons-material/AddBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
-import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
+import SearchIcon from '@mui/icons-material/Search';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -29,9 +29,10 @@ export default function RightSidebar({
   onAddDocument,
   onDeleteDocument,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'rules' | 'documents'>('documents');
+  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const editorRef = useRef<any>(null);
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -43,113 +44,69 @@ export default function RightSidebar({
     placeholder: 'Add rules or guidelines for this project...',
   }), []);
 
+  // Collapse sidebar when project changes
+  useEffect(() => {
+    setActiveSection(null);
+  }, [selectedProject?.id]);
+
+  // Adjust editor height when rules section is opened
+  useEffect(() => {
+    if (activeSection === 'rules' && editorRef.current) {
+      setTimeout(() => {
+        const codemirror = editorRef.current?.codemirror;
+        if (codemirror) {
+          codemirror.refresh();
+        }
+      }, 100);
+    }
+  }, [activeSection]);
+
   return (
     <Box
-      className="border-l border-gray-900 overflow-y-auto relative"
+      className="border-l border-gray-900 relative"
       sx={{
-        width: { xs: '0', md: isCollapsed ? '48px' : '30%' },
-        display: { xs: 'none', md: 'block' },
+        width: { xs: '0', md: activeSection ? '30%' : '48px' },
+        minWidth: { xs: '0', md: activeSection ? '320px' : '48px' },
+        maxWidth: { xs: '0', md: activeSection ? '450px' : '48px' },
+        display: { xs: 'none', md: 'flex' },
+        flexDirection: 'row',
         transition: 'width 0.3s ease',
       }}
     >
-      {isCollapsed ? (
-        /* Collapsed State - Show Icon Buttons */
-        <Box className="flex flex-col items-center py-3 gap-2">
-          <Tooltip title="Documents" placement="left">
-            <IconButton
-              onClick={() => {
-                setActiveSection('documents');
-                setIsCollapsed(false);
-              }}
-              sx={{
-                color: '#9ca3af',
-                bgcolor: 'rgba(255, 255, 255, 0.05)',
-                padding: '8px',
-                '&:hover': {
-                  color: '#ec4899',
-                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                },
-              }}
-              size="small"
-            >
-              <DescriptionOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Rules" placement="left">
-            <IconButton
-              onClick={() => {
-                setActiveSection('rules');
-                setIsCollapsed(false);
-              }}
-              sx={{
-                color: '#9ca3af',
-                bgcolor: 'rgba(255, 255, 255, 0.05)',
-                padding: '8px',
-                '&:hover': {
-                  color: '#ec4899',
-                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                },
-              }}
-              size="small"
-            >
-              <RuleOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      ) : (
-      /* Expanded State - Show Full Content */
-      <>
-      <Box className="p-3 space-y-4">
-        {/* Header with Actions */}
-        <Box className="flex items-center justify-end gap-1 pb-2">
-          {selectedProject && activeSection === 'documents' && (
-            <Tooltip title="Add document" placement="left">
-              <IconButton
+      {/* Content Area */}
+      {activeSection && (
+        <Box
+          className="flex-1 overflow-y-auto p-3 space-y-4"
+          sx={{
+            opacity: activeSection ? 1 : 0,
+            transition: 'opacity 0.3s ease',
+          }}
+        >
+          {/* Section Title and Actions */}
+          <Box className="flex items-center justify-between pb-3 mb-4 border-b border-gray-800">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : ''}
+            </span>
+            {selectedProject && activeSection === 'documents' && (
+              <button
                 onClick={onAddDocument}
-                size="small"
-                sx={{
-                  color: '#9ca3af',
-                  padding: '6px',
-                  '&:hover': {
-                    color: '#ec4899',
-                    bgcolor: 'rgba(236, 72, 153, 0.1)',
-                  },
-                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-pink-600 hover:bg-pink-500 rounded-sm transition-colors"
               >
-                <AddBoxIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-          <Tooltip title="Collapse sidebar" placement="left">
-            <IconButton
-              onClick={() => setIsCollapsed(true)}
-              size="small"
-              sx={{
-                color: '#9ca3af',
-                padding: '6px',
-                '&:hover': {
-                  color: '#ec4899',
-                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                },
-              }}
-            >
-              <KeyboardDoubleArrowRightIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
+                <AddBoxIcon sx={{ fontSize: 16 }} />
+                <span>Add</span>
+              </button>
+            )}
+          </Box>
 
         {/* Project Rules Section */}
         {activeSection === 'rules' && selectedProject && currentProjectData && (
-          <div className="space-y-3">
+          <div className="space-y-3 w-full">
             <Box className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                Project Rules
-              </span>
               <span className="text-xs text-gray-500">
                 {projectRules.length}/300
               </span>
             </Box>
-            <Box className="relative">
+            <Box className="relative w-full">
               {isSavingRules && (
                 <Box
                   sx={{
@@ -168,11 +125,14 @@ export default function RightSidebar({
                   <CircularProgress size={14} sx={{ color: '#ec4899' }} />
                 </Box>
               )}
-              <Box className="markdown-editor-container">
+              <Box className="markdown-editor-container w-full">
                 <SimpleMDE
                   value={projectRules}
                   onChange={onRulesChange}
                   options={editorOptions}
+                  getMdeInstance={(instance) => {
+                    editorRef.current = instance;
+                  }}
                 />
               </Box>
             </Box>
@@ -187,8 +147,56 @@ export default function RightSidebar({
           <div className="space-y-3">
           {selectedProject && currentProjectData ? (
             currentProjectData.documents && currentProjectData.documents.length > 0 ? (
+              <>
+                {/* Search Input */}
+                <TextField
+                  size="small"
+                  placeholder="Search documents..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    width: '100%',
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': {
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: 'rgba(236, 72, 153, 0.3)',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#ec4899',
+                      },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': {
+                        color: '#9ca3af',
+                        opacity: 1,
+                      },
+                    },
+                  }}
+                />
               <Box className="space-y-2">
-                {currentProjectData.documents.map((doc: any, i: number) => (
+                {currentProjectData.documents
+                  .filter((doc: any) => {
+                    if (!searchQuery) return true;
+                    const query = searchQuery.toLowerCase();
+                    const filename = (doc.filename || doc.name || '').toLowerCase();
+                    const summary = (doc.summary || '').toLowerCase();
+                    const markdown = (doc.markdown || '').toLowerCase();
+                    return filename.includes(query) || summary.includes(query) || markdown.includes(query);
+                  })
+                  .map((doc: any, i: number) => (
                   <Box
                     key={doc.id || `doc-${i}`}
                     onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
@@ -292,6 +300,7 @@ export default function RightSidebar({
                   </Box>
                 ))}
               </Box>
+              </>
             ) : (
               <Box className="text-center py-6">
                 <Box className="text-gray-500 text-xs mb-3">No documents yet</Box>
@@ -310,9 +319,59 @@ export default function RightSidebar({
           )}
         </div>
         )}
-      </Box>
-      </>
+        </Box>
       )}
+
+      {/* Vertical Tab Bar on Right Edge */}
+      <Box
+        className="border-l border-gray-900"
+        sx={{
+          width: '48px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          py: 2,
+          gap: 1,
+          bgcolor: 'rgba(0, 0, 0, 0.2)',
+        }}
+      >
+        <Tooltip title="Documents" placement="left">
+          <IconButton
+            onClick={() => setActiveSection(activeSection === 'documents' ? null : 'documents')}
+            sx={{
+              color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
+              bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              padding: '10px',
+              borderRadius: '8px',
+              '&:hover': {
+                color: '#ec4899',
+                bgcolor: 'rgba(236, 72, 153, 0.1)',
+              },
+            }}
+            size="small"
+          >
+            <DescriptionOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Rules" placement="left">
+          <IconButton
+            onClick={() => setActiveSection(activeSection === 'rules' ? null : 'rules')}
+            sx={{
+              color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
+              bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              padding: '10px',
+              borderRadius: '8px',
+              '&:hover': {
+                color: '#ec4899',
+                bgcolor: 'rgba(236, 72, 153, 0.1)',
+              },
+            }}
+            size="small"
+          >
+            <RuleOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
     </Box>
   );
 }

@@ -91,8 +91,7 @@ export default function Chat(props: {
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
   onConversationCreated?: (conversation: any) => void,
-  onConversationUpdate?: (conversation: any) => void,
-  isGeneral?: boolean
+  onConversationUpdate?: (conversation: any) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 

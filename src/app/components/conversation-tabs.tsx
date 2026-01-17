@@ -29,7 +29,8 @@ export default function ConversationTabs({
       const containerWidth = containerRef.current.offsetWidth;
       const buttonWidth = 60; // Approximate width for + button and margins
       const availableWidth = containerWidth - buttonWidth;
-      const tabCount = projectConversations.length;
+      // Account for "New Conversation" tab if no current conversation
+      const tabCount = projectConversations.length + (currentConversation ? 0 : 1);
 
       if (tabCount === 0) {
         setTabWidth(200);
@@ -54,7 +55,7 @@ export default function ConversationTabs({
     // Recalculate on window resize
     window.addEventListener('resize', calculateTabWidth);
     return () => window.removeEventListener('resize', calculateTabWidth);
-  }, [projectConversations.length]);
+  }, [projectConversations.length, currentConversation]);
 
   // Listen for conversation created events to refresh tab list
   useEffect(() => {
@@ -104,11 +105,35 @@ export default function ConversationTabs({
           );
         })}
 
+        {/* New Conversation Tab - shown when no current conversation */}
+        {!currentConversation && (
+          <div
+            style={{ width: `${tabWidth}px`, flexShrink: 0 }}
+            className="
+              group px-4 py-2 pb-[10px] text-[13px]
+              flex items-center gap-1.5 relative -mb-px
+              transition-all duration-200
+              font-medium text-white bg-pink-500/10
+              border-l border-r border-b border-t border-pink-500/30
+              border-b-pink-500/10
+            "
+          >
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1 italic opacity-75">
+              New Conversation
+            </span>
+          </div>
+        )}
+
         {/* New Conversation Button - right after last conversation */}
         <button
-          onClick={onNewConversation}
-          className="text-gray-400 px-2 py-1.5 mb-1 mr-5 hover:text-pink-500 transition-colors"
-          title="New conversation"
+          onClick={!currentConversation ? undefined : onNewConversation}
+          disabled={!currentConversation}
+          className={`px-2 py-1.5 mb-1 mr-5 transition-colors ${
+            !currentConversation
+              ? 'text-gray-600 cursor-not-allowed opacity-40'
+              : 'text-gray-400 hover:text-pink-500 cursor-pointer'
+          }`}
+          title={!currentConversation ? "Already creating a new conversation" : "New conversation"}
         >
           <AddBoxIcon className="text-[20px]" />
         </button>

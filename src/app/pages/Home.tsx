@@ -116,17 +116,11 @@ export default function Home() {
         const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
 
         if (remaining && remaining.length > 0) {
-          // Filter conversations by current project (or general if no project)
+          // Filter conversations by current project
           const currentProjectId = selectedProject?.id;
-          const projectConversations = remaining.filter((conv: any) => {
-            if (currentProjectId) {
-              // If we have a project selected, only show conversations from that project
-              return conv.project_id === currentProjectId;
-            } else {
-              // If no project selected (general mode), only show conversations without project_id
-              return !conv.project_id;
-            }
-          });
+          const projectConversations = remaining.filter((conv: any) =>
+            conv.project_id === currentProjectId
+          );
 
           if (projectConversations.length > 0) {
             // Sort by created_at descending and select the most recent from the same project
@@ -136,19 +130,15 @@ export default function Home() {
 
             console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
 
-            // Navigate to the previous conversation, keeping the same project
+            // Navigate to the previous conversation
             if (currentProjectId) {
               navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
-            } else {
-              navigate(`/?conversation=${lastConversation.id}&general=true`);
             }
           } else {
-            // No conversations left in the current project, navigate to project/general home
-            console.log('No conversations remaining in current project, navigating to project/general home');
+            // No conversations left in the current project, navigate to project home
+            console.log('No conversations remaining in current project, navigating to project home');
             if (currentProjectId) {
               navigate(`/?project=${currentProjectId}`);
-            } else {
-              navigate('/?general=true');
             }
             setShowChat(false);
             setConversation(null);
@@ -156,12 +146,10 @@ export default function Home() {
             setMessage('');
           }
         } else {
-          // No conversations left at all, navigate to home
-          console.log('No conversations remaining, navigating to home');
+          // No conversations left at all, navigate to project home
+          console.log('No conversations remaining, navigating to project home');
           if (selectedProject) {
             navigate(`/?project=${selectedProject.id}`);
-          } else {
-            navigate('/?general=true');
           }
           setShowChat(false);
           setConversation(null);
@@ -233,10 +221,9 @@ export default function Home() {
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
-    const isGeneral = searchParams.get('general') === 'true';
 
     // Create a string representation of current URL params to detect actual URL changes
-    const currentUrlParams = `${urlConversationId || ''}-${urlProjectId || ''}-${isGeneral}`;
+    const currentUrlParams = `${urlConversationId || ''}-${urlProjectId || ''}`;
     const urlParamsChanged = previousUrlParamsRef.current !== currentUrlParams;
     previousUrlParamsRef.current = currentUrlParams;
 
@@ -269,21 +256,14 @@ export default function Home() {
             setSelectedProject(project || null);
           }
         } else {
-          // Conversation has no project - it's a general conversation
-          if (selectedProject !== null) {
-            console.log('[Home] Clearing project for general conversation');
-            setSelectedProject(null);
+          // Conversation has no project_id - should not happen with system project logic
+          // But handle gracefully by finding system project
+          const systemProject = user.projects?.find((p: any) => p.system === true);
+          if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
+            console.log('[Home] Setting system project for conversation without project_id');
+            setSelectedProject(systemProject);
           }
         }
-      }
-    } else if (isGeneral) {
-      // General mode - no project selected
-      // Only update if URL actually changed (not just user data update)
-      if (urlParamsChanged) {
-        setConversation(null);
-        setShowChat(true);
-        setActiveTab(0);
-        setSelectedProject(null);
       }
     } else if (urlProjectId) {
       // Only update if URL actually changed (not just user data update)
@@ -299,13 +279,19 @@ export default function Home() {
       }
 
     } else {
-      // No conversation or project - clear state
-      // Only clear if URL actually changed
+      // No conversation or project - auto-select system project for welcome screen
+      // Only update if URL actually changed
       if (urlParamsChanged) {
         setConversation(null);
         setShowChat(false);
         setChatMessage(null);
-        setSelectedProject(null);
+
+        // Always have system project selected on welcome screen
+        const systemProject = user.projects?.find((p: any) => p.system === true);
+        if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
+          console.log('[Home] Auto-selecting system project for welcome screen');
+          setSelectedProject(systemProject);
+        }
       }
     }
   }, [searchParams, user?.conversations, user?.projects]);
@@ -348,11 +334,17 @@ export default function Home() {
     const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
 
     if (!selectedProject) {
-      // Show general conversations (no project_id)
-      const generalConversations = allConversations.filter(
-        (conv: any) => !conv.project_id
-      );
-      setProjectConversations(generalConversations);
+      // No project selected - this shouldn't happen with system project, but handle gracefully
+      // Find system project conversations
+      const systemProject = user.projects?.find((p: any) => p.system === true);
+      if (systemProject) {
+        const filtered = allConversations.filter(
+          (conv: any) => conv.project_id === systemProject.id
+        );
+        setProjectConversations(filtered);
+      } else {
+        setProjectConversations([]);
+      }
     } else {
       // Filter by project
       const filtered = allConversations.filter(
@@ -555,6 +547,17 @@ export default function Home() {
             setConversation(newConversation);
             setActiveTab(0); // Select chat tab 0
             setShowChat(true); // Set showChat immediately after creating conversation
+
+            // Immediately add to projectConversations so tab appears right away
+            setProjectConversations(prev => {
+              // Check if conversation already exists in list
+              if (prev.some((c: any) => c.id === newConversation.id)) {
+                return prev;
+              }
+              // Add new conversation to the beginning
+              return [newConversation, ...prev];
+            });
+
             setMessageAttachments(attachmentsToSend);
             setChatMessage(cleanMessage);
             setMessage('');
@@ -621,23 +624,15 @@ export default function Home() {
           // Ensure conversations is always an array before filtering
           const conversations = (updatedUser.conversations && Array.isArray(updatedUser.conversations)) ? updatedUser.conversations : [];
           const remainingConversations = conversations.filter(
-            (c: any) => projectId ? c.project_id === projectId : !c.project_id
+            (c: any) => c.project_id === projectId
           );
 
           if (remainingConversations.length > 0) {
             const nextConv = remainingConversations[0];
-            if (projectId) {
-              navigate(`/?conversation=${nextConv.id}&project=${projectId}`);
-            } else {
-              navigate(`/?conversation=${nextConv.id}&general=true`);
-            }
+            navigate(`/?conversation=${nextConv.id}&project=${projectId}`);
           } else {
-            // No more conversations, go to project/general view
-            if (projectId) {
-              navigate(`/?project=${projectId}`);
-            } else {
-              navigate(`/?general=true`);
-            }
+            // No more conversations, go to project view
+            navigate(`/?project=${projectId}`);
             setConversation(null);
             setShowChat(false);
           }
@@ -702,16 +697,12 @@ export default function Home() {
           const projectId = selectedProject?.id;
           if (projectId) {
             navigate(`/?conversation=${targetConversation.id}&project=${projectId}`);
-          } else {
-            navigate(`/?conversation=${targetConversation.id}&general=true`);
           }
         } else {
-          // No conversations left, navigate to project/general home
+          // No conversations left, navigate to project home
           const projectId = selectedProject?.id;
           if (projectId) {
             navigate(`/?project=${projectId}`);
-          } else {
-            navigate('/?general=true');
           }
           setConversation(null);
           setShowChat(false);
@@ -796,11 +787,9 @@ export default function Home() {
     setShowChat(true);
     setActiveTab(0);
 
-    // Update URL to remove conversation param but keep project/general context
+    // Update URL to remove conversation param but keep project context
     if (selectedProject) {
       navigate(`/?project=${selectedProject.id}`);
-    } else {
-      navigate(`/?general=true`);
     }
   };
 
@@ -810,11 +799,9 @@ export default function Home() {
     // Determine project ID from conversation or selected project
     const projectId = newConversation.project_id || selectedProject?.id;
 
-    // Navigate to the new conversation URL FIRST to ensure it's selected
+    // Navigate to the new conversation URL
     if (projectId) {
       navigate(`/?conversation=${newConversation.id}&project=${projectId}`, { replace: true });
-    } else {
-      navigate(`/?conversation=${newConversation.id}&general=true`, { replace: true });
     }
 
     // Set state immediately
@@ -877,6 +864,12 @@ export default function Home() {
     e.preventDefault();
 
     if (!selectedProject) return;
+
+    // Prevent deletion of system projects
+    if (selectedProject.system === true) {
+      setDeleteProjectError('Cannot delete system project');
+      return;
+    }
 
     if (deleteProjectConfirm.toLowerCase() !== 'delete') {
       setDeleteProjectError('Please type "delete" to confirm');
@@ -1703,14 +1696,14 @@ export default function Home() {
                 </Box>
 
                 {/* Tabs - show each conversation as tab plus Configuration */}
-                {(selectedProject || searchParams.get('project') || searchParams.get('general') === 'true') && (
+                {(selectedProject || searchParams.get('project')) && (
                   <ConversationTabs
                     projectConversations={projectConversations}
                     currentConversation={conversation}
                     onConversationSelect={(conversationId) => {
                       const newUrl = selectedProject
                         ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                        : `/?conversation=${conversationId}&general=true`;
+                        : `/?conversation=${conversationId}`;
                       navigate(newUrl);
                     }}
                     onConversationDelete={handleDeleteConversationFromList}
@@ -1719,9 +1712,9 @@ export default function Home() {
                 )}
 
                 {/* Main Content Area - 2 columns */}
-                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || searchParams.get('general') === 'true') ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
                   {/* Left Column - Chat or Documents Tab */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: (selectedProject || searchParams.get('general') === 'true') ? '70%' : '100%' } }}>
+                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
                     {activeTab === 1 && selectedProject ? (
                       <DocumentsTab
                         user={user}
@@ -1739,7 +1732,6 @@ export default function Home() {
                         initialMessage={chatMessage}
                         attachments={messageAttachments}
                         conversation={conversation}
-                        isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
                         onFileAttached={handleFileAttached}
                         onAttachmentsClear={() => {
                           setMessageAttachments([]);
@@ -1916,11 +1908,20 @@ export default function Home() {
                                   }
                                   label={selectedProject.title || selectedProject.name}
                                   size="small"
-                                  onDelete={() => {
-                                    setSelectedProject(null);
-                                    previousMessageRef.current = ''; // Reset previous message tracking
-                                    navigate('/');
-                                  }}
+                                  {...(!selectedProject.system && {
+                                    onDelete: () => {
+                                      // Navigate back to system project instead of clearing
+                                      const systemProject = user?.projects?.find((p: any) => p.system === true);
+                                      if (systemProject) {
+                                        setSelectedProject(systemProject);
+                                        navigate(`/?project=${systemProject.id}`);
+                                      } else {
+                                        setSelectedProject(null);
+                                        navigate('/');
+                                      }
+                                      previousMessageRef.current = ''; // Reset previous message tracking
+                                    }
+                                  })}
                                   sx={{
                                     height: '28px',
                                     borderRadius: '1px',

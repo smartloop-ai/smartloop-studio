@@ -89,6 +89,31 @@ export function useAuth(): [any, (user: any) => void] {
           // User is authenticated and verified
           setUser(u);
 
+          // Initialize system project if running in Electron
+          const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+          if (isElectron && window.electronAPI?.initializeSystemProject) {
+            try {
+              console.log('useAuth: Initializing system project...');
+              const result = await window.electronAPI.initializeSystemProject(token);
+              if (result.success) {
+                if (result.existed) {
+                  console.log('useAuth: System project already exists');
+                } else {
+                  console.log('useAuth: System project created successfully');
+                  // Refresh user data to include the new system project
+                  const refreshedUser = await userService.get();
+                  if (refreshedUser) {
+                    setUser(refreshedUser);
+                  }
+                }
+              } else {
+                console.error('useAuth: Failed to initialize system project:', result.error);
+              }
+            } catch (error) {
+              console.error('useAuth: Error initializing system project:', error);
+            }
+          }
+
           // Initialize token refresh in the background
           userService.initializeTokenRefresh();
         }
