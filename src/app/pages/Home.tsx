@@ -3,7 +3,7 @@
 import '../styles/home.css';
 import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Chip, Typography, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
@@ -16,15 +16,14 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import TuneIcon from '@mui/icons-material/Tune';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import AddBoxIcon from '@mui/icons-material/AddBox';
 import FileAttacher from '@/app/components/file-attacher';
 import DocumentPolling from '@/app/components/document-polling';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-import SimpleMDE from 'react-simplemde-editor';
+import DocumentsTab from '@/app/components/documents-tab';
+import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
@@ -75,6 +74,11 @@ export default function Home() {
   const [editedProjectName, setEditedProjectName] = useState('');
   const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
   const previousUrlParamsRef = useRef<string>(''); // Track previous URL params to avoid unnecessary tab changes
+  const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<any>(null);
+  const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
+  const [deleteDocError, setDeleteDocError] = useState('');
+  const [isDeletingDoc, setIsDeletingDoc] = useState(false);
 
 
   const getGreeting = () => {
@@ -173,6 +177,23 @@ export default function Home() {
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
     };
   }, [conversation, navigate, selectedProject]);
+
+  // Listen for delete project dialog event from sidebar
+  useEffect(() => {
+    const handleOpenDeleteProjectDialog = (event: any) => {
+      const projectId = event.detail?.projectId;
+      if (projectId && selectedProject?.id === projectId) {
+        setDeleteProjectConfirm('');
+        setDeleteProjectError('');
+        setShowDeleteProjectDialog(true);
+      }
+    };
+
+    window.addEventListener('openDeleteProjectDialog', handleOpenDeleteProjectDialog);
+    return () => {
+      window.removeEventListener('openDeleteProjectDialog', handleOpenDeleteProjectDialog);
+    };
+  }, [selectedProject]);
 
   // Listen for conversation creation events to update tab bar
   useEffect(() => {
@@ -409,22 +430,6 @@ export default function Home() {
   };
 
   // Handle mention changes
-  // SimpleMDE editor options
-  const editorOptions = useMemo(() => {
-    return {
-      spellChecker: false,
-      placeholder: "Add project-specific rules and guidelines that will be included with every message...",
-      status: false,
-      toolbar: [
-        "bold", "italic", "heading", "|",
-        "quote", "unordered-list", "ordered-list", "|",
-        "link", "code", "|",
-        "preview", "guide"
-      ] as any,
-      minHeight: "200px",
-      maxHeight: "400px",
-    } as any;
-  }, []);
 
   const autoSaveProjectRules = async (rules: string) => {
     if (!selectedProject || !rules) return;
@@ -940,6 +945,72 @@ export default function Home() {
     return project?.color || DEFAULT_COLOR;
   };
 
+  const handleOpenDeleteDocDialog = (doc: any) => {
+    setDocumentToDelete(doc);
+    setDeleteDocConfirm('');
+    setDeleteDocError('');
+    setShowDeleteDocDialog(true);
+  };
+
+  const handleCloseDeleteDocDialog = () => {
+    setShowDeleteDocDialog(false);
+    setDocumentToDelete(null);
+    setDeleteDocConfirm('');
+    setDeleteDocError('');
+  };
+
+  const handleDeleteDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (deleteDocConfirm.toLowerCase() !== 'delete') {
+      return;
+    }
+
+    if (!documentToDelete || !selectedProject) return;
+
+    setIsDeletingDoc(true);
+    setDeleteDocError('');
+
+    try {
+      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
+      const response = await userService.makeAuthenticatedRequest(url, {
+        method: 'DELETE',
+      });
+
+      if (response && (response.status === 200 || response.status === 204)) {
+        // Update user state incrementally - remove the deleted document from the specific project
+        if (user && selectedProject) {
+          const updatedProjects = user.projects.map((p: any) => {
+            if (p.id === selectedProject.id) {
+              const filteredDocs = (p.documents || []).filter((doc: any) => doc.id !== documentToDelete.id);
+              return { ...p, documents: filteredDocs };
+            }
+            return p;
+          });
+
+          const updatedUser = { ...user, projects: updatedProjects };
+          setUser(updatedUser);
+
+          // Update current project data - keep project selected even with no documents
+          const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
+          if (updatedProject) {
+            setCurrentProjectData(updatedProject);
+            setSelectedProject(updatedProject);
+          }
+        }
+
+        handleCloseDeleteDocDialog();
+      } else {
+        setDeleteDocError('Failed to delete document. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error deleting document:', error);
+      setDeleteDocError(error.message || 'An error occurred while deleting the document.');
+    } finally {
+      setIsDeletingDoc(false);
+    }
+  };
+
   const features = [
     {
       title: 'Instantly extract information',
@@ -1433,6 +1504,116 @@ export default function Home() {
             </Box>
           </Dialog>
 
+          {/* Delete Document Confirmation Dialog */}
+          <Dialog
+            open={showDeleteDocDialog}
+            onClose={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
+            maxWidth="sm"
+            fullWidth
+            PaperProps={{
+              sx: dialogStyles.paper
+            }}
+            BackdropProps={{
+              sx: dialogStyles.backdrop
+            }}
+          >
+            <Box className="p-6">
+              <Box className="flex items-center justify-between mb-4">
+                <h3 className="text-white text-xl font-semibold">Delete Document</h3>
+                <IconButton
+                  onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
+                  sx={{
+                    color: '#6b7280',
+                    '&:hover': {
+                      color: 'white',
+                      bgcolor: '#1a1a1a'
+                    },
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+
+              <form onSubmit={handleDeleteDocument}>
+                <Box className="space-y-4">
+                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <Box>
+                      <Typography className="text-red-400 font-medium mb-1">
+                        Warning: This action cannot be undone
+                      </Typography>
+                      <Typography className="text-gray-300 text-sm">
+                        Deleting "{documentToDelete?.filename || documentToDelete?.name || 'this document'}" will permanently remove it from the project.
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box>
+                    <Typography className="text-gray-300 text-sm mb-3">
+                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
+                    </Typography>
+                    <TextField
+                      autoComplete="off"
+                      fullWidth
+                      value={deleteDocConfirm}
+                      onChange={(e) => {
+                        setDeleteDocConfirm(e.target.value);
+                        setDeleteDocError('');
+                      }}
+                      placeholder="Type 'delete' to confirm"
+                      disabled={isDeletingDoc}
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          color: 'white',
+                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          '& fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: '#ec4899',
+                          },
+                        },
+                      }}
+                    />
+                    {deleteDocError && (
+                      <Typography className="text-red-400 text-sm mt-2">
+                        {deleteDocError}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  <Box className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCloseDeleteDocDialog}
+                      disabled={isDeletingDoc}
+                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isDeletingDoc || deleteDocConfirm.toLowerCase() !== 'delete'}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDeletingDoc ? (
+                        <CircularProgress size={18} sx={{ color: 'white' }} />
+                      ) : (
+                        <>
+                          <DeleteOutlineIcon fontSize="small" />
+                          Delete Document
+                        </>
+                      )}
+                    </button>
+                  </Box>
+                </Box>
+              </form>
+            </Box>
+          </Dialog>
+
 
           <Box className="min-h-screen bg-black text-white">
             {(() => {
@@ -1518,31 +1699,6 @@ export default function Home() {
                         )}
                       </Box>
                     </Box>
-                    <Box className="flex items-center gap-2">
-                      {selectedProject && (
-                        <IconButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveTab(1);
-                            setConversation(null);
-                            setShowChat(false);
-                            // Update URL to configuration mode without conversation
-                            navigate(`/?project=${selectedProject.id}`);
-                          }}
-                          sx={{
-                            color: activeTab === 1 ? '#ec4899' : '#9ca3af',
-                            padding: '8px',
-                            '&:hover': {
-                              color: '#ec4899',
-                              bgcolor: 'rgba(236, 72, 153, 0.1)',
-                            },
-                          }}
-                          title="Project Configuration"
-                        >
-                          <TuneIcon />
-                        </IconButton>
-                      )}
-                    </Box>
                   </Box>
                 </Box>
 
@@ -1564,199 +1720,58 @@ export default function Home() {
 
                 {/* Main Content Area - 2 columns */}
                 <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || searchParams.get('general') === 'true') ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                  {/* Left Column - Chat/Conversation List or Configuration */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: (selectedProject || searchParams.get('general') === 'true') && activeTab !== 1 ? '70%' : '100%' } }}>
+                  {/* Left Column - Chat or Documents Tab */}
+                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: (selectedProject || searchParams.get('general') === 'true') ? '70%' : '100%' } }}>
                     {activeTab === 1 && selectedProject ? (
-                      <Box className="px-4 md:px-8 lg:px-12 py-4 h-full overflow-auto">
-                        {/* Configuration Tab */}
-                        <Box className="max-w-4xl mx-auto">
-                          {currentProjectData && (
-                            <Box className="space-y-6">
-                              <div className="space-y-3">
-                                <Box className="flex items-center justify-between mb-2 py-2">
-                                  <Box className="flex flex-col">
-                                    <h4 className="text-sm text-gray-400">Project Rules:</h4>
-                                  </Box>
-                                  <span className="text-xs text-gray-500">
-                                    {projectRules.length}/300
-                                  </span>
-                                </Box>
-                                <Box className="relative">
-                                  {isSavingRules && (
-                                    <Box
-                                      sx={{
-                                        position: 'absolute',
-                                        top: '12px',
-                                        right: '12px',
-                                        zIndex: 10,
-                                        bgcolor: 'rgba(0, 0, 0, 0.7)',
-                                        borderRadius: '50%',
-                                        padding: '4px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                      }}
-                                    >
-                                      <CircularProgress size={16} sx={{ color: '#ec4899' }} />
-                                    </Box>
-                                  )}
-                                  <Box className="markdown-editor-container">
-                                    <SimpleMDE
-                                      value={projectRules}
-                                      onChange={(value: any) => {
-                                        setProjectRules(value);
-                                        if (autoSaveTimerRef.current) {
-                                          clearTimeout(autoSaveTimerRef.current);
-                                        }
-                                        autoSaveTimerRef.current = setTimeout(() => {
-                                          autoSaveProjectRules(value);
-                                        }, 3000);
-                                      }}
-                                      options={editorOptions}
-                                    />
-                                  </Box>
-                                </Box>
-                                <p className="text-gray-400 text-xs">* Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
-                              </div>
-
-                              {/* Delete Section */}
-                              <Box className="pt-4">
-                                <Box className="flex items-start gap-3 p-4 bg-red-500/5 border border-red-500/20 rounded-lg">
-                                  <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 20, mt: 0.5 }} />
-                                  <Box className="flex-1">
-                                    <Typography className="text-white font-medium text-sm mb-1">
-                                      Delete this project
-                                    </Typography>
-                                    <Typography className="text-gray-400 text-xs mb-3">
-                                      Permanently delete this project and all associated data. This action cannot be undone.
-                                    </Typography>
-                                    <button
-                                      onClick={() => {
-                                        setDeleteProjectConfirm('');
-                                        setDeleteProjectError('');
-                                        setShowDeleteProjectDialog(true);
-                                      }}
-                                      className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium transition-colors"
-                                    >
-                                      Delete Project
-                                    </button>
-                                  </Box>
-                                </Box>
-                              </Box>
-                            </Box>
-                          )}
-                        </Box>
-                      </Box>
+                      <DocumentsTab
+                        user={user}
+                        setUser={setUser}
+                        selectedProject={selectedProject}
+                        setSelectedProject={setSelectedProject}
+                        currentProjectData={currentProjectData}
+                        setCurrentProjectData={setCurrentProjectData}
+                        setActiveTab={setActiveTab}
+                      />
                     ) : (
                       // Show Chat component (it handles the case when conversation is null)
-                      activeTab !== 1 && (
-                        <Chat
-                          project={selectedProject}
-                          initialMessage={chatMessage}
-                          attachments={messageAttachments}
-                          conversation={conversation}
-                          isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
-                          onFileAttached={handleFileAttached}
-                          onAttachmentsClear={() => {
-                            setMessageAttachments([]);
-                          }}
-                          onTokenUpdate={() => {
-                            window.dispatchEvent(new Event('refreshUserTokens'));
-                          }}
-                          onConversationCreated={handleConversationCreated}
-                          onConversationUpdate={handleConversationUpdate}
-                        />
-                      )
+                      <Chat
+                        project={selectedProject}
+                        initialMessage={chatMessage}
+                        attachments={messageAttachments}
+                        conversation={conversation}
+                        isGeneral={!selectedProject && (searchParams.get('general') === 'true' || !searchParams.get('project'))}
+                        onFileAttached={handleFileAttached}
+                        onAttachmentsClear={() => {
+                          setMessageAttachments([]);
+                        }}
+                        onTokenUpdate={() => {
+                          window.dispatchEvent(new Event('refreshUserTokens'));
+                        }}
+                        onConversationCreated={handleConversationCreated}
+                        onConversationUpdate={handleConversationUpdate}
+                      />
                     )}
                   </Box>
 
-                  {/* Right Column - Documents List Only (only for projects) */}
+                  {/* Right Sidebar - Rules & Documents */}
                   {selectedProject && activeTab !== 1 && (
-                    <Box
-                      className="border-l border-gray-900 overflow-y-auto"
-                      sx={{
-                        width: { xs: '0', md: '30%' },
-                        display: { xs: 'none', md: 'block' }
+                    <RightSidebar
+                      selectedProject={selectedProject}
+                      currentProjectData={currentProjectData}
+                      projectRules={projectRules}
+                      isSavingRules={isSavingRules}
+                      onRulesChange={(value: string) => {
+                        setProjectRules(value);
+                        if (autoSaveTimerRef.current) {
+                          clearTimeout(autoSaveTimerRef.current);
+                        }
+                        autoSaveTimerRef.current = setTimeout(() => {
+                          autoSaveProjectRules(value);
+                        }, 3000);
                       }}
-                    >
-                      <Box className="p-3">
-                        <Box className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                            Documents
-                          </span>
-                          {selectedProject && (
-                            <IconButton
-                              onClick={() => setShowFileUploadDialog(true)}
-                              size="small"
-                              sx={{
-                                color: '#9ca3af',
-                                padding: '4px',
-                                '&:hover': {
-                                  color: '#ec4899',
-                                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                },
-                              }}
-                              title="Add document"
-                            >
-                              <AddBoxIcon fontSize="small" />
-                            </IconButton>
-                          )}
-                        </Box>
-                        {selectedProject && currentProjectData ? (
-                          currentProjectData.documents && currentProjectData.documents.length > 0 ? (
-                            <Box className="space-y-2">
-                              {currentProjectData.documents.map((doc: any, i: number) => (
-                                <Box
-                                  key={`doc-${i}`}
-                                  sx={{
-                                    padding: '10px',
-                                    borderRadius: '6px',
-                                    bgcolor: 'rgba(255, 255, 255, 0.02)',
-                                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                                    transition: 'all 0.15s ease',
-                                    '&:hover': {
-                                      bgcolor: 'rgba(255, 255, 255, 0.04)',
-                                      borderColor: 'rgba(255, 255, 255, 0.08)',
-                                    },
-                                  }}
-                                >
-                                  <div className="flex items-start justify-between gap-2 mb-1">
-                                    <span className="text-xs text-white font-medium truncate flex-1">
-                                      {doc.filename || doc.name || 'Untitled'}
-                                    </span>
-                                    {doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0) ? (
-                                      <CircularProgress size={10} sx={{ color: '#9ca3af' }} />
-                                    ) : null}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}
-                                    {doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                                      <span className="ml-2">
-                                        • <span style={{ color: '#ec4899' }}>{Math.ceil(doc.num_of_tokens / 100)} credits</span>
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                </Box>
-                              ))}
-                            </Box>
-                          ) : (
-                            <Box className="text-center py-8">
-                              <Box className="text-gray-500 text-xs mb-3">No documents yet</Box>
-                              <button
-                                onClick={() => setShowFileUploadDialog(true)}
-                                className="text-xs px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white rounded transition-colors"
-                              >
-                                Add Document
-                              </button>
-                            </Box>
-                          )
-                        ) : (
-                          <Box className="text-gray-500 text-xs py-4 text-center">
-                            Select a project to view documents
-                          </Box>
-                        )}
-                      </Box>
-                    </Box>
+                      onAddDocument={() => setShowFileUploadDialog(true)}
+                      onDeleteDocument={handleOpenDeleteDocDialog}
+                    />
                   )}
                 </Box>
               </Box>

@@ -68,7 +68,7 @@ export default function ConversationTabs({
   }, []);
 
   return (
-    <Box ref={containerRef} className="flex-none border-b border-gray-800 px-2 overflow-hidden">
+    <Box ref={containerRef} className="flex-none border-b border-gray-800 px-4 overflow-hidden">
       <Box className="flex items-end gap-[2px]">
         {/* Conversation Tabs */}
         {projectConversations.map((conv: any) => {

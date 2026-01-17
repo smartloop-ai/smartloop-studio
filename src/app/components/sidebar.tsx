@@ -595,14 +595,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   return (
                     <Box
                       key={project.id}
-                      onClick={() => handleProjectClick(project.id)}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1.5,
                         padding: '9px 11px',
                         borderRadius: '7px',
-                        cursor: 'pointer',
                         bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
                         color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
                         fontWeight: isActive ? 600 : 500,
@@ -613,21 +611,60 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
                           color: isActive ? '#ec4899' : 'white',
                         },
+                        '&:hover .delete-icon': {
+                          opacity: 1,
+                        },
                         mb: 0.5,
                       }}
                     >
                       <Box
+                        onClick={() => handleProjectClick(project.id)}
                         sx={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '2px',
-                          bgcolor: getColorForProject(project),
-                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                          flex: 1,
+                          cursor: 'pointer',
+                          minWidth: 0,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '2px',
+                            bgcolor: getColorForProject(project),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={{ flex: 1 }} className="truncate">
+                          {projectName}
+                        </span>
+                      </Box>
+                      <DeleteOutlineIcon
+                        className="delete-icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Navigate to the project and open delete dialog
+                          navigate(`/?project=${project.id}`);
+                          // Dispatch event to open delete dialog
+                          setTimeout(() => {
+                            window.dispatchEvent(new CustomEvent('openDeleteProjectDialog', {
+                              detail: { projectId: project.id }
+                            }));
+                          }, 100);
+                        }}
+                        sx={{
+                          fontSize: 14,
+                          opacity: 0,
+                          color: 'rgba(255, 255, 255, 0.4)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            color: '#ef4444',
+                          },
                         }}
                       />
-                      <span style={{ flex: 1 }} className="truncate">
-                        {projectName}
-                      </span>
                     </Box>
                   );
                 })
