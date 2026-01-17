@@ -44,10 +44,17 @@ export default function RightSidebar({
     placeholder: 'Add rules or guidelines for this project...',
   }), []);
 
-  // Collapse sidebar when project changes
+  // Collapse sidebar when project changes or when system project is selected
   useEffect(() => {
     setActiveSection(null);
   }, [selectedProject?.id]);
+
+  // Ensure sidebar is collapsed for system projects
+  useEffect(() => {
+    if (selectedProject?.system && activeSection) {
+      setActiveSection(null);
+    }
+  }, [selectedProject?.system, activeSection]);
 
   // Adjust editor height when rules section is opened
   useEffect(() => {
@@ -90,7 +97,7 @@ export default function RightSidebar({
             {selectedProject && activeSection === 'documents' && (
               <button
                 onClick={onAddDocument}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-pink-600 hover:bg-pink-500 rounded-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-pink-600 border border-pink-600 hover:bg-pink-600 hover:text-white rounded-sm transition-colors"
               >
                 <AddBoxIcon sx={{ fontSize: 16 }} />
                 <span>Add</span>
@@ -335,41 +342,63 @@ export default function RightSidebar({
           bgcolor: 'rgba(0, 0, 0, 0.2)',
         }}
       >
-        <Tooltip title="Documents" placement="left">
-          <IconButton
-            onClick={() => setActiveSection(activeSection === 'documents' ? null : 'documents')}
-            sx={{
-              color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
-              bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-              padding: '10px',
-              borderRadius: '8px',
-              '&:hover': {
-                color: '#ec4899',
-                bgcolor: 'rgba(236, 72, 153, 0.1)',
-              },
-            }}
-            size="small"
-          >
-            <DescriptionOutlinedIcon fontSize="small" />
-          </IconButton>
+        <Tooltip title={selectedProject?.system ? "Documents (Disabled for General)" : "Documents"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+            <IconButton
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'documents' ? null : 'documents')}
+              disabled={selectedProject?.system}
+              sx={{
+                color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
+                bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                '&:hover': {
+                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                },
+                '&.Mui-disabled': {
+                  color: '#6b7280',
+                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <DescriptionOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
-        <Tooltip title="Rules" placement="left">
-          <IconButton
-            onClick={() => setActiveSection(activeSection === 'rules' ? null : 'rules')}
-            sx={{
-              color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
-              bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-              padding: '10px',
-              borderRadius: '8px',
-              '&:hover': {
-                color: '#ec4899',
-                bgcolor: 'rgba(236, 72, 153, 0.1)',
-              },
-            }}
-            size="small"
-          >
-            <RuleOutlinedIcon fontSize="small" />
-          </IconButton>
+        <Tooltip title={selectedProject?.system ? "Rules (Disabled for General)" : "Rules"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+            <IconButton
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'rules' ? null : 'rules')}
+              disabled={selectedProject?.system}
+              sx={{
+                color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
+                bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                '&:hover': {
+                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                },
+                '&.Mui-disabled': {
+                  color: '#6b7280',
+                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <RuleOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
       </Box>
     </Box>

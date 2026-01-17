@@ -750,6 +750,12 @@ export default function Home() {
       return;
     }
 
+    // Prevent renaming system projects
+    if (selectedProject.system === true) {
+      setIsEditingProjectName(false);
+      return;
+    }
+
     const newName = editedProjectName.trim();
     if (newName === (selectedProject.title || selectedProject.name)) {
       setIsEditingProjectName(false);
@@ -1665,14 +1671,14 @@ export default function Home() {
                           />
                         ) : (
                           <div
-                            className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
+                            className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
                             onClick={() => {
-                              if (selectedProject) {
+                              if (selectedProject && !selectedProject.system) {
                                 setEditedProjectName(selectedProject.title || selectedProject.name || '');
                                 setIsEditingProjectName(true);
                               }
                             }}
-                            title={selectedProject ? 'Click to rename' : undefined}
+                            title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
                           >
                             {(() => {
                               if (selectedProject) {
