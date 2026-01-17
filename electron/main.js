@@ -282,6 +282,65 @@ ipcMain.handle('refresh-token', async (event, token) => {
   }
 });
 
+// Initialize system project on app load
+ipcMain.handle('initialize-system-project', async (event, token) => {
+  console.log('[SystemProject] Initializing system project...');
+
+  try {
+    // First, check if system project already exists
+    const getUserUrl = `${BASE_URL}/v1/users/me`;
+    const userResponse = await fetch(getUserUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!userResponse.ok) {
+      console.error('[SystemProject] Failed to get user data:', userResponse.status);
+      return { success: false, error: 'Failed to get user data' };
+    }
+
+    const userData = await userResponse.json();
+    const systemProject = userData.projects?.find(p => p.system === true);
+
+    if (systemProject) {
+      console.log('[SystemProject] System project already exists:', systemProject.id);
+      return { success: true, project: systemProject, existed: true };
+    }
+
+    // Create system project if it doesn't exist
+    console.log('[SystemProject] Creating new system project...');
+    const createUrl = `${BASE_URL}/v1/projects`;
+    const createResponse = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: 'General',
+        temperature: 0.3,
+        system: true
+      })
+    });
+
+    if (createResponse.ok) {
+      const project = await createResponse.json();
+      console.log('[SystemProject] System project created successfully:', project.id);
+      return { success: true, project, existed: false };
+    } else {
+      const errorText = await createResponse.text();
+      console.error('[SystemProject] Failed to create system project:', createResponse.status, errorText);
+      return { success: false, error: errorText };
+    }
+  } catch (error) {
+    console.error('[SystemProject] Error initializing system project:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Start periodic token refresh
 ipcMain.handle('start-token-refresh', async (event, token) => {
   console.log('[TokenRefresh] Starting periodic token refresh');

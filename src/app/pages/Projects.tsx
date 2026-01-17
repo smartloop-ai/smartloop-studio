@@ -94,6 +94,10 @@ export default function ProjectsList() {
   };
 
   const handleOpenDeleteDialog = (project: any) => {
+    // Prevent deletion of system projects
+    if (project.system === true) {
+      return;
+    }
     setProjectToDelete(project);
     setDeleteConfirm('');
     setErrorMessage('');
@@ -115,6 +119,12 @@ export default function ProjectsList() {
     }
 
     if (!projectToDelete) return;
+
+    // Prevent deletion of system projects
+    if (projectToDelete.system === true) {
+      setErrorMessage('Cannot delete system project');
+      return;
+    }
 
     setIsDeleting(true);
     setErrorMessage('');
@@ -461,27 +471,29 @@ export default function ProjectsList() {
                             <SettingsIcon fontSize="small" />
                           </IconButton>
 
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenDeleteDialog(project);
-                            }}
-                            sx={{
-                              color: '#9ca3af',
-                              bgcolor: 'rgba(239, 68, 68, 0.1)',
-                              border: '1px solid rgba(239, 68, 68, 0.2)',
-                              '&:hover': {
-                                color: '#ef4444',
-                                bgcolor: 'rgba(239, 68, 68, 0.2)',
-                                borderColor: 'rgba(239, 68, 68, 0.4)',
-                                transform: 'scale(1.05)',
-                              },
-                              transition: 'all 0.2s',
-                            }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                          {!project.system && (
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeleteDialog(project);
+                              }}
+                              sx={{
+                                color: '#9ca3af',
+                                bgcolor: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                '&:hover': {
+                                  color: '#ef4444',
+                                  bgcolor: 'rgba(239, 68, 68, 0.2)',
+                                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                                  transform: 'scale(1.05)',
+                                },
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </Box>
                       </Box>
                     </Box>

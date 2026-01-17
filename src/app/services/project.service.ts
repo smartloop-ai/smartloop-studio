@@ -10,6 +10,7 @@ interface CreateProjectParams {
   title: string;
   temperature?: number;
   color?: string;
+  system?: boolean;
 }
 
 interface ProjectServiceResponse {
@@ -25,7 +26,7 @@ interface ProjectServiceResponse {
  */
 const createProject = async (params: CreateProjectParams): Promise<ProjectServiceResponse> => {
   try {
-    const { title, temperature = 0.3, color } = params;
+    const { title, temperature = 0.3, color, system = false } = params;
 
     if (!title || !title.trim()) {
       return {
@@ -36,7 +37,8 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
 
     const requestBody: any = {
       title: title.trim(),
-      temperature
+      temperature,
+      system
     };
 
     // Include color if provided

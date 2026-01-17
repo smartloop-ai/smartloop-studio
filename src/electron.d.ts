@@ -12,6 +12,8 @@ export interface ElectronAPI {
   stopTokenRefresh: () => Promise<{ success: boolean }>;
   onTokenRefreshed: (callback: (data: { success: boolean; token?: string; error?: string; requiresReauth?: boolean }) => void) => void;
   removeTokenRefreshListener: () => void;
+  // System project initialization
+  initializeSystemProject: (token: string) => Promise<{ success: boolean; project?: any; existed?: boolean; error?: string }>;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;

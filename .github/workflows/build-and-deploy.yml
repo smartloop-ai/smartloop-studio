@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-      - develop
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -46,7 +43,7 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.rpm
-          retention-days: 7
+          retention-days: 1
 
   build-macos:
     name: Build for macOS
@@ -90,7 +87,7 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
-          retention-days: 7
+          retention-days: 1
 
   build-windows:
     name: Build for Windows
@@ -122,7 +119,7 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
-          retention-days: 7
+          retention-days: 1
 
   upload-to-gcp:
     name: Upload to GCP Bucket

@@ -238,8 +238,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           createdAt: conversation.created_at || new Date(),
         };
       })
-      // Filter to show all conversations
-      .filter((conv: any) => conv.id)
+      // Filter to show only conversations with project_id (belongs to actual projects)
+      .filter((conv: any) => conv.id && conv.projectId)
       // Sort by most recently updated
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       // Limit to 3 most recent
@@ -252,13 +252,25 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Search functionality - filter projects only
   const filteredProjects = useMemo(() => {
-    if (!searchQuery.trim() || !liveUser?.projects) return liveUser?.projects || [];
+    let projects = liveUser?.projects || [];
 
-    const query = searchQuery.toLowerCase();
+    // Apply search filter if there's a query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      projects = projects.filter((project: any) => {
+        const title = (project.title || project.name || '').toLowerCase();
+        return title.includes(query);
+      });
+    }
 
-    return (liveUser.projects || []).filter((project: any) => {
-      const title = (project.title || project.name || '').toLowerCase();
-      return title.includes(query);
+    // Sort projects: system projects first, then others
+    return projects.sort((a: any, b: any) => {
+      // System projects always come first
+      if (a.system && !b.system) return -1;
+      if (!a.system && b.system) return 1;
+
+      // For non-system projects, maintain original order (or could sort by name)
+      return 0;
     });
   }, [searchQuery, liveUser]);
 
@@ -282,59 +294,42 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     // Use the conversations state which is now up-to-date
     const allConversations = (conversations && Array.isArray(conversations)) ? conversations : [];
 
-    // Auto-select the most recent conversation for the project/general
-    if (projectId === null || projectId === 'general') {
-      // Navigate to general - auto-select most recent general conversation
-      try {
-        const generalConversations = allConversations.filter(
-          (conv: any) => !conv.project_id
-        );
-
-        if (generalConversations.length > 0) {
-          // Sort by updated_at (most recent first) and navigate to the most recent
-          const sorted = generalConversations.sort((a: any, b: any) => {
-            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
-            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
-            return dateB - dateA;
-          });
-          const mostRecent = sorted[0];
-          console.log('[Sidebar] Auto-selecting most recent general conversation:', mostRecent.id);
-          navigate(`/?conversation=${mostRecent.id}&general=true`);
-        } else {
-          // No conversations for general, navigate to welcome screen
-          console.log('[Sidebar] No general conversations, showing welcome screen');
-          navigate('/?general=true');
-        }
-      } catch (error) {
-        console.error('Error handling general click:', error);
-        navigate('/?general=true');
+    // If no projectId provided, navigate to system project
+    if (!projectId) {
+      // Find system project
+      const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+      if (systemProject) {
+        projectId = systemProject.id;
+      } else {
+        console.error('[Sidebar] No system project found');
+        return;
       }
-    } else {
-      // For projects, auto-select the most recent conversation
-      try {
-        const projectConversations = allConversations.filter(
-          (conv: any) => conv.project_id === projectId
-        );
+    }
 
-        if (projectConversations.length > 0) {
-          // Sort by updated_at (most recent first) and navigate to the most recent
-          const sorted = projectConversations.sort((a: any, b: any) => {
-            const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
-            const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
-            return dateB - dateA;
-          });
-          const mostRecent = sorted[0];
-          console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
-          navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
-        } else {
-          // No conversations for this project, navigate to welcome screen
-          console.log('[Sidebar] No conversations for project, showing welcome screen');
-          navigate(`/?project=${projectId}`);
-        }
-      } catch (error) {
-        console.error('Error handling project click:', error);
+    // For projects, auto-select the most recent conversation
+    try {
+      const projectConversations = allConversations.filter(
+        (conv: any) => conv.project_id === projectId
+      );
+
+      if (projectConversations.length > 0) {
+        // Sort by updated_at (most recent first) and navigate to the most recent
+        const sorted = projectConversations.sort((a: any, b: any) => {
+          const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
+          const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
+          return dateB - dateA;
+        });
+        const mostRecent = sorted[0];
+        console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
+        navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
+      } else {
+        // No conversations for this project, navigate to welcome screen
+        console.log('[Sidebar] No conversations for project, showing welcome screen');
         navigate(`/?project=${projectId}`);
       }
+    } catch (error) {
+      console.error('Error handling project click:', error);
+      navigate(`/?project=${projectId}`);
     }
 
     setSearchQuery('');
@@ -508,10 +503,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         {(() => {
           const urlParams = new URLSearchParams(location.search);
           const currentProjectId = urlParams.get('project');
-          const hasGeneralParam = urlParams.get('general') === 'true';
-
-          // General is active only if explicitly set via URL param
-          const isGeneralActive = hasGeneralParam;
 
           return (
             <>
@@ -551,41 +542,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 );
               })}
 
-              {/* #general option */}
-              <Box
-                onClick={() => handleProjectClick(null)}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  padding: '9px 11px',
-                  borderRadius: '7px',
-                  cursor: 'pointer',
-                  bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                  color: isGeneralActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
-                  fontWeight: isGeneralActive ? 600 : 500,
-                  fontSize: '13.5px',
-                  transition: 'all 0.12s ease',
-                  border: isGeneralActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
-                  '&:hover': {
-                    bgcolor: isGeneralActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                    color: isGeneralActive ? '#ec4899' : 'white',
-                  },
-                  mb: 0.5,
-                }}
-              >
-                <Box
-                  sx={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: '2px',
-                    bgcolor: getColorForProject(null),
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ flex: 1 }}>general</span>
-              </Box>
-
               {/* Project list - filtered by search */}
               {filteredProjects && filteredProjects.length > 0 && (
                 filteredProjects.map((project: any) => {
@@ -595,14 +551,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   return (
                     <Box
                       key={project.id}
-                      onClick={() => handleProjectClick(project.id)}
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 1.5,
                         padding: '9px 11px',
                         borderRadius: '7px',
-                        cursor: 'pointer',
                         bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
                         color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
                         fontWeight: isActive ? 600 : 500,
@@ -613,21 +567,62 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
                           color: isActive ? '#ec4899' : 'white',
                         },
+                        '&:hover .delete-icon': {
+                          opacity: 1,
+                        },
                         mb: 0.5,
                       }}
                     >
                       <Box
+                        onClick={() => handleProjectClick(project.id)}
                         sx={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '2px',
-                          bgcolor: getColorForProject(project),
-                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                          flex: 1,
+                          cursor: 'pointer',
+                          minWidth: 0,
                         }}
-                      />
-                      <span style={{ flex: 1 }} className="truncate">
-                        {projectName}
-                      </span>
+                      >
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '2px',
+                            bgcolor: getColorForProject(project),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span style={{ flex: 1 }} className="truncate">
+                          {projectName}
+                        </span>
+                      </Box>
+                      {!project.system && (
+                        <DeleteOutlineIcon
+                          className="delete-icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Navigate to the project and open delete dialog
+                            navigate(`/?project=${project.id}`);
+                            // Dispatch event to open delete dialog
+                            setTimeout(() => {
+                              window.dispatchEvent(new CustomEvent('openDeleteProjectDialog', {
+                                detail: { projectId: project.id }
+                              }));
+                            }, 100);
+                          }}
+                          sx={{
+                            fontSize: 14,
+                            opacity: 0,
+                            color: 'rgba(255, 255, 255, 0.4)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            '&:hover': {
+                              color: '#ef4444',
+                            },
+                          }}
+                        />
+                      )}
                     </Box>
                   );
                 })
@@ -690,7 +685,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 if (chat.project_id) {
                   navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
                 } else {
-                  navigate(`/?conversation=${chat.id}&general=true`);
+                  // Conversation without project_id - find system project
+                  const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+                  if (systemProject) {
+                    navigate(`/?conversation=${chat.id}&project=${systemProject.id}`);
+                  }
                 }
                 onMobileClose?.();
               }}

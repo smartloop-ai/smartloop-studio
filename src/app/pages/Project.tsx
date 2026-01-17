@@ -132,6 +132,12 @@ export default function Project() {
     setErrorMessage("");
 
     if (current !== null) {
+      // Prevent deletion of system projects
+      if (current.system === true) {
+        setErrorMessage('Cannot delete system project');
+        return;
+      }
+
       if (formData.confirm.toLowerCase() !== 'delete') {
         return;
       }
@@ -926,12 +932,17 @@ export default function Project() {
                             <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                               <p className="text-sm text-gray-400 mb-6">Deleting the project will remove all the documents and histories and can not be undone</p>
 
-                              <button
-                                onClick={handleProjectDelete}
-                                className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:bg-opacity-10 transition-colors text-sm font-medium"
-                              >
-                                Delete
-                              </button>
+                              {!current?.system && (
+                                <button
+                                  onClick={handleProjectDelete}
+                                  className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:bg-opacity-10 transition-colors text-sm font-medium"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                              {current?.system && (
+                                <p className="text-xs text-gray-500 italic">System projects cannot be deleted</p>
+                              )}
                             </Box>
 
                             <div className="py-5"></div>
