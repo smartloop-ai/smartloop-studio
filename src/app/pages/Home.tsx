@@ -366,6 +366,8 @@ export default function Home() {
     const searchTerm = search.toLowerCase().trim();
 
     const filteredProjects = user.projects.filter((project: any) => {
+      // Exclude system projects
+      if (project.system) return false;
       const projectName = (project.title || project.name || '').toLowerCase();
       // If no search term, show all projects
       if (!searchTerm) return true;

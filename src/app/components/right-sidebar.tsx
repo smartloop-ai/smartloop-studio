@@ -37,10 +37,14 @@ export default function RightSidebar({
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
     spellChecker: false,
-    status: false,
-    toolbar: false,
+    status: ["autosave", "lines", "words"],
+    toolbar: true,
+    autoSave: {
+      enabled: true,
+      uniqueId: `project-rules-${selectedProject?.id || 'none'}`,
+      delay: 1000,
+    },
     minHeight: '300px',
-    maxHeight: '500px',
     placeholder: 'Add rules or guidelines for this project...',
   }), []);
 
@@ -97,7 +101,7 @@ export default function RightSidebar({
             {selectedProject && activeSection === 'documents' && (
               <button
                 onClick={onAddDocument}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-pink-600 border border-pink-600 hover:bg-pink-600 hover:text-white rounded-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-pink-500 border border-pink-500 hover:bg-pink-600 hover:text-white rounded-sm transition-colors"
               >
                 <AddBoxIcon sx={{ fontSize: 16 }} />
                 <span>Add</span>
@@ -107,12 +111,7 @@ export default function RightSidebar({
 
         {/* Project Rules Section */}
         {activeSection === 'rules' && selectedProject && currentProjectData && (
-          <div className="space-y-3 w-full">
-            <Box className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">
-                {projectRules.length}/300
-              </span>
-            </Box>
+          <div className=" w-full">
             <Box className="relative w-full">
               {isSavingRules && (
                 <Box
@@ -144,7 +143,11 @@ export default function RightSidebar({
               </Box>
             </Box>
             <p className="text-gray-400 text-[10px] leading-relaxed">
-              Rules are auto-saved and included with every AI message.
+              <ul>
+                <li>- Use markdown to format the rules.</li>
+                <li>- Clearly define guidelines for document processing.</li>
+                <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
+              </ul>
             </p>
           </div>
         )}
@@ -309,14 +312,22 @@ export default function RightSidebar({
               </Box>
               </>
             ) : (
-              <Box className="text-center py-6">
-                <Box className="text-gray-500 text-xs mb-3">No documents yet</Box>
-                <button
-                  onClick={onAddDocument}
-                  className="text-xs px-3 py-1.5 bg-pink-600 hover:bg-pink-500 text-white rounded transition-colors"
+              <Box className="flex flex-col items-center justify-center py-8">
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '50%',
+                    bgcolor: 'rgba(236, 72, 153, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mb: 2,
+                  }}
                 >
-                  Add Document
-                </button>
+                  <DescriptionOutlinedIcon sx={{ fontSize: 24, color: '#ec4899' }} />
+                </Box>
+                <Box className="text-pink-500 text-xs">No documents yet</Box>
               </Box>
             )
           ) : (

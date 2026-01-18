@@ -119,11 +119,12 @@ export default function DocumentUploadDialog({
       const formData = new FormData();
       formData.append('file', uploadFiles[0]);
 
+      const token = await userService.token();
       const url = `${API_ENDPOINT}/projects/${targetProject.id}/documents`;
       const response = await fetch(url, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${userService.token()}`
+          'Authorization': `Bearer ${token}`
         },
         body: formData
       });
