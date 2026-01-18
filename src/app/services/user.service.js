@@ -89,7 +89,14 @@ const stopTokenRefresh = () => {
 const redirectToLogin = () => {
   logout();
   if (typeof window !== 'undefined') {
-    window.location.href = '/login';
+    const isElectron = window.electronAPI?.isElectron;
+    if (isElectron) {
+      // Use hash navigation for Electron (file:// protocol with HashRouter)
+      window.location.hash = '/login';
+      window.location.reload();
+    } else {
+      window.location.href = '/login';
+    }
   }
 }
 

@@ -161,7 +161,7 @@ export default function Project() {
       setIsLoading(false);
 
       // send to home
-      window.location.href = "/";
+      navigate("/", { replace: true });
     }
 
     setOpenProjectDeleteDialog(false);

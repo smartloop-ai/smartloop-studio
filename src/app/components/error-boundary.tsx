@@ -65,7 +65,9 @@ class ErrorBoundary extends Component<Props, State> {
 
         if (isElectron && window.electronAPI?.storageClear) {
             window.electronAPI.storageClear().then(() => {
-                window.location.href = '/login';
+                // Use hash navigation for Electron (file:// protocol with HashRouter)
+                window.location.hash = '/login';
+                window.location.reload();
             });
         } else {
             localStorage.clear();
