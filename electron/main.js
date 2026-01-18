@@ -3,7 +3,6 @@ const path = require('path');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 
-
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
   try {
@@ -20,6 +19,7 @@ let tokenRefreshInterval = null;
 
 // Token refresh configuration
 const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes (before 15-min expiry)
+const SYSTEM_PROJECT_NAME = "General Chat"; // Name of the system project
 
 const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
@@ -307,6 +307,24 @@ ipcMain.handle('initialize-system-project', async (event, token) => {
 
     if (systemProject) {
       console.log('[SystemProject] System project already exists:', systemProject.id);
+
+      if (systemProject.title !== SYSTEM_PROJECT_NAME) {
+        systemProject.title = SYSTEM_PROJECT_NAME;
+
+        console.log('[SystemProject] Updating system project title to:', SYSTEM_PROJECT_NAME);
+        const updateUrl = `${BASE_URL}/v1/projects/${systemProject.id}`;
+        await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: systemProject.title
+          })
+        });
+      }
+
       return { success: true, project: systemProject, existed: true };
     }
 
@@ -320,7 +338,7 @@ ipcMain.handle('initialize-system-project', async (event, token) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        title: 'General',
+        title: SYSTEM_PROJECT_NAME,
         temperature: 0.3,
         system: true
       })

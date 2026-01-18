@@ -5,21 +5,16 @@ import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, Dialog, IconButton, CircularProgress, Chip, Typography, TextField } from '@mui/material';
-import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import FlashOnIcon from '@mui/icons-material/FlashOn';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
-import ManageSearchIcon from '@mui/icons-material/ManageSearch';
+import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
+import { SuggestionDataItem } from 'react-mentions';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import FileAttacher from '@/app/components/file-attacher';
+import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import DocumentPolling from '@/app/components/document-polling';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import DocumentsTab from '@/app/components/documents-tab';
@@ -33,6 +28,7 @@ import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
+import WelcomeScreen from '@/app/components/welcome-screen';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 // Extend SuggestionDataItem to include color property
@@ -79,18 +75,6 @@ export default function Home() {
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
-
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) {
-      return 'Good Morning';
-    } else if (hour < 18) {
-      return 'Good Afternoon';
-    } else {
-      return 'Good Evening';
-    }
-  };
 
 
   useEffect(() => {
@@ -279,19 +263,14 @@ export default function Home() {
       }
 
     } else {
-      // No conversation or project - auto-select system project for welcome screen
+      // No conversation or project - welcome screen without auto-selecting project
       // Only update if URL actually changed
       if (urlParamsChanged) {
         setConversation(null);
         setShowChat(false);
         setChatMessage(null);
-
-        // Always have system project selected on welcome screen
-        const systemProject = user.projects?.find((p: any) => p.system === true);
-        if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
-          console.log('[Home] Auto-selecting system project for welcome screen');
-          setSelectedProject(systemProject);
-        }
+        // Do not auto-select system project - let user choose or auto-select on message send
+        setSelectedProject(null);
       }
     }
   }, [searchParams, user?.conversations, user?.projects]);
@@ -499,98 +478,107 @@ export default function Home() {
   };
 
   const handleSendMessage = async () => {
-    if (message.trim()) {
-      // Remove /command markup before sending the message
-      // The markup format is: /[display](id)
-      const cleanMessage = message.replace(/\/\[([^\]]+)\]\([^)]+\)/g, '').trim();
+    // Remove /command markup before checking message
+    // The markup format is: /[display](id)
+    const cleanMessage = message.replace(/\/\[([^\]]+)\]\([^)]+\)/g, '').trim();
 
-      let activeConversationId = conversation?.id;
+    // Only proceed if there's a valid message
+    if (!cleanMessage) {
+      return;
+    }
 
-      // Generate title from first 5 words of message
-      const words = cleanMessage.split(' ');
-      const titleWords = words.slice(0, 5).join(' ');
-      const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
+    let activeConversationId = conversation?.id;
 
-      // Prepare attachments array
-      const attachmentsToSend = [...messageAttachments];
+    // If no project is selected, auto-select the system project
+    let projectForMessage = selectedProject;
+    if (!projectForMessage && !activeConversationId) {
+      const systemProject = user?.projects?.find((p: any) => p.system === true);
+      if (systemProject) {
+        console.log('[handleSendMessage] No project selected, auto-selecting system project:', systemProject.id);
+        projectForMessage = systemProject;
+        setSelectedProject(systemProject);
+      }
+    }
 
-      // Create or update conversation
-      if (!activeConversationId) {
-        // Only add project as attachment when creating a new conversation (first message)
-        // Once conversation exists, backend uses memory and project_id, so no need to send attachment again
-        if (selectedProject?.id) {
-          console.log('[handleSendMessage] Adding project as attachment (first message only):', {
-            projectId: selectedProject.id,
-            projectName: selectedProject.title || selectedProject.name,
-            file_id: `project-${selectedProject.id}`
-          });
-          attachmentsToSend.push({
-            file_id: `project-${selectedProject.id}`,
-            name: selectedProject.title || selectedProject.name || 'Project'
-          });
-        }
-        console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
-        // Create a new conversation with the selected project
-        try {
-          // Ensure project_id is set if project is selected (not general)
-          const projectId = selectedProject?.id ? selectedProject.id : undefined;
-          const conversationResult = await conversationService.createConversation({
-            title: conversationTitle,
-            project_id: projectId
-          });
+    // Generate title from first 5 words of message
+    const words = cleanMessage.split(' ');
+    const titleWords = words.slice(0, 5).join(' ');
+    const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
-          if (conversationResult.success && conversationResult.data) {
-            const newConversation = conversationResult.data;
-            activeConversationId = newConversation.id;
+    // Prepare attachments array
+    const attachmentsToSend = [...messageAttachments];
 
-            // Set all state updates together before navigation to avoid race conditions
-            setConversation(newConversation);
-            setActiveTab(0); // Select chat tab 0
-            setShowChat(true); // Set showChat immediately after creating conversation
+    // Create or update conversation
+    if (!activeConversationId) {
+      // Only add project as attachment when creating a new conversation (first message)
+      // Once conversation exists, backend uses memory and project_id, so no need to send attachment again
+      if (projectForMessage?.id) {
+        console.log('[handleSendMessage] Adding project as attachment (first message only):', {
+          projectId: projectForMessage.id,
+          projectName: projectForMessage.title || projectForMessage.name,
+          file_id: `project-${projectForMessage.id}`
+        });
+        attachmentsToSend.push({
+          file_id: `project-${projectForMessage.id}`,
+          name: projectForMessage.title || projectForMessage.name || 'Project'
+        });
+      }
+      console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
+      // Create a new conversation with the selected project
+      try {
+        const projectId = projectForMessage?.id;
+        const conversationResult = await conversationService.createConversation({
+          title: conversationTitle,
+          project_id: projectId
+        });
 
-            // Immediately add to projectConversations so tab appears right away
-            setProjectConversations(prev => {
-              // Check if conversation already exists in list
-              if (prev.some((c: any) => c.id === newConversation.id)) {
-                return prev;
-              }
-              // Add new conversation to the beginning
-              return [newConversation, ...prev];
-            });
+        if (conversationResult.success && conversationResult.data) {
+          const newConversation = conversationResult.data;
+          activeConversationId = newConversation.id;
 
-            setMessageAttachments(attachmentsToSend);
-            setChatMessage(cleanMessage);
-            setMessage('');
-            setClearAttachmentTrigger(prev => prev + 1);
+          // Set all state updates together before navigation to avoid race conditions
+          setConversation(newConversation);
+          setActiveTab(0); // Select chat tab 0
+          setShowChat(true); // Set showChat immediately after creating conversation
 
-            // Note: conversationCreated event is already dispatched by conversationService.createConversation()
-
-            // Navigate to conversation page with project if selected
-            // Use replace: true to avoid adding to history and ensure URL is updated immediately
-            if (projectId) {
-              navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
-            } else {
-              navigate(`/?conversation=${activeConversationId}&general=true`, { replace: true });
+          // Immediately add to projectConversations so tab appears right away
+          setProjectConversations(prev => {
+            // Check if conversation already exists in list
+            if (prev.some((c: any) => c.id === newConversation.id)) {
+              return prev;
             }
-          } else {
-            console.error('Failed to create conversation');
-            return;
-          }
-        } catch (error) {
-          console.error('Failed to create conversation:', error);
+            // Add new conversation to the beginning
+            return [newConversation, ...prev];
+          });
+
+          setMessageAttachments(attachmentsToSend);
+          setChatMessage(cleanMessage);
+          setMessage('');
+          setClearAttachmentTrigger(prev => prev + 1);
+
+          // Note: conversationCreated event is already dispatched by conversationService.createConversation()
+
+          // Navigate to conversation page with project
+          // Use replace: true to avoid adding to history and ensure URL is updated immediately
+          navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
+        } else {
+          console.error('Failed to create conversation');
           return;
         }
-      } else {
-        // Existing conversation - filter out project attachments (backend uses memory and project_id)
-        const attachmentsWithoutProject = attachmentsToSend.filter(
-          (att: any) => !att.file_id || !att.file_id.startsWith('project-')
-        );
-        console.log('[handleSendMessage] Existing conversation - filtered attachments (no project):', attachmentsWithoutProject);
-        setMessageAttachments(attachmentsWithoutProject);
-        setChatMessage(cleanMessage);
-        setMessage('');
-        setClearAttachmentTrigger(prev => prev + 1);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        return;
       }
+    } else {
+      // Existing conversation - filter out project attachments (backend uses memory and project_id)
+      const attachmentsWithoutProject = attachmentsToSend.filter(
+        (att: any) => !att.file_id || !att.file_id.startsWith('project-')
+      );
+      console.log('[handleSendMessage] Existing conversation - filtered attachments (no project):', attachmentsWithoutProject);
+      setMessageAttachments(attachmentsWithoutProject);
+      setChatMessage(cleanMessage);
+      setMessage('');
+      setClearAttachmentTrigger(prev => prev + 1);
     }
   };
 
@@ -1009,24 +997,6 @@ export default function Home() {
       setIsDeletingDoc(false);
     }
   };
-
-  const features = [
-    {
-      title: 'Instantly extract information',
-      subtitle: 'Extract',
-      icon: <ManageSearchIcon sx={{ fontSize: 20 }} />,
-    },
-    {
-      title: 'Learn smarter, faster',
-      subtitle: 'Learn',
-      icon: <MenuBookIcon sx={{ fontSize: 20 }} />,
-    },
-    {
-      title: 'Grow with AI power',
-      subtitle: 'Grow',
-      icon: <TrendingUpIcon sx={{ fontSize: 20 }} />,
-    },
-  ];
 
   if (isLoading) {
     return <LoadingSpinner showLogo message="Getting things ready..." size={48} />;
@@ -1775,225 +1745,35 @@ export default function Home() {
               </Box>
             ) : (
               // Welcome Screen
-              <Box className="h-screen flex flex-col bg-black">
-                <Box className="flex-1 overflow-hidden flex">
-                  {/* Welcome/Input Area */}
-                  <Box className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-12 py-4" sx={{ width: '100%' }}>
-                    <Box className="flex items-center justify-center mt-12 md:mt-20">
-                      <Box className="max-w-4xl w-full">
-                        {/* Greeting */}
-                        <Box className="mb-8">
-                          <Box className="hidden md:flex items-center mb-4">
-                            <Box className="w-12 h-12 flex">
-                              <svg width="48" height="48" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <g clip-path="url(#clip0_1_62)">
-                                  <path d="M23 66.9683C23 84.0784 36.9216 98 54.0317 98L83.124 98C84.1946 98 85.0635 97.1311 85.0635 96.0605L85.0635 66.9683C85.0635 49.8581 71.1419 35.9365 54.0317 35.9365C36.9216 35.9365 23 49.8581 23 66.9683Z" fill="white" />
-                                  <circle cx="85.4286" cy="47.254" r="18.254" fill="#FF3478" />
-                                </g>
-                                <defs>
-                                  <clipPath id="clip0_1_62">
-                                    <rect width="128" height="128" fill="white" />
-                                  </clipPath>
-                                </defs>
-                              </svg>
-                            </Box>
-                          </Box>
-                          <h1 className="text-2xl md:text-4xl font-light mb-2">
-                            <span className="md:hidden ml-2" >{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                            <span className="hidden md:inline">{getGreeting()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!</span>
-                          </h1>
-                        </Box>
-
-                        {/* Pro Plan Banner - Only show if user is not paid */}
-                        {!user?.is_paid && (
-                          <Box
-                            className="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6 cursor-pointer hover:bg-gray-800 transition-colors"
-                            onClick={() => navigate('/pricing')}
-                          >
-                            <Box className="flex items-center gap-2 text-sm">
-                              <FlashOnIcon sx={{ fontSize: 18, color: '#fbbf24' }} />
-                              <span>Unlock more features with <span className="font-semibold">Pro Plan</span></span>
-                            </Box>
-                          </Box>
-                        )}
-
-                        {/* Main Input Area */}
-                        <Box
-                          className="bg-gray-900/50 border rounded-2xl p-4 md:p-6 mb-6 relative transition-all border-gray-700 hover:border-pink-500/50"
-                        >
-                          <MentionsInput
-                            value={message}
-                            onChange={handleMentionChange}
-                            placeholder="Type your message or /project to select a project"
-                            className="mentions"
-                            allowSuggestionsAboveCursor={true}
-                            style={{
-                              control: {
-                                minHeight: '100px',
-                                border: 'none',
-                                outline: 'none',
-                                boxShadow: 'none',
-                              },
-                              input: {
-                                color: 'white',
-                                minHeight: '100px',
-                                border: 'none',
-                                outline: 'none',
-                                boxShadow: 'none',
-                              },
-                              highlighter: {
-                                minHeight: '100px',
-                                border: 'none',
-                                outline: 'none',
-                                boxShadow: 'none',
-                              },
-                              suggestions: {
-                                backgroundColor: '#0a0a0a',
-                                border: '1px solid #2a2a2a',
-                                borderRadius: '8px',
-                                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
-                                zIndex: 10000,
-                              },
-                            }}
-                            inputRef={textareaRef}
-                            onKeyDown={(e: any) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendMessage();
-                              }
-                            }}
-                          >
-                            <Mention
-                              trigger="/"
-                              data={fetchProjects}
-                              renderSuggestion={renderProjectSuggestion}
-                              displayTransform={(_id: string, _display: string) => ''}
-                              markup="/[__display__](__id__)"
-                              isLoading={false}
-                              onAdd={(id: string | number) => {
-                                // Handle project selection when user explicitly selects from dropdown
-                                const project = user?.projects?.find((p: any) => p.id === id);
-                                if (project) {
-                                  setSelectedProject(project);
-                                  // Clear the /command from message after selection
-                                  setMessage('');
-                                  // Reset previous message ref so typing doesn't trigger mention removal logic
-                                  previousMessageRef.current = '';
-                                }
-                              }}
-                              style={{
-                                backgroundColor: 'transparent',
-                              }}
-                            />
-                          </MentionsInput>
-
-                          <Box className="flex items-center justify-between mt-4">
-                            {/* Left side - File attachment and project label */}
-                            <Box className="flex items-center gap-2">
-                              <FileAttacher
-                                conversation={conversation}
-                                onSuccess={handleFileAttached}
-                                onError={(error) => console.error('File upload error:', error)}
-                                size="small"
-                                showDragDrop={true}
-                                clearTrigger={clearAttachmentTrigger}
-                              />
-                              {/* Selected project label */}
-                              {selectedProject && (
-                                <Chip
-                                  icon={
-                                    <Box
-                                      sx={{
-                                        width: 12,
-                                        height: 12,
-                                        borderRadius: '2px',
-                                        bgcolor: selectedProject.color || DEFAULT_COLOR,
-                                        flexShrink: 0,
-                                      }}
-                                    />
-                                  }
-                                  label={selectedProject.title || selectedProject.name}
-                                  size="small"
-                                  {...(!selectedProject.system && {
-                                    onDelete: () => {
-                                      // Navigate back to system project instead of clearing
-                                      const systemProject = user?.projects?.find((p: any) => p.system === true);
-                                      if (systemProject) {
-                                        setSelectedProject(systemProject);
-                                        navigate(`/?project=${systemProject.id}`);
-                                      } else {
-                                        setSelectedProject(null);
-                                        navigate('/');
-                                      }
-                                      previousMessageRef.current = ''; // Reset previous message tracking
-                                    }
-                                  })}
-                                  sx={{
-                                    height: '28px',
-                                    borderRadius: '1px',
-                                    bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                    color: '#ec4899',
-                                    border: '1px solid rgba(236, 72, 153, 0.3)',
-                                    fontSize: '12px',
-                                    '& .MuiChip-icon': {
-                                      color: '#ec4899',
-                                    },
-                                    '& .MuiChip-deleteIcon': {
-                                      color: 'rgba(236, 72, 153, 0.6)',
-                                      fontSize: '14px',
-                                      '&:hover': {
-                                        color: '#ec4899',
-                                      },
-                                    },
-                                  }}
-                                />
-                              )}
-                            </Box>
-
-                            <button
-                              disabled={message.trim().length <= 1}
-                              className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                              onClick={handleSendMessage}
-                            >
-                              <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
-                            </button>
-                          </Box>
-
-                          {/* Helper Text */}
-                          <Box className="mt-4 pt-4 border-t border-gray-800">
-                            <Box className="text-xs text-gray-500">
-                              💡 Tip: Type <span className="text-pink-400 font-mono bg-gray-800 px-1 rounded">/</span> to select a project. Use ↑↓ to navigate, Enter to confirm.
-                            </Box>
-                          </Box>
-                        </Box>
-
-                        {/* Feature Cards */}
-                        <Box className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-6">
-                          {features.map((feature, index) => (
-                            <Box
-                              key={index}
-                              className="bg-gray-900/50 border border-gray-700 rounded-xl p-4 md:p-6"
-                            >
-                              <Box className="mb-4">
-                                <h3 className="text-sm font-medium mb-2 text-white">{feature.title}</h3>
-                              </Box>
-                              <Box className="flex items-center gap-2 text-gray-400">
-                                {feature.icon}
-                                <span className="text-sm">{feature.subtitle}</span>
-                              </Box>
-                            </Box>
-                          ))}
-                        </Box>
-
-                        {/* Bottom Text */}
-                        <Box className="text-center text-gray-400 text-sm">
-                          Ready to assist you with anything you need.
-                        </Box>
-                      </Box>
-                    </Box>
-                  </Box>
-                </Box>
-              </Box>
+              <WelcomeScreen
+                user={user}
+                message={message}
+                selectedProject={selectedProject}
+                conversation={conversation}
+                clearAttachmentTrigger={clearAttachmentTrigger}
+                textareaRef={textareaRef}
+                handleMentionChange={handleMentionChange}
+                handleSendMessage={handleSendMessage}
+                handleFileAttached={handleFileAttached}
+                fetchProjects={fetchProjects}
+                renderProjectSuggestion={renderProjectSuggestion}
+                onNavigate={navigate}
+                onClearProject={() => {
+                  setSelectedProject(null);
+                  previousMessageRef.current = ''; // Reset previous message tracking
+                }}
+                onProjectSelected={(id: string | number) => {
+                  // Handle project selection when user explicitly selects from dropdown
+                  const project = user?.projects?.find((p: any) => p.id === id);
+                  if (project) {
+                    setSelectedProject(project);
+                    // Clear the /command from message after selection
+                    setMessage('');
+                    // Reset previous message ref so typing doesn't trigger mention removal logic
+                    previousMessageRef.current = '';
+                  }
+                }}
+              />
             )}
           </Box>
         </>

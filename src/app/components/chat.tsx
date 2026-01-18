@@ -350,10 +350,13 @@ export default function Chat(props: {
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
     try {
+      // Get the auth token (async)
+      const authToken = await userService.token();
+
       // Initialize OpenAI client
       const openai = new OpenAI({
         baseURL: `${API_ENDPOINT}/openai`,
-        apiKey: userService.token() || '',
+        apiKey: authToken || '',
         dangerouslyAllowBrowser: true
       });
 
