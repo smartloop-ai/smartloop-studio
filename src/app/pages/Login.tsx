@@ -38,14 +38,11 @@ export default function Login() {
             const validation = await window.electronAPI.validateToken(accessToken);
 
             if (validation.valid) {
-              // Store the access token to both localStorage (for sync access) and storageService (for persistence)
-              localStorage.setItem('token', accessToken);
               await storageService.setItem('token', accessToken);
 
               // Store user data if provided
               if (validation.user) {
                 const userData = JSON.stringify(validation.user);
-                localStorage.setItem('u', userData);
                 await storageService.setItem('u', userData);
               }
 
@@ -78,23 +75,7 @@ export default function Login() {
   // Check if already logged in
   useEffect(() => {
     const checkExistingToken = async () => {
-      // Check localStorage first (fast)
-      let token = localStorage.getItem('token');
-
-      // If not in localStorage and running in Electron, check persistent storage
-      if (!token && isElectron && window.electronAPI) {
-        token = await storageService.getItem('token');
-        if (token) {
-          console.log('[Login] Found token in persistent storage, loading to localStorage');
-          localStorage.setItem('token', token);
-
-          // Also load user data if available
-          const userData = await storageService.getItem('u');
-          if (userData) {
-            localStorage.setItem('u', userData);
-          }
-        }
-      }
+      const token = await storageService.getItem('token');
 
       if (token) {
         // Optionally validate the token before redirecting
@@ -103,9 +84,6 @@ export default function Login() {
           if (validation.valid) {
             navigate('/', { replace: true });
           } else {
-            // Token is invalid, clear it from both storage systems
-            localStorage.removeItem('token');
-            localStorage.removeItem('u');
             await storageService.removeItem('token');
             await storageService.removeItem('u');
           }

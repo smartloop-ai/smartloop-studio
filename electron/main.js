@@ -352,7 +352,7 @@ ipcMain.handle('start-token-refresh', async (event, token) => {
   }
 
   // Function to perform token refresh
-  const performRefresh = async () => {
+  const performRefresh = async (tokenToUse = null) => {
     if (!mainWindow) {
       console.log('[TokenRefresh] No main window, skipping refresh');
       return;
@@ -360,11 +360,7 @@ ipcMain.handle('start-token-refresh', async (event, token) => {
 
     try {
       const refreshUrl = `${BASE_URL}/v1/auth/jwt/refresh`;
-
-      // Get the current token from renderer
-      const currentToken = await mainWindow.webContents.executeJavaScript(
-        'localStorage.getItem("token")'
-      );
+      const currentToken = tokenToUse || store.get('token', null);
 
       if (!currentToken) {
         console.log('[TokenRefresh] No token found, stopping refresh');
@@ -411,10 +407,10 @@ ipcMain.handle('start-token-refresh', async (event, token) => {
     }
   };
 
-  // Perform initial refresh
-  await performRefresh();
+  // Perform initial refresh with the provided token
+  await performRefresh(token);
 
-  // Set up periodic refresh
+  // Set up periodic refresh (will read from storage)
   tokenRefreshInterval = setInterval(performRefresh, TOKEN_REFRESH_INTERVAL);
   console.log('[TokenRefresh] Refresh interval set to', TOKEN_REFRESH_INTERVAL / 1000 / 60, 'minutes');
 

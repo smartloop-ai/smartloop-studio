@@ -903,7 +903,7 @@ export default function Home() {
       }
 
       // Delete the project using project service (this also cleans up local storage)
-      const result = await projectService.deleteProject(selectedProject.id, user?.email);
+      const result = await projectService.deleteProject(selectedProject.id);
 
       if (result.success) {
         // Refresh user data

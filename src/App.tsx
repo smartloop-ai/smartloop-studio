@@ -7,7 +7,6 @@ import { useAuth } from './app/hooks/useAuth';
 import { AuthContext } from './app/contexts/AuthContext';
 import Home from './app/pages/Home';
 import Login from './app/pages/Login';
-import Signup from './app/pages/Signup';
 import Forgot from './app/pages/Forgot';
 import Reset from './app/pages/Reset';
 import Verify from './app/pages/Verify';
@@ -58,7 +57,6 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={isElectron ? <Navigate to="/login" replace /> : <Signup />} />
           <Route path="/forgot" element={<Forgot />} />
           <Route path="/reset" element={<Reset />} />
           <Route path="/verify" element={<Verify />} />

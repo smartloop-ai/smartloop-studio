@@ -60,17 +60,15 @@ class ErrorBoundary extends Component<Props, State> {
         window.location.reload();
     };
 
-    private handleFullReset = () => {
+    private handleFullReset = async () => {
         const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
         if (isElectron && window.electronAPI?.storageClear) {
-            window.electronAPI.storageClear().then(() => {
-                // Use hash navigation for Electron (file:// protocol with HashRouter)
-                window.location.hash = '/login';
-                window.location.reload();
-            });
+            await window.electronAPI.storageClear();
+            // Use hash navigation for Electron (file:// protocol with HashRouter)
+            window.location.hash = '/login';
+            window.location.reload();
         } else {
-            localStorage.clear();
             window.location.href = '/login';
         }
     };

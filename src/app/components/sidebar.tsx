@@ -149,8 +149,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleLogout = async () => {
     // Only clear auth tokens, keep chat history
-    localStorage.removeItem('token');
-    localStorage.removeItem('u');
     await storageService.removeItem('token');
     await storageService.removeItem('u');
     sessionStorage.clear();

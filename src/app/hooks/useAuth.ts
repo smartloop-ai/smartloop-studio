@@ -32,23 +32,13 @@ export function useAuth(): [any, (user: any) => void] {
     const checkAuth = async () => {
       try {
         // Check if token exists in localStorage
-        let token = userService.token();
+        let token = await userService.token();
 
-        // If not in localStorage and running in Electron, check persistent storage
+        // If running in Electron, check persistent storage
         const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
         if (!token && isElectron && window.electronAPI) {
           console.log('useAuth: Token not in localStorage, checking persistent storage...');
           token = await storageService.getItem('token');
-          if (token) {
-            console.log('useAuth: Found token in persistent storage, loading to localStorage');
-            localStorage.setItem('token', token);
-
-            // Also load user data if available
-            const userData = await storageService.getItem('u');
-            if (userData) {
-              localStorage.setItem('u', userData);
-            }
-          }
         }
 
         if (!token) {

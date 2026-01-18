@@ -1,9 +1,9 @@
 import { API_ENDPOINT } from "@/app/constants";
 import { storageService } from "./storage.service";
 
-const getToken = () => {
+const getToken = async () => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem("token")
+    const token = await storageService.getItem("token");
 
     if (token && token?.length > 0) {
       return token;
@@ -13,13 +13,8 @@ const getToken = () => {
 };
 
 const logout = async () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("u");
-
-  // Also clear from storageService for consistency
   await storageService.removeItem("token");
   await storageService.removeItem("u");
-
   // Stop token refresh when logging out
   stopTokenRefresh();
 }
@@ -33,7 +28,7 @@ const isElectron = () => {
 let tokenRefreshInitialized = false;
 
 // Initialize token refresh (call this after successful login)
-const initializeTokenRefresh = () => {
+const initializeTokenRefresh = async () => {
   if (!isElectron()) {
     console.log('[TokenRefresh] Not in Electron, skipping token refresh setup');
     return;
@@ -46,7 +41,7 @@ const initializeTokenRefresh = () => {
     return;
   }
 
-  const token = getToken();
+  const token = await getToken();
   if (!token) {
     console.log('[TokenRefresh] No token found, skipping refresh setup');
     return;
@@ -59,7 +54,6 @@ const initializeTokenRefresh = () => {
   window.electronAPI.onTokenRefreshed(async (data) => {
     if (data.success && data.token) {
       console.log('[TokenRefresh] Received new token from main process');
-      localStorage.setItem('token', data.token);
       await storageService.setItem('token', data.token);
 
       // Dispatch event so other parts of the app can react if needed
@@ -86,8 +80,8 @@ const stopTokenRefresh = () => {
   window.electronAPI.stopTokenRefresh();
 };
 
-const redirectToLogin = () => {
-  logout();
+const redirectToLogin = async () => {
+  await logout();
   if (typeof window !== 'undefined') {
     const isElectron = window.electronAPI?.isElectron;
     if (isElectron) {
@@ -98,7 +92,7 @@ const redirectToLogin = () => {
       window.location.href = '/login';
     }
   }
-}
+};
 
 const checkTokenExpiration = (response) => {
   // Handle 401 Unauthorized (expired or invalid token)
@@ -117,7 +111,7 @@ const checkTokenExpiration = (response) => {
 }
 
 const getUser = async () => {
-  const token = getToken();
+  const token = await getToken();
 
   if (token == null) {
     console.error('UserService: No token found');
@@ -164,10 +158,9 @@ const getUser = async () => {
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
 
-      // Save to localStorage and storageService for persistence
+      // Save to storageService for persistence
       try {
         const userData = JSON.stringify(user);
-        localStorage.setItem("u", userData);
         await storageService.setItem("u", userData);
       } catch (e) {
         console.error('Error saving user to storage:', e);
@@ -205,7 +198,7 @@ const getUser = async () => {
 };
 
 const makeAuthenticatedRequest = async (url, options = {}) => {
-  const token = getToken();
+  const token = await getToken();
 
   if (!token) {
     redirectToLogin();
@@ -271,10 +264,9 @@ const fetchAndStoreUser = async (token) => {
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
 
-      // Store user to localStorage and storageService for persistence
+      // Store user to storageService for persistence
       try {
         const userData = JSON.stringify(user);
-        localStorage.setItem("u", userData);
         await storageService.setItem("u", userData);
         console.log('User data stored successfully');
         return user;
@@ -294,7 +286,7 @@ const fetchAndStoreUser = async (token) => {
 
 // Update user settings
 const updateSettings = async (settings) => {
-  const token = getToken();
+  const token = await getToken();
 
   if (!token) {
     console.error('UserService: No token found');

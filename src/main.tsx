@@ -64,7 +64,7 @@ const theme = createTheme({
 
 // Initialize app - load token from persistent storage if in Electron
 async function initializeApp() {
-  // If running in Electron, load token and user data from electron-store to localStorage
+  // If running in Electron, load token and user data from electron-store to persistent storage
   // This ensures tokens persist across app restarts
   if (isElectron && window.electronAPI) {
     try {
@@ -73,12 +73,12 @@ async function initializeApp() {
 
       if (storedToken) {
         console.log('[App Init] Loading token from persistent storage');
-        localStorage.setItem('token', storedToken);
+        await window.electronAPI.storageSet('token', storedToken);
       }
 
       if (storedUser) {
         console.log('[App Init] Loading user data from persistent storage');
-        localStorage.setItem('u', storedUser);
+        await window.electronAPI.storageSet('u', storedUser);
       }
     } catch (error) {
       console.error('[App Init] Error loading from persistent storage:', error);

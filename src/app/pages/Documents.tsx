@@ -260,7 +260,7 @@ function DocumentsListContent() {
         // If this was the only document, delete the project as well
         if (isOnlyDocument) {
           // Use project service to delete project and cleanup recent chats
-          const deleteResult = await projectService.deleteProject(documentToDelete.projectId, user?.email);
+          const deleteResult = await projectService.deleteProject(documentToDelete.projectId);
 
           if (deleteResult.success) {
             // Refresh user data to get updated projects and documents

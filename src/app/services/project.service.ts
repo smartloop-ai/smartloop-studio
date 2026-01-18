@@ -90,7 +90,7 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
  * @param userId - User ID (email) for cleaning up chat history
  * @returns Promise with success status
  */
-const deleteProject = async (projectId: string, userId?: string): Promise<ProjectServiceResponse> => {
+const deleteProject = async (projectId: string): Promise<ProjectServiceResponse> => {
   try {
     if (!projectId) {
       return {
@@ -113,9 +113,6 @@ const deleteProject = async (projectId: string, userId?: string): Promise<Projec
     }
 
     if (response.status === 200 || response.status === 204) {
-      // Clean up local storage data associated with this project
-      cleanupProjectData(projectId, userId);
-
       return {
         success: true,
         data: { projectId }
@@ -136,42 +133,6 @@ const deleteProject = async (projectId: string, userId?: string): Promise<Projec
   }
 };
 
-/**
- * Clean up localStorage and sessionStorage data for a deleted project
- * @param projectId - ID of the deleted project
- * @param userId - User ID (email) for identifying chat history keys
- */
-const cleanupProjectData = (projectId: string, userId?: string): void => {
-  if (typeof window === 'undefined') return;
-
-  try {
-    // Clean up chat history from localStorage
-    if (userId) {
-      const chatKey = `chat_${userId}_${projectId}`;
-      localStorage.removeItem(chatKey);
-    }
-
-    // Clean up any session storage related to this project
-    const sessionKey = `project_session_${projectId}`;
-    sessionStorage.removeItem(sessionKey);
-
-    // If we don't have userId, try to find and remove any chat keys with this projectId
-    if (!userId) {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes(`_${projectId}`)) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-    }
-
-    console.log(`Cleaned up data for project: ${projectId}`);
-  } catch (error) {
-    console.error('Error cleaning up project data:', error);
-  }
-};
 
 /**
  * Get all projects for the current user
@@ -258,6 +219,5 @@ export const projectService = {
   createProject,
   deleteProject,
   getProjects,
-  updateProject,
-  cleanupProjectData
+  updateProject
 };

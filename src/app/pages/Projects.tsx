@@ -131,7 +131,7 @@ export default function ProjectsList() {
 
     try {
       // Use project service to delete project and cleanup recent chats
-      const result = await projectService.deleteProject(projectToDelete.id, user?.email);
+      const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
         // Refresh user data to get updated projects list
