@@ -48,6 +48,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [createProjectError, setCreateProjectError] = useState('');
+  const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<any>(null);
+  const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
+  const [deleteProjectError, setDeleteProjectError] = useState('');
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   // Update live user when prop changes
   useEffect(() => {
@@ -392,6 +397,48 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setSearchQuery('');
   };
 
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    const projectTitle = projectToDelete.title || projectToDelete.name || '';
+    if (deleteProjectConfirm !== projectTitle) {
+      setDeleteProjectError('Project name does not match');
+      return;
+    }
+
+    setIsDeletingProject(true);
+    setDeleteProjectError('');
+
+    try {
+      const result = await projectService.deleteProject(projectToDelete.id);
+
+      if (result.success) {
+        // Refresh user data to remove deleted project
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setLiveUser(updatedUser);
+          setConversations(updatedUser.conversations || []);
+          // Emit event to refresh user data globally
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+          window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
+        }
+
+        // Navigate to home after deletion
+        navigate('/');
+        setShowDeleteProjectDialog(false);
+        setProjectToDelete(null);
+        setDeleteProjectConfirm('');
+      } else {
+        setDeleteProjectError(result.error || 'Failed to delete project');
+      }
+    } catch (error: any) {
+      console.error('Error deleting project:', error);
+      setDeleteProjectError('An error occurred while deleting the project');
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
   const sidebarContent = (
     <>
       {/* Logo with Mobile Close Button */}
@@ -600,14 +647,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           className="delete-icon"
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Navigate to the project and open delete dialog
-                            navigate(`/?project=${project.id}`);
-                            // Dispatch event to open delete dialog
-                            setTimeout(() => {
-                              window.dispatchEvent(new CustomEvent('openDeleteProjectDialog', {
-                                detail: { projectId: project.id }
-                              }));
-                            }, 100);
+                            setProjectToDelete(project);
+                            setDeleteProjectConfirm('');
+                            setDeleteProjectError('');
+                            setShowDeleteProjectDialog(true);
                           }}
                           sx={{
                             fontSize: 14,
@@ -1194,6 +1237,129 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           </Box>
         </>
       )}
+
+      {/* Delete Project Confirmation Dialog */}
+      <Dialog
+        open={showDeleteProjectDialog}
+        onClose={() => !isDeletingProject && setShowDeleteProjectDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: dialogStyles.paper
+        }}
+        BackdropProps={{
+          sx: dialogStyles.backdrop
+        }}
+      >
+        <Box className="relative p-6">
+          <IconButton
+            onClick={() => setShowDeleteProjectDialog(false)}
+            disabled={isDeletingProject}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: '#6b7280',
+              '&:hover': {
+                color: '#fff',
+                bgcolor: '#1a1a1a',
+              },
+              '&:disabled': {
+                color: '#3f3f3f',
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+
+          <Box className="flex items-start gap-3 mb-4">
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '40px',
+                height: '40px',
+                flexShrink: 0,
+                borderRadius: '10px',
+                bgcolor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+              }}
+            >
+              <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24 }} />
+            </Box>
+            <Box className="flex-1">
+              <h3 className="text-white font-semibold text-lg mb-1">
+                Delete Project
+              </h3>
+              <p className="text-gray-400 text-sm leading-relaxed">
+                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.title || projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
+              </p>
+            </Box>
+          </Box>
+
+          <Box className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
+            <Box className="text-red-400 text-sm mb-3">
+              <strong>Warning:</strong> This action cannot be undone. All data will be permanently deleted.
+            </Box>
+            <TextField
+              fullWidth
+              placeholder={`Type "${projectToDelete?.title || projectToDelete?.name}" to confirm`}
+              value={deleteProjectConfirm}
+              onChange={(e) => setDeleteProjectConfirm(e.target.value)}
+              error={!!deleteProjectError}
+              helperText={deleteProjectError}
+              disabled={isDeletingProject}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  color: 'white',
+                  bgcolor: 'rgba(0, 0, 0, 0.3)',
+                  '& fieldset': {
+                    borderColor: 'rgba(239, 68, 68, 0.3)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#ef4444',
+                  },
+                },
+                '& .MuiFormHelperText-root': {
+                  color: '#ef4444',
+                },
+              }}
+            />
+          </Box>
+
+          <Box className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowDeleteProjectDialog(false)}
+              disabled={isDeletingProject}
+              className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteProject}
+              disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.title || projectToDelete?.name)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isDeletingProject ? (
+                <>
+                  <CircularProgress size={18} sx={{ color: 'white' }} />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <DeleteOutlineIcon fontSize="small" />
+                  Delete Project
+                </>
+              )}
+            </button>
+          </Box>
+        </Box>
+      </Dialog>
 
       {/* Delete Conversation Confirmation Dialog */}
       <Dialog
