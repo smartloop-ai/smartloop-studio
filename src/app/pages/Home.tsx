@@ -1741,6 +1741,8 @@ export default function Home() {
                       }}
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}
+                      user={user}
+                      setUser={setUser}
                     />
                   )}
                 </Box>

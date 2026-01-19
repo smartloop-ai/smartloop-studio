@@ -5,10 +5,13 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import SearchIcon from '@mui/icons-material/Search';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { userService } from '@/app/services/user.service';
+import { API_ENDPOINT } from '@/app/constants';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -18,6 +21,8 @@ interface RightSidebarProps {
   onRulesChange: (value: string) => void;
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
+  user: any;
+  setUser: (user: any) => void;
 }
 
 export default function RightSidebar({
@@ -28,10 +33,16 @@ export default function RightSidebar({
   onRulesChange,
   onAddDocument,
   onDeleteDocument,
+  user,
+  setUser,
 }: RightSidebarProps) {
   const [activeSection, setActiveSection] = useState<'rules' | 'documents' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
 
   // SimpleMDE editor options
@@ -71,6 +82,103 @@ export default function RightSidebar({
       }, 100);
     }
   }, [activeSection]);
+
+  const validateAndUploadFile = async (file: File) => {
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
+    const maxSize = 50 * 1024 * 1024; // 50MB
+
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
+      return;
+    }
+
+    if (file.size > maxSize) {
+      setUploadError('File size exceeds 50MB limit');
+      return;
+    }
+
+    if (!selectedProject) {
+      setUploadError('No project selected');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const token = await userService.token();
+      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents`;
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.detail || result.message || 'Upload failed');
+      }
+
+      const uploadedDocument = await response.json();
+
+      // Update user state
+      if (user) {
+        const updatedProjects = user.projects.map((p: any) => {
+          if (p.id === selectedProject.id) {
+            const updatedDocs = [...(p.documents || []), uploadedDocument];
+            return { ...p, documents: updatedDocs };
+          }
+          return p;
+        });
+
+        const updatedUser = { ...user, projects: updatedProjects };
+        setUser(updatedUser);
+      }
+
+      window.dispatchEvent(new CustomEvent('documentUploaded', {
+        detail: { projectId: selectedProject.id }
+      }));
+
+      setUploadError('');
+    } catch (error: any) {
+      setUploadError(error.message || 'Failed to upload document');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      validateAndUploadFile(e.target.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      validateAndUploadFile(e.dataTransfer.files[0]);
+    }
+  };
 
   return (
     <Box
@@ -154,10 +262,52 @@ export default function RightSidebar({
 
         {/* Documents Section */}
         {activeSection === 'documents' && (
-          <div className="space-y-3">
+          <div
+            className="space-y-3"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
           {selectedProject && currentProjectData ? (
             currentProjectData.documents && currentProjectData.documents.length > 0 ? (
               <>
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.csv"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                {/* Compact Drop Zone */}
+                <Box
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${
+                    isDragging
+                      ? 'border-pink-500 bg-pink-500/10'
+                      : 'border-gray-700 hover:border-pink-500/50 bg-gray-900/30'
+                  }`}
+                >
+                  {isUploading ? (
+                    <Box className="flex items-center justify-center gap-2">
+                      <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                      <span className="text-gray-300 text-xs">Uploading...</span>
+                    </Box>
+                  ) : (
+                    <Box className="flex items-center justify-center gap-2">
+                      <CloudUploadIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
+                      <span className="text-gray-400 text-xs">Drop files here or click to upload</span>
+                    </Box>
+                  )}
+                </Box>
+
+                {uploadError && (
+                  <Box className="text-red-400 text-xs text-center -mt-1">
+                    {uploadError}
+                  </Box>
+                )}
+
                 {/* Search Input */}
                 <TextField
                   size="small"
@@ -312,23 +462,51 @@ export default function RightSidebar({
               </Box>
               </>
             ) : (
-              <Box className="flex flex-col items-center justify-center py-8">
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.txt,.csv"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
                 <Box
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: '50%',
-                    bgcolor: 'rgba(236, 72, 153, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    mb: 2,
-                  }}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
+                    isDragging
+                      ? 'border-pink-500 bg-pink-500/10'
+                      : 'border-gray-700 hover:border-gray-600 bg-gray-900/50'
+                  }`}
                 >
-                  <DescriptionOutlinedIcon sx={{ fontSize: 24, color: '#ec4899' }} />
+                  {isUploading ? (
+                    <Box className="flex flex-col items-center gap-3">
+                      <CircularProgress size={48} sx={{ color: '#ec4899' }} />
+                      <Box className="text-gray-300 text-sm">Uploading...</Box>
+                    </Box>
+                  ) : (
+                    <>
+                      <CloudUploadIcon sx={{ fontSize: 48, color: '#6b7280', mb: 2 }} />
+                      <Box className="text-gray-300 text-sm mb-1">
+                        Drag and drop your file here
+                      </Box>
+                      <Box className="text-gray-500 text-xs mb-3">
+                        or click to browse
+                      </Box>
+                      <Box className="text-gray-600 text-xs">
+                        Supported: PDF, DOCX, TXT, CSV (Max 50MB)
+                      </Box>
+                    </>
+                  )}
                 </Box>
-                <Box className="text-pink-500 text-xs">No documents yet</Box>
-              </Box>
+                {uploadError && (
+                  <Box className="text-red-400 text-xs mt-2 text-center">
+                    {uploadError}
+                  </Box>
+                )}
+              </>
             )
           ) : (
             <Box className="text-gray-500 text-xs py-4 text-center">
