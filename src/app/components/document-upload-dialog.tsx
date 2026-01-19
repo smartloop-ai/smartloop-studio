@@ -317,7 +317,7 @@ export default function DocumentUploadDialog({
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                   isDragging
                     ? 'border-pink-500 bg-pink-500/10'
-                    : 'border-gray-700 hover:border-gray-600 bg-gray-900/50'
+                    : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
                 }`}
                 onClick={() => document.getElementById('file-upload-input')?.click()}
               >

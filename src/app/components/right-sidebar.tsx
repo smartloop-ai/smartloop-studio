@@ -48,8 +48,22 @@ export default function RightSidebar({
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
     spellChecker: false,
-    status: ["autosave", "lines", "words"],
-    toolbar: true,
+    status: ["words", "lines"] as const,
+    toolbar: [
+      'bold',
+      'italic',
+      'heading',
+      '|',
+      'unordered-list',
+      'ordered-list',
+      '|',
+      'quote',
+      'code',
+      '|',
+      'preview',
+      '|',
+      'guide',
+    ] as const,
     autoSave: {
       enabled: true,
       uniqueId: `project-rules-${selectedProject?.id || 'none'}`,
@@ -57,7 +71,7 @@ export default function RightSidebar({
     },
     minHeight: '300px',
     placeholder: 'Add rules or guidelines for this project...',
-  }), []);
+  }), [selectedProject?.id]);
 
   // Collapse sidebar when project changes or when system project is selected
   useEffect(() => {
@@ -202,11 +216,11 @@ export default function RightSidebar({
           }}
         >
           {/* Section Title and Actions */}
-          <Box className="flex items-center justify-between pb-3 mb-4 border-b border-gray-800">
+          <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : ''}
             </span>
-            {selectedProject && activeSection === 'documents' && (
+            {selectedProject && activeSection === 'documents' && currentProjectData.documents.length > 0 && (
               <button
                 onClick={onAddDocument}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-pink-500 border border-pink-500 hover:bg-pink-600 hover:text-white rounded-sm transition-colors"
@@ -281,9 +295,9 @@ export default function RightSidebar({
                 />
 
                 {/* Compact Drop Zone */}
-                <Box
+                {/* <Box
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-all cursor-pointer ${
+                  className={`border-2 border-dashed rounded-sm p-4 text-center transition-all cursor-pointer ${
                     isDragging
                       ? 'border-pink-500 bg-pink-500/10'
                       : 'border-gray-700 hover:border-pink-500/50 bg-gray-900/30'
@@ -300,7 +314,7 @@ export default function RightSidebar({
                       <span className="text-gray-400 text-xs">Drop files here or click to upload</span>
                     </Box>
                   )}
-                </Box>
+                </Box> */}
 
                 {uploadError && (
                   <Box className="text-red-400 text-xs text-center -mt-1">
@@ -475,10 +489,10 @@ export default function RightSidebar({
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
+                  className={`border-2 border-dashed rounded-sm p-8 text-center transition-all cursor-pointer ${
                     isDragging
                       ? 'border-pink-500 bg-pink-500/10'
-                      : 'border-gray-700 hover:border-gray-600 bg-gray-900/50'
+                      : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
                   }`}
                 >
                   {isUploading ? (
@@ -488,7 +502,7 @@ export default function RightSidebar({
                     </Box>
                   ) : (
                     <>
-                      <CloudUploadIcon sx={{ fontSize: 48, color: '#6b7280', mb: 2 }} />
+                      <CloudUploadIcon className="text-5xl text-gray-500 mb-2" />
                       <Box className="text-gray-300 text-sm mb-1">
                         Drag and drop your file here
                       </Box>
