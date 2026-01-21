@@ -64,7 +64,6 @@ export default function Home() {
   const [projectMemory, setProjectMemory] = useState(true);
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRulesRef = useRef<string>('');
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
@@ -404,13 +403,10 @@ export default function Home() {
 
   // Handle mention changes
 
-  const autoSaveProjectRules = async (rules: string) => {
+  const saveProjectRules = async (rules: string) => {
     if (!selectedProject || !rules) return;
 
-    // Skip if the value hasn't changed from last save
-    if (rules === lastSavedRulesRef.current) {
-      return;
-    }
+    console.log('Saving project rules for project:', selectedProject.id);
 
     setIsSavingRules(true);
 
@@ -425,18 +421,22 @@ export default function Home() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userService.token()}`
+          'Authorization': `Bearer ${await userService.token()}`
         },
         body: JSON.stringify(payload),
       });
 
       if (response.status === 200) {
         lastSavedRulesRef.current = rules;
+        // Update projectRules state after successful save
+        setProjectRules(rules);
         // Refresh user data
         const updatedUser = await userService.get();
         if (updatedUser) {
           setUser(updatedUser);
         }
+      } else {
+        console.error('Failed to save project rules. Status:', response.status);
       }
     } catch (ex: any) {
       console.error('Error saving project rules:', ex);
@@ -1730,14 +1730,8 @@ export default function Home() {
                       currentProjectData={currentProjectData}
                       projectRules={projectRules}
                       isSavingRules={isSavingRules}
-                      onRulesChange={(value: string) => {
-                        setProjectRules(value);
-                        if (autoSaveTimerRef.current) {
-                          clearTimeout(autoSaveTimerRef.current);
-                        }
-                        autoSaveTimerRef.current = setTimeout(() => {
-                          autoSaveProjectRules(value);
-                        }, 3000);
+                      onSaveRules={(rules: string) => {
+                        saveProjectRules(rules || '');
                       }}
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}

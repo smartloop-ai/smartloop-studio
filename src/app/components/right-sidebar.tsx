@@ -6,6 +6,7 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CircleIcon from '@mui/icons-material/Circle';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -18,7 +19,7 @@ interface RightSidebarProps {
   currentProjectData: any;
   projectRules: string;
   isSavingRules: boolean;
-  onRulesChange: (value: string) => void;
+  onSaveRules: (rules: string) => void;
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
   user: any;
@@ -30,7 +31,7 @@ export default function RightSidebar({
   currentProjectData,
   projectRules,
   isSavingRules,
-  onRulesChange,
+  onSaveRules,
   onAddDocument,
   onDeleteDocument,
   user,
@@ -44,11 +45,15 @@ export default function RightSidebar({
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
+  const isUserEditingRef = useRef<boolean>(false);
+  const initialLoadRef = useRef<boolean>(true);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
     spellChecker: false,
     status: ["words", "lines"] as const,
+
     toolbar: [
       'bold',
       'italic',
@@ -59,15 +64,11 @@ export default function RightSidebar({
       '|',
       'quote',
       'code',
-      '|',
-      'preview',
-      '|',
-      'guide',
     ] as const,
-    autoSave: {
+    autosave: {
       enabled: true,
       uniqueId: `project-rules-${selectedProject?.id || 'none'}`,
-      delay: 1000,
+      delay: 3000, // 3 seconds - enough time to type without interruption
     },
     minHeight: '300px',
     placeholder: 'Add rules or guidelines for this project...',
@@ -85,17 +86,35 @@ export default function RightSidebar({
     }
   }, [selectedProject?.system, activeSection]);
 
-  // Adjust editor height when rules section is opened
+  // Reset editing flag when project changes
+  useEffect(() => {
+    isUserEditingRef.current = false;
+    initialLoadRef.current = true;
+  }, [selectedProject?.id]);
+
+  // Load rules into editor when rules section is opened
   useEffect(() => {
     if (activeSection === 'rules' && editorRef.current) {
       setTimeout(() => {
         const codemirror = editorRef.current?.codemirror;
         if (codemirror) {
-          codemirror.refresh();
+          // Only set value on initial load or project change, not during active editing
+          if (initialLoadRef.current || !isUserEditingRef.current) {
+            const currentValue = codemirror.getValue();
+            if (currentValue !== projectRules) {
+              codemirror.setValue(projectRules || '');
+              codemirror.refresh();
+            }
+            initialLoadRef.current = false;
+          }
         }
       }, 100);
+    } else if (activeSection !== 'rules') {
+      // Reset when section closes
+      initialLoadRef.current = true;
+      isUserEditingRef.current = false;
     }
-  }, [activeSection]);
+  }, [activeSection, projectRules]);
 
   const validateAndUploadFile = async (file: File) => {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
@@ -229,40 +248,50 @@ export default function RightSidebar({
                 <span>Add</span>
               </button>
             )}
+            {selectedProject && activeSection === 'rules' && (
+              <div className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${
+                isSavingRules
+                  ? 'text-pink-400 bg-pink-500/10'
+                  : 'text-pink-500 bg-pink-500/10'
+              }`}>
+                {isSavingRules ? (
+                  <>
+                    <CircularProgress size={10} sx={{ color: '#f9a8d4' }} />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <CircleIcon className="text-pink-500" sx={{ fontSize: 12 }} />
+                    <span>Saved</span>
+                  </>
+                )}
+              </div>
+            )}
           </Box>
 
         {/* Project Rules Section */}
         {activeSection === 'rules' && selectedProject && currentProjectData && (
           <div className=" w-full">
-            <Box className="relative w-full">
-              {isSavingRules && (
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    zIndex: 10,
-                    bgcolor: 'rgba(0, 0, 0, 0.7)',
-                    borderRadius: '50%',
-                    padding: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <CircularProgress size={14} sx={{ color: '#ec4899' }} />
-                </Box>
-              )}
-              <Box className="markdown-editor-container w-full">
-                <SimpleMDE
-                  value={projectRules}
-                  onChange={onRulesChange}
-                  options={editorOptions}
-                  getMdeInstance={(instance) => {
-                    editorRef.current = instance;
-                  }}
-                />
-              </Box>
+            <Box className="markdown-editor-container w-full">
+              <SimpleMDE
+                value={projectRules || ''}
+                onChange={(value: string) => {
+                  isUserEditingRef.current = true;
+                  // Clear previous timeout to debounce save
+                  if (saveTimeoutRef.current) {
+                    clearTimeout(saveTimeoutRef.current);
+                  }
+                  // Set new timeout
+                  saveTimeoutRef.current = setTimeout(() => {
+                    isUserEditingRef.current = false;
+                    onSaveRules(value);
+                  }, 1000);
+                }}
+                options={editorOptions}
+                getMdeInstance={(instance) => {
+                  editorRef.current = instance;
+                }}
+              />
             </Box>
             <p className="text-gray-400 text-[10px] leading-relaxed">
               <ul>
