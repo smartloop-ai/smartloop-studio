@@ -549,6 +549,41 @@ export default function Chat(props: {
     };
   }, []);
 
+  // Handle link clicks to open in system browser
+  useEffect(() => {
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Check if the clicked element is an anchor tag or inside one
+      const anchor = target.closest('a');
+      
+      if (anchor && anchor.href) {
+        const href = anchor.href;
+        
+        // Check if it's an external link (http/https)
+        if (href.startsWith('http://') || href.startsWith('https://')) {
+          e.preventDefault();
+          
+          // If Electron API is available, use it to open in system browser
+          if ((window as any).electronAPI?.openExternal) {
+            (window as any).electronAPI.openExternal(href);
+          } else {
+            // Fallback for non-Electron environments
+            window.open(href, '_blank', 'noopener,noreferrer');
+          }
+        }
+      }
+    };
+
+    // Add click listener to the document
+    document.addEventListener('click', handleLinkClick);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('click', handleLinkClick);
+    };
+  }, []);
+
   // Auto-send initial message when provided
   useEffect(() => {
     // Only auto-send if we have initialMessage, haven't sent it yet, not currently loading,

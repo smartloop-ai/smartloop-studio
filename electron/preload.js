@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeTokenRefreshListener: () => {
     ipcRenderer.removeAllListeners('token-refreshed');
   },
+  // Open external URL in default browser
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   // System project initialization
   initializeSystemProject: (token) => ipcRenderer.invoke('initialize-system-project', token),
   // Storage methods - native Electron storage using electron-store

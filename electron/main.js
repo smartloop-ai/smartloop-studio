@@ -37,6 +37,15 @@ ipcMain.handle('get-machine-id', async () => {
   }
 });
 
+// Open external URL in system browser
+ipcMain.handle('open-external', async (event, url) => {
+  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+    await shell.openExternal(url);
+    return true;
+  }
+  return false;
+});
+
 // Initialize electron-store
 const store = new Store({ name: 'smartloop', encryptionKey: machineIdSync() });
 
