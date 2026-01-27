@@ -1,0 +1,259 @@
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.chat-content table,
+.chat-content .csv-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  background-color: #1a1a1a;
+  border: 1px solid #374151;
+  overflow-x: auto;
+  display: block;
+}
+
+.chat-content table thead,
+.chat-content .csv-table thead {
+  background-color: #111827;
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.chat-content table th,
+.chat-content .csv-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-bottom: 2px solid #4b5563;
+}
+
+.chat-content table tbody,
+.chat-content .csv-table tbody {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.chat-content table td,
+.chat-content .csv-table td {
+  padding: 10px 12px;
+  color: #d1d5db;
+  border: 1px solid #374151;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.chat-content table tbody tr:hover,
+.chat-content .csv-table tbody tr:hover {
+  background-color: #1f2937;
+}
+
+.chat-content table tbody tr:nth-child(even),
+.chat-content .csv-table tbody tr:nth-child(even) {
+  background-color: #0f1419;
+}
+
+.chat-content h1 {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.chat-content h2 {
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.chat-content h3 {
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat-content h4,
+.chat-content h5,
+.chat-content h6 {
+  color: #fff;
+  font-weight: 600;
+}
+
+.chat-content p {
+  color: #d1d5db;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+}
+
+.chat-content strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.chat-content em {
+  font-style: italic;
+}
+
+.chat-content a {
+  color: #ec4899;
+  text-decoration: underline;
+}
+
+.chat-content a:hover {
+  color: #f472b6;
+}
+
+.chat-content blockquote {
+  border-left: 4px solid #ec4899;
+  padding-left: 1rem;
+  color: #9ca3af;
+  font-style: italic;
+  margin-bottom: 1rem;
+}
+
+.chat-content hr {
+  border: none;
+  border-top: 1px solid #374151;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+.chat-content ul {
+  list-style-type: disc;
+  list-style-position: outside;
+  margin-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1em;
+}
+
+.chat-content ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+  margin-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1em;
+}
+
+.chat-content li {
+  display: list-item;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25em;
+  color: #d1d5db;
+  line-height: 1.6;
+}
+
+.chat-content ul > li {
+  list-style-type: disc;
+}
+
+.chat-content ul ul {
+  list-style-type: circle;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.chat-content ul ul > li {
+  list-style-type: circle;
+}
+
+.chat-content ul ul ul {
+  list-style-type: square;
+}
+
+.chat-content ul ul ul > li {
+  list-style-type: square;
+}
+
+.chat-content ol ol {
+  list-style-type: lower-alpha;
+  margin-top: 0.25em;
+}
+
+.chat-content ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.chat-content pre {
+  background-color: #1a1a1a;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 1em 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.chat-content pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #e5e7eb;
+  display: block;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.chat-content code {
+  background-color: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.875em;
+  color: #ec4899;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.chat-content p code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* CSV table wrapper for horizontal scrolling */
+.chat-content .csv-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+/* Retro block cursor */
+#message textarea {
+  caret-color: transparent;
+}
+
+#message textarea::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 1.2em;
+  background-color: #ec4899;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  50.1%, 100% {
+    opacity: 0;
+  }
+}
