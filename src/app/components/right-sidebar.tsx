@@ -7,6 +7,7 @@ import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
+import SaveIcon from '@mui/icons-material/Save';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -45,9 +46,9 @@ export default function RightSidebar({
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
-  const isUserEditingRef = useRef<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [currentRulesValue, setCurrentRulesValue] = useState('');
   const initialLoadRef = useRef<boolean>(true);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -65,11 +66,6 @@ export default function RightSidebar({
       'quote',
       'code',
     ] as const,
-    autosave: {
-      enabled: true,
-      uniqueId: `project-rules-${selectedProject?.id || 'none'}`,
-      delay: 3000, // 3 seconds - enough time to type without interruption
-    },
     minHeight: '300px',
     placeholder: 'Add rules or guidelines for this project...',
   }), [selectedProject?.id]);
@@ -86,11 +82,12 @@ export default function RightSidebar({
     }
   }, [selectedProject?.system, activeSection]);
 
-  // Reset editing flag when project changes
+  // Reset states when project changes
   useEffect(() => {
-    isUserEditingRef.current = false;
     initialLoadRef.current = true;
-  }, [selectedProject?.id]);
+    setHasUnsavedChanges(false);
+    setCurrentRulesValue(projectRules || '');
+  }, [selectedProject?.id, projectRules]);
 
   // Load rules into editor when rules section is opened
   useEffect(() => {
@@ -98,23 +95,41 @@ export default function RightSidebar({
       setTimeout(() => {
         const codemirror = editorRef.current?.codemirror;
         if (codemirror) {
-          // Only set value on initial load or project change, not during active editing
-          if (initialLoadRef.current || !isUserEditingRef.current) {
+          if (initialLoadRef.current) {
             const currentValue = codemirror.getValue();
             if (currentValue !== projectRules) {
               codemirror.setValue(projectRules || '');
               codemirror.refresh();
             }
+            setCurrentRulesValue(projectRules || '');
+            setHasUnsavedChanges(false);
             initialLoadRef.current = false;
           }
         }
       }, 100);
     } else if (activeSection !== 'rules') {
-      // Reset when section closes
       initialLoadRef.current = true;
-      isUserEditingRef.current = false;
+      setHasUnsavedChanges(false);
     }
   }, [activeSection, projectRules]);
+
+  // Keyboard shortcut handler for Ctrl+S
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (activeSection === 'rules' && hasUnsavedChanges) {
+          onSaveRules(currentRulesValue);
+          setHasUnsavedChanges(false);
+        }
+      }
+    };
+
+    if (activeSection === 'rules') {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
 
   const validateAndUploadFile = async (file: File) => {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
@@ -242,22 +257,38 @@ export default function RightSidebar({
             {selectedProject && activeSection === 'documents' && currentProjectData.documents.length > 0 && (
               <button
                 onClick={onAddDocument}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-pink-500 border border-pink-500 hover:bg-pink-600 hover:text-white rounded-sm transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
               >
-                <AddBoxIcon sx={{ fontSize: 16 }} />
+                <AddBoxIcon sx={{ fontSize: 12 }} />
                 <span>Add</span>
               </button>
             )}
             {selectedProject && activeSection === 'rules' && (
-              <div className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${
-                isSavingRules
-                  ? 'text-pink-400 bg-pink-500/10'
-                  : 'text-pink-500 bg-pink-500/10'
-              }`}>
+              <button
+                onClick={() => {
+                  if (hasUnsavedChanges && !isSavingRules) {
+                    onSaveRules(currentRulesValue);
+                    setHasUnsavedChanges(false);
+                  }
+                }}
+                disabled={isSavingRules || !hasUnsavedChanges}
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${
+                  isSavingRules
+                    ? 'text-pink-400 border border-pink-400 cursor-wait'
+                    : hasUnsavedChanges
+                    ? 'text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400'
+                    : 'text-pink-500 border border-pink-400 cursor-default'
+                }`}
+              >
                 {isSavingRules ? (
                   <>
                     <CircularProgress size={10} sx={{ color: '#f9a8d4' }} />
                     <span>Saving...</span>
+                  </>
+                ) : hasUnsavedChanges ? (
+                  <>
+                    <SaveIcon sx={{ fontSize: 12 }} />
+                    <span>Save</span>
                   </>
                 ) : (
                   <>
@@ -265,7 +296,7 @@ export default function RightSidebar({
                     <span>Saved</span>
                   </>
                 )}
-              </div>
+              </button>
             )}
           </Box>
 
@@ -274,18 +305,10 @@ export default function RightSidebar({
           <div className=" w-full">
             <Box className="markdown-editor-container w-full">
               <SimpleMDE
-                value={projectRules || ''}
+                value={currentRulesValue}
                 onChange={(value: string) => {
-                  isUserEditingRef.current = true;
-                  // Clear previous timeout to debounce save
-                  if (saveTimeoutRef.current) {
-                    clearTimeout(saveTimeoutRef.current);
-                  }
-                  // Set new timeout
-                  saveTimeoutRef.current = setTimeout(() => {
-                    isUserEditingRef.current = false;
-                    onSaveRules(value);
-                  }, 1000);
+                  setCurrentRulesValue(value);
+                  setHasUnsavedChanges(value !== projectRules);
                 }}
                 options={editorOptions}
                 getMdeInstance={(instance) => {
@@ -298,6 +321,7 @@ export default function RightSidebar({
                 <li>- Use markdown to format the rules.</li>
                 <li>- Clearly define guidelines for document processing.</li>
                 <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
+                <li>- Press Ctrl+S (Cmd+S on Mac) to save changes.</li>
               </ul>
             </p>
           </div>
