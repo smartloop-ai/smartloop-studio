@@ -47,7 +47,7 @@ ipcMain.handle('open-external', async (event, url) => {
 });
 
 // Initialize electron-store
-const store = new Store({ name: 'smartloop', encryptionKey: machineIdSync() });
+const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
