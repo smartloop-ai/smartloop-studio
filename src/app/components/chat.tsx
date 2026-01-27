@@ -17,15 +17,14 @@ import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
+
 import ThumbUpOffAltIcon from '@mui/icons-material/ThumbUpOffAlt';
 import ThumbDownAltIcon from '@mui/icons-material/ThumbDownOffAlt';
 import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import LockIcon from '@mui/icons-material/Lock';
-import BuildIcon from '@mui/icons-material/Build';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+
+import '@/app/styles/chat.css';
 
 // Configure marked options for proper code rendering
 marked.setOptions({
@@ -111,6 +110,7 @@ export default function Chat(props: {
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
+  const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
 
   // Log project prop for debugging
   useEffect(() => {
@@ -385,11 +385,11 @@ export default function Chat(props: {
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
       // Create streaming chat completion with custom fields
-      const stream = await openai.chat.completions.create({
-        model: 'slp-model-001',
-        messages: [messageObject],
-        stream: true,
-        conversation_id: conversationId
+      let stream = await openai.chat.completions.create({
+          model: 'slp-model-001',
+          messages: [messageObject],
+          stream: true,
+          conversation_id: conversationId
       } as any) as any;
 
       // Process the stream
@@ -479,9 +479,17 @@ export default function Chat(props: {
         let errorMessage = 'An error occurred while processing your message. Please try again.';
         let errorIconType = 'error';
 
-        if (error.status === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) {
+        // Enhanced 429 detection - check status, message content, and error codes
+        if (
+          error.status === 429 ||
+          error.statusCode === 429 ||
+          error.message?.includes('429') ||
+          error.code === 'rate_limit_exceeded' ||
+          error.code === 'insufficient_quota' ||
+          error.message?.toLowerCase().includes('insufficient credits')
+        ) {
           errorIconType = 'warning';
-          errorMessage = 'You have exceeded your usage limit or are out of credits. Please upgrade your account or reach out to us at support@smartloop.ai';
+          errorMessage = 'You have exceeded your usage limit or are out of credits. Please upgrade your account or contact support@smartloop.ai for assistance.';
         } else if (error.message?.includes('allocated memory') || error.message?.includes('exceeded the limit') || error.message?.includes('context length')) {
           errorIconType = 'warning';
           errorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
@@ -497,15 +505,23 @@ export default function Chat(props: {
 
         // Update the response message with the error instead of removing it
         setMessages((prevState: any) => {
-          const updatedMessages = prevState.map((msg: any) =>
-            msg.id === responseId ? {
-              ...msg,
-              is_new: false,
-              isError: true,
-              errorIconType: errorIconType,
-              content: errorMessage
-            } : msg
-          );
+          const updatedMessages = prevState.map((msg: any) => {
+            if (msg.id === responseId) {
+              console.log('[DEBUG Error] MATCH FOUND - updating message:', msg.id);
+              return {
+                ...msg,
+                is_new: false,
+                isError: true,
+                errorIconType: errorIconType,
+                content: errorMessage
+              };
+            }
+            return msg;
+          });
+
+          // Mark that we have a local error to prevent conversation sync from overwriting
+          hasLocalErrorRef.current = true;
+
           return updatedMessages;
         });
       }
@@ -521,6 +537,13 @@ export default function Chat(props: {
     // Don't overwrite messages while actively sending (new conversation scenario)
     if (sendingMessageRef.current || isLoading) {
       console.log('[Chat] Skipping message load - currently sending');
+      return;
+    }
+
+    // Don't overwrite messages if we have a local error displayed
+    if (hasLocalErrorRef.current) {
+      console.log('[Chat] Skipping message load - local error message displayed');
+      hasLocalErrorRef.current = false; // Reset for next time
       return;
     }
 
@@ -553,17 +576,17 @@ export default function Chat(props: {
   useEffect(() => {
     const handleLinkClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      
+
       // Check if the clicked element is an anchor tag or inside one
       const anchor = target.closest('a');
-      
+
       if (anchor && anchor.href) {
         const href = anchor.href;
-        
+
         // Check if it's an external link (http/https)
         if (href.startsWith('http://') || href.startsWith('https://')) {
           e.preventDefault();
-          
+
           // If Electron API is available, use it to open in system browser
           if ((window as any).electronAPI?.openExternal) {
             (window as any).electronAPI.openExternal(href);
@@ -625,250 +648,6 @@ export default function Chat(props: {
 
   return (
     <>
-      <style>{`
-        @keyframes blink {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.2;
-          }
-        }
-
-        .chat-content table,
-        .chat-content .csv-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 1em 0;
-          background-color: #1a1a1a;
-          border: 1px solid #374151;
-          overflow-x: auto;
-          display: block;
-        }
-
-        .chat-content table thead,
-        .chat-content .csv-table thead {
-          background-color: #111827;
-          display: table;
-          width: 100%;
-          table-layout: fixed;
-        }
-
-        .chat-content table th,
-        .chat-content .csv-table th {
-          padding: 12px;
-          text-align: left;
-          font-weight: 600;
-          color: #e5e7eb;
-          border: 1px solid #374151;
-          border-bottom: 2px solid #4b5563;
-        }
-
-        .chat-content table tbody,
-        .chat-content .csv-table tbody {
-          display: table;
-          width: 100%;
-          table-layout: fixed;
-        }
-
-        .chat-content table td,
-        .chat-content .csv-table td {
-          padding: 10px 12px;
-          color: #d1d5db;
-          border: 1px solid #374151;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-        }
-
-        .chat-content table tbody tr:hover,
-        .chat-content .csv-table tbody tr:hover {
-          background-color: #1f2937;
-        }
-
-        .chat-content table tbody tr:nth-child(even),
-        .chat-content .csv-table tbody tr:nth-child(even) {
-          background-color: #0f1419;
-        }
-
-        .chat-content h1 {
-          color: #fff;
-          font-size: 2rem;
-          font-weight: 700;
-          margin-top: 1.5rem;
-          margin-bottom: 1rem;
-        }
-
-        .chat-content h2 {
-          color: #fff;
-          font-size: 1.5rem;
-          font-weight: 600;
-          margin-top: 1.25rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .chat-content h3 {
-          color: #fff;
-          font-size: 1.25rem;
-          font-weight: 600;
-          margin-top: 1rem;
-          margin-bottom: 0.5rem;
-        }
-
-        .chat-content h4,
-        .chat-content h5,
-        .chat-content h6 {
-          color: #fff;
-          font-weight: 600;
-        }
-
-        .chat-content p {
-          color: #d1d5db;
-          line-height: 1.7;
-          margin-bottom: 1rem;
-        }
-
-        .chat-content strong {
-          color: #fff;
-          font-weight: 600;
-        }
-
-        .chat-content em {
-          font-style: italic;
-        }
-
-        .chat-content a {
-          color: #ec4899;
-          text-decoration: underline;
-        }
-
-        .chat-content a:hover {
-          color: #f472b6;
-        }
-
-        .chat-content blockquote {
-          border-left: 4px solid #ec4899;
-          padding-left: 1rem;
-          color: #9ca3af;
-          font-style: italic;
-          margin-bottom: 1rem;
-        }
-
-        .chat-content hr {
-          border: none;
-          border-top: 1px solid #374151;
-          margin-top: 2rem;
-          margin-bottom: 2rem;
-        }
-
-        .chat-content ul {
-          list-style-type: disc;
-          margin-left: 1.5em;
-          margin-top: 0.5em;
-          margin-bottom: 0.5em;
-          padding-left: 0.5em;
-        }
-
-        .chat-content ol {
-          list-style-type: decimal;
-          margin-left: 1.5em;
-          margin-top: 0.5em;
-          margin-bottom: 0.5em;
-          padding-left: 0.5em;
-        }
-
-        .chat-content li {
-          margin-bottom: 0.5rem;
-          padding-left: 0.25em;
-          color: #d1d5db;
-        }
-
-        .chat-content ul ul {
-          list-style-type: circle;
-          margin-top: 0.25em;
-        }
-
-        .chat-content ul ul ul {
-          list-style-type: square;
-        }
-
-        .chat-content ol ol {
-          list-style-type: lower-alpha;
-          margin-top: 0.25em;
-        }
-
-        .chat-content ol ol ol {
-          list-style-type: lower-roman;
-        }
-
-        .chat-content pre {
-          background-color: #1a1a1a;
-          border: 1px solid #374151;
-          border-radius: 8px;
-          padding: 16px;
-          margin: 1em 0;
-          overflow-x: auto;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          word-break: break-word;
-        }
-
-        .chat-content pre code {
-          background-color: transparent;
-          padding: 0;
-          border: none;
-          font-size: 0.875rem;
-          line-height: 1.6;
-          color: #e5e7eb;
-          display: block;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-        }
-
-        .chat-content code {
-          background-color: #1f2937;
-          border: 1px solid #374151;
-          border-radius: 4px;
-          padding: 2px 6px;
-          font-size: 0.875em;
-          color: #ec4899;
-          font-family: 'Courier New', Courier, monospace;
-        }
-
-        .chat-content p code {
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-
-        /* CSV table wrapper for horizontal scrolling */
-        .chat-content .csv-table-wrapper {
-          width: 100%;
-          overflow-x: auto;
-          margin: 1em 0;
-        }
-
-        /* Retro block cursor */
-        #message textarea {
-          caret-color: transparent;
-        }
-
-        #message textarea::after {
-          content: '';
-          position: absolute;
-          width: 8px;
-          height: 1.2em;
-          background-color: #ec4899;
-          animation: blink 1s step-end infinite;
-        }
-
-        @keyframes blink {
-          0%, 50% {
-            opacity: 1;
-          }
-          50.1%, 100% {
-            opacity: 0;
-          }
-        }
-      `}</style>
       <Box className="chat__box flex flex-col h-full bg-black overflow-hidden" sx={{ borderLeft: '1px solid rgba(75, 85, 99, 0.3)' }}>
         <section className="chat__body flex-1 overflow-hidden">
           <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 scrollbar-thin">
@@ -963,14 +742,6 @@ export default function Chat(props: {
                         <Box className="flex-1">
                           <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="prose prose-invert max-w-none chat-content">
-                              {msg.isError && msg.errorIconType && (
-                                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', mr: 1, verticalAlign: 'middle' }}>
-                                  {msg.errorIconType === 'warning' && <WarningAmberIcon sx={{ fontSize: 18, color: '#f59e0b' }} />}
-                                  {msg.errorIconType === 'lock' && <LockIcon sx={{ fontSize: 18, color: '#ef4444' }} />}
-                                  {msg.errorIconType === 'build' && <BuildIcon sx={{ fontSize: 18, color: '#6b7280' }} />}
-                                  {msg.errorIconType === 'error' && <ErrorOutlineIcon sx={{ fontSize: 18, color: '#ef4444' }} />}
-                                </Box>
-                              )}
                               {(!msg.content || msg.content.trim() === '') && msg.is_new ? (
                                 <span
                                   className="inline-block bg-white"
