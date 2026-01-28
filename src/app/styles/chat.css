@@ -7,6 +7,49 @@
   }
 }
 
+/* Custom selection styling for assistant messages - pink theme */
+.chat-content ::selection {
+  background-color: rgba(236, 72, 153, 0.4);
+  color: #fff;
+}
+
+.chat-content ::-moz-selection {
+  background-color: rgba(236, 72, 153, 0.4);
+  color: #fff;
+}
+
+/* Persistent quote highlight - stays visible after selection */
+.chat-content .quote-highlight {
+  background-color: rgba(236, 72, 153, 0.3);
+  border-bottom: 2px solid #ec4899;
+  border-radius: 2px;
+  padding: 1px 0;
+}
+
+/* User message quoted text styling */
+.user-message-content blockquote {
+  background-color: rgba(236, 72, 153, 0.15);
+  border-left: 3px solid #ec4899;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 0 0 12px 0;
+  color: #d1d5db;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.user-message-content blockquote p {
+  margin: 0;
+}
+
+.user-message-content p {
+  margin-bottom: 0.5rem;
+}
+
+.user-message-content p:last-child {
+  margin-bottom: 0;
+}
+
 .chat-content table,
 .chat-content .csv-table {
   width: 100%;

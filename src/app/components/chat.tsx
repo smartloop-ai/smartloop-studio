@@ -97,6 +97,7 @@ export default function Chat(props: {
   const [formData, setFormData] = useState({
     message: "",
   });
+  const [selectedQuote, setSelectedQuote] = useState<string>("");
   const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
@@ -134,6 +135,66 @@ export default function Chat(props: {
     console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
 
+
+  // Clear any existing quote highlights
+  const clearQuoteHighlight = () => {
+    const existingHighlights = document.querySelectorAll('.quote-highlight');
+    existingHighlights.forEach((el) => {
+      const parent = el.parentNode;
+      if (parent) {
+        // Replace the highlight span with its text content
+        const textNode = document.createTextNode(el.textContent || '');
+        parent.replaceChild(textNode, el);
+        parent.normalize(); // Merge adjacent text nodes
+      }
+    });
+  };
+
+  // Handle text selection from assistant messages
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      const selectedText = selection.toString().trim();
+      // Check if the selection is within an assistant message
+      const anchorNode = selection.anchorNode;
+      if (anchorNode) {
+        const chatContent = anchorNode.parentElement?.closest('.chat-content');
+        if (chatContent) {
+          // Clear previous highlights first
+          clearQuoteHighlight();
+
+          // Wrap selection in highlight span
+          try {
+            const range = selection.getRangeAt(0);
+            const highlightSpan = document.createElement('span');
+            highlightSpan.className = 'quote-highlight';
+            range.surroundContents(highlightSpan);
+          } catch (e) {
+            // surroundContents can fail if selection spans multiple elements
+            // In that case, just set the quote without visual highlight
+            console.log('Could not highlight selection spanning multiple elements');
+          }
+
+          setSelectedQuote(selectedText);
+          selection.removeAllRanges(); // Clear browser selection after highlighting
+        }
+      }
+    }
+  };
+
+  // Clear highlight when quote is cleared
+  const handleQuoteClear = () => {
+    clearQuoteHighlight();
+    setSelectedQuote("");
+  };
+
+  // Attach text selection listener
+  useEffect(() => {
+    document.addEventListener('mouseup', handleTextSelection);
+    return () => {
+      document.removeEventListener('mouseup', handleTextSelection);
+    };
+  }, []);
 
   const sendFeedback = async (msg: any) => {
     const url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
@@ -197,11 +258,18 @@ export default function Chat(props: {
       return;
     }
 
-    const userMessage = messageOverride || formData.message.trim();
+    let userMessage = messageOverride || formData.message.trim();
 
     if (userMessage.length === 0) {
       console.log('Empty message, skipping');
       return;
+    }
+
+    // Prepend selected quote if present
+    if (selectedQuote) {
+      userMessage = `> ${selectedQuote.split('\n').join('\n> ')}\n\n${userMessage}`;
+      clearQuoteHighlight(); // Clear the visual highlight
+      setSelectedQuote(""); // Clear the quote after using
     }
 
     // Mark as sending
@@ -839,7 +907,7 @@ export default function Chat(props: {
 
                             {/* Message bubble */}
                             <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
-                              <div className="text-wrap break-words py-3" dangerouslySetInnerHTML={{
+                              <div className="user-message-content text-wrap break-words py-3" dangerouslySetInnerHTML={{
                                 __html: marked(msg.content)
                               }}>
                               </div>
@@ -883,6 +951,8 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
+            selectedQuote={selectedQuote}
+            onQuoteClear={handleQuoteClear}
           />
         </footer>
 
