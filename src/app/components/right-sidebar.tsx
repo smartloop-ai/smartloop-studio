@@ -8,12 +8,15 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
+import CableIcon from '@mui/icons-material/Cable';
+import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { userService } from '@/app/services/user.service';
 import { API_ENDPOINT } from '@/app/constants';
+import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -38,7 +41,7 @@ export default function RightSidebar({
   user,
   setUser,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | null>(null);
+  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -49,6 +52,17 @@ export default function RightSidebar({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentRulesValue, setCurrentRulesValue] = useState('');
   const initialLoadRef = useRef<boolean>(true);
+
+  // MCP Servers state
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [isLoadingMcp, setIsLoadingMcp] = useState(false);
+  const [mcpError, setMcpError] = useState('');
+  const [showAddMcpForm, setShowAddMcpForm] = useState(false);
+  const [newMcpName, setNewMcpName] = useState('');
+  const [newMcpUrl, setNewMcpUrl] = useState('');
+  const [isAddingMcp, setIsAddingMcp] = useState(false);
+  // mcpToDelete can be used for deletion confirmation dialog if needed
+  const [, setMcpToDelete] = useState<McpServer | null>(null);
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -75,9 +89,9 @@ export default function RightSidebar({
     setActiveSection(null);
   }, [selectedProject?.id]);
 
-  // Ensure sidebar is collapsed for system projects
+  // Ensure sidebar is collapsed for system projects (only for rules/documents, NOT for mcp)
   useEffect(() => {
-    if (selectedProject?.system && activeSection) {
+    if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents')) {
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
@@ -130,6 +144,175 @@ export default function RightSidebar({
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
   }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
+
+  // Load MCP servers when section is opened
+  useEffect(() => {
+    if (activeSection === 'mcp' && selectedProject?.id) {
+      loadMcpServers();
+    }
+  }, [activeSection, selectedProject?.id]);
+
+  // Auto-connect stored MCP servers on app start/project change
+  useEffect(() => {
+    const initializeMcpServers = async () => {
+      if (!selectedProject?.id) return;
+
+      console.log('[MCP Init] Checking for stored MCP servers...');
+      const storedServers = await mcpServerService.loadMcpServersFromStorage(selectedProject.id);
+
+      if (storedServers.length > 0) {
+        console.log(`[MCP Init] Found ${storedServers.length} stored servers, auto-connecting...`);
+        setIsLoadingMcp(true);
+
+        try {
+          const results = await mcpServerService.autoConnectStoredServers(selectedProject.id);
+
+          // Update state with connected servers
+          const apiResult = await mcpServerService.getMcpServers(selectedProject.id);
+          if (apiResult.success && apiResult.data) {
+            setMcpServers(apiResult.data as McpServer[]);
+          }
+
+          const connectedCount = results.filter(r => r.success).length;
+          console.log(`[MCP Init] Auto-connected ${connectedCount}/${storedServers.length} servers`);
+        } catch (error: any) {
+          console.error('[MCP Init] Error during auto-connect:', error);
+        } finally {
+          setIsLoadingMcp(false);
+        }
+      }
+    };
+
+    initializeMcpServers();
+  }, [selectedProject?.id]);
+
+  // Listen for MCP authorization callback from Electron
+  useEffect(() => {
+    const electronWindow = window as any;
+    if (electronWindow.electronAPI?.onMcpAuthCallback) {
+      electronWindow.electronAPI.onMcpAuthCallback(async (data: { serverId?: string; error?: string }) => {
+        console.log('[MCP Auth] Callback received:', data);
+        if (data.error) {
+          setMcpError(data.error);
+        } else if (data.serverId && selectedProject?.id) {
+          // Refresh the MCP server list after successful authorization
+          await loadMcpServers();
+
+          // Auto-connect to the newly authorized server
+          console.log('[MCP Auth] Auto-connecting to server:', data.serverId);
+          const result = await mcpServerService.connectMcpServer(selectedProject.id, data.serverId);
+          if (result.success && result.data) {
+            setMcpServers(prev => prev.map(s =>
+              s.id === data.serverId ? result.data as McpServer : s
+            ));
+            // Save updated servers to storage
+            const updatedServers = mcpServers.map(s =>
+              s.id === data.serverId ? result.data as McpServer : s
+            );
+            await mcpServerService.saveMcpServersToStorage(selectedProject.id, updatedServers);
+          } else {
+            setMcpError(result.error || 'Failed to auto-connect after authorization');
+          }
+        }
+      });
+
+      return () => {
+        electronWindow.electronAPI?.removeMcpAuthCallbackListener?.();
+      };
+    }
+  }, [selectedProject?.id, mcpServers]);
+
+  const loadMcpServers = async () => {
+    if (!selectedProject?.id) return;
+
+    setIsLoadingMcp(true);
+    setMcpError('');
+
+    try {
+      const result = await mcpServerService.getMcpServers(selectedProject.id);
+      if (result.success && result.data) {
+        const servers = result.data as McpServer[];
+        setMcpServers(servers);
+        // Save to local storage for persistence
+        await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
+      } else {
+        setMcpError(result.error || 'Failed to load MCP servers');
+      }
+    } catch (error: any) {
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsLoadingMcp(false);
+    }
+  };
+
+  const handleAddMcpServer = async () => {
+    if (!selectedProject?.id || !newMcpName.trim() || !newMcpUrl.trim()) return;
+
+    setIsAddingMcp(true);
+    setMcpError('');
+
+    try {
+      // Initiate OAuth for the remote MCP server
+      const result = await mcpServerService.initiateOAuth(
+        selectedProject.id,
+        newMcpName.trim(),
+        newMcpUrl.trim()
+      );
+
+      if (result.success && result.data) {
+        const responseData = result.data as Record<string, any>;
+
+        setNewMcpName('');
+        setNewMcpUrl('');
+        setShowAddMcpForm(false);
+
+        // Open auth URL for OAuth authentication (check common field names)
+        const authUrl = responseData.authorization_url || responseData.auth_url || responseData.url || responseData.redirect_url;
+
+        console.log('OAuth response:', responseData);
+        console.log('Auth URL:', authUrl);
+
+        if (authUrl) {
+          // Use Electron API to open in external browser
+          const electronWindow = window as any;
+          if (electronWindow.electronAPI?.openExternal) {
+            electronWindow.electronAPI.openExternal(authUrl);
+          } else {
+            // Fallback for non-Electron environment
+            window.open(authUrl, '_blank');
+          }
+        } else {
+          // If no auth URL, maybe the server was added directly - reload list
+          loadMcpServers();
+        }
+      } else {
+        setMcpError(result.error || 'Failed to initiate OAuth');
+      }
+    } catch (error: any) {
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleDeleteMcpServer = async (server: McpServer) => {
+    if (!selectedProject?.id || !server.id) return;
+
+    try {
+      const result = await mcpServerService.deleteMcpServer(selectedProject.id, server.id);
+      if (result.success) {
+        setMcpServers(prev => prev.filter(s => s.id !== server.id));
+        setMcpToDelete(null);
+        // Remove from local storage
+        await mcpServerService.removeMcpServerFromStorage(selectedProject.id, server.id);
+      } else {
+        setMcpError(result.error || 'Failed to delete MCP server');
+      }
+    } catch (error: any) {
+      setMcpError(error.message || 'An error occurred');
+    }
+  };
+
 
   const validateAndUploadFile = async (file: File) => {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
@@ -252,7 +435,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && currentProjectData.documents.length > 0 && (
               <button
@@ -296,6 +479,15 @@ export default function RightSidebar({
                     <span>Saved</span>
                   </>
                 )}
+              </button>
+            )}
+            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && (
+              <button
+                onClick={() => setShowAddMcpForm(true)}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
+              >
+                <AddBoxIcon sx={{ fontSize: 12 }} />
+                <span>Add</span>
               </button>
             )}
           </Box>
@@ -582,6 +774,153 @@ export default function RightSidebar({
           )}
         </div>
         )}
+
+        {/* MCP Servers Section */}
+        {activeSection === 'mcp' && (
+          <div className="space-y-3">
+            {/* Add MCP Server Form */}
+            {showAddMcpForm && (
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <TextField
+                  size="small"
+                  placeholder="Server name"
+                  value={newMcpName}
+                  onChange={(e) => setNewMcpName(e.target.value)}
+                  fullWidth
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                />
+                <TextField
+                  size="small"
+                  placeholder="Server URL (e.g., https://mcp.example.com)"
+                  value={newMcpUrl}
+                  onChange={(e) => setNewMcpUrl(e.target.value)}
+                  fullWidth
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                />
+                <Box className="flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setShowAddMcpForm(false);
+                      setNewMcpName('');
+                      setNewMcpUrl('');
+                      setMcpError('');
+                    }}
+                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddMcpServer}
+                    disabled={isAddingMcp || !newMcpName.trim() || !newMcpUrl.trim()}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
+                      isAddingMcp || !newMcpName.trim() || !newMcpUrl.trim()
+                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
+                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
+                    }`}
+                  >
+                    {isAddingMcp ? (
+                      <>
+                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <span>Adding...</span>
+                      </>
+                    ) : (
+                      <span>Add Server</span>
+                    )}
+                  </button>
+                </Box>
+              </Box>
+            )}
+
+            {/* Error Message */}
+            {mcpError && (
+              <Box className="text-red-400 text-xs text-center py-2">
+                {mcpError}
+              </Box>
+            )}
+
+            {/* Loading State */}
+            {isLoadingMcp ? (
+              <Box className="flex items-center justify-center py-8">
+                <CircularProgress size={24} sx={{ color: '#ec4899' }} />
+              </Box>
+            ) : mcpServers.length > 0 ? (
+              /* Server List */
+              <Box className="space-y-2">
+                {mcpServers.map((server, index) => (
+                  <McpServerItem
+                    key={server.id || `mcp-${index}`}
+                    server={server}
+                    projectId={selectedProject?.id || ''}
+                    onDelete={handleDeleteMcpServer}
+                    onServerUpdate={(updatedServer) => {
+                      setMcpServers(prev => {
+                        const newServers = prev.map(s =>
+                          s.id === updatedServer.id ? updatedServer : s
+                        );
+                        // Save to storage when server is updated
+                        if (selectedProject?.id) {
+                          mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                        }
+                        return newServers;
+                      });
+                    }}
+                  />
+                ))}
+              </Box>
+            ) : (
+              /* Empty State */
+              <Box className="flex flex-col items-center justify-center py-8 text-center">
+                <CableIcon sx={{ fontSize: 48, color: '#4b5563', mb: 2 }} />
+                <Box className="text-gray-400 text-sm mb-1">
+                  No MCP servers configured
+                </Box>
+                <Box className="text-gray-500 text-xs">
+                  Add an MCP server to extend capabilities
+                </Box>
+              </Box>
+            )}
+
+            {/* Help Text */}
+            <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
+              MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
+            </p>
+          </div>
+        )}
         </Box>
       )}
 
@@ -653,6 +992,27 @@ export default function RightSidebar({
               size="small"
             >
               <RuleOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="MCP Servers" placement="left">
+          <span>
+            <IconButton
+              onClick={() => setActiveSection(activeSection === 'mcp' ? null : 'mcp')}
+              sx={{
+                color: activeSection === 'mcp' ? '#ec4899' : '#9ca3af',
+                bgcolor: activeSection === 'mcp' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: '#ec4899',
+                  bgcolor: 'rgba(236, 72, 153, 0.1)',
+                },
+              }}
+              size="small"
+            >
+              <CableIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
