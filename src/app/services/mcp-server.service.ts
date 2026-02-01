@@ -452,14 +452,44 @@ const connectMcpServer = async (projectId: string, serverId: string): Promise<Mc
 const MCP_STORAGE_KEY = 'mcp_servers';
 
 /**
- * Save MCP servers to local storage
+ * Get the current user's identifier for storage scoping
+ * @returns User email or null if not available
+ */
+const getCurrentUserId = async (): Promise<string | null> => {
+  try {
+    const userData = await storageService.getItem('u');
+    if (userData) {
+      const user = typeof userData === 'string' ? JSON.parse(userData) : userData;
+      return user.email || null;
+    }
+    return null;
+  } catch (error) {
+    console.error('[MCP Storage] Error getting current user:', error);
+    return null;
+  }
+};
+
+/**
+ * Save MCP servers to local storage (scoped by user and project)
  * @param projectId - ID of the project
  * @param servers - Array of MCP servers to save
  */
 const saveMcpServersToStorage = async (projectId: string, servers: McpServer[]): Promise<void> => {
   try {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      console.warn('[MCP Storage] No user found, skipping save');
+      return;
+    }
+
     const allMcpData = await storageService.getItem(MCP_STORAGE_KEY) || {};
-    allMcpData[projectId] = servers.map(server => ({
+
+    // Initialize user scope if it doesn't exist
+    if (!allMcpData[userId]) {
+      allMcpData[userId] = {};
+    }
+
+    allMcpData[userId][projectId] = servers.map(server => ({
       id: server.id,
       name: server.name,
       config: server.config,
@@ -467,22 +497,29 @@ const saveMcpServersToStorage = async (projectId: string, servers: McpServer[]):
       lastConnected: server.lastConnected
     }));
     await storageService.setItem(MCP_STORAGE_KEY, allMcpData);
-    console.log(`[MCP Storage] Saved ${servers.length} servers for project ${projectId}`);
+    console.log(`[MCP Storage] Saved ${servers.length} servers for user ${userId}, project ${projectId}`);
   } catch (error) {
     console.error('[MCP Storage] Error saving servers:', error);
   }
 };
 
 /**
- * Load MCP servers from local storage
+ * Load MCP servers from local storage (scoped by user and project)
  * @param projectId - ID of the project
  * @returns Array of stored MCP servers
  */
 const loadMcpServersFromStorage = async (projectId: string): Promise<McpServer[]> => {
   try {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      console.warn('[MCP Storage] No user found, returning empty list');
+      return [];
+    }
+
     const allMcpData = await storageService.getItem(MCP_STORAGE_KEY) || {};
-    const servers = allMcpData[projectId] || [];
-    console.log(`[MCP Storage] Loaded ${servers.length} servers for project ${projectId}`);
+    const userMcpData = allMcpData[userId] || {};
+    const servers = userMcpData[projectId] || [];
+    console.log(`[MCP Storage] Loaded ${servers.length} servers for user ${userId}, project ${projectId}`);
     return servers;
   } catch (error) {
     console.error('[MCP Storage] Error loading servers:', error);
@@ -491,17 +528,26 @@ const loadMcpServersFromStorage = async (projectId: string): Promise<McpServer[]
 };
 
 /**
- * Remove MCP server from local storage
+ * Remove MCP server from local storage (scoped by user and project)
  * @param projectId - ID of the project
  * @param serverId - ID of the server to remove
  */
 const removeMcpServerFromStorage = async (projectId: string, serverId: string): Promise<void> => {
   try {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      console.warn('[MCP Storage] No user found, skipping remove');
+      return;
+    }
+
     const allMcpData = await storageService.getItem(MCP_STORAGE_KEY) || {};
-    if (allMcpData[projectId]) {
-      allMcpData[projectId] = allMcpData[projectId].filter((s: McpServer) => s.id !== serverId);
+    const userMcpData = allMcpData[userId];
+
+    if (userMcpData && userMcpData[projectId]) {
+      userMcpData[projectId] = userMcpData[projectId].filter((s: McpServer) => s.id !== serverId);
+      allMcpData[userId] = userMcpData;
       await storageService.setItem(MCP_STORAGE_KEY, allMcpData);
-      console.log(`[MCP Storage] Removed server ${serverId} from project ${projectId}`);
+      console.log(`[MCP Storage] Removed server ${serverId} for user ${userId}, project ${projectId}`);
     }
   } catch (error) {
     console.error('[MCP Storage] Error removing server:', error);
