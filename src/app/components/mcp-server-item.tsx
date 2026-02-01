@@ -11,6 +11,7 @@ interface McpServerItemProps {
   projectId: string;
   onDelete: (server: McpServer) => void;
   onServerUpdate: (updatedServer: McpServer) => void;
+  autoConnect?: boolean;
 }
 
 export default function McpServerItem({
@@ -18,6 +19,7 @@ export default function McpServerItem({
   projectId,
   onDelete,
   onServerUpdate,
+  autoConnect = true,
 }: McpServerItemProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -33,8 +35,19 @@ export default function McpServerItem({
 
   // Get display values - use server_info.title as primary
   const serverInfo = localServerInfo;
-  const displayName = serverInfo?.title || serverInfo?.name || server.name;
   const displayUrl = serverInfo?.website_url || serverInfo?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
+
+  // Extract hostname from URL as fallback name
+  const getHostnameFromUrl = (url: string): string => {
+    try {
+      const hostname = new URL(url).hostname;
+      return hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+
+  const displayName = serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(displayUrl) || 'MCP Server';
 
   // Icon can be in src or url field
   const icon = serverInfo?.icons?.[0];
@@ -77,12 +90,12 @@ export default function McpServerItem({
     onServerUpdate({ ...server, server_info: undefined });
   };
 
-  // Auto-connect on mount if not connected
+  // Auto-connect on mount if not connected and autoConnect is enabled
   useEffect(() => {
-    if (!isConnected && !isConnecting && projectId && server.id) {
+    if (autoConnect && !isConnected && !isConnecting && projectId && server.id) {
       handleConnect();
     }
-  }, []); // Run once on mount
+  }, [autoConnect]); // Run when autoConnect changes or on mount
 
   return (
     <Box
@@ -239,7 +252,7 @@ export default function McpServerItem({
             className="text-[10px] text-gray-500 leading-relaxed truncate"
             title={displayUrl}
           >
-            {displayUrl || 'Connecting...'}
+            {displayUrl || (isConnecting ? 'Connecting...' : '')}
           </div>
         </Box>
       </Box>

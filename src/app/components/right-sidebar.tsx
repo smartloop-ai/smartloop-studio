@@ -195,23 +195,20 @@ export default function RightSidebar({
         if (data.error) {
           setMcpError(data.error);
         } else if (data.serverId && selectedProject?.id) {
-          // Refresh the MCP server list after successful authorization
-          await loadMcpServers();
+          // Fetch the server list to show the new server
+          // McpServerItem will handle auto-connecting
+          console.log('[MCP Auth] Fetching server list...');
+          const listResult = await mcpServerService.getMcpServers(selectedProject.id);
 
-          // Auto-connect to the newly authorized server
-          console.log('[MCP Auth] Auto-connecting to server:', data.serverId);
-          const result = await mcpServerService.connectMcpServer(selectedProject.id, data.serverId);
-          if (result.success && result.data) {
-            setMcpServers(prev => prev.map(s =>
-              s.id === data.serverId ? result.data as McpServer : s
-            ));
-            // Save updated servers to storage
-            const updatedServers = mcpServers.map(s =>
-              s.id === data.serverId ? result.data as McpServer : s
-            );
-            await mcpServerService.saveMcpServersToStorage(selectedProject.id, updatedServers);
+          if (listResult.success && listResult.data) {
+            const servers = listResult.data as McpServer[];
+            setMcpServers(servers);
+
+            // Save to storage so the server persists
+            await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
+            console.log('[MCP Auth] Server added, auto-connect will be handled by component');
           } else {
-            setMcpError(result.error || 'Failed to auto-connect after authorization');
+            setMcpError(listResult.error || 'Failed to load MCP servers after authorization');
           }
         }
       });
@@ -220,7 +217,7 @@ export default function RightSidebar({
         electronWindow.electronAPI?.removeMcpAuthCallbackListener?.();
       };
     }
-  }, [selectedProject?.id, mcpServers]);
+  }, [selectedProject?.id]);
 
   const loadMcpServers = async () => {
     if (!selectedProject?.id) return;

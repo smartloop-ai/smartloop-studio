@@ -600,6 +600,16 @@ export default function Chat(props: {
     }
   }
 
+  // Reset input when conversation changes (switching tabs)
+  useEffect(() => {
+    // Reset input box when switching to a different conversation
+    setFormData({ message: "" });
+    setSelectedQuote("");
+    clearQuoteHighlight();
+    messageAttachmentsRef.current = [];
+    setClearAttachmentTrigger(prev => prev + 1);
+  }, [props.conversation?.id]);
+
   // Load messages when conversation changes - simple and direct
   useEffect(() => {
     // Don't overwrite messages while actively sending (new conversation scenario)
