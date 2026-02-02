@@ -154,6 +154,9 @@
 .chat-content a {
   color: #ec4899;
   text-decoration: underline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .chat-content a:hover {
