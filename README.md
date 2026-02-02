@@ -1,4 +1,4 @@
-# SmartLoop Studio
+# Smartloop Studio
 
 A cross-platform desktop application built with Electron, React, and Vite.
 
@@ -209,10 +209,6 @@ Built applications are placed in the `dist/` folder:
 - [React Documentation](https://react.dev/)
 - [electron-builder](https://www.electron.build/)
 
-## 👥 Author
-
-**Mehfuz Hossain**  
-mehfuz@smartloop.ai
 
 ---
 
