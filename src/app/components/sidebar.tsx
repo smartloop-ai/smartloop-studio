@@ -641,22 +641,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         <span style={{ flex: 1 }} className="truncate">
                           {projectName}
                         </span>
-                        {!project.system && (
-                          <Box
-                            sx={{
-                              fontSize: '9px',
-                              fontWeight: 500,
-                              color: 'rgba(255, 255, 255, 0.35)',
-                              bgcolor: 'rgba(255, 255, 255, 0.05)',
-                              px: 0.6,
-                              py: 0.2,
-                              borderRadius: '3px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            {(project.inference ?? 1.0).toFixed(1)}
-                          </Box>
-                        )}
                       </Box>
                       {!project.system && (
                         <DeleteOutlineIcon
