@@ -473,9 +473,9 @@ export default function Chat(props: {
           fullText += content;
 
           // Check if the response contains a memory/context limit error
-          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit'))) {
+          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
             // Display a clean error message instead of the raw error
-            const cleanErrorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
+            const cleanErrorMessage = 'This conversation has exceeded its context limit. Please start a new conversation to continue.';
             setMessages((prevMessages: any) =>
               prevMessages.map((msg: any) =>
                 msg.id === responseId ? {
@@ -599,6 +599,16 @@ export default function Chat(props: {
       abortControllerRef.current = null;
     }
   }
+
+  // Reset input when conversation changes (switching tabs)
+  useEffect(() => {
+    // Reset input box when switching to a different conversation
+    setFormData({ message: "" });
+    setSelectedQuote("");
+    clearQuoteHighlight();
+    messageAttachmentsRef.current = [];
+    setClearAttachmentTrigger(prev => prev + 1);
+  }, [props.conversation?.id]);
 
   // Load messages when conversation changes - simple and direct
   useEffect(() => {

@@ -546,6 +546,32 @@ function handleOAuthCallback(url) {
 
   try {
     const urlObj = new URL(url);
+    const pathname = urlObj.hostname || urlObj.pathname.replace(/^\/+/, '');
+
+    // Check if this is an MCP authorization callback
+    if (pathname === 'mcp-authorization') {
+      const serverId = urlObj.searchParams.get('server_id');
+      const error = urlObj.searchParams.get('error');
+
+      console.log('[MCP Auth] Callback - server_id:', serverId || 'none', 'error:', error || 'none');
+
+      if (mainWindow) {
+        if (error) {
+          mainWindow.webContents.send('mcp-auth-callback', { error });
+        } else if (serverId) {
+          mainWindow.webContents.send('mcp-auth-callback', { serverId });
+        } else {
+          mainWindow.webContents.send('mcp-auth-callback', { error: 'No server_id received' });
+        }
+
+        // Focus the main window
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+      return;
+    }
+
+    // Handle regular OAuth login callback
     const accessToken = urlObj.searchParams.get('token');
     const error = urlObj.searchParams.get('error');
 

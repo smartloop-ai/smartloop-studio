@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeOAuthCallbackListener: () => {
     ipcRenderer.removeAllListeners('oauth-callback');
   },
+  // MCP authorization callback
+  onMcpAuthCallback: (callback) => {
+    ipcRenderer.on('mcp-auth-callback', (event, data) => callback(data));
+  },
+  removeMcpAuthCallbackListener: () => {
+    ipcRenderer.removeAllListeners('mcp-auth-callback');
+  },
   // Token refresh methods
   refreshToken: (token) => ipcRenderer.invoke('refresh-token', token),
   startTokenRefresh: () => ipcRenderer.invoke('start-token-refresh'),

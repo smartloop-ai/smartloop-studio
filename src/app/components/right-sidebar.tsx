@@ -8,12 +8,20 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
+import CableIcon from '@mui/icons-material/Cable';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
+import MemoryIcon from '@mui/icons-material/Memory';
+import TuneIcon from '@mui/icons-material/Tune';
+import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { userService } from '@/app/services/user.service';
 import { API_ENDPOINT } from '@/app/constants';
+import { mcpServerService, McpServer, McpServerRegistrationResponse } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -38,7 +46,7 @@ export default function RightSidebar({
   user,
   setUser,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | null>(null);
+  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -49,6 +57,21 @@ export default function RightSidebar({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentRulesValue, setCurrentRulesValue] = useState('');
   const initialLoadRef = useRef<boolean>(true);
+
+  // MCP Servers state
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [isLoadingMcp, setIsLoadingMcp] = useState(false);
+  const [mcpError, setMcpError] = useState('');
+  const [showAddMcpForm, setShowAddMcpForm] = useState(false);
+  const [newMcpName, setNewMcpName] = useState('');
+  const [newMcpUrl, setNewMcpUrl] = useState('');
+  const [isAddingMcp, setIsAddingMcp] = useState(false);
+  // Token authentication state
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [mcpToken, setMcpToken] = useState('');
+  const [pendingServerUrl, setPendingServerUrl] = useState('');
+  // mcpToDelete can be used for deletion confirmation dialog if needed
+  const [, setMcpToDelete] = useState<McpServer | null>(null);
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -75,9 +98,9 @@ export default function RightSidebar({
     setActiveSection(null);
   }, [selectedProject?.id]);
 
-  // Ensure sidebar is collapsed for system projects
+  // Ensure sidebar is collapsed for system projects (only for rules/documents/settings, NOT for mcp)
   useEffect(() => {
-    if (selectedProject?.system && activeSection) {
+    if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents' || activeSection === 'settings')) {
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
@@ -130,6 +153,234 @@ export default function RightSidebar({
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
   }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
+
+  // Load MCP servers when section is opened
+  useEffect(() => {
+    if (activeSection === 'mcp' && selectedProject?.id) {
+      loadMcpServers();
+    }
+  }, [activeSection, selectedProject?.id]);
+
+  // Auto-connect stored MCP servers on app start/project change
+  useEffect(() => {
+    const initializeMcpServers = async () => {
+      if (!selectedProject?.id) return;
+
+      console.log('[MCP Init] Checking for stored MCP servers...');
+      const storedServers = await mcpServerService.loadMcpServersFromStorage(selectedProject.id);
+
+      if (storedServers.length > 0) {
+        console.log(`[MCP Init] Found ${storedServers.length} stored servers, auto-connecting...`);
+        setIsLoadingMcp(true);
+
+        try {
+          const results = await mcpServerService.autoConnectStoredServers(selectedProject.id);
+
+          // Update state with connected servers
+          const apiResult = await mcpServerService.getMcpServers(selectedProject.id);
+          if (apiResult.success && apiResult.data) {
+            setMcpServers(apiResult.data as McpServer[]);
+          }
+
+          const connectedCount = results.filter(r => r.success).length;
+          console.log(`[MCP Init] Auto-connected ${connectedCount}/${storedServers.length} servers`);
+        } catch (error: any) {
+          console.error('[MCP Init] Error during auto-connect:', error);
+        } finally {
+          setIsLoadingMcp(false);
+        }
+      }
+    };
+
+    initializeMcpServers();
+  }, [selectedProject?.id]);
+
+  // Listen for MCP authorization callback from Electron
+  useEffect(() => {
+    const electronWindow = window as any;
+    if (electronWindow.electronAPI?.onMcpAuthCallback) {
+      electronWindow.electronAPI.onMcpAuthCallback(async (data: { serverId?: string; error?: string }) => {
+        console.log('[MCP Auth] Callback received:', data);
+        if (data.error) {
+          setMcpError(data.error);
+        } else if (data.serverId && selectedProject?.id) {
+          // Fetch the server list to show the new server
+          // McpServerItem will handle auto-connecting
+          console.log('[MCP Auth] Fetching server list...');
+          const listResult = await mcpServerService.getMcpServers(selectedProject.id);
+
+          if (listResult.success && listResult.data) {
+            const servers = listResult.data as McpServer[];
+            setMcpServers(servers);
+
+            // Save to storage so the server persists
+            await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
+            console.log('[MCP Auth] Server added, auto-connect will be handled by component');
+          } else {
+            setMcpError(listResult.error || 'Failed to load MCP servers after authorization');
+          }
+        }
+      });
+
+      return () => {
+        electronWindow.electronAPI?.removeMcpAuthCallbackListener?.();
+      };
+    }
+  }, [selectedProject?.id]);
+
+  const loadMcpServers = async () => {
+    if (!selectedProject?.id) return;
+
+    setIsLoadingMcp(true);
+    setMcpError('');
+
+    try {
+      const result = await mcpServerService.getMcpServers(selectedProject.id);
+      if (result.success && result.data) {
+        const servers = result.data as McpServer[];
+        setMcpServers(servers);
+        // Save to local storage for persistence
+        await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
+      } else {
+        setMcpError(result.error || 'Failed to load MCP servers');
+      }
+    } catch (error: any) {
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsLoadingMcp(false);
+    }
+  };
+
+  const handleAddMcpServer = async () => {
+    if (!selectedProject?.id || !newMcpUrl.trim()) return;
+
+    setIsAddingMcp(true);
+    setMcpError('');
+
+    try {
+      // First, register the MCP server to determine auth type
+      console.log('[MCP] Registering server:', newMcpUrl.trim());
+      const registerResult = await mcpServerService.registerMcpServer(
+        selectedProject.id,
+        newMcpUrl.trim()
+      );
+
+      if (!registerResult.success || !registerResult.data) {
+        setMcpError(registerResult.error || 'Failed to register MCP server');
+        return;
+      }
+
+      const registrationData = registerResult.data as McpServerRegistrationResponse;
+      console.log('[MCP] Registration response:', registrationData);
+
+      const authType = registrationData.auth_type;
+
+      if (authType === 'oauth') {
+        // OAuth flow - redirect to auth URL (check multiple possible field names)
+        const responseData = registrationData as Record<string, any>;
+        const authUrl = responseData.auth_url || responseData.authorization_url || responseData.url || responseData.redirect_url;
+
+        console.log('[MCP] OAuth response data:', responseData);
+        console.log('[MCP] Auth URL:', authUrl);
+
+        if (authUrl) {
+          setNewMcpName('');
+          setNewMcpUrl('');
+          setShowAddMcpForm(false);
+
+          console.log('[MCP] OAuth flow - opening auth URL:', authUrl);
+          const electronWindow = window as any;
+          if (electronWindow.electronAPI?.openExternal) {
+            electronWindow.electronAPI.openExternal(authUrl);
+          } else {
+            window.open(authUrl, '_blank');
+          }
+        } else {
+          console.error('[MCP] OAuth required but no auth URL found in response:', responseData);
+          setMcpError('OAuth required but no authorization URL provided. Check console for details.');
+        }
+      } else if (authType === 'token') {
+        // Token flow - show token input
+        console.log('[MCP] Token flow - switching to token input mode');
+        setPendingServerUrl(newMcpUrl.trim());
+        setShowTokenInput(true);
+        setNewMcpUrl('');
+        setNewMcpName('');
+      } else {
+        // No auth required - server registered successfully, reload list
+        console.log('[MCP] No auth required - server registered');
+        setNewMcpName('');
+        setNewMcpUrl('');
+        setShowAddMcpForm(false);
+        loadMcpServers();
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error adding server:', error);
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleTokenSubmit = async () => {
+    if (!selectedProject?.id || !pendingServerUrl || !mcpToken.trim()) return;
+
+    setIsAddingMcp(true);
+    setMcpError('');
+
+    try {
+      console.log('[MCP] Submitting token for:', pendingServerUrl);
+      const result = await mcpServerService.authenticateWithToken(
+        selectedProject.id,
+        pendingServerUrl,
+        mcpToken.trim()
+      );
+
+      if (result.success) {
+        console.log('[MCP] Token authentication successful');
+        // Reset form state
+        setShowTokenInput(false);
+        setShowAddMcpForm(false);
+        setMcpToken('');
+        setPendingServerUrl('');
+        // Reload server list
+        loadMcpServers();
+      } else {
+        setMcpError(result.error || 'Failed to authenticate with token');
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error submitting token:', error);
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleCancelTokenInput = () => {
+    setShowTokenInput(false);
+    setMcpToken('');
+    setPendingServerUrl('');
+    setMcpError('');
+  };
+
+  const handleDeleteMcpServer = async (server: McpServer) => {
+    if (!selectedProject?.id || !server.id) return;
+
+    try {
+      const result = await mcpServerService.deleteMcpServer(selectedProject.id, server.id);
+      if (result.success) {
+        setMcpServers(prev => prev.filter(s => s.id !== server.id));
+        setMcpToDelete(null);
+        // Remove from local storage
+        await mcpServerService.removeMcpServerFromStorage(selectedProject.id, server.id);
+      } else {
+        setMcpError(result.error || 'Failed to delete MCP server');
+      }
+    } catch (error: any) {
+      setMcpError(error.message || 'An error occurred');
+    }
+  };
+
 
   const validateAndUploadFile = async (file: File) => {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
@@ -252,7 +503,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Info' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && currentProjectData.documents.length > 0 && (
               <button
@@ -296,6 +547,15 @@ export default function RightSidebar({
                     <span>Saved</span>
                   </>
                 )}
+              </button>
+            )}
+            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && !showTokenInput && (
+              <button
+                onClick={() => setShowAddMcpForm(true)}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
+              >
+                <AddBoxIcon sx={{ fontSize: 12 }} />
+                <span>Add</span>
               </button>
             )}
           </Box>
@@ -582,6 +842,363 @@ export default function RightSidebar({
           )}
         </div>
         )}
+
+        {/* MCP Servers Section */}
+        {activeSection === 'mcp' && (
+          <div className="space-y-3">
+            {/* Add MCP Server Form */}
+            {showAddMcpForm && !showTokenInput && (
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <TextField
+                  size="small"
+                  placeholder="Server name (optional)"
+                  value={newMcpName}
+                  onChange={(e) => setNewMcpName(e.target.value)}
+                  fullWidth
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                />
+                <TextField
+                  size="small"
+                  placeholder="Server URL (e.g., https://mcp.example.com)"
+                  value={newMcpUrl}
+                  onChange={(e) => setNewMcpUrl(e.target.value)}
+                  fullWidth
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                />
+                <Box className="flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setShowAddMcpForm(false);
+                      setNewMcpName('');
+                      setNewMcpUrl('');
+                      setMcpError('');
+                    }}
+                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddMcpServer}
+                    disabled={isAddingMcp || !newMcpUrl.trim()}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
+                      isAddingMcp || !newMcpUrl.trim()
+                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
+                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
+                    }`}
+                  >
+                    {isAddingMcp ? (
+                      <>
+                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <span>Adding...</span>
+                      </>
+                    ) : (
+                      <span>Add Server</span>
+                    )}
+                  </button>
+                </Box>
+              </Box>
+            )}
+
+            {/* Token Input Form */}
+            {showTokenInput && (
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(236, 72, 153, 0.3)',
+                }}
+              >
+                <Box className="text-xs text-gray-300 mb-3">
+                  <span className="text-pink-400 font-medium">Token Required</span>
+                  <br />
+                  <span className="text-gray-500 text-[10px]">
+                    Server: {pendingServerUrl}
+                  </span>
+                </Box>
+                <TextField
+                  size="small"
+                  placeholder="Enter authentication token"
+                  value={mcpToken}
+                  onChange={(e) => setMcpToken(e.target.value)}
+                  type="password"
+                  fullWidth
+                  autoFocus
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.5)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && mcpToken.trim()) {
+                      handleTokenSubmit();
+                    }
+                  }}
+                />
+                <Box className="flex justify-end gap-2">
+                  <button
+                    onClick={handleCancelTokenInput}
+                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleTokenSubmit}
+                    disabled={isAddingMcp || !mcpToken.trim()}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
+                      isAddingMcp || !mcpToken.trim()
+                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
+                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
+                    }`}
+                  >
+                    {isAddingMcp ? (
+                      <>
+                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <span>Authenticating...</span>
+                      </>
+                    ) : (
+                      <span>Submit Token</span>
+                    )}
+                  </button>
+                </Box>
+              </Box>
+            )}
+
+            {/* Error Message */}
+            {mcpError && (
+              <Box className="text-red-400 text-xs text-center py-2">
+                {mcpError}
+              </Box>
+            )}
+
+            {/* Loading State */}
+            {isLoadingMcp ? (
+              <Box className="flex items-center justify-center py-8">
+                <CircularProgress size={24} sx={{ color: '#ec4899' }} />
+              </Box>
+            ) : mcpServers.length > 0 ? (
+              /* Server List */
+              <Box className="space-y-2">
+                {mcpServers.map((server, index) => (
+                  <McpServerItem
+                    key={server.id || `mcp-${index}`}
+                    server={server}
+                    projectId={selectedProject?.id || ''}
+                    onDelete={handleDeleteMcpServer}
+                    onServerUpdate={(updatedServer) => {
+                      setMcpServers(prev => {
+                        const newServers = prev.map(s =>
+                          s.id === updatedServer.id ? updatedServer : s
+                        );
+                        // Save to storage when server is updated
+                        if (selectedProject?.id) {
+                          mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                        }
+                        return newServers;
+                      });
+                    }}
+                  />
+                ))}
+              </Box>
+            ) : (
+              /* Empty State */
+              <Box className="flex flex-col items-center justify-center py-8 text-center">
+                <CableIcon sx={{ fontSize: 48, color: '#4b5563', mb: 2 }} />
+                <Box className="text-gray-400 text-sm mb-1">
+                  No MCP servers configured
+                </Box>
+                <Box className="text-gray-500 text-xs">
+                  Add an MCP server to extend capabilities
+                </Box>
+              </Box>
+            )}
+
+            {/* Help Text */}
+            <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
+              MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
+            </p>
+          </div>
+        )}
+
+        {/* Settings/Project Info Section */}
+        {activeSection === 'settings' && selectedProject && currentProjectData && (
+          <div className="space-y-4">
+            {/* Stats Grid */}
+            <Box className="grid grid-cols-2 gap-3">
+              {/* Documents Count */}
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: 'rgba(236, 72, 153, 0.08)',
+                  border: '1px solid rgba(236, 72, 153, 0.15)',
+                }}
+              >
+                <Box className="flex items-center gap-2 mb-1">
+                  <ArticleOutlinedIcon sx={{ fontSize: 14, color: '#ec4899' }} />
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Docs</span>
+                </Box>
+                <div className="text-xl font-semibold text-white">
+                  {currentProjectData.documents?.length || 0}
+                </div>
+              </Box>
+
+              {/* Inference - 1.0 = excellent (green), < 0.5 = poor (red) */}
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: (selectedProject.inference ?? 1.0) >= 0.8
+                    ? 'rgba(34, 197, 94, 0.08)'
+                    : (selectedProject.inference ?? 1.0) >= 0.5
+                      ? 'rgba(234, 179, 8, 0.08)'
+                      : 'rgba(239, 68, 68, 0.08)',
+                  border: (selectedProject.inference ?? 1.0) >= 0.8
+                    ? '1px solid rgba(34, 197, 94, 0.15)'
+                    : (selectedProject.inference ?? 1.0) >= 0.5
+                      ? '1px solid rgba(234, 179, 8, 0.15)'
+                      : '1px solid rgba(239, 68, 68, 0.15)',
+                }}
+              >
+                <Box className="flex items-center gap-2 mb-1">
+                  <TuneIcon sx={{ fontSize: 14, color: (selectedProject.inference ?? 1.0) >= 0.8 ? '#22c55e' : (selectedProject.inference ?? 1.0) >= 0.5 ? '#eab308' : '#ef4444' }} />
+                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Inference</span>
+                </Box>
+                <div
+                  className={`text-xl font-semibold ${
+                    (selectedProject.inference ?? 1.0) >= 0.8
+                      ? 'text-green-400'
+                      : (selectedProject.inference ?? 1.0) >= 0.5
+                        ? 'text-yellow-400'
+                        : 'text-red-400'
+                  }`}
+                >
+                  {(selectedProject.inference ?? 1.0).toFixed(1)}
+                </div>
+              </Box>
+            </Box>
+
+            {/* Additional Info */}
+            <Box
+              sx={{
+                padding: '16px',
+                borderRadius: '8px',
+                bgcolor: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+              }}
+            >
+              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Details</div>
+
+              <Box className="space-y-3">
+                {/* Created Date */}
+                {selectedProject.created_at && (
+                  <Box className="flex items-center justify-between">
+                    <Box className="flex items-center gap-2">
+                      <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                      <span className="text-xs text-gray-400">Created</span>
+                    </Box>
+                    <span className="text-xs text-gray-300">
+                      {new Date(selectedProject.created_at).toLocaleDateString()}
+                    </span>
+                  </Box>
+                )}
+
+                {/* Last Modified */}
+                {selectedProject.updated_at && (
+                  <Box className="flex items-center justify-between">
+                    <Box className="flex items-center gap-2">
+                      <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                      <span className="text-xs text-gray-400">Last Modified</span>
+                    </Box>
+                    <span className="text-xs text-gray-300">
+                      {new Date(selectedProject.updated_at).toLocaleDateString()}
+                    </span>
+                  </Box>
+                )}
+
+                {/* Memory Status */}
+                <Box className="flex items-center justify-between">
+                  <Box className="flex items-center gap-2">
+                    <MemoryIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                    <span className="text-xs text-gray-400">Memory</span>
+                  </Box>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    currentProjectData.config?.memory !== false
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
+                    {currentProjectData.config?.memory !== false ? 'Enabled' : 'Disabled'}
+                  </span>
+                </Box>
+
+                {/* Rules Status */}
+                <Box className="flex items-center justify-between">
+                  <Box className="flex items-center gap-2">
+                    <RuleOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
+                    <span className="text-xs text-gray-400">Rules</span>
+                  </Box>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    projectRules && projectRules.trim()
+                      ? 'bg-pink-500/20 text-pink-400'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
+                    {projectRules && projectRules.trim() ? 'Configured' : 'Not Set'}
+                  </span>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* Help Text */}
+            <p className="text-gray-500 text-[10px] leading-relaxed">
+              Project info shows an overview of your project settings and statistics. Use the other tabs to manage documents, rules, and MCP servers.
+            </p>
+          </div>
+        )}
         </Box>
       )}
 
@@ -653,6 +1270,60 @@ export default function RightSidebar({
               size="small"
             >
               <RuleOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="MCP Servers" placement="left">
+          <span>
+            <IconButton
+              onClick={() => setActiveSection(activeSection === 'mcp' ? null : 'mcp')}
+              sx={{
+                color: activeSection === 'mcp' ? '#ec4899' : '#9ca3af',
+                bgcolor: activeSection === 'mcp' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: '#ec4899',
+                  bgcolor: 'rgba(236, 72, 153, 0.1)',
+                },
+              }}
+              size="small"
+            >
+              <CableIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        {/* Spacer to push settings to bottom */}
+        <Box sx={{ flex: 1 }} />
+
+        <Tooltip title={selectedProject?.system ? "Project Info (Disabled for General)" : "Project Info"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+            <IconButton
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'settings' ? null : 'settings')}
+              disabled={selectedProject?.system}
+              sx={{
+                color: activeSection === 'settings' ? '#ec4899' : '#9ca3af',
+                bgcolor: activeSection === 'settings' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                '&:hover': {
+                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                },
+                '&.Mui-disabled': {
+                  color: '#6b7280',
+                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <InfoOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
