@@ -65,6 +65,19 @@ export interface McpRemoteConfig {
   token_endpoint?: string;
 }
 
+export interface McpServerRegistrationResponse {
+  id?: string;
+  name?: string;
+  auth_type: 'oauth' | 'token' | 'none';
+  auth_url?: string;  // For OAuth flow - URL to redirect user
+  authorization_url?: string;  // Alternative field name for auth URL
+  url?: string;  // Another alternative field name
+  redirect_url?: string;  // Another alternative field name
+  token_endpoint?: string;  // For token flow
+  server_info?: McpServerInfo;
+  message?: string;
+}
+
 export interface McpServer {
   id: string;
   name: string;
@@ -86,6 +99,45 @@ interface McpServerServiceResponse {
   data?: McpServer | McpServer[];
   error?: string;
 }
+
+interface McpServerRegistrationServiceResponse {
+  success: boolean;
+  data?: McpServerRegistrationResponse;
+  error?: string;
+}
+
+/**
+ * Extract error message from API response
+ * Handles FastAPI/Pydantic validation errors which can be arrays of objects
+ */
+const extractErrorMessage = (errorData: any, fallbackMessage: string): string => {
+  if (!errorData) return fallbackMessage;
+
+  // If detail is a string, return it
+  if (typeof errorData.detail === 'string') {
+    return errorData.detail;
+  }
+
+  // If detail is an array (Pydantic validation errors), extract messages
+  if (Array.isArray(errorData.detail)) {
+    const messages = errorData.detail
+      .map((err: any) => err.msg || err.message || JSON.stringify(err))
+      .filter(Boolean);
+    return messages.length > 0 ? messages.join('; ') : fallbackMessage;
+  }
+
+  // If detail is an object, try to get msg or message
+  if (typeof errorData.detail === 'object' && errorData.detail !== null) {
+    return errorData.detail.msg || errorData.detail.message || JSON.stringify(errorData.detail);
+  }
+
+  // Try message field
+  if (typeof errorData.message === 'string') {
+    return errorData.message;
+  }
+
+  return fallbackMessage;
+};
 
 /**
  * Get all MCP servers for a project
@@ -124,13 +176,146 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to fetch MCP servers'
+      error: extractErrorMessage(errorData, 'Failed to fetch MCP servers')
     };
   } catch (error: any) {
     console.error('Error fetching MCP servers:', error);
     return {
       success: false,
       error: error.message || 'An error occurred while fetching MCP servers'
+    };
+  }
+};
+
+/**
+ * Register an MCP server - determines whether OAuth or token flow is needed
+ * @param projectId - ID of the project
+ * @param serverUrl - URL of the remote MCP server
+ * @returns Promise with registration response indicating auth_type and relevant data
+ */
+const registerMcpServer = async (projectId: string, serverUrl: string): Promise<McpServerRegistrationServiceResponse> => {
+  try {
+    if (!projectId) {
+      return {
+        success: false,
+        error: 'Project ID is required'
+      };
+    }
+
+    if (!serverUrl || !serverUrl.trim()) {
+      return {
+        success: false,
+        error: 'Server URL is required'
+      };
+    }
+
+    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/register`;
+    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        server_url: serverUrl.trim()
+      })
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.status === 200 || response.status === 201) {
+      const data = await response.json();
+      return {
+        success: true,
+        data
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Failed to register MCP server')
+    };
+  } catch (error: any) {
+    console.error('Error registering MCP server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while registering the MCP server'
+    };
+  }
+};
+
+/**
+ * Authenticate MCP server with a token
+ * @param projectId - ID of the project
+ * @param serverUrl - URL of the remote MCP server
+ * @param token - Authentication token
+ * @returns Promise with server data
+ */
+const authenticateWithToken = async (projectId: string, serverUrl: string, token: string): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId) {
+      return {
+        success: false,
+        error: 'Project ID is required'
+      };
+    }
+
+    if (!serverUrl || !serverUrl.trim()) {
+      return {
+        success: false,
+        error: 'Server URL is required'
+      };
+    }
+
+    if (!token || !token.trim()) {
+      return {
+        success: false,
+        error: 'Token is required'
+      };
+    }
+
+    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/token-auth`;
+    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        server_url: serverUrl.trim(),
+        token: token.trim()
+      })
+    });
+
+    if (!response) {
+      return {
+        success: false,
+        error: 'No response from server'
+      };
+    }
+
+    if (response.status === 200 || response.status === 201) {
+      const data = await response.json();
+      return {
+        success: true,
+        data
+      };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Failed to authenticate with token')
+    };
+  } catch (error: any) {
+    console.error('Error authenticating with token:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while authenticating with token'
     };
   }
 };
@@ -195,7 +380,7 @@ const initiateOAuth = async (projectId: string, name: string, serverUrl: string)
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to initiate OAuth'
+      error: extractErrorMessage(errorData, 'Failed to initiate OAuth')
     };
   } catch (error: any) {
     console.error('Error initiating OAuth:', error);
@@ -268,7 +453,7 @@ const createMcpServer = async (projectId: string, name: string, url: string): Pr
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to create MCP server'
+      error: extractErrorMessage(errorData, 'Failed to create MCP server')
     };
   } catch (error: any) {
     console.error('Error creating MCP server:', error);
@@ -324,7 +509,7 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to fetch MCP server'
+      error: extractErrorMessage(errorData, 'Failed to fetch MCP server')
     };
   } catch (error: any) {
     console.error('Error fetching MCP server:', error);
@@ -379,7 +564,7 @@ const deleteMcpServer = async (projectId: string, serverId: string): Promise<Mcp
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to delete MCP server'
+      error: extractErrorMessage(errorData, 'Failed to delete MCP server')
     };
   } catch (error: any) {
     console.error('Error deleting MCP server:', error);
@@ -435,7 +620,7 @@ const connectMcpServer = async (projectId: string, serverId: string): Promise<Mc
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: errorData.detail || errorData.message || 'Failed to connect to MCP server'
+      error: extractErrorMessage(errorData, 'Failed to connect to MCP server')
     };
   } catch (error: any) {
     console.error('Error connecting to MCP server:', error);
@@ -604,6 +789,8 @@ export const mcpServerService = {
   getMcpServer,
   deleteMcpServer,
   connectMcpServer,
+  registerMcpServer,
+  authenticateWithToken,
   initiateOAuth,
   // Storage methods
   saveMcpServersToStorage,

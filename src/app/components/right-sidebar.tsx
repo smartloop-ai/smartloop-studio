@@ -16,7 +16,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { userService } from '@/app/services/user.service';
 import { API_ENDPOINT } from '@/app/constants';
-import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer, McpServerRegistrationResponse } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -61,6 +61,10 @@ export default function RightSidebar({
   const [newMcpName, setNewMcpName] = useState('');
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
+  // Token authentication state
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  const [mcpToken, setMcpToken] = useState('');
+  const [pendingServerUrl, setPendingServerUrl] = useState('');
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
 
@@ -243,53 +247,115 @@ export default function RightSidebar({
   };
 
   const handleAddMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpName.trim() || !newMcpUrl.trim()) return;
+    if (!selectedProject?.id || !newMcpUrl.trim()) return;
 
     setIsAddingMcp(true);
     setMcpError('');
 
     try {
-      // Initiate OAuth for the remote MCP server
-      const result = await mcpServerService.initiateOAuth(
+      // First, register the MCP server to determine auth type
+      console.log('[MCP] Registering server:', newMcpUrl.trim());
+      const registerResult = await mcpServerService.registerMcpServer(
         selectedProject.id,
-        newMcpName.trim(),
         newMcpUrl.trim()
       );
 
-      if (result.success && result.data) {
-        const responseData = result.data as Record<string, any>;
+      if (!registerResult.success || !registerResult.data) {
+        setMcpError(registerResult.error || 'Failed to register MCP server');
+        return;
+      }
 
-        setNewMcpName('');
-        setNewMcpUrl('');
-        setShowAddMcpForm(false);
+      const registrationData = registerResult.data as McpServerRegistrationResponse;
+      console.log('[MCP] Registration response:', registrationData);
 
-        // Open auth URL for OAuth authentication (check common field names)
-        const authUrl = responseData.authorization_url || responseData.auth_url || responseData.url || responseData.redirect_url;
+      const authType = registrationData.auth_type;
 
-        console.log('OAuth response:', responseData);
-        console.log('Auth URL:', authUrl);
+      if (authType === 'oauth') {
+        // OAuth flow - redirect to auth URL (check multiple possible field names)
+        const responseData = registrationData as Record<string, any>;
+        const authUrl = responseData.auth_url || responseData.authorization_url || responseData.url || responseData.redirect_url;
+
+        console.log('[MCP] OAuth response data:', responseData);
+        console.log('[MCP] Auth URL:', authUrl);
 
         if (authUrl) {
-          // Use Electron API to open in external browser
+          setNewMcpName('');
+          setNewMcpUrl('');
+          setShowAddMcpForm(false);
+
+          console.log('[MCP] OAuth flow - opening auth URL:', authUrl);
           const electronWindow = window as any;
           if (electronWindow.electronAPI?.openExternal) {
             electronWindow.electronAPI.openExternal(authUrl);
           } else {
-            // Fallback for non-Electron environment
             window.open(authUrl, '_blank');
           }
         } else {
-          // If no auth URL, maybe the server was added directly - reload list
-          loadMcpServers();
+          console.error('[MCP] OAuth required but no auth URL found in response:', responseData);
+          setMcpError('OAuth required but no authorization URL provided. Check console for details.');
         }
+      } else if (authType === 'token') {
+        // Token flow - show token input
+        console.log('[MCP] Token flow - switching to token input mode');
+        setPendingServerUrl(newMcpUrl.trim());
+        setShowTokenInput(true);
+        setNewMcpUrl('');
+        setNewMcpName('');
       } else {
-        setMcpError(result.error || 'Failed to initiate OAuth');
+        // No auth required - server registered successfully, reload list
+        console.log('[MCP] No auth required - server registered');
+        setNewMcpName('');
+        setNewMcpUrl('');
+        setShowAddMcpForm(false);
+        loadMcpServers();
       }
     } catch (error: any) {
+      console.error('[MCP] Error adding server:', error);
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
     }
+  };
+
+  const handleTokenSubmit = async () => {
+    if (!selectedProject?.id || !pendingServerUrl || !mcpToken.trim()) return;
+
+    setIsAddingMcp(true);
+    setMcpError('');
+
+    try {
+      console.log('[MCP] Submitting token for:', pendingServerUrl);
+      const result = await mcpServerService.authenticateWithToken(
+        selectedProject.id,
+        pendingServerUrl,
+        mcpToken.trim()
+      );
+
+      if (result.success) {
+        console.log('[MCP] Token authentication successful');
+        // Reset form state
+        setShowTokenInput(false);
+        setShowAddMcpForm(false);
+        setMcpToken('');
+        setPendingServerUrl('');
+        // Reload server list
+        loadMcpServers();
+      } else {
+        setMcpError(result.error || 'Failed to authenticate with token');
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error submitting token:', error);
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleCancelTokenInput = () => {
+    setShowTokenInput(false);
+    setMcpToken('');
+    setPendingServerUrl('');
+    setMcpError('');
   };
 
   const handleDeleteMcpServer = async (server: McpServer) => {
@@ -478,7 +544,7 @@ export default function RightSidebar({
                 )}
               </button>
             )}
-            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && (
+            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && !showTokenInput && (
               <button
                 onClick={() => setShowAddMcpForm(true)}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -776,7 +842,7 @@ export default function RightSidebar({
         {activeSection === 'mcp' && (
           <div className="space-y-3">
             {/* Add MCP Server Form */}
-            {showAddMcpForm && (
+            {showAddMcpForm && !showTokenInput && (
               <Box
                 sx={{
                   padding: '12px',
@@ -787,7 +853,7 @@ export default function RightSidebar({
               >
                 <TextField
                   size="small"
-                  placeholder="Server name"
+                  placeholder="Server name (optional)"
                   value={newMcpName}
                   onChange={(e) => setNewMcpName(e.target.value)}
                   fullWidth
@@ -843,9 +909,9 @@ export default function RightSidebar({
                   </button>
                   <button
                     onClick={handleAddMcpServer}
-                    disabled={isAddingMcp || !newMcpName.trim() || !newMcpUrl.trim()}
+                    disabled={isAddingMcp || !newMcpUrl.trim()}
                     className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || !newMcpName.trim() || !newMcpUrl.trim()
+                      isAddingMcp || !newMcpUrl.trim()
                         ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
                         : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
                     }`}
@@ -857,6 +923,81 @@ export default function RightSidebar({
                       </>
                     ) : (
                       <span>Add Server</span>
+                    )}
+                  </button>
+                </Box>
+              </Box>
+            )}
+
+            {/* Token Input Form */}
+            {showTokenInput && (
+              <Box
+                sx={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  bgcolor: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(236, 72, 153, 0.3)',
+                }}
+              >
+                <Box className="text-xs text-gray-300 mb-3">
+                  <span className="text-pink-400 font-medium">Token Required</span>
+                  <br />
+                  <span className="text-gray-500 text-[10px]">
+                    Server: {pendingServerUrl}
+                  </span>
+                </Box>
+                <TextField
+                  size="small"
+                  placeholder="Enter authentication token"
+                  value={mcpToken}
+                  onChange={(e) => setMcpToken(e.target.value)}
+                  type="password"
+                  fullWidth
+                  autoFocus
+                  sx={{
+                    mb: 1.5,
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
+                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.5)' },
+                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: '#fff',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                    },
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && mcpToken.trim()) {
+                      handleTokenSubmit();
+                    }
+                  }}
+                />
+                <Box className="flex justify-end gap-2">
+                  <button
+                    onClick={handleCancelTokenInput}
+                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleTokenSubmit}
+                    disabled={isAddingMcp || !mcpToken.trim()}
+                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
+                      isAddingMcp || !mcpToken.trim()
+                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
+                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
+                    }`}
+                  >
+                    {isAddingMcp ? (
+                      <>
+                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <span>Authenticating...</span>
+                      </>
+                    ) : (
+                      <span>Submit Token</span>
                     )}
                   </button>
                 </Box>

@@ -473,9 +473,9 @@ export default function Chat(props: {
           fullText += content;
 
           // Check if the response contains a memory/context limit error
-          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit'))) {
+          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
             // Display a clean error message instead of the raw error
-            const cleanErrorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
+            const cleanErrorMessage = 'This conversation has exceeded its context limit. Please start a new conversation to continue.';
             setMessages((prevMessages: any) =>
               prevMessages.map((msg: any) =>
                 msg.id === responseId ? {
