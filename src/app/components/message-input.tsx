@@ -62,10 +62,13 @@ export default function MessageInput({
   return (
     <Box>
       <Box
-        className="px-4 md:px-6 py-3 md:py-4 border rounded-lg shadow-lg transition-all relative border-gray-800"
+        className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
         sx={{
           bgcolor: 'rgba(17, 24, 39, 0.5)',
-          borderLeft: '3px solid #ec4899',
+          border: '1px solid #1f2937',
+          '&:focus-within': {
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+          },
         }}
       >
         <InputBase
