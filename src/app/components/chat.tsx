@@ -803,7 +803,7 @@ export default function Chat(props: {
                 return (
                   <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
-                      <Box className="flex items-start gap-3 max-w-3xl">
+                      <Box className="flex items-start gap-3 w-full">
                         <Box className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 relative">
                           <Box
                             className="w-3 h-3 rounded-full bg-gradient-to-br from-pink-500 to-purple-500"
