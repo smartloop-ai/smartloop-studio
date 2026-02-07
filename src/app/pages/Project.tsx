@@ -158,6 +158,10 @@ export default function Project() {
       const updatedUser = await userService.get();
       setUser(updatedUser);
 
+      // Dispatch events to refresh sidebar conversations and projects
+      window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+      window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: id } }));
+
       setIsLoading(false);
 
       // send to home
