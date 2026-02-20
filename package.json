@@ -10,7 +10,8 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "download-slp": "node scripts/download-slp.js",
+    "build": "node scripts/download-slp.js && tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "electron": "electron .",
