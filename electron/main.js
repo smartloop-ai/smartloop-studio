@@ -1,5 +1,7 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 
@@ -16,6 +18,7 @@ if (process.env.NODE_ENV === 'development') {
 let mainWindow;
 let splashWindow;
 let tokenRefreshInterval = null;
+let localServicePort = null;
 
 // Token refresh configuration
 const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes (before 15-min expiry)
@@ -72,6 +75,122 @@ ipcMain.handle('storage-has', (event, key) => {
 
 ipcMain.handle('storage-get-all', () => {
   return store.store;
+});
+
+// IPC: save a file buffer to a temp directory so the local SLP service can read it by path
+ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
+  const tmpDir = os.tmpdir();
+  const filePath = path.join(tmpDir, fileName);
+  fs.writeFileSync(filePath, Buffer.from(buffer));
+  return filePath;
+});
+
+// --- Local SLP service helpers ---
+
+function getSlpDir() {
+  return path.join(os.homedir(), '.slp');
+}
+
+function readLocalServicePort() {
+  try {
+    const portFile = path.join(getSlpDir(), 'server.port');
+    const portStr = fs.readFileSync(portFile, 'utf-8').trim();
+    const port = parseInt(portStr, 10);
+    if (!isNaN(port) && port > 0) {
+      console.log('[SLP] Local service port:', port);
+      return port;
+    }
+  } catch (error) {
+    console.warn('[SLP] Could not read server.port:', error.message);
+  }
+  return null;
+}
+
+function getLocalBaseUrl() {
+  return localServicePort ? `http://localhost:${localServicePort}` : null;
+}
+
+// IPC: get local API URL
+ipcMain.handle('get-local-api-url', async () => {
+  if (!localServicePort) {
+    localServicePort = readLocalServicePort();
+  }
+  return getLocalBaseUrl();
+});
+
+// IPC: get SLP config
+ipcMain.handle('get-slp-config', async () => {
+  try {
+    const configPath = path.join(getSlpDir(), 'config.json');
+    const data = fs.readFileSync(configPath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.warn('[SLP] Could not read config.json:', error.message);
+    return null;
+  }
+});
+
+// Model loading helper
+async function loadModel(baseUrl) {
+  try {
+    console.log('[SLP] Checking model status...');
+    const healthRes = await fetch(`${baseUrl}/health`);
+    const health = await healthRes.json();
+
+    if (health.model_loaded) {
+      console.log('[SLP] Model already loaded');
+      return true;
+    }
+
+    console.log('[SLP] Loading model...');
+    const loadRes = await fetch(`${baseUrl}/v1/models/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'inference', model_name: 'gemma3-1b' })
+    });
+
+    if (loadRes.ok) {
+      console.log('[SLP] Model loaded successfully');
+      return true;
+    } else {
+      console.error('[SLP] Model load failed:', loadRes.status);
+      return false;
+    }
+  } catch (error) {
+    console.error('[SLP] Error loading model:', error.message);
+    return false;
+  }
+}
+
+// Model unloading helper
+async function unloadModel() {
+  const baseUrl = getLocalBaseUrl();
+  if (!baseUrl) return;
+
+  try {
+    console.log('[SLP] Unloading model...');
+    await fetch(`${baseUrl}/v1/models/unload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    console.log('[SLP] Model unloaded');
+  } catch (error) {
+    console.warn('[SLP] Error unloading model:', error.message);
+  }
+}
+
+// IPC: unload model (called from renderer)
+ipcMain.handle('unload-model', async () => {
+  await unloadModel();
+  return { success: true };
+});
+
+// IPC: load model (called from renderer)
+ipcMain.handle('load-model', async () => {
+  const baseUrl = getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  const result = await loadModel(baseUrl);
+  return { success: result };
 });
 
 // Register custom protocol for OAuth callback
@@ -291,79 +410,56 @@ ipcMain.handle('refresh-token', async (event, token) => {
   }
 });
 
-// Initialize system project on app load
+// Initialize default project on app load (local-first)
 ipcMain.handle('initialize-system-project', async (event, token) => {
-  console.log('[SystemProject] Initializing system project...');
+  console.log('[SystemProject] Initializing default project on local SLP server...');
+
+  const baseUrl = getLocalBaseUrl();
+  if (!baseUrl) {
+    console.warn('[SystemProject] No local service available, skipping');
+    return { success: false, error: 'No local service' };
+  }
 
   try {
-    // First, check if system project already exists
-    const getUserUrl = `${BASE_URL}/v1/users/me`;
-    const userResponse = await fetch(getUserUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+    // Check if any projects exist on local server
+    const listRes = await fetch(`${baseUrl}/v1/projects`);
+    if (listRes.ok) {
+      const data = await listRes.json();
+      const projects = Array.isArray(data) ? data : (data.projects || []);
+      if (projects.length > 0) {
+        // Check if "General Chat" already exists
+        const existing = projects.find(p => p.name === SYSTEM_PROJECT_NAME || p.title === SYSTEM_PROJECT_NAME);
+        if (existing) {
+          console.log('[SystemProject] Default project already exists:', existing.id);
+          return { success: true, project: existing, existed: true };
+        }
+        // Projects exist but no "General Chat" — still create it
+        console.log('[SystemProject] Projects exist but no default project found, creating...');
       }
-    });
-
-    if (!userResponse.ok) {
-      console.error('[SystemProject] Failed to get user data:', userResponse.status);
-      return { success: false, error: 'Failed to get user data' };
     }
 
-    const userData = await userResponse.json();
-    const systemProject = userData.projects?.find(p => p.system === true);
-
-    if (systemProject) {
-      console.log('[SystemProject] System project already exists:', systemProject.id);
-
-      if (systemProject.title !== SYSTEM_PROJECT_NAME) {
-        systemProject.title = SYSTEM_PROJECT_NAME;
-
-        console.log('[SystemProject] Updating system project title to:', SYSTEM_PROJECT_NAME);
-        const updateUrl = `${BASE_URL}/v1/projects/${systemProject.id}`;
-        await fetch(updateUrl, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            title: systemProject.title
-          })
-        });
-      }
-
-      return { success: true, project: systemProject, existed: true };
-    }
-
-    // Create system project if it doesn't exist
-    console.log('[SystemProject] Creating new system project...');
-    const createUrl = `${BASE_URL}/v1/projects`;
-    const createResponse = await fetch(createUrl, {
+    // No projects exist, create default one
+    console.log('[SystemProject] Creating default project...');
+    const createRes = await fetch(`${baseUrl}/v1/projects`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: SYSTEM_PROJECT_NAME,
-        temperature: 0.3,
-        system: true
+        name: SYSTEM_PROJECT_NAME,
+        description: ''
       })
     });
 
-    if (createResponse.ok) {
-      const project = await createResponse.json();
-      console.log('[SystemProject] System project created successfully:', project.id);
+    if (createRes.ok) {
+      const project = await createRes.json();
+      console.log('[SystemProject] Default project created:', project.id);
       return { success: true, project, existed: false };
     } else {
-      const errorText = await createResponse.text();
-      console.error('[SystemProject] Failed to create system project:', createResponse.status, errorText);
+      const errorText = await createRes.text();
+      console.error('[SystemProject] Failed to create default project:', createRes.status, errorText);
       return { success: false, error: errorText };
     }
   } catch (error) {
-    console.error('[SystemProject] Error initializing system project:', error);
+    console.error('[SystemProject] Error initializing default project:', error);
     return { success: false, error: error.message };
   }
 });
@@ -510,7 +606,7 @@ if (!gotTheLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     console.log('[OAuth] App is ready');
     console.log('[OAuth] Process args:', process.argv);
 
@@ -527,6 +623,25 @@ if (!gotTheLock) {
 
     // Show splash screen first
     createSplashScreen();
+
+    // Read local service port and load model during splash
+    localServicePort = readLocalServicePort();
+    const baseUrl = getLocalBaseUrl();
+
+    if (baseUrl) {
+      // Update splash text
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.webContents.executeJavaScript(
+          `document.querySelector('.loading-text').textContent = 'Warming up...'`
+        ).catch(() => {});
+      }
+
+      try {
+        await loadModel(baseUrl);
+      } catch (error) {
+        console.warn('[SLP] Model init failed during splash, proceeding anyway:', error.message);
+      }
+    }
 
     // Create main window (hidden)
     createWindow();
@@ -605,6 +720,15 @@ function handleOAuthCallback(url) {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('before-quit', async (event) => {
+  // Unload model before quitting
+  if (getLocalBaseUrl()) {
+    event.preventDefault();
+    await unloadModel();
+    app.exit(0);
   }
 });
 

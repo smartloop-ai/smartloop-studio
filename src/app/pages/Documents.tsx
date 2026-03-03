@@ -2,7 +2,7 @@ import '@/app/styles/documents.css';
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Box, IconButton, Chip, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Tooltip } from '@mui/material';
+import { Box, IconButton, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Tooltip } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderIcon from '@mui/icons-material/Folder';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -12,12 +12,10 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import AddIcon from '@mui/icons-material/Add';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
-import WarningIcon from '@mui/icons-material/Warning';
 import MobileNav from '@/app/components/mobile-nav';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
-import { API_ENDPOINT } from '@/app/constants';
+import { documentService } from '@/app/services/document.service';
 import Sidebar from '@/app/components/sidebar';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
@@ -48,24 +46,22 @@ function DocumentsListContent() {
 
     const interval = setInterval(async () => {
       try {
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          // Force a new object reference to trigger React re-render
-          setUser({ ...updatedUser });
+        const result = await documentService.getLocalDocuments();
+        if (result.success && result.data) {
+          const newDocs: any[] = result.data.documents || result.data;
+
+          // Update the documents for the current project in user state
+          if (projectId && user) {
+            const updatedProjects = (user.projects || []).map((p: any) => {
+              if (p.id === projectId) return { ...p, documents: newDocs };
+              return p;
+            });
+            setUser({ ...user, projects: updatedProjects });
+          }
 
           // Check if all documents are processed
-          let hasProcessing = false;
-          (updatedUser.projects || []).forEach((project: any) => {
-            if (!projectId || project.id === projectId) {
-              (project.documents || []).forEach((doc: any) => {
-                if (!doc.num_of_tokens || doc.num_of_tokens === 0) {
-                  hasProcessing = true;
-                }
-              });
-            }
-          });
+          const hasProcessing = false;
 
-          // Stop polling if no documents are processing
           if (!hasProcessing) {
             stopPolling();
           }
@@ -102,7 +98,7 @@ function DocumentsListContent() {
             });
 
             // Check if this document is still processing
-            if (!doc.num_of_tokens || doc.num_of_tokens === 0) {
+            if (false) {
               hasProcessing = true;
             }
           });
@@ -132,14 +128,19 @@ function DocumentsListContent() {
   // Listen for document upload events to trigger polling
   useEffect(() => {
     const handleDocumentUploaded = async () => {
-      // Refresh user data immediately after upload
+      // Refresh document list from local API immediately after upload
       try {
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          // Start polling to check for processing completion
-          startPolling();
+        const result = await documentService.getLocalDocuments();
+        if (result.success && result.data && projectId && user) {
+          const newDocs: any[] = result.data.documents || result.data;
+          const updatedProjects = (user.projects || []).map((p: any) => {
+            if (p.id === projectId) return { ...p, documents: newDocs };
+            return p;
+          });
+          setUser({ ...user, projects: updatedProjects });
         }
+        // Start polling to check for processing completion
+        startPolling();
       } catch (error) {
         console.error('Error refreshing after document upload:', error);
       }
@@ -161,8 +162,10 @@ function DocumentsListContent() {
     if (searchQuery.trim()) {
       const searchLower = searchQuery.toLowerCase();
       documents = documents.filter((doc: any) => {
-        // Search in filename, name, title, description, and project name
+        // Search in path basename, filename, name, title, description, and project name
+        const pathBase = doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || '') : '';
         const searchableText = [
+          pathBase,
           doc.filename,
           doc.name,
           doc.title,
@@ -177,8 +180,8 @@ function DocumentsListContent() {
     // Apply sorting
     documents.sort((a: any, b: any) => {
       if (sortBy === 'name') {
-        const nameA = (a.filename || a.name || a.title || '').toLowerCase();
-        const nameB = (b.filename || b.name || b.title || '').toLowerCase();
+        const nameA = (a.path ? (a.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || '') : (a.filename || a.name || a.title || '')).toLowerCase();
+        const nameB = (b.path ? (b.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || '') : (b.filename || b.name || b.title || '')).toLowerCase();
         return nameA.localeCompare(nameB);
       } else {
         // Sort by last updated
@@ -190,19 +193,6 @@ function DocumentsListContent() {
 
     return documents;
   }, [allDocuments, searchQuery, sortBy]);
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  };
 
   const handleOpenUploadDialog = () => {
     setOpenUploadDialog(true);
@@ -251,35 +241,39 @@ function DocumentsListContent() {
       const project = user?.projects?.find((p: any) => p.id === documentToDelete.projectId);
       const isOnlyDocument = project && project.documents && project.documents.length === 1;
 
-      const url = `${API_ENDPOINT}/projects/${documentToDelete.projectId}/documents/${documentToDelete.id}`;
-      const response = await userService.makeAuthenticatedRequest(url, {
-        method: 'DELETE',
-      });
+      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
 
-      if (response && (response.status === 200 || response.status === 204)) {
+      if (deleteResult.success) {
         // If this was the only document, delete the project as well
         if (isOnlyDocument) {
           // Use project service to delete project and cleanup recent chats
-          const deleteResult = await projectService.deleteProject(documentToDelete.projectId);
+          const delProjResult = await projectService.deleteProject(documentToDelete.projectId);
 
-          if (deleteResult.success) {
-            // Refresh user data to get updated projects and documents
-            const updatedUser = await userService.get();
-            if (updatedUser) {
-              setUser(updatedUser);
+          if (delProjResult.success) {
+            // Remove deleted project from local state
+            if (user) {
+              const updatedProjects = (user.projects || []).filter(
+                (p: any) => p.id !== documentToDelete.projectId
+              );
+              setUser({ ...user, projects: updatedProjects });
             }
           }
         } else {
-          // Just refresh user data for document deletion
-          const updatedUser = await userService.get();
-          if (updatedUser) {
-            setUser(updatedUser);
+          // Remove document from local state without remote fetch
+          if (user) {
+            const updatedProjects = user.projects.map((p: any) => {
+              if (p.id === documentToDelete.projectId) {
+                return { ...p, documents: (p.documents || []).filter((d: any) => d.id !== documentToDelete.id) };
+              }
+              return p;
+            });
+            setUser({ ...user, projects: updatedProjects });
           }
         }
 
         handleCloseDeleteDialog();
       } else {
-        setErrorMessage('Failed to delete document. Please try again.');
+        setErrorMessage(deleteResult.error || 'Failed to delete document. Please try again.');
       }
     } catch (error) {
       console.error('Error deleting document:', error);
@@ -443,49 +437,12 @@ function DocumentsListContent() {
                       <Box className="flex items-center justify-between">
                         <Box className="flex-1">
                           <h3 className="text-white font-medium text-sm md:text-base mb-2">
-                            {doc.filename || doc.name || 'Untitled Document'}
+                            {doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
                           </h3>
 
                           <Box className="text-gray-400 text-xs mb-1 flex items-center gap-1.5">
                             <FolderIcon sx={{ fontSize: 14 }} />
                             <span>{doc.projectName || 'Unknown Project'}</span>
-                          </Box>
-
-                          <Box className="text-gray-600 text-xs mb-3 flex items-center gap-2">
-                            <span>Uploaded on {formatDate(doc.updated_at || doc.created_at)}</span>
-                            {doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                              <span className="text-pink-400">| Credits: -{Math.ceil(doc.num_of_tokens / 100)}</span>
-                            ) : doc.is_processing ? (
-                              <Chip
-                                label="Processing..."
-                                size="small"
-                                icon={<CircularProgress size={10} sx={{ color: 'white !important' }} />}
-                                sx={{
-                                  bgcolor: '#6b7280',
-                                  color: 'white',
-                                  fontSize: '11px',
-                                  height: '22px',
-                                  fontWeight: 600,
-                                  borderRadius: '4px',
-                                }}
-                              />
-                            ) : null}
-                            {doc.is_token_limit_reached && (
-                              <Chip
-                                icon={<WarningIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important' }} />}
-                                label="Token Limit"
-                                size="small"
-                                sx={{
-                                  bgcolor: 'rgba(245, 158, 11, 0.1)',
-                                  color: '#f59e0b',
-                                  fontSize: '11px',
-                                  height: '22px',
-                                  fontWeight: 500,
-                                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                                  borderRadius: '4px',
-                                }}
-                              />
-                            )}
                           </Box>
                         </Box>
 

@@ -19,8 +19,7 @@ import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { userService } from '@/app/services/user.service';
-import { API_ENDPOINT } from '@/app/constants';
+import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer, McpServerRegistrationResponse } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
@@ -405,25 +404,18 @@ export default function RightSidebar({
     setUploadError('');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const token = await userService.token();
-      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents`;
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.detail || result.message || 'Upload failed');
+      if (!window.electronAPI?.saveTempFile) {
+        throw new Error('Local file upload is not available outside of the desktop app');
       }
 
-      const uploadedDocument = await response.json();
+      const buffer = await file.arrayBuffer();
+      const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
+      const localResult = await documentService.addLocalDocument(tempPath);
+      if (!localResult.success) {
+        throw new Error(localResult.error || 'Upload failed');
+      }
+
+      const uploadedDocument = localResult.data;
 
       // Update user state
       if (user) {
@@ -505,7 +497,7 @@ export default function RightSidebar({
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Info' : ''}
             </span>
-            {selectedProject && activeSection === 'documents' && currentProjectData.documents.length > 0 && (
+            {selectedProject && activeSection === 'documents' && currentProjectData?.documents?.length > 0 && (
               <button
                 onClick={onAddDocument}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -678,7 +670,7 @@ export default function RightSidebar({
                   .filter((doc: any) => {
                     if (!searchQuery) return true;
                     const query = searchQuery.toLowerCase();
-                    const filename = (doc.filename || doc.name || '').toLowerCase();
+                    const filename = (doc.path ? (doc.path.split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
                     const summary = (doc.summary || '').toLowerCase();
                     const markdown = (doc.markdown || '').toLowerCase();
                     return filename.includes(query) || summary.includes(query) || markdown.includes(query);
@@ -723,7 +715,7 @@ export default function RightSidebar({
                       <Box className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="text-xs text-white font-medium truncate">
-                            {doc.filename || doc.name || 'Untitled Document'}
+                            {doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
                           </span>
                           {/* Delete Icon - Appears on Hover */}
                           <Tooltip title="Delete Document" arrow>
@@ -770,17 +762,6 @@ export default function RightSidebar({
 
                         {/* Document Metadata */}
                         <div className="text-[10px] text-gray-500 flex items-center gap-2 flex-wrap">
-                          <span>{doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}</span>
-                          {doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0) ? (
-                            <span className="flex items-center gap-1.5 text-gray-400">
-                              <CircularProgress size={8} sx={{ color: '#9ca3af' }} />
-                              <span>Processing</span>
-                            </span>
-                          ) : doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                            <span className="text-gray-600">
-                              • <span style={{ color: '#ec4899' }}>$ {Math.ceil(doc.num_of_tokens / 100)} credits</span>
-                            </span>
-                          ) : null}
                         </div>
                       </Box>
                     </Box>

@@ -17,7 +17,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
+import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -53,15 +53,49 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [localProjects, setLocalProjects] = useState<any[]>([]);
 
-  // Update live user when prop changes
+  // Load projects from local API, update live user when prop changes
   useEffect(() => {
-    setLiveUser(user);
-    // Ensure conversations is always an array, never null or undefined
+    if (!user) {
+      setLiveUser(user);
+      return;
+    }
+
     const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
     setConversations(conversations);
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
+    setLiveUser(user);
   }, [user]);
+
+  // Fetch projects from local SLP server
+  const loadLocalProjects = async () => {
+    try {
+      const localBase = await getLocalApiEndpoint();
+      const res = await fetch(`${localBase}/v1/projects`);
+      if (res.ok) {
+        const data = await res.json();
+        // API may return { projects: [...] } or bare array
+        const rawProjects = Array.isArray(data) ? data : (data.projects || []);
+        const mapped = rawProjects.map((p: any) => ({
+          ...p,
+          title: p.title || p.name,
+          documents: p.documents || [],
+          config: p.config || { rules: '', memory: true },
+        }));
+        setLocalProjects(mapped);
+      }
+    } catch {
+      // keep current state
+    }
+  };
+
+  // Load projects on mount
+  useEffect(() => {
+    if (user) {
+      loadLocalProjects();
+    }
+  }, [user?.email]);
 
 
   // Load conversations from local storage
@@ -119,12 +153,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
     // Listen for project deletion to refresh user data and conversations
     const handleProjectDeleted = async () => {
-      // Refresh user data to get updated projects list
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setLiveUser(updatedUser);
-        setConversations(updatedUser.conversations || []);
-      }
+      await loadLocalProjects();
     };
 
     window.addEventListener('refreshUserTokens', handleRefresh);
@@ -153,10 +182,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleLogout = async () => {
-    // Only clear auth tokens, keep chat history
-    await storageService.removeItem('token');
-    await storageService.removeItem('u');
-    sessionStorage.clear();
+    await userService.logout();
     navigate('/login');
     handleMenuClose();
   };
@@ -255,7 +281,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Search functionality - filter projects only
   const filteredProjects = useMemo(() => {
-    let projects = liveUser?.projects || [];
+    let projects = localProjects;
 
     // Apply search filter if there's a query
     if (searchQuery.trim()) {
@@ -275,7 +301,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       // For non-system projects, maintain original order (or could sort by name)
       return 0;
     });
-  }, [searchQuery, liveUser]);
+  }, [searchQuery, localProjects]);
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
@@ -372,16 +398,24 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       });
 
       if (result.success && result.data) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setLiveUser(updatedUser);
-          // Emit event to refresh user data globally
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-          // Auto-select newly created project
-          navigate(`/?project=${result.data.id}`);
-        }
+        // Map local API response (name) to UI expected format (title)
+        // Include defaults for fields the UI expects (documents, config)
+        const newProject = {
+          ...result.data,
+          title: result.data.title || result.data.name,
+          documents: result.data.documents || [],
+          config: result.data.config || { rules: '', memory: true },
+        };
+
+        // Refresh projects from local API
+        await loadLocalProjects();
+
         handleCloseCreateProjectDialog();
+
+        // Navigate after a tick so React processes the state update first
+        setTimeout(() => {
+          navigate(`/?project=${newProject.id}`);
+        }, 50);
       } else {
         setCreateProjectError(result.error || 'Failed to create project');
       }
@@ -413,15 +447,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
-        // Refresh user data to remove deleted project
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setLiveUser(updatedUser);
-          setConversations(updatedUser.conversations || []);
-          // Emit event to refresh user data globally
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-          window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
-        }
+        // Refresh projects from local API
+        await loadLocalProjects();
+        window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
 
         // Navigate to home after deletion
         navigate('/');

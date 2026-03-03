@@ -21,8 +21,9 @@ import {Chip, CircularProgress, IconButton, TextField, Typography, Switch } from
 
 import { Dialog, DialogContent, DialogTitle } from "@mui/material";
 
-import { API_ENDPOINT } from '@/app/constants';
+import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
+import { documentService } from '@/app/services/document.service';
 import { dialogStyles } from '@/app/shared/utils';
 
 // Import SimpleMDE directly for desktop app (no lazy loading)
@@ -216,42 +217,24 @@ export default function Project() {
   const updateProjectSettings = async (config: {
     rules?: string,
     memory?: boolean | null
-
   }) => {
-    const url = `${API_ENDPOINT}/projects/${current.id}/config`;
-
     setIsLoading(true);
 
-    // Build payload with all available fields
-    const payload: any = {};
-    if (config.rules !== undefined) {
-      payload.rules = config.rules;
-    }
-    if (config.memory !== undefined) {
-      payload.memory = config.memory;
-    }
-
-    console.log('📤 updateProjectSettings - Sending to /config:', payload);
-
-    const options = {
-      method: 'PATCH',
-
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userService.token()}`
-      },
-      body: JSON.stringify(payload),
-    };
-
     try {
-      const response = await fetch(url, options)
-      const result = await response.json();
+      const localBase = await getLocalApiEndpoint();
 
-      console.log('📥 updateProjectSettings - Response from /config:', result);
-      console.log('Response status:', response.status);
+      if (config.rules !== undefined) {
+        const url = `${localBase}/v1/rules`;
+        const response = await fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rule: config.rules }),
+        });
 
-      if (response.status !== 200) {
-        throw result.detail || result.message;
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw result.detail || result.message || 'Failed to save rules';
+        }
       }
     } catch (ex: any) {
       setIsLoading(false);
@@ -277,39 +260,24 @@ export default function Project() {
 
     setIsSavingRules(true);
 
-    const url = `${API_ENDPOINT}/projects/${current.id}/config`;
-
-    const payload = {
-      rules: rules,
-      memory: memory
-    };
-
-    console.log('📤 Sending to /config endpoint:', payload);
-
-    const options = {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userService.token()}`
-      },
-      body: JSON.stringify(payload),
-    };
-
     try {
-      const response = await fetch(url, options);
-      const result = await response.json();
+      const localBase = await getLocalApiEndpoint();
+      const url = `${localBase}/v1/rules`;
 
-      console.log('📥 Response from /config endpoint:', result);
-      console.log('Response status:', response.status);
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rule: rules }),
+      });
 
-      if (response.status !== 200) {
-        throw result.detail || result.message;
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw result.detail || result.message || 'Failed to save rules';
       }
 
-      // Track the last saved value
       lastSavedRulesRef.current = rules;
     } catch (ex: any) {
-      console.error('❌ Error saving project rules:', ex);
+      console.error('Error saving project rules:', ex);
     } finally {
       setIsSavingRules(false);
     }
@@ -317,29 +285,27 @@ export default function Project() {
 
   const deleteDocument = async (documentId: string) => {
     try {
-      const url = `${API_ENDPOINT}/projects/${current.id}/documents/${documentId}`;
-
       setIsLoading(true);
+      const deleteResult = await documentService.deleteLocalDocument(documentId);
 
-      const options = {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${userService.token()}`
+      if (deleteResult.success) {
+        // Remove document from local state without remote fetch
+        if (current) {
+          const updatedDocs = (current.documents || []).filter((d: any) => d.id !== documentId);
+          const updatedProject = { ...current, documents: updatedDocs };
+          setCurrent(updatedProject);
+          if (user) {
+            const updatedProjects = user.projects.map((p: any) =>
+              p.id === current.id ? updatedProject : p
+            );
+            setUser({ ...user, projects: updatedProjects });
+          }
         }
-      };
-
-      const response = await fetch(url, options);
-
-      if (response.ok) {
-        // Refresh user data from API to get updated documents
-        const updatedUser = await userService.get();
-        setUser(updatedUser);
       } else {
-        const result = await response.json();
-        throw result.detail || result.message || 'Failed to delete document';
+        setErrorMessage(deleteResult.error || 'Failed to delete document');
       }
     } catch (ex: any) {
-      setErrorMessage(ex);
+      setErrorMessage(ex.message || ex);
       console.error('Error deleting document:', ex);
     } finally {
       setIsLoading(false);
@@ -364,15 +330,29 @@ export default function Project() {
         return;
       }
 
-      // Load project rules from config
-      const initialRules = project.config?.rules || '';
-      setProjectRules(initialRules);
-      lastSavedRulesRef.current = initialRules;
+      // Load memory setting from config
       if (typeof project.config?.memory !== 'undefined') {
         setMemory(project.config.memory);
       }
 
       setCurrent(project);
+
+      // Load rules from local service
+      (async () => {
+        try {
+          const localBase = await getLocalApiEndpoint();
+          const res = await fetch(`${localBase}/v1/rules`);
+          if (res.ok) {
+            const data = await res.json();
+            const rules = data.rule || data.rules || '';
+            setProjectRules(rules);
+            lastSavedRulesRef.current = rules;
+          }
+        } catch {
+          setProjectRules('');
+          lastSavedRulesRef.current = '';
+        }
+      })();
       setIsLoading(false);
 
       // Start polling if there are processing documents

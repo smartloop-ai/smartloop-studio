@@ -13,8 +13,23 @@ const getToken = async () => {
 };
 
 const logout = async () => {
+  // Clear conversations and messages before clearing user
+  try {
+    const conversations = await storageService.getConversations();
+    for (const conv of conversations) {
+      if (conv.id) {
+        await storageService.deleteMessages(conv.id);
+      }
+    }
+    // Use saveConversations([]) so the local_ prefixed key is correctly cleared
+    await storageService.saveConversations([]);
+  } catch (e) {
+    console.error('Error clearing conversations on logout:', e);
+  }
+
   await storageService.removeItem("token");
   await storageService.removeItem("u");
+  sessionStorage.clear();
   // Stop token refresh when logging out
   stopTokenRefresh();
 }

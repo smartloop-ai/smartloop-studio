@@ -23,8 +23,9 @@ import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { projectService } from '@/app/services/project.service';
+import { documentService } from '@/app/services/document.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
+import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
@@ -61,7 +62,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState(0);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
   const [projectRules, setProjectRules] = useState('');
-  const [projectMemory, setProjectMemory] = useState(true);
+  const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
   const lastSavedRulesRef = useRef<string>('');
@@ -287,16 +288,66 @@ export default function Home() {
   }, [chatMessage, showChat, conversation]);
 
 
-  // Load project data when selected
+  // Load project data when selected, unload/load model on switch
+  const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (selectedProject && user) {
       const project = user.projects?.find((p: any) => p.id === selectedProject.id);
       if (project) {
         setCurrentProjectData(project);
-        setProjectRules(project.config?.rules || '');
         setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
-        lastSavedRulesRef.current = project.config?.rules || '';
       }
+
+      // Unload and reload model when switching between projects
+      const electronAPI = (window as any).electronAPI;
+      if (electronAPI?.unloadModel && prevProjectIdRef.current && prevProjectIdRef.current !== selectedProject.id) {
+        (async () => {
+          try {
+            await electronAPI.unloadModel();
+            await electronAPI.loadModel();
+          } catch (e: any) {
+            console.warn('[Home] Model reload on project switch failed:', e.message);
+          }
+        })();
+      }
+      prevProjectIdRef.current = selectedProject.id;
+
+      // Load documents + rules from local service
+      (async () => {
+        try {
+          const localBase = await getLocalApiEndpoint();
+
+          // Fetch documents for this project from local SLP
+          const docsRes = await fetch(`${localBase}/v1/documents`);
+          if (docsRes.ok) {
+            const docsData = await docsRes.json();
+            const docs: any[] = docsData.documents || docsData || [];
+            setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
+            // Keep user.projects in sync
+            if (user) {
+              const updatedProjects = (user.projects || []).map((p: any) =>
+                p.id === selectedProject.id ? { ...p, documents: docs } : p
+              );
+              setUser({ ...user, projects: updatedProjects });
+            }
+          }
+
+          // Fetch rules
+          const res = await fetch(`${localBase}/v1/rules`);
+          if (res.ok) {
+            const data = await res.json();
+            const rules = data.rule || data.rules || '';
+            setProjectRules(rules);
+            lastSavedRulesRef.current = rules;
+          } else {
+            setProjectRules('');
+            lastSavedRulesRef.current = '';
+          }
+        } catch {
+          setProjectRules('');
+          lastSavedRulesRef.current = '';
+        }
+      })();
     } else {
       setCurrentProjectData(null);
       setProjectRules('');
@@ -410,31 +461,20 @@ export default function Home() {
 
     setIsSavingRules(true);
 
-    const url = `${API_ENDPOINT}/projects/${selectedProject.id}/config`;
-    const payload = {
-      rules: rules,
-      memory: projectMemory
-    };
-
     try {
+      const localBase = await getLocalApiEndpoint();
+      const url = `${localBase}/v1/rules`;
+      const payload = { rule: rules };
+
       const response = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await userService.token()}`
-        },
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (response.status === 200) {
+      if (response.ok) {
         lastSavedRulesRef.current = rules;
-        // Update projectRules state after successful save
         setProjectRules(rules);
-        // Refresh user data
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-        }
       } else {
         console.error('Failed to save project rules. Status:', response.status);
       }
@@ -961,12 +1001,9 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
-      const response = await userService.makeAuthenticatedRequest(url, {
-        method: 'DELETE',
-      });
+      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
 
-      if (response && (response.status === 200 || response.status === 204)) {
+      if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
         if (user && selectedProject) {
           const updatedProjects = user.projects.map((p: any) => {
@@ -990,7 +1027,7 @@ export default function Home() {
 
         handleCloseDeleteDocDialog();
       } else {
-        setDeleteDocError('Failed to delete document. Please try again.');
+        setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
       }
     } catch (error: any) {
       console.error('Error deleting document:', error);

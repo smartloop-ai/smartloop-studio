@@ -9,7 +9,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 import MessageInput from './message-input';
 
-import { API_ENDPOINT } from '@/app/constants';
+import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
 
 import { marked, Renderer, Tokens } from 'marked';
 
@@ -418,13 +418,12 @@ export default function Chat(props: {
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
     try {
-      // Get the auth token (async)
-      const authToken = await userService.token();
+      // Initialize OpenAI client pointing to local SLP service
+      const localBaseUrl = await getLocalApiEndpoint();
 
-      // Initialize OpenAI client
       const openai = new OpenAI({
-        baseURL: `${API_ENDPOINT}/openai`,
-        apiKey: authToken || '',
+        baseURL: `${localBaseUrl}/v1`,
+        apiKey: 'local',
         dangerouslyAllowBrowser: true
       });
 
@@ -438,27 +437,26 @@ export default function Chat(props: {
         conversationId: conversationId
       });
 
-      // Prepare the message object with attachments
+      // Prepare the message object (local server only accepts role + content)
       const messageObject: any = {
         role: 'user',
         content: userMessage
       };
 
-      // Add attachments to the message object if they exist
-      if (currentAttachments.length > 0) {
-        console.log('[Chat sendMessage] Adding attachments to message object:', currentAttachments);
-        messageObject.attachments = currentAttachments;
-      }
-
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
-      // Create streaming chat completion with custom fields
-      let stream = await openai.chat.completions.create({
-          model: 'slp-model-001',
+      // Create streaming chat completion
+      // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
+      const createParams: any = {
+          model: 'gemma3-1b',
           messages: [messageObject],
           stream: true,
-          conversation_id: conversationId
-      } as any) as any;
+          session_id: conversationId,
+      };
+      if (projectId) {
+        createParams.project_id = projectId;
+      }
+      let stream = await openai.chat.completions.create(createParams) as any;
 
       // Process the stream
       for await (const chunk of stream) {
@@ -466,6 +464,9 @@ export default function Chat(props: {
         if (abortControllerRef.current?.signal.aborted) {
           throw new Error('AbortError');
         }
+
+        // Skip status/non-standard chunks from local SLP server
+        if (!chunk.choices || !chunk.choices[0]) continue;
 
         const content = chunk.choices[0]?.delta?.content;
 

@@ -23,6 +23,8 @@ export interface ElectronAPI {
   storageGetAll: () => Promise<Record<string, any>>;
   // Machine ID
   getMachineId: () => Promise<string | null>;
+  // Save a file to a temp directory for local SLP document upload
+  saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
   // System info
   isElectron: boolean;
   platform: string;

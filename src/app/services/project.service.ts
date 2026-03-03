@@ -1,9 +1,8 @@
-import { API_ENDPOINT } from "@/app/constants";
-import { userService } from "./user.service";
+import { getLocalApiEndpoint } from "@/app/constants";
 
 /**
  * Project Service
- * Handles project creation, deletion, and related cleanup operations
+ * Handles project CRUD against the local SLP service
  */
 
 interface CreateProjectParams {
@@ -21,8 +20,7 @@ interface ProjectServiceResponse {
 
 /**
  * Create a new project
- * @param params - Project creation parameters (title, temperature, color)
- * @returns Promise with project data or error
+ * Local API uses `name` field instead of `title`
  */
 const createProject = async (params: CreateProjectParams): Promise<ProjectServiceResponse> => {
   try {
@@ -36,38 +34,27 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
     }
 
     const requestBody: any = {
-      title: title.trim(),
+      name: title.trim(),
+      description: '',
       temperature,
       system
     };
 
-    // Include color if provided
     if (color) {
       requestBody.color = color;
     }
 
-    const url = `${API_ENDPOINT}/projects`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects`;
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     });
 
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
     if (response.status === 200 || response.status === 201) {
       const project = await response.json();
-      return {
-        success: true,
-        data: project
-      };
+      return { success: true, data: project };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -85,38 +72,20 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
 };
 
 /**
- * Delete a project and clean up associated data
- * @param projectId - ID of the project to delete
- * @param userId - User ID (email) for cleaning up chat history
- * @returns Promise with success status
+ * Delete a project
  */
 const deleteProject = async (projectId: string): Promise<ProjectServiceResponse> => {
   try {
     if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
+      return { success: false, error: 'Project ID is required' };
     }
 
-    // Delete the project via API
-    const url = `${API_ENDPOINT}/projects/${projectId}`;
-    const response = await userService.makeAuthenticatedRequest(url, {
-      method: 'DELETE'
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects/${projectId}`;
+    const response = await fetch(url, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
-      return {
-        success: true,
-        data: { projectId }
-      };
+      return { success: true, data: { projectId } };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -133,25 +102,24 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
   }
 };
 
-
 /**
- * Get all projects for the current user
- * @returns Promise with user data containing projects
+ * Get all projects from local service
  */
 const getProjects = async (): Promise<ProjectServiceResponse> => {
   try {
-    const user = await userService.get();
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects`;
+    const response = await fetch(url);
 
-    if (!user) {
-      return {
-        success: false,
-        error: 'Failed to fetch user data'
-      };
+    if (response.ok) {
+      const projects = await response.json();
+      return { success: true, data: projects };
     }
 
+    const errorData = await response.json().catch(() => ({}));
     return {
-      success: true,
-      data: user.projects || []
+      success: false,
+      error: errorData.detail || errorData.message || 'Failed to fetch projects'
     };
   } catch (error: any) {
     console.error('Error fetching projects:', error);
@@ -164,41 +132,31 @@ const getProjects = async (): Promise<ProjectServiceResponse> => {
 
 /**
  * Update project details
- * @param projectId - ID of the project to update
- * @param updates - Fields to update (title, temperature, etc.)
- * @returns Promise with updated project data
  */
 const updateProject = async (projectId: string, updates: Partial<CreateProjectParams>): Promise<ProjectServiceResponse> => {
   try {
     if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
+      return { success: false, error: 'Project ID is required' };
     }
 
-    const url = `${API_ENDPOINT}/projects/${projectId}`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    // Map title to name for local API
+    const body: any = { ...updates };
+    if (body.title) {
+      body.name = body.title;
+      delete body.title;
+    }
+
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects/${projectId}`;
+    const response = await fetch(url, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(updates)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
 
     if (response.status === 200) {
       const project = await response.json();
-      return {
-        success: true,
-        data: project
-      };
+      return { success: true, data: project };
     }
 
     const errorData = await response.json().catch(() => ({}));

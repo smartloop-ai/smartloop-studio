@@ -8,6 +8,39 @@ export const WS_ENDPOINT = `${BASE_URL}/ws`;
 export const APP_URL = import.meta.env.VITE_APP_URL || "https://app.smartloop.ai";
 export const API_BASE_URL = BASE_URL; // For OAuth app_url parameter
 
+// Local SLP service endpoint (cached)
+let _localApiUrl = null;
+let _localApiUrlPromise = null;
+
+/**
+ * Get the local SLP API base URL (e.g. http://localhost:41533)
+ * Returns cached value after first call.
+ */
+export const getLocalApiEndpoint = async () => {
+  if (_localApiUrl) return _localApiUrl;
+  if (_localApiUrlPromise) return _localApiUrlPromise;
+
+  _localApiUrlPromise = (async () => {
+    try {
+      if (typeof window !== 'undefined' && window.electronAPI?.getLocalApiUrl) {
+        const url = await window.electronAPI.getLocalApiUrl();
+        if (url) {
+          _localApiUrl = url;
+          return url;
+        }
+      }
+    } catch (e) {
+      console.warn('[Constants] Failed to get local API URL from Electron:', e);
+    }
+    // Fallback
+    const fallback = import.meta.env.VITE_LOCAL_BASE_URL || 'http://localhost:41533';
+    _localApiUrl = fallback;
+    return fallback;
+  })();
+
+  return _localApiUrlPromise;
+};
+
 export const APP_DESCRIPTION = (
   <>
     <strong style={{ color: '#ec4899' }}> <a href="https://smartloop.ai" target="_blank" rel="noopener noreferrer" className="no-underline" style={{ color: '#ec4899', textDecoration: 'none' }}>Smartloop</a></strong> is an SLM platform designed to fine-tune and inference models on edge. Get started for free to extract information from your documents using AI tailored for developers and businesses with privacy and security at its core.

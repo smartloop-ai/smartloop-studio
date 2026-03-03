@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { userService } from '@/app/services/user.service';
+import { projectService } from '@/app/services/project.service';
 import { storageService } from '../services/storage.service';
 
 /**
@@ -48,7 +49,7 @@ export function useAuth(): [any, (user: any) => void] {
         }
 
         // Fetch user data
-        const u = await userService.get();
+        let u = await userService.get();
 
         if (!u) {
           // Could be network error or invalid token
@@ -76,31 +77,44 @@ export function useAuth(): [any, (user: any) => void] {
           navigate('/login', { replace: true });
         }
         else {
-          // User is authenticated and verified
+          // Always use local SLP as the source of truth for projects in Electron
+          if (isElectron) {
+            try {
+              const localProjectsResult = await projectService.getProjects();
+              if (localProjectsResult.success && localProjectsResult.data) {
+                const localProjects: any[] = localProjectsResult.data.projects || localProjectsResult.data;
+                const mappedProjects = localProjects.map((p: any) => ({
+                  ...p,
+                  title: p.title || p.name,
+                  documents: p.documents || [],
+                  config: p.config || { rules: '', memory: true },
+                }));
+                console.log(`useAuth: Loaded ${mappedProjects.length} project(s) from local SLP`);
+                u = { ...u, projects: mappedProjects };
+              }
+            } catch (err) {
+              console.warn('useAuth: Could not load projects from local SLP:', err);
+            }
+          }
+
           setUser(u);
 
           // Initialize system project if running in Electron
-          const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
           if (isElectron && window.electronAPI?.initializeSystemProject) {
             try {
-              console.log('useAuth: Initializing system project...');
+              console.log('useAuth: Initializing default project...');
               const result = await window.electronAPI.initializeSystemProject(token);
               if (result.success) {
                 if (result.existed) {
-                  console.log('useAuth: System project already exists');
+                  console.log('useAuth: Default project already exists');
                 } else {
-                  console.log('useAuth: System project created successfully');
-                  // Refresh user data to include the new system project
-                  const refreshedUser = await userService.get();
-                  if (refreshedUser) {
-                    setUser(refreshedUser);
-                  }
+                  console.log('useAuth: Default project created successfully');
                 }
               } else {
-                console.error('useAuth: Failed to initialize system project:', result.error);
+                console.error('useAuth: Failed to initialize default project:', result.error);
               }
             } catch (error) {
-              console.error('useAuth: Error initializing system project:', error);
+              console.error('useAuth: Error initializing default project:', error);
             }
           }
 

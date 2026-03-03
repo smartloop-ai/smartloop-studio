@@ -95,11 +95,18 @@ class StorageService {
   }
 
   /**
+   * Storage key prefix for local mode — avoids conflicts with remote-mode cache
+   */
+  private localKey(key: string): string {
+    return `local_${key}`;
+  }
+
+  /**
    * Save conversations to storage
    */
   async saveConversations(conversations: any[]): Promise<void> {
     try {
-      await this.setItem('conversations', conversations);
+      await this.setItem(this.localKey('conversations'), conversations);
       console.log(`[Storage] Saved ${conversations.length} conversations`);
     } catch (error) {
       console.error('Error saving conversations:', error);
@@ -111,7 +118,7 @@ class StorageService {
    */
   async getConversations(): Promise<any[]> {
     try {
-      const conversations = await this.getItem('conversations');
+      const conversations = await this.getItem(this.localKey('conversations'));
       return conversations || [];
     } catch (error) {
       console.error('Error getting conversations:', error);
@@ -126,13 +133,13 @@ class StorageService {
     try {
       const conversations = await this.getConversations();
       const existingIndex = conversations.findIndex((c: any) => c.id === conversation.id);
-      
+
       if (existingIndex >= 0) {
         conversations[existingIndex] = conversation;
       } else {
         conversations.push(conversation);
       }
-      
+
       await this.saveConversations(conversations);
     } catch (error) {
       console.error('Error saving conversation:', error);
@@ -160,7 +167,7 @@ class StorageService {
       const conversations = await this.getConversations();
       const filtered = conversations.filter((c: any) => c.id !== conversationId);
       await this.saveConversations(filtered);
-      
+
       // Also delete messages for this conversation
       await this.deleteMessages(conversationId);
       console.log(`[Storage] Deleted conversation ${conversationId}`);
@@ -174,7 +181,7 @@ class StorageService {
    */
   async saveMessages(conversationId: string, messages: any[]): Promise<void> {
     try {
-      const key = `messages_${conversationId}`;
+      const key = this.localKey(`messages_${conversationId}`);
       await this.setItem(key, messages);
       console.log(`[Storage] Saved ${messages.length} messages for conversation ${conversationId}`);
     } catch (error) {
@@ -187,7 +194,7 @@ class StorageService {
    */
   async getMessages(conversationId: string): Promise<any[]> {
     try {
-      const key = `messages_${conversationId}`;
+      const key = this.localKey(`messages_${conversationId}`);
       const messages = await this.getItem(key);
       return messages || [];
     } catch (error) {
@@ -201,7 +208,7 @@ class StorageService {
    */
   async deleteMessages(conversationId: string): Promise<void> {
     try {
-      const key = `messages_${conversationId}`;
+      const key = this.localKey(`messages_${conversationId}`);
       await this.removeItem(key);
       console.log(`[Storage] Deleted messages for conversation ${conversationId}`);
     } catch (error) {

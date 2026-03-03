@@ -58,6 +58,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storageGetAll: () => ipcRenderer.invoke('storage-get-all'),
   // Machine ID
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
+  // Local SLP service
+  getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
+  getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
+  unloadModel: () => ipcRenderer.invoke('unload-model'),
+  loadModel: () => ipcRenderer.invoke('load-model'),
+  // Save a file to a temp directory (for local SLP document upload)
+  saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
   // Check if running in Electron
   isElectron: true,
   // System info
