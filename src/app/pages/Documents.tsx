@@ -12,11 +12,9 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import AddIcon from '@mui/icons-material/Add';
 import SortIcon from '@mui/icons-material/Sort';
 import CheckIcon from '@mui/icons-material/Check';
-import MobileNav from '@/app/components/mobile-nav';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import { projectService } from '@/app/services/project.service';
 import { documentService } from '@/app/services/document.service';
-import Sidebar from '@/app/components/sidebar';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
 
@@ -32,7 +30,6 @@ function DocumentsListContent() {
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'lastUpdated'>('lastUpdated');
   const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openUploadDialog, setOpenUploadDialog] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -287,11 +284,8 @@ function DocumentsListContent() {
     <>
       {user && (
         <>
-          <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
-
           <Box className="min-h-screen bg-black text-white">
             <Box className="p-4">
-              <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
               {/* Header */}
               <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">

@@ -202,13 +202,8 @@ export default function ProjectsList() {
     <>
       {user && (
         <>
-          {/* Sidebar is now rendered in App.tsx for persistence across routes */}
-          {/* <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} /> */}
-
           <Box className="min-h-screen bg-black text-white">
             <Box className="p-4">
-              {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-              {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
               {/* Header */}
               <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">

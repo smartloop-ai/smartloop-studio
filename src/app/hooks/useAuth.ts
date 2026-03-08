@@ -19,7 +19,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
   useEffect(() => {
     // Don't check auth on public pages
-    const publicPages = ['/login', '/signup', '/forgot', '/reset', '/verify', '/resend', '/oauth-callback', '/terms'];
+    const publicPages = ['/welcome', '/login', '/signup', '/forgot', '/reset', '/verify', '/resend', '/oauth-callback', '/terms'];
     if (publicPages.includes(location.pathname)) {
       return;
     }
@@ -61,13 +61,25 @@ export function useAuth(): [any, (user: any) => void, boolean] {
             } catch (err) {
               console.warn('useAuth: Could not load local projects for guest mode:', err);
             }
+            // Ensure a system project exists for guest users
+            const hasSystemProject = mappedProjects.some((p: any) => p.system === true);
+            if (!hasSystemProject) {
+              mappedProjects.unshift({
+                id: 'general',
+                title: 'General Chat',
+                name: 'General Chat',
+                system: true,
+                documents: [],
+                config: { rules: '', memory: true },
+              });
+            }
             console.log(`useAuth: Guest mode — loaded ${mappedProjects.length} project(s) from local SLP`);
             setUser({ name: 'Guest', guest: true, projects: mappedProjects, conversations: [] });
             return;
           }
-          // Not in Electron — redirect to login
-          if (location.pathname !== '/') {
-            navigate('/', { replace: true });
+          // Not in Electron — redirect to welcome page
+          if (location.pathname !== '/welcome') {
+            navigate('/welcome', { replace: true });
           }
           return;
         }
@@ -98,7 +110,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           // No cached data or invalid cache - redirect to welcome screen
           console.log('useAuth: Failed to fetch user and no cached data, redirecting to welcome');
           userService.logout();
-          navigate('/', { replace: true });
+          navigate('/welcome', { replace: true });
         }
         else {
           // Always use local SLP as the source of truth for projects in Electron
@@ -113,6 +125,18 @@ export function useAuth(): [any, (user: any) => void, boolean] {
                   documents: p.documents || [],
                   config: p.config || { rules: '', memory: true },
                 }));
+                // Ensure a system project exists
+                const hasSystemProject = mappedProjects.some((p: any) => p.system === true);
+                if (!hasSystemProject) {
+                  mappedProjects.unshift({
+                    id: 'general',
+                    title: 'General Chat',
+                    name: 'General Chat',
+                    system: true,
+                    documents: [],
+                    config: { rules: '', memory: true },
+                  });
+                }
                 console.log(`useAuth: Loaded ${mappedProjects.length} project(s) from local SLP`);
                 u = { ...u, projects: mappedProjects };
               }
@@ -151,7 +175,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         // Redirect to welcome screen on other errors
         console.log('useAuth: Redirecting to welcome screen due to error');
         userService.logout();
-        navigate('/', { replace: true });
+        navigate('/welcome', { replace: true });
       } finally {
         isAuthCheckingRef.current = false;
         setAuthReady(true);

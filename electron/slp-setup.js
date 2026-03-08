@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { execSync, execFileSync } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const VERSION = '1.0.1';
 const BASE_URL = `https://storage.googleapis.com/smartloop-gcp-us-east-releases/${VERSION}`;
@@ -46,9 +46,41 @@ function verifyChecksum(filePath, expected) {
 }
 
 /**
- * Download the slp archive from GCS and extract to ~/.smartloop/
+ * Run a command asynchronously and return a promise.
+ * Optionally calls onProgress with stderr/stdout data for progress reporting.
  */
-function downloadAndInstall() {
+function runAsync(command, args, options = {}, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+      if (onProgress) onProgress(data.toString());
+    });
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+      if (onProgress) onProgress(data.toString());
+    });
+
+    proc.on('error', (err) => reject(err));
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Command "${command} ${args.join(' ')}" exited with code ${code}: ${stderr}`));
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+/**
+ * Download the slp archive from GCS using curl (async, non-blocking).
+ * Calls onProgress with status updates for the splash screen.
+ */
+async function downloadAndInstall(onProgress = null) {
   const { platform, arch } = getPlatformKey();
   const key = `${platform}-${arch}`;
   const expectedHash = CHECKSUMS[key];
@@ -77,21 +109,26 @@ function downloadAndInstall() {
 
   if (needsDownload) {
     console.log('[SLP Setup] Downloading slp', VERSION, 'from', archiveUrl);
-    execSync(`curl -fSL -o "${cachedArchive}" "${archiveUrl}"`, {
-      stdio: 'inherit',
-      timeout: 300000,
+    if (onProgress) onProgress({ status: 'downloading', message: 'Downloading SLP framework...' });
+
+    // Use curl async — this is the key fix to prevent "not responding"
+    await runAsync('curl', ['-fSL', '-o', cachedArchive, archiveUrl], { timeout: 300000 }, (data) => {
+      // curl progress output
+      if (onProgress) onProgress({ status: 'downloading', message: `Downloading SLP framework...` });
     });
 
     verifyChecksum(cachedArchive, expectedHash);
     console.log('[SLP Setup] Checksum verified');
   }
 
+  if (onProgress) onProgress({ status: 'installing', message: 'Installing SLP framework...' });
+
   // Extract to a temp dir, then move to INSTALL_DIR
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-'));
 
   try {
     console.log('[SLP Setup] Extracting...');
-    execSync(`tar -xzf "${cachedArchive}" -C "${tmpDir}"`, { stdio: 'pipe' });
+    await runAsync('tar', ['-xzf', cachedArchive, '-C', tmpDir]);
 
     // Clear old install (preserve cache and studio database)
     const preserve = new Set(['cache', 'studio.db', 'studio.db-wal', 'studio.db-shm']);
@@ -124,12 +161,15 @@ function downloadAndInstall() {
 
   console.log('[SLP Setup] Binary installed to', INSTALL_DIR);
 
-  // Verify installation by running slp --help
+  // Verify installation asynchronously
+  if (onProgress) onProgress({ status: 'verifying', message: 'Verifying installation...' });
   try {
     console.log('[SLP Setup] Verifying installation...');
-    execFileSync(path.join(INSTALL_DIR, 'slp'), ['--help'], {
-      timeout: 120000,
-      stdio: 'pipe',
+    await new Promise((resolve, reject) => {
+      execFile(path.join(INSTALL_DIR, 'slp'), ['--help'], { timeout: 120000 }, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
     console.log('[SLP Setup] Binary verified successfully');
   } catch (error) {
@@ -187,7 +227,7 @@ function setupPath() {
   } catch {}
 }
 
-function installLinuxService() {
+async function installLinuxService() {
   const serviceDir = path.join(os.homedir(), '.config', 'systemd', 'user');
   const servicePath = path.join(serviceDir, 'smartloop.service');
   const logDir = path.join(os.homedir(), '.local', 'log');
@@ -219,20 +259,20 @@ WantedBy=default.target
   console.log('[SLP Setup] systemd service written to', servicePath);
 
   try {
-    execSync('systemctl --user daemon-reload', { stdio: 'pipe' });
-    execSync('systemctl --user enable smartloop', { stdio: 'pipe' });
-    execSync('systemctl --user restart smartloop', { stdio: 'pipe' });
+    await runAsync('systemctl', ['--user', 'daemon-reload']);
+    await runAsync('systemctl', ['--user', 'enable', 'smartloop']);
+    await runAsync('systemctl', ['--user', 'restart', 'smartloop']);
     console.log('[SLP Setup] systemd service enabled and started');
   } catch (error) {
     console.warn('[SLP Setup] Could not enable systemd service:', error.message);
   }
 
   try {
-    execSync(`loginctl enable-linger ${os.userInfo().username}`, { stdio: 'pipe' });
+    await runAsync('loginctl', ['enable-linger', os.userInfo().username]);
   } catch {}
 }
 
-function installMacService() {
+async function installMacService() {
   const agentDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
   const plistPath = path.join(agentDir, 'com.smartloop.server.plist');
   const logFile = path.join(os.homedir(), 'Library', 'Logs', 'smartloop.log');
@@ -265,13 +305,13 @@ function installMacService() {
 </plist>
 `;
 
-  try { execSync(`launchctl unload "${plistPath}"`, { stdio: 'pipe' }); } catch {}
+  try { await runAsync('launchctl', ['unload', plistPath]).catch(() => {}); } catch {}
 
   fs.writeFileSync(plistPath, plistContent);
   console.log('[SLP Setup] launchd plist written to', plistPath);
 
   try {
-    execSync(`launchctl load -w "${plistPath}"`, { stdio: 'pipe' });
+    await runAsync('launchctl', ['load', '-w', plistPath]);
     console.log('[SLP Setup] launchd agent loaded');
   } catch (error) {
     console.warn('[SLP Setup] Could not load launchd agent:', error.message);
@@ -280,9 +320,11 @@ function installMacService() {
 
 /**
  * Run the full setup: download binary from GCS, register service, configure PATH.
- * Returns true if setup was performed, false if already up-to-date.
+ * Fully async — does NOT block the Electron main process.
+ * @param {function} onProgress - Optional callback for splash screen progress updates.
+ * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
-function setupSlpService() {
+async function setupSlpService(onProgress = null) {
   if (!needsInstall()) {
     console.log('[SLP Setup] Already installed version', VERSION);
     return false;
@@ -290,14 +332,14 @@ function setupSlpService() {
 
   console.log('[SLP Setup] Installing SLP service version', VERSION);
 
-  // 1. Download and extract binary
-  downloadAndInstall();
+  // 1. Download and extract binary (async)
+  await downloadAndInstall(onProgress);
 
-  // 2. Register platform service
+  // 2. Register platform service (async)
   if (process.platform === 'linux') {
-    installLinuxService();
+    await installLinuxService();
   } else if (process.platform === 'darwin') {
-    installMacService();
+    await installMacService();
   }
 
   // 3. Create CLI symlink
@@ -319,16 +361,16 @@ function uninstallSlpService() {
 
   if (process.platform === 'linux') {
     try {
-      execSync('systemctl --user stop smartloop.service', { stdio: 'pipe' });
-      execSync('systemctl --user disable smartloop.service', { stdio: 'pipe' });
+      require('child_process').execSync('systemctl --user stop smartloop.service', { stdio: 'pipe' });
+      require('child_process').execSync('systemctl --user disable smartloop.service', { stdio: 'pipe' });
       const servicePath = path.join(os.homedir(), '.config', 'systemd', 'user', 'smartloop.service');
       try { fs.unlinkSync(servicePath); } catch {}
-      execSync('systemctl --user daemon-reload', { stdio: 'pipe' });
+      require('child_process').execSync('systemctl --user daemon-reload', { stdio: 'pipe' });
     } catch {}
   } else if (process.platform === 'darwin') {
     const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.smartloop.server.plist');
     try {
-      execSync(`launchctl unload "${plistPath}"`, { stdio: 'pipe' });
+      require('child_process').execSync(`launchctl unload "${plistPath}"`, { stdio: 'pipe' });
       fs.unlinkSync(plistPath);
     } catch {}
   }

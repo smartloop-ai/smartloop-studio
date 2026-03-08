@@ -13,11 +13,6 @@ export default function WelcomeScreen({
 }: WelcomeScreenProps) {
   const [message, setMessage] = useState('');
 
-  const handleSend = () => {
-    // Redirect to login when user tries to send
-    onNavigateToLogin();
-  };
-
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'black' }}>
       {/* Top bar with login button */}
@@ -30,31 +25,25 @@ export default function WelcomeScreen({
         </button>
       </Box>
 
-      {/* Center content */}
+      {/* Center content - vertically and horizontally centered */}
       <Box className="flex-1 flex items-center justify-center px-4">
         <Box className="max-w-3xl w-full">
-          {/* Logo */}
-          <Box className="flex justify-center mb-4">
+          {/* Logo - bigger with padding */}
+          <Box className="flex justify-center mb-6" sx={{ padding: '10px' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <span className="text-3xl font-semibold text-white tracking-tight">smartloop</span>
-              <span className="text-pink-500 text-3xl font-semibold">.</span>
+              <span className="text-5xl font-semibold text-white tracking-tight">smartloop</span>
+              <span className="text-pink-500 text-5xl font-semibold">.</span>
             </Box>
           </Box>
 
-          {/* Prompt input */}
-          <Box className="bg-gray-900/50 border rounded-2xl p-4 relative transition-all border-gray-700 hover:border-pink-500/50">
+          {/* Prompt input - rounded-xs border */}
+          <Box className="bg-gray-900/50 border rounded-[2px] p-4 relative transition-all border-gray-700 hover:border-pink-500/50">
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Type your prompt (e.g. what is a quantum?)"
               className="w-full bg-transparent text-white placeholder-gray-500 outline-none resize-none"
               style={{ minHeight: '80px' }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
             />
 
             <Box className="flex items-center justify-between mt-3">
@@ -86,16 +75,16 @@ export default function WelcomeScreen({
               <button
                 disabled={message.trim().length <= 1}
                 className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                onClick={handleSend}
+                onClick={onNavigateToLogin}
               >
                 <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
               </button>
             </Box>
           </Box>
 
-          {/* Fine line + footer */}
-          <Box className="mt-6 pt-4 border-t border-gray-800">
-            <Box className="text-xs text-gray-500 text-left">
+          {/* Footer text */}
+          <Box className="mt-4">
+            <Box className="text-xs text-gray-500 text-center">
               Ready to assist you with anything you need.
             </Box>
           </Box>

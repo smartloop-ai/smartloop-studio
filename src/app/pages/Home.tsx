@@ -7,14 +7,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Chip, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
 import { Mention, MentionsInput, SuggestionDataItem } from 'react-mentions';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FileAttacher from '@/app/components/file-attacher';
 import DocumentPolling from '@/app/components/document-polling';
@@ -26,12 +21,12 @@ import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { projectService } from '@/app/services/project.service';
 import { documentService } from '@/app/services/document.service';
+import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
-import WelcomeScreen from '@/app/components/welcome-screen';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 // Extend SuggestionDataItem to include color property
@@ -46,7 +41,6 @@ export default function Home() {
   const [selectedProject, setSelectedProject]: any = useState(null);
   const [showChat, setShowChat] = useState(false);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showProjectInfoDialog, setShowProjectInfoDialog] = useState(false);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
@@ -82,9 +76,6 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       setIsLoading(false);
-      if (!user.onboarded) {
-        setShowOnboarding(true);
-      }
     }
   }, [user]);
 
@@ -203,7 +194,8 @@ export default function Home() {
   }, [selectedProject]);
 
 
-  // Handle conversation ID from URL parameter - simple lookup from user.conversations
+  // Handle conversation ID from URL parameter
+  // For Electron/local mode: load from SQLite. For remote: use user.conversations.
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
@@ -215,63 +207,62 @@ export default function Home() {
 
     if (!user) return;
 
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+
     if (urlConversationId) {
-      // Find conversation in user.conversations (source of truth)
-      // Ensure conversations is always an array before using find
+      // Try user.conversations first (remote mode), then fall back to SQLite (local mode)
       const conversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      const foundConversation = conversations.find((c: any) => c.id === urlConversationId);
+      let foundConversation = conversations.find((c: any) => c.id === urlConversationId);
 
-      if (foundConversation) {
-        // Only update conversation if it's different from current or URL changed
-        if (!conversation || conversation.id !== foundConversation.id) {
-          console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
-          setConversation({ ...foundConversation });
-          setShowChat(true);
-          // Only change tab if URL actually changed
-          if (urlParamsChanged) {
-            setActiveTab(0);
+      const loadAndSetConversation = async () => {
+        // In Electron mode, always load conversation and messages from SQLite
+        if (isElectron) {
+          const stored = await storageService.getConversation(urlConversationId);
+          if (stored) {
+            const messages = await storageService.getMessages(urlConversationId);
+            foundConversation = { ...stored, messages: messages || [] };
           }
         }
 
-        // Set project based on conversation's project_id - conversation is the source of truth
-        if (foundConversation.project_id) {
-          const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-          // Always update if project changed or doesn't match
-          if (!selectedProject || selectedProject.id !== foundConversation.project_id) {
-            console.log('[Home] Setting project from conversation:', foundConversation.project_id);
-            setSelectedProject(project || null);
+        if (foundConversation) {
+          // Update conversation if it's different or messages may have changed
+          if (!conversation || conversation.id !== foundConversation.id || urlParamsChanged) {
+            console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
+            setConversation({ ...foundConversation });
+            setShowChat(true);
+            if (urlParamsChanged) {
+              setActiveTab(0);
+            }
           }
-        } else {
-          // Conversation has no project_id - should not happen with system project logic
-          // But handle gracefully by finding system project
-          const systemProject = user.projects?.find((p: any) => p.system === true);
-          if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
-            console.log('[Home] Setting system project for conversation without project_id');
-            setSelectedProject(systemProject);
+
+          // Set project based on conversation's project_id
+          if (foundConversation.project_id) {
+            const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
+            if (!selectedProject || selectedProject.id !== foundConversation.project_id) {
+              console.log('[Home] Setting project from conversation:', foundConversation.project_id);
+              setSelectedProject(project || null);
+            }
+          } else {
+            const systemProject = user.projects?.find((p: any) => p.system === true);
+            if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
+              setSelectedProject(systemProject);
+            }
           }
         }
-      }
+      };
+
+      loadAndSetConversation();
     } else if (urlProjectId) {
-      // Only update if URL actually changed (not just user data update)
       if (urlParamsChanged || !selectedProject || selectedProject.id !== urlProjectId) {
         setConversation(null);
-        // Don't set showChat to true here - let the activeTab state control it
-        // Don't change activeTab automatically - let explicit navigation control it
-        // This prevents the gear icon from switching to tab 0 before going to configuration
-
-        // Project selected but no conversation - clear conversation, set project
         const project = user.projects?.find((p: any) => p.id === urlProjectId);
         setSelectedProject(project || null);
       }
-
     } else {
-      // No conversation or project - welcome screen without auto-selecting project
-      // Only update if URL actually changed
       if (urlParamsChanged) {
         setConversation(null);
         setShowChat(false);
         setChatMessage(null);
-        // Do not auto-select system project - let user choose or auto-select on message send
         setSelectedProject(null);
       }
     }
@@ -361,28 +352,31 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
 
-    // Ensure conversations is always an array, never null
-    const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-    if (!selectedProject) {
-      // No project selected - this shouldn't happen with system project, but handle gracefully
-      // Find system project conversations
-      const systemProject = user.projects?.find((p: any) => p.system === true);
-      if (systemProject) {
+    const loadProjectConversations = async () => {
+      const projectId = selectedProject?.id ||
+        user.projects?.find((p: any) => p.system === true)?.id;
+
+      if (!projectId) {
+        setProjectConversations([]);
+        return;
+      }
+
+      if (isElectron) {
+        // Load from SQLite — already ordered by updated_at DESC
+        const convos = await storageService.getConversations(projectId);
+        setProjectConversations(convos);
+      } else {
+        const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
         const filtered = allConversations.filter(
-          (conv: any) => conv.project_id === systemProject.id
+          (conv: any) => conv.project_id === projectId
         );
         setProjectConversations(filtered);
-      } else {
-        setProjectConversations([]);
       }
-    } else {
-      // Filter by project
-      const filtered = allConversations.filter(
-        (conv: any) => conv.project_id === selectedProject.id
-      );
-      setProjectConversations(filtered);
-    }
+    };
+
+    loadProjectConversations();
   }, [user?.conversations, selectedProject]);
 
   // Clear project selection when component unmounts (navigating away)
@@ -392,19 +386,6 @@ export default function Home() {
     };
   }, []);
 
-  const handleCloseOnboarding = async () => {
-    setShowOnboarding(false);
-
-    // Save onboarded status to user object
-    try {
-      const updatedUser = await userService.updateSettings({ onboarded: true });
-      if (updatedUser) {
-        setUser(updatedUser);
-      }
-    } catch (error) {
-      console.error('Failed to save onboarding status:', error);
-    }
-  };
 
   // Fetch projects for mentions
   const fetchProjects = async (search: string, callback: (data: ProjectSuggestion[]) => void) => {
@@ -604,7 +585,11 @@ export default function Home() {
 
           // Navigate to conversation page with project
           // Use replace: true to avoid adding to history and ensure URL is updated immediately
-          navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
+          if (projectId) {
+            navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
+          } else {
+            navigate(`/?conversation=${activeConversationId}`, { replace: true });
+          }
         } else {
           console.error('Failed to create conversation');
           return;
@@ -840,6 +825,8 @@ export default function Home() {
     // Navigate to the new conversation URL
     if (projectId) {
       navigate(`/?conversation=${newConversation.id}&project=${projectId}`, { replace: true });
+    } else {
+      navigate(`/?conversation=${newConversation.id}`, { replace: true });
     }
 
     // Set state immediately
@@ -847,20 +834,22 @@ export default function Home() {
     setShowChat(true);
     setActiveTab(0);
 
-    // Refresh user data to include new conversation and dispatch event
-    try {
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setUser(updatedUser);
-        // Dispatch userUpdated event to update sidebar with the refreshed user object
-        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-        // Also dispatch conversationCreated for other components that might need it
-        window.dispatchEvent(new CustomEvent('conversationCreated', {
-          detail: { conversation: newConversation }
-        }));
+    // Dispatch conversationCreated event so sidebar refreshes from SQLite
+    window.dispatchEvent(new CustomEvent('conversationCreated', {
+      detail: { conversation: newConversation }
+    }));
+
+    // For remote users, also refresh user data from server
+    if (!user?.guest) {
+      try {
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+      } catch (error) {
+        console.error('[Home] Failed to refresh user after conversation created:', error);
       }
-    } catch (error) {
-      console.error('[Home] Failed to refresh user after conversation created:', error);
     }
   };
 
@@ -873,24 +862,26 @@ export default function Home() {
     // Update local conversation state
     setConversation(updatedConversation);
 
-    // Sync messages to server using the new method that accepts messages directly
+    // Sync messages to storage
     if (updatedConversation.id && updatedConversation.messages) {
       try {
-        // Sync messages directly to server (no local storage)
         await conversationService.updateConversationMessages(
           updatedConversation.id,
           updatedConversation.messages
         );
-        console.log('[Home] Synced conversation to server');
+        console.log('[Home] Synced conversation messages');
 
-        // Refresh user data to update user.conversations
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          // Dispatch event to update sidebar
-          window.dispatchEvent(new CustomEvent('conversationUpdated', {
-            detail: { conversationId: updatedConversation.id }
-          }));
+        // Dispatch event to update sidebar conversation list
+        window.dispatchEvent(new CustomEvent('conversationUpdated', {
+          detail: { conversationId: updatedConversation.id }
+        }));
+
+        // For remote users, also refresh user data from server
+        if (!user?.guest) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
         }
       } catch (error) {
         console.error('[Home] Failed to sync conversation:', error);
@@ -1040,10 +1031,6 @@ export default function Home() {
   };
 
   if (isLoading) {
-    // Don't show loading spinner if there's no user (show welcome screen instead)
-    if (!user) {
-      return <WelcomeScreen onNavigateToLogin={() => navigate('/login')} />;
-    }
     return <LoadingSpinner showLogo message="Getting things ready..." size={48} />;
   }
 
@@ -1058,193 +1045,6 @@ export default function Home() {
       />
       {user && (
         <>
-          {/* Sidebar is now rendered in App.tsx for persistence across routes */}
-          {/* <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} /> */}
-
-          {/* Onboarding Dialog */}
-          <Dialog
-            open={showOnboarding}
-            onClose={handleCloseOnboarding}
-            maxWidth="md"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paperWide
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative">
-              {/* Close Button */}
-              <IconButton
-                onClick={handleCloseOnboarding}
-                sx={{
-                  position: 'absolute',
-                  right: 16,
-                  top: 16,
-                  color: '#9ca3af',
-                  '&:hover': {
-                    color: '#fff',
-                    bgcolor: 'rgba(236, 72, 153, 0.1)',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-
-              {/* Header */}
-              <Box className="p-8 pb-4">
-                <Box className="flex items-center gap-3 mb-3">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
-                      border: '1px solid rgba(236, 72, 153, 0.2)',
-                    }}
-                  >
-                    <RocketLaunchIcon sx={{ color: '#ec4899', fontSize: 28 }} />
-                  </Box>
-                  <h2 className="text-2xl font-bold text-white">Welcome to Smartloop!</h2>
-                </Box>
-                <p className="text-gray-400 text-sm">
-                  Let's get you started with a quick tour of how to make the most of your AI-powered workspace
-                </p>
-              </Box>
-
-              {/* Steps */}
-              <Box className="px-8 pb-8 space-y-6">
-                {/* Step 1 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
-                      border: '1px solid rgba(236, 72, 153, 0.2)',
-                    }}
-                  >
-                    <FolderOpenIcon sx={{ color: '#ec4899', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-pink-400 text-sm">01</span>
-                      Understand Projects
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      A project is like a folder that lets you group related documents together. Each project keeps your information organized and isolated from others.
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 2 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(59, 130, 246, 0.1)',
-                      border: '1px solid rgba(59, 130, 246, 0.2)',
-                    }}
-                  >
-                    <CreateNewFolderIcon sx={{ color: '#3b82f6', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-blue-400 text-sm">02</span>
-                      Create or Select a Project
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed mb-2">
-                      Type <span className="px-2 py-0.5 bg-gray-800 text-pink-400 rounded font-mono text-xs">/project-name</span> in the message box to select an existing project or create a new one instantly.
-                    </p>
-                    <p className="text-gray-500 text-xs italic">
-                      Example: Type <span className="text-pink-400">/marketing</span> to create a "marketing" project
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 3 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(168, 85, 247, 0.1)',
-                      border: '1px solid rgba(168, 85, 247, 0.2)',
-                    }}
-                  >
-                    <UploadFileIcon sx={{ color: '#a855f7', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-purple-400 text-sm">03</span>
-                      Upload Your Documents
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Add PDFs, Word documents, or text files to your project. The AI will analyze them and make the information instantly accessible.
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 4 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(34, 197, 94, 0.1)',
-                      border: '1px solid rgba(34, 197, 94, 0.2)',
-                    }}
-                  >
-                    <ManageSearchIcon sx={{ color: '#22c55e', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-green-400 text-sm">04</span>
-                      Start Extracting Information
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Ask questions, request summaries, or generate content based on your documents. The AI searches across all project files to give you accurate answers.
-                    </p>
-                  </Box>
-                </Box>
-              </Box>
-
-              {/* Footer Button */}
-              <Box className="px-8 pb-8">
-                <button
-                  onClick={handleCloseOnboarding}
-                  className="w-full py-3 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-semibold transition-all shadow-lg shadow-pink-500/20"
-                >
-                  Let's Go! 🚀
-                </button>
-              </Box>
-            </Box>
-          </Dialog>
 
           {/* Project Selection Info Dialog */}
           <Dialog
@@ -1717,7 +1517,7 @@ export default function Home() {
                 </Box>
 
                 {/* Tabs - show each conversation as tab plus Configuration */}
-                {(selectedProject || searchParams.get('project')) && (
+                {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
                   <ConversationTabs
                     projectConversations={projectConversations}
                     currentConversation={conversation}
@@ -1733,7 +1533,7 @@ export default function Home() {
                 )}
 
                 {/* Main Content Area - 2 columns */}
-                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
                   {/* Left Column - Chat or Documents Tab */}
                   <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
                     {activeTab === 1 && selectedProject ? (
@@ -1787,37 +1587,14 @@ export default function Home() {
             ) : (
               // Main prompt screen with no active conversation
               <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'black' }}>
-                {/* Login button for guest users */}
-                {user?.guest && (
-                  <Box className="flex items-center justify-end px-6 py-4">
-                    <button
-                      onClick={() => navigate('/login')}
-                      className="px-4 py-1.5 rounded-sm border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-pink-500/50 hover:bg-gray-900/50 transition-all"
-                    >
-                      Login
-                    </button>
-                  </Box>
-                )}
                 <Box className="flex-1 flex items-center justify-center px-4">
                   <Box className="max-w-3xl w-full">
                     {/* Logo */}
-                    <Box className="flex justify-center mb-4">
+                    <Box className="flex justify-center mb-6" sx={{ padding: '10px' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <span className="text-3xl font-semibold text-white tracking-tight">smartloop</span>
-                        <span className="text-pink-500 text-3xl font-semibold">.</span>
+                        <span className="text-5xl font-semibold text-white tracking-tight">smartloop</span>
+                        <span className="text-pink-500 text-5xl font-semibold">.</span>
                       </Box>
-                    </Box>
-
-                    {/* Greeting */}
-                    <Box className="text-center mb-6">
-                      <span className="text-lg text-gray-300">
-                        {(() => {
-                          const hour = new Date().getHours();
-                          if (hour < 12) return 'Good Morning';
-                          if (hour < 18) return 'Good Afternoon';
-                          return 'Good Evening';
-                        })()}, <span className="font-semibold text-pink-400">{user?.name?.split(' ')[0] || 'there'}</span>!
-                      </span>
                     </Box>
 
                     {/* Prompt input */}
@@ -1897,9 +1674,9 @@ export default function Home() {
                       </Box>
                     </Box>
 
-                    {/* Fine line + footer */}
-                    <Box className="mt-6 pt-4 border-t border-gray-800">
-                      <Box className="text-xs text-gray-500 text-left">
+                    {/* Footer text */}
+                    <Box className="mt-4">
+                      <Box className="text-xs text-gray-500 text-center">
                         Ready to assist you with anything you need.
                       </Box>
                     </Box>
@@ -1909,9 +1686,6 @@ export default function Home() {
             )}
           </Box>
         </>
-      )}
-      {!user && (
-        <WelcomeScreen onNavigateToLogin={() => navigate('/login')} />
       )}
     </>
   );

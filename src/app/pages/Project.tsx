@@ -432,8 +432,6 @@ export default function Project() {
     <>
       {user && (
         <>
-          {/* Sidebar is now rendered in App.tsx for persistence across routes */}
-          {/* <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} /> */}
           <IconButton
             sx={{
               position: 'fixed',
@@ -463,9 +461,6 @@ export default function Project() {
 
           <Box className="bg-black text-white" sx={{ display: 'flex', flexDirection: 'column' }}>
             <Box className="p-4 flex-shrink-0">
-              {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-              {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
-
             <main className="page projects files relative bg-black flex-1 overflow-hidden flex flex-col">
               <Box className="flex flex-col">
                 <Box className="mb-4 md:mb-6 mt-6 md:mt-8">

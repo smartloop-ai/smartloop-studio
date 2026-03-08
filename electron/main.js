@@ -861,14 +861,19 @@ if (!gotTheLock) {
     // Create main window (hidden until ready)
     createWindow();
 
-    // Setup and start SLP service in background (non-blocking)
+    // Setup and start SLP service in background (non-blocking, fully async)
     (async () => {
       try {
+        // Download & install SLP binary via curl (async — won't freeze the app)
         try {
-          setupSlpService();
+          await setupSlpService((progress) => {
+            updateSplashProgress(progress);
+          });
         } catch (error) {
           console.warn('[SLP] Setup failed, proceeding anyway:', error.message);
         }
+
+        updateSplashProgress({ status: 'starting', message: 'Starting SLP service...' });
 
         const serviceStarted = await startSlpService();
         const baseUrl = getLocalBaseUrl();

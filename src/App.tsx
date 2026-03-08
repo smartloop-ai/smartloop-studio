@@ -1,10 +1,7 @@
-import { useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Box } from '@mui/material';
-import Sidebar from './app/components/sidebar';
-import MobileNav from './app/components/mobile-nav';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './app/hooks/useAuth';
 import { AuthContext } from './app/contexts/AuthContext';
+import AppLayout from './app/layouts/AppLayout';
 import Home from './app/pages/Home';
 import Login from './app/pages/Login';
 import Forgot from './app/pages/Forgot';
@@ -20,63 +17,40 @@ import Settings from './app/pages/Settings';
 import Terms from './app/pages/Terms';
 import Developer from './app/pages/Developer';
 import OAuthCallback from './app/pages/OAuthCallback';
+import Welcome from './app/pages/Welcome';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-// Routes that should not show the sidebar
-const authRoutes = ['/login', '/signup', '/forgot', '/reset', '/verify', '/resend', '/oauth-callback', '/terms'];
-
 function App() {
-  const location = useLocation();
   const [user, setUser, _authReady] = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const showSidebar = !authRoutes.includes(location.pathname) && !!user;
 
   return (
     <AuthContext.Provider value={{ user, setUser }}>
-    <div className="wrapper">
-      {showSidebar && user && (
-        <>
-          {/* Persistent Sidebar across all app routes */}
-          <Sidebar
-            user={user}
-            mobileOpen={mobileMenuOpen}
-            onMobileClose={() => setMobileMenuOpen(false)}
-          />
-        </>
-      )}
+      <Routes>
+        {/* Pages without sidebar */}
+        <Route path="/welcome" element={<Welcome />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/forgot" element={<Forgot />} />
+        <Route path="/reset" element={<Reset />} />
+        <Route path="/verify" element={<Verify />} />
+        <Route path="/resend" element={<Resend />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/oauth-callback" element={<OAuthCallback />} />
 
-      <Box sx={{ marginLeft: { xs: 0, md: showSidebar && user ? '280px' : 0 } }}>
-        {showSidebar && user && (
-          /* Mobile Nav */
-          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-            <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-          </Box>
-        )}
+        {/* Pages with sidebar */}
+        <Route path="/" element={<AppLayout><Home /></AppLayout>} />
+        <Route path="/invite" element={<AppLayout><Invite /></AppLayout>} />
+        <Route path="/projects" element={<AppLayout><Projects /></AppLayout>} />
+        <Route path="/project/:slug" element={<AppLayout><Project /></AppLayout>} />
+        <Route path="/documents" element={<AppLayout><Documents /></AppLayout>} />
+        <Route path="/profile" element={<AppLayout><Profile /></AppLayout>} />
+        <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
+        <Route path="/developer" element={isElectron ? <Navigate to="/" replace /> : <AppLayout><Developer /></AppLayout>} />
 
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot" element={<Forgot />} />
-          <Route path="/reset" element={<Reset />} />
-          <Route path="/verify" element={<Verify />} />
-          <Route path="/resend" element={<Resend />} />
-          <Route path="/invite" element={<Invite />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/project/:slug" element={<Project />} />
-          <Route path="/documents" element={<Documents />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/terms" element={<Terms />} />
-          <Route path="/developer" element={isElectron ? <Navigate to="/" replace /> : <Developer />} />
-          <Route path="/oauth-callback" element={<OAuthCallback />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Box>
-    </div>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </AuthContext.Provider>
   );
 }
 
 export default App;
-

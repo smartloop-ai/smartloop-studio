@@ -95,6 +95,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             config: p.config || { rules: '', memory: true },
           };
         });
+        // Ensure a system project exists
+        const hasSystemProject = mapped.some((p: any) => p.system === true);
+        if (!hasSystemProject) {
+          mapped.unshift({
+            id: 'general',
+            title: 'General Chat',
+            name: 'General Chat',
+            system: true,
+            documents: [],
+            config: { rules: '', memory: true },
+          });
+        }
         setLocalProjects(mapped);
       }
     } catch {
@@ -128,8 +140,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Refresh user data on demand
+  // Refresh user data on demand (skip for guest users — no remote API)
   const refreshUserData = async () => {
+    if (user?.guest) return;
     try {
       const updatedUser = await userService.get();
       if (updatedUser) {
@@ -157,8 +170,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
 
     const handleConversationCreated = () => {
-      // No longer need to refresh - userUpdated event will handle it
-      // But keep this for backward compatibility if other code depends on it
+      refreshConversations();
     };
 
     const handleConversationDeleted = () => {
@@ -285,11 +297,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           createdAt: conversation.created_at || new Date(),
         };
       })
-      // Filter to show only conversations with project_id (belongs to actual projects)
       .filter((conv: any) => conv.id && conv.projectId)
-      // Sort by most recently updated
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      // Limit to 3 most recent
       .slice(0, 3);
 
     return recentConversations;
@@ -772,10 +780,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 if (chat.project_id) {
                   navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
                 } else {
-                  // Conversation without project_id - find system project
+                  // Conversation without project_id - find system project or navigate without project
                   const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
                   if (systemProject) {
                     navigate(`/?conversation=${chat.id}&project=${systemProject.id}`);
+                  } else {
+                    navigate(`/?conversation=${chat.id}`);
                   }
                 }
                 onMobileClose?.();
