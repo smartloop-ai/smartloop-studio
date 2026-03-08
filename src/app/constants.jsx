@@ -12,9 +12,22 @@ export const API_BASE_URL = BASE_URL; // For OAuth app_url parameter
 let _localApiUrl = null;
 let _localApiUrlPromise = null;
 
+// Listen for service-ready event to update cached URL
+if (typeof window !== 'undefined' && window.electronAPI?.onSlpServiceReady) {
+  window.electronAPI.onSlpServiceReady((data) => {
+    if (data?.baseUrl) {
+      console.log('[Constants] SLP service ready, updating URL to:', data.baseUrl);
+      _localApiUrl = data.baseUrl;
+      _localApiUrlPromise = null;
+      // Notify any listeners
+      window.dispatchEvent(new CustomEvent('slpServiceReady', { detail: data }));
+    }
+  });
+}
+
 /**
- * Get the local SLP API base URL (e.g. http://localhost:41533)
- * Returns cached value after first call.
+ * Get the local SLP API base URL (e.g. http://localhost:38383)
+ * Fetches from Electron main process; updates when service comes online.
  */
 export const getLocalApiEndpoint = async () => {
   if (_localApiUrl) return _localApiUrl;
@@ -32,10 +45,8 @@ export const getLocalApiEndpoint = async () => {
     } catch (e) {
       console.warn('[Constants] Failed to get local API URL from Electron:', e);
     }
-    // Fallback
-    const fallback = import.meta.env.VITE_LOCAL_BASE_URL || 'http://localhost:41533';
-    _localApiUrl = fallback;
-    return fallback;
+    // No fallback — return null if service isn't ready yet
+    return null;
   })();
 
   return _localApiUrlPromise;

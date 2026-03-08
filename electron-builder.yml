@@ -10,11 +10,6 @@ protocols:
   name: smartloop
   schemes:
     - smartloop
-extraFiles:
-  - from: build/slp/slp
-    to: slp
-    filter:
-      - "**/*"
 files:
   - dist-web/**/*
   - electron/**/*

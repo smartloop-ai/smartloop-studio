@@ -28,9 +28,9 @@ const authRoutes = ['/login', '/signup', '/forgot', '/reset', '/verify', '/resen
 
 function App() {
   const location = useLocation();
-  const [user, setUser] = useAuth();
+  const [user, setUser, _authReady] = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const showSidebar = !authRoutes.includes(location.pathname);
+  const showSidebar = !authRoutes.includes(location.pathname) && !!user;
 
   return (
     <AuthContext.Provider value={{ user, setUser }}>

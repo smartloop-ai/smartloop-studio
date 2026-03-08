@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "download-slp": "node scripts/download-slp.js",
-    "build": "node scripts/download-slp.js && tsc && vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "electron": "electron .",
@@ -28,6 +28,7 @@
     "@mui/icons-material": "^6.0.1",
     "@mui/material": "^6.0.1",
     "@mui/x-data-grid": "^7.15.0",
+    "better-sqlite3": "^12.6.2",
     "crypto-js": "^4.2.0",
     "easymde": "^2.20.0",
     "electron-store": "^11.0.2",

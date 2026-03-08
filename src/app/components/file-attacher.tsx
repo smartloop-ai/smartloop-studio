@@ -162,7 +162,7 @@ export default function FileAttacher({
   if (selectedFile) {
     return (
       <Box
-        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700"
+        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm"
         sx={{ height: isSmall ? '28px' : '40px' }}
       >
         {isUploading ? (
@@ -218,7 +218,7 @@ export default function FileAttacher({
       )}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
+        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
         style={{ height: isSmall ? '28px' : '40px' }}
         disabled={disabled || isUploading}
       >

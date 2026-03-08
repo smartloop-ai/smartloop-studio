@@ -55,34 +55,46 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [localProjects, setLocalProjects] = useState<any[]>([]);
 
-  // Load projects from local API, update live user when prop changes
+  // Update live user and load conversations
   useEffect(() => {
     if (!user) {
       setLiveUser(user);
       return;
     }
 
-    const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-    setConversations(conversations);
+    // In local/Electron mode, load conversations from SQLite
+    if (isElectron) {
+      refreshConversations();
+    } else {
+      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      setConversations(conversations);
+    }
     lastTokenCount.current = user?.number_of_tokens_processed || 0;
     setLiveUser(user);
   }, [user]);
 
-  // Fetch projects from local SLP server
+  // Fetch projects from local SLP server, enriched with local metadata (color)
   const loadLocalProjects = async () => {
     try {
       const localBase = await getLocalApiEndpoint();
+      if (!localBase) return;
       const res = await fetch(`${localBase}/v1/projects`);
       if (res.ok) {
         const data = await res.json();
-        // API may return { projects: [...] } or bare array
         const rawProjects = Array.isArray(data) ? data : (data.projects || []);
-        const mapped = rawProjects.map((p: any) => ({
-          ...p,
-          title: p.title || p.name,
-          documents: p.documents || [],
-          config: p.config || { rules: '', memory: true },
-        }));
+        // Enrich with local metadata (color) from SQLite
+        const localMeta = await storageService.getAllProjectMeta();
+        const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
+        const mapped = rawProjects.map((p: any) => {
+          const meta = metaMap.get(p.id);
+          return {
+            ...p,
+            title: p.title || p.name,
+            color: meta?.color || p.color || null,
+            documents: p.documents || [],
+            config: p.config || { rules: '', memory: true },
+          };
+        });
         setLocalProjects(mapped);
       }
     } catch {
@@ -90,23 +102,29 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Load projects on mount
+  // Load projects on mount and when service becomes ready
   useEffect(() => {
     if (user) {
       loadLocalProjects();
     }
+    const handleServiceReady = () => { loadLocalProjects(); refreshConversations(); };
+    window.addEventListener('slpServiceReady', handleServiceReady);
+    return () => window.removeEventListener('slpServiceReady', handleServiceReady);
   }, [user?.email]);
 
-
-  // Load conversations from local storage
+  // Load conversations from SQLite (local mode) or user service (remote)
   const refreshConversations = async () => {
     try {
-      const user = await userService.get();
-      // Ensure conversations is always an array, never null or undefined
-      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      setConversations(conversations);
+      if (isElectron) {
+        const convos = await storageService.getConversations();
+        setConversations(convos);
+      } else {
+        const user = await userService.get();
+        const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+        setConversations(conversations);
+      }
     } catch (error) {
-      console.error('Error loading conversations from storage:', error);
+      console.error('Error loading conversations:', error);
     }
   };
 
@@ -938,7 +956,34 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       })()}
 
       {/* User Profile at bottom */}
-      {user && (
+      {user?.guest && (
+        <Box sx={{
+          p: 2,
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          bgcolor: 'rgba(255, 255, 255, 0.02)',
+        }}>
+          <Box
+            onClick={() => navigate('/login')}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              borderRadius: '8px',
+              padding: '10px',
+              border: '1px solid rgba(107, 114, 128, 0.3)',
+              transition: 'all 0.12s ease',
+              '&:hover': {
+                bgcolor: 'rgba(236, 72, 153, 0.1)',
+                borderColor: 'rgba(236, 72, 153, 0.4)',
+              },
+            }}
+          >
+            <span className="text-sm text-gray-300">Login</span>
+          </Box>
+        </Box>
+      )}
+      {user && !user.guest && (
         <>
           <Box sx={{
             p: 2,

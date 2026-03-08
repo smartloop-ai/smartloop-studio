@@ -10,8 +10,9 @@ import { storageService } from '../services/storage.service';
  * Handles invalid or expired tokens by redirecting to login
  * @returns [user, setUser] tuple - user object (or null) and setter function
  */
-export function useAuth(): [any, (user: any) => void] {
+export function useAuth(): [any, (user: any) => void, boolean] {
   const [user, setUser] = useState<any>(null);
+  const [authReady, setAuthReady] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const isAuthCheckingRef = useRef(false);
@@ -43,8 +44,31 @@ export function useAuth(): [any, (user: any) => void] {
         }
 
         if (!token) {
-          console.log('useAuth: No token found, redirecting to login');
-          navigate('/login', { replace: true });
+          // No token — in Electron, create guest user with local SLP projects
+          if (isElectron) {
+            let mappedProjects: any[] = [];
+            try {
+              const localProjectsResult = await projectService.getProjects();
+              if (localProjectsResult.success && localProjectsResult.data) {
+                const localProjects: any[] = localProjectsResult.data.projects || localProjectsResult.data;
+                mappedProjects = localProjects.map((p: any) => ({
+                  ...p,
+                  title: p.title || p.name,
+                  documents: p.documents || [],
+                  config: p.config || { rules: '', memory: true },
+                }));
+              }
+            } catch (err) {
+              console.warn('useAuth: Could not load local projects for guest mode:', err);
+            }
+            console.log(`useAuth: Guest mode — loaded ${mappedProjects.length} project(s) from local SLP`);
+            setUser({ name: 'Guest', guest: true, projects: mappedProjects, conversations: [] });
+            return;
+          }
+          // Not in Electron — redirect to login
+          if (location.pathname !== '/') {
+            navigate('/', { replace: true });
+          }
           return;
         }
 
@@ -71,10 +95,10 @@ export function useAuth(): [any, (user: any) => void] {
             }
           }
 
-          // No cached data or invalid cache - redirect to login
-          console.log('useAuth: Failed to fetch user and no cached data, redirecting to login');
+          // No cached data or invalid cache - redirect to welcome screen
+          console.log('useAuth: Failed to fetch user and no cached data, redirecting to welcome');
           userService.logout();
-          navigate('/login', { replace: true });
+          navigate('/', { replace: true });
         }
         else {
           // Always use local SLP as the source of truth for projects in Electron
@@ -98,25 +122,6 @@ export function useAuth(): [any, (user: any) => void] {
           }
 
           setUser(u);
-
-          // Initialize system project if running in Electron
-          if (isElectron && window.electronAPI?.initializeSystemProject) {
-            try {
-              console.log('useAuth: Initializing default project...');
-              const result = await window.electronAPI.initializeSystemProject(token);
-              if (result.success) {
-                if (result.existed) {
-                  console.log('useAuth: Default project already exists');
-                } else {
-                  console.log('useAuth: Default project created successfully');
-                }
-              } else {
-                console.error('useAuth: Failed to initialize default project:', result.error);
-              }
-            } catch (error) {
-              console.error('useAuth: Error initializing default project:', error);
-            }
-          }
 
           // Initialize token refresh in the background
           userService.initializeTokenRefresh();
@@ -143,12 +148,13 @@ export function useAuth(): [any, (user: any) => void] {
           }
         }
 
-        // Always redirect to login on other errors to prevent white screens
-        console.log('useAuth: Redirecting to login due to error');
+        // Redirect to welcome screen on other errors
+        console.log('useAuth: Redirecting to welcome screen due to error');
         userService.logout();
-        navigate('/login', { replace: true });
+        navigate('/', { replace: true });
       } finally {
         isAuthCheckingRef.current = false;
+        setAuthReady(true);
       }
     };
 
@@ -169,5 +175,5 @@ export function useAuth(): [any, (user: any) => void] {
     };
   }, []);
 
-  return [user, setUser];
+  return [user, setUser, authReady];
 }

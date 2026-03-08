@@ -1,12 +1,12 @@
 /**
  * Storage Service
- * Uses electron-store for persistent storage in Electron app
+ * Uses SQLite (via Electron IPC) for conversations, messages, and project metadata.
+ * Falls back to electron-store for generic key-value storage (token, user prefs).
  */
 
 class StorageService {
-  /**
-   * Get an item from storage
-   */
+  // --- Generic key-value (electron-store) ---
+
   async getItem(key: string): Promise<any> {
     try {
       if (window.electronAPI?.storageGet) {
@@ -19,9 +19,6 @@ class StorageService {
     }
   }
 
-  /**
-   * Set an item in storage
-   */
   async setItem(key: string, value: any): Promise<void> {
     try {
       if (window.electronAPI?.storageSet) {
@@ -34,185 +31,199 @@ class StorageService {
     }
   }
 
-  /**
-   * Remove an item from storage
-   */
   async removeItem(key: string): Promise<void> {
     try {
       if (window.electronAPI?.storageRemove) {
         await window.electronAPI.storageRemove(key);
-      } else {
-        throw new Error('Electron storage not available');
       }
     } catch (error) {
       console.error(`Error removing item ${key} from storage:`, error);
     }
   }
 
-  /**
-   * Clear all storage
-   */
   async clear(): Promise<void> {
     try {
       if (window.electronAPI?.storageClear) {
         await window.electronAPI.storageClear();
-      } else {
-        throw new Error('Electron storage not available');
       }
     } catch (error) {
       console.error('Error clearing storage:', error);
     }
   }
 
-  /**
-   * Check if a key exists in storage
-   */
   async has(key: string): Promise<boolean> {
     try {
       if (window.electronAPI?.storageHas) {
         return await window.electronAPI.storageHas(key);
       }
-      throw new Error('Electron storage not available');
+      return false;
     } catch (error) {
       console.error(`Error checking if ${key} exists in storage:`, error);
       return false;
     }
   }
 
-  /**
-   * Get all storage data
-   */
   async getAll(): Promise<Record<string, any>> {
     try {
       if (window.electronAPI?.storageGetAll) {
         return await window.electronAPI.storageGetAll();
       }
-      throw new Error('Electron storage not available');
+      return {};
     } catch (error) {
       console.error('Error getting all storage data:', error);
       return {};
     }
   }
 
-  /**
-   * Storage key prefix for local mode — avoids conflicts with remote-mode cache
-   */
-  private localKey(key: string): string {
-    return `local_${key}`;
+  // --- Conversations (SQLite) ---
+
+  private get db() {
+    return (window as any).electronAPI?.db;
   }
 
-  /**
-   * Save conversations to storage
-   */
   async saveConversations(conversations: any[]): Promise<void> {
-    try {
-      await this.setItem(this.localKey('conversations'), conversations);
-      console.log(`[Storage] Saved ${conversations.length} conversations`);
-    } catch (error) {
-      console.error('Error saving conversations:', error);
+    if (!this.db) return;
+    for (const conv of conversations) {
+      await this.saveConversation(conv);
     }
   }
 
-  /**
-   * Get all conversations from storage
-   */
-  async getConversations(): Promise<any[]> {
+  async getConversations(projectId?: string): Promise<any[]> {
+    if (!this.db) return [];
     try {
-      const conversations = await this.getItem(this.localKey('conversations'));
-      return conversations || [];
+      return await this.db.getConversations(projectId || null);
     } catch (error) {
       console.error('Error getting conversations:', error);
       return [];
     }
   }
 
-  /**
-   * Save a single conversation to storage
-   */
   async saveConversation(conversation: any): Promise<void> {
+    if (!this.db) return;
     try {
-      const conversations = await this.getConversations();
-      const existingIndex = conversations.findIndex((c: any) => c.id === conversation.id);
-
-      if (existingIndex >= 0) {
-        conversations[existingIndex] = conversation;
+      const existing = await this.db.getConversation(conversation.id);
+      if (existing) {
+        await this.db.updateConversation(conversation.id, {
+          title: conversation.title,
+          project_id: conversation.project_id,
+        });
       } else {
-        conversations.push(conversation);
+        await this.db.createConversation({
+          id: conversation.id,
+          title: conversation.title,
+          project_id: conversation.project_id || null,
+        });
       }
-
-      await this.saveConversations(conversations);
     } catch (error) {
       console.error('Error saving conversation:', error);
     }
   }
 
-  /**
-   * Get a single conversation by ID
-   */
   async getConversation(conversationId: string): Promise<any | null> {
+    if (!this.db) return null;
     try {
-      const conversations = await this.getConversations();
-      return conversations.find((c: any) => c.id === conversationId) || null;
+      return await this.db.getConversation(conversationId);
     } catch (error) {
       console.error('Error getting conversation:', error);
       return null;
     }
   }
 
-  /**
-   * Delete a conversation from storage
-   */
   async deleteConversation(conversationId: string): Promise<void> {
+    if (!this.db) return;
     try {
-      const conversations = await this.getConversations();
-      const filtered = conversations.filter((c: any) => c.id !== conversationId);
-      await this.saveConversations(filtered);
-
-      // Also delete messages for this conversation
-      await this.deleteMessages(conversationId);
+      await this.db.deleteConversation(conversationId);
       console.log(`[Storage] Deleted conversation ${conversationId}`);
     } catch (error) {
       console.error('Error deleting conversation:', error);
     }
   }
 
-  /**
-   * Save messages for a conversation
-   */
+  // --- Messages (SQLite) ---
+
   async saveMessages(conversationId: string, messages: any[]): Promise<void> {
+    if (!this.db) return;
     try {
-      const key = this.localKey(`messages_${conversationId}`);
-      await this.setItem(key, messages);
-      console.log(`[Storage] Saved ${messages.length} messages for conversation ${conversationId}`);
+      // Ensure each message has an id
+      const msgsWithIds = messages.map(m => ({
+        id: m.id || crypto.randomUUID(),
+        role: m.role,
+        content: m.content,
+        created_at: m.created_at || m.timestamp,
+      }));
+      await this.db.addMessages(conversationId, msgsWithIds);
     } catch (error) {
       console.error(`Error saving messages for conversation ${conversationId}:`, error);
     }
   }
 
-  /**
-   * Get messages for a conversation
-   */
   async getMessages(conversationId: string): Promise<any[]> {
+    if (!this.db) return [];
     try {
-      const key = this.localKey(`messages_${conversationId}`);
-      const messages = await this.getItem(key);
-      return messages || [];
+      return await this.db.getMessages(conversationId);
     } catch (error) {
       console.error(`Error getting messages for conversation ${conversationId}:`, error);
       return [];
     }
   }
 
-  /**
-   * Delete messages for a conversation
-   */
   async deleteMessages(conversationId: string): Promise<void> {
+    if (!this.db) return;
     try {
-      const key = this.localKey(`messages_${conversationId}`);
-      await this.removeItem(key);
-      console.log(`[Storage] Deleted messages for conversation ${conversationId}`);
+      await this.db.deleteMessages(conversationId);
     } catch (error) {
       console.error(`Error deleting messages for conversation ${conversationId}:`, error);
+    }
+  }
+
+  // --- Project metadata (SQLite) ---
+
+  async upsertProject(project: { id: string; name: string; color?: string; temperature?: number; system?: boolean }): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.upsertProject(project);
+    } catch (error) {
+      console.error('Error upserting project:', error);
+      return null;
+    }
+  }
+
+  async getProjectMeta(projectId: string): Promise<any | null> {
+    if (!this.db) return null;
+    try {
+      return await this.db.getProject(projectId);
+    } catch (error) {
+      console.error('Error getting project meta:', error);
+      return null;
+    }
+  }
+
+  async getAllProjectMeta(): Promise<any[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.getAllProjects();
+    } catch (error) {
+      console.error('Error getting all project meta:', error);
+      return [];
+    }
+  }
+
+  async updateProjectMeta(projectId: string, updates: { name?: string; color?: string; temperature?: number }): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.updateProject(projectId, updates);
+    } catch (error) {
+      console.error('Error updating project meta:', error);
+      return null;
+    }
+  }
+
+  async deleteProjectMeta(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteProject(projectId);
+    } catch (error) {
+      console.error('Error deleting project meta:', error);
     }
   }
 }

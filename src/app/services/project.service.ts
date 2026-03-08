@@ -1,8 +1,10 @@
 import { getLocalApiEndpoint } from "@/app/constants";
+import { storageService } from "./storage.service";
 
 /**
  * Project Service
- * Handles project CRUD against the local SLP service
+ * Handles project CRUD against the local SLP service.
+ * Stores UI metadata (color, temperature) in local SQLite.
  */
 
 interface CreateProjectParams {
@@ -54,7 +56,17 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
 
     if (response.status === 200 || response.status === 201) {
       const project = await response.json();
-      return { success: true, data: project };
+
+      // Store UI metadata in local SQLite
+      await storageService.upsertProject({
+        id: project.id,
+        name: project.name || title.trim(),
+        color: color,
+        temperature,
+        system,
+      });
+
+      return { success: true, data: { ...project, color } };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -85,6 +97,8 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     const response = await fetch(url, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
+      // Remove from local SQLite
+      await storageService.deleteProjectMeta(projectId);
       return { success: true, data: { projectId } };
     }
 
@@ -103,7 +117,7 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
 };
 
 /**
- * Get all projects from local service
+ * Get all projects from local service, enriched with local metadata
  */
 const getProjects = async (): Promise<ProjectServiceResponse> => {
   try {
@@ -113,7 +127,21 @@ const getProjects = async (): Promise<ProjectServiceResponse> => {
 
     if (response.ok) {
       const projects = await response.json();
-      return { success: true, data: projects };
+
+      // Enrich with local metadata (color, etc.)
+      const localMeta = await storageService.getAllProjectMeta();
+      const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
+
+      const enriched = (Array.isArray(projects) ? projects : []).map((p: any) => {
+        const meta = metaMap.get(p.id);
+        return {
+          ...p,
+          color: meta?.color || p.color || null,
+          temperature: meta?.temperature ?? p.temperature,
+        };
+      });
+
+      return { success: true, data: enriched };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -156,7 +184,17 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
 
     if (response.status === 200) {
       const project = await response.json();
-      return { success: true, data: project };
+
+      // Update local metadata
+      const metaUpdates: any = {};
+      if (updates.title) metaUpdates.name = updates.title;
+      if (updates.color !== undefined) metaUpdates.color = updates.color;
+      if (updates.temperature !== undefined) metaUpdates.temperature = updates.temperature;
+      if (Object.keys(metaUpdates).length > 0) {
+        await storageService.updateProjectMeta(projectId, metaUpdates);
+      }
+
+      return { success: true, data: { ...project, color: updates.color ?? project.color } };
     }
 
     const errorData = await response.json().catch(() => ({}));

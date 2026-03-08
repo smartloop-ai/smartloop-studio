@@ -47,8 +47,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  // System project initialization
-  initializeSystemProject: (token) => ipcRenderer.invoke('initialize-system-project', token),
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),
@@ -63,8 +61,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
+  // SLP service lifecycle
+  slpServiceStart: () => ipcRenderer.invoke('slp-service-start'),
+  slpServiceStop: () => ipcRenderer.invoke('slp-service-stop'),
+  slpServiceStatus: () => ipcRenderer.invoke('slp-service-status'),
+  slpServiceUninstall: () => ipcRenderer.invoke('slp-service-uninstall'),
+  onSlpServiceReady: (callback) => {
+    ipcRenderer.on('slp-service-ready', (event, data) => callback(data));
+  },
+  removeSlpServiceReadyListener: () => {
+    ipcRenderer.removeAllListeners('slp-service-ready');
+  },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
+  // SQLite database methods
+  db: {
+    // Projects
+    upsertProject: (project) => ipcRenderer.invoke('db-upsert-project', project),
+    getProject: (id) => ipcRenderer.invoke('db-get-project', id),
+    getAllProjects: () => ipcRenderer.invoke('db-get-all-projects'),
+    updateProject: (id, updates) => ipcRenderer.invoke('db-update-project', id, updates),
+    deleteProject: (id) => ipcRenderer.invoke('db-delete-project', id),
+    // Conversations
+    createConversation: (conv) => ipcRenderer.invoke('db-create-conversation', conv),
+    getConversation: (id) => ipcRenderer.invoke('db-get-conversation', id),
+    getConversations: (projectId) => ipcRenderer.invoke('db-get-conversations', projectId),
+    updateConversation: (id, updates) => ipcRenderer.invoke('db-update-conversation', id, updates),
+    deleteConversation: (id) => ipcRenderer.invoke('db-delete-conversation', id),
+    // Messages
+    addMessage: (msg) => ipcRenderer.invoke('db-add-message', msg),
+    addMessages: (conversationId, msgs) => ipcRenderer.invoke('db-add-messages', conversationId, msgs),
+    getMessages: (conversationId) => ipcRenderer.invoke('db-get-messages', conversationId),
+    deleteMessages: (conversationId) => ipcRenderer.invoke('db-delete-messages', conversationId),
+  },
   // Check if running in Electron
   isElectron: true,
   // System info
