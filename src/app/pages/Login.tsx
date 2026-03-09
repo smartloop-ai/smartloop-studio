@@ -3,7 +3,8 @@ import '../styles/login.css';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Box, CircularProgress } from '@mui/material';
+import { Box, CircularProgress, IconButton } from '@mui/material';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import { APP_URL, API_BASE_URL } from '@/app/constants';
 import { storageService } from '@/app/services/storage.service';
 
@@ -123,7 +124,15 @@ export default function Login() {
   };
 
   return (
-    <Box className="min-h-screen bg-black flex flex-col items-center justify-center p-6">
+    <Box className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative">
+      {/* Home icon */}
+      <IconButton
+        onClick={() => navigate('/', { replace: true })}
+        sx={{ position: 'absolute', top: 16, right: 16, color: '#9ca3af', '&:hover': { color: '#fff' } }}
+      >
+        <HomeOutlinedIcon />
+      </IconButton>
+
       {/* Logo */}
       <Box className="mb-12">
         <Box className="flex items-center gap-0 justify-center">

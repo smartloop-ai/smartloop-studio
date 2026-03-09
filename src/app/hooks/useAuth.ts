@@ -43,38 +43,20 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           token = await storageService.getItem('token');
         }
 
-        if (!token) {
-          // No token — in Electron, create guest user with local SLP projects
+        if (!token || isElectron) {
+          // No token or Electron — use local guest mode (skip remote user service)
           if (isElectron) {
-            let mappedProjects: any[] = [];
+            let projects: any[] = [];
             try {
               const localProjectsResult = await projectService.getProjects();
               if (localProjectsResult.success && localProjectsResult.data) {
-                const localProjects: any[] = localProjectsResult.data.projects || localProjectsResult.data;
-                mappedProjects = localProjects.map((p: any) => ({
-                  ...p,
-                  title: p.title || p.name,
-                  documents: p.documents || [],
-                  config: p.config || { rules: '', memory: true },
-                }));
+                projects = Array.isArray(localProjectsResult.data) ? localProjectsResult.data : [];
               }
             } catch (err) {
               console.warn('useAuth: Could not load local projects for guest mode:', err);
             }
-            // Ensure a system project exists for guest users
-            const hasSystemProject = mappedProjects.some((p: any) => p.system === true);
-            if (!hasSystemProject) {
-              mappedProjects.unshift({
-                id: 'general',
-                title: 'General Chat',
-                name: 'General Chat',
-                system: true,
-                documents: [],
-                config: { rules: '', memory: true },
-              });
-            }
-            console.log(`useAuth: Guest mode — loaded ${mappedProjects.length} project(s) from local SLP`);
-            setUser({ name: 'Guest', guest: true, projects: mappedProjects, conversations: [] });
+            console.log(`useAuth: Guest mode — loaded ${projects.length} project(s) from local SLP`);
+            setUser({ name: 'Guest', guest: true, projects, conversations: [] });
             return;
           }
           // Not in Electron — redirect to welcome page
@@ -84,7 +66,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           return;
         }
 
-        // Fetch user data
+        // Fetch user data (only reached in non-Electron mode with valid token)
         let u = await userService.get();
 
         if (!u) {
@@ -118,27 +100,9 @@ export function useAuth(): [any, (user: any) => void, boolean] {
             try {
               const localProjectsResult = await projectService.getProjects();
               if (localProjectsResult.success && localProjectsResult.data) {
-                const localProjects: any[] = localProjectsResult.data.projects || localProjectsResult.data;
-                const mappedProjects = localProjects.map((p: any) => ({
-                  ...p,
-                  title: p.title || p.name,
-                  documents: p.documents || [],
-                  config: p.config || { rules: '', memory: true },
-                }));
-                // Ensure a system project exists
-                const hasSystemProject = mappedProjects.some((p: any) => p.system === true);
-                if (!hasSystemProject) {
-                  mappedProjects.unshift({
-                    id: 'general',
-                    title: 'General Chat',
-                    name: 'General Chat',
-                    system: true,
-                    documents: [],
-                    config: { rules: '', memory: true },
-                  });
-                }
-                console.log(`useAuth: Loaded ${mappedProjects.length} project(s) from local SLP`);
-                u = { ...u, projects: mappedProjects };
+                const projects = Array.isArray(localProjectsResult.data) ? localProjectsResult.data : [];
+                console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
+                u = { ...u, projects };
               }
             } catch (err) {
               console.warn('useAuth: Could not load projects from local SLP:', err);

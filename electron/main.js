@@ -99,7 +99,7 @@ ipcMain.handle('db-delete-project', (event, id) => database.deleteProject(id));
 // Conversations
 ipcMain.handle('db-create-conversation', (event, conv) => database.createConversation(conv));
 ipcMain.handle('db-get-conversation', (event, id) => database.getConversation(id));
-ipcMain.handle('db-get-conversations', (event, projectId) => database.getConversations(projectId));
+ipcMain.handle('db-get-conversations', (event, projectId, order) => database.getConversations(projectId, order));
 ipcMain.handle('db-update-conversation', (event, id, updates) => database.updateConversation(id, updates));
 ipcMain.handle('db-delete-conversation', (event, id) => database.deleteConversation(id));
 
@@ -855,56 +855,81 @@ if (!gotTheLock) {
       }, 1000);
     }
 
-    // Show splash screen while SLP service starts
-    createSplashScreen();
-
     // Create main window (hidden until ready)
     createWindow();
 
-    // Setup and start SLP service in background (non-blocking, fully async)
-    (async () => {
+    // Check if SLP daemon is already running
+    const existingPort = readLocalServicePort();
+    let serviceReady = false;
+
+    if (existingPort) {
       try {
-        // Download & install SLP binary via curl (async — won't freeze the app)
-        try {
-          await setupSlpService((progress) => {
-            updateSplashProgress(progress);
-          });
-        } catch (error) {
-          console.warn('[SLP] Setup failed, proceeding anyway:', error.message);
+        const res = await fetch(`http://localhost:${existingPort}/health`);
+        if (res.ok) {
+          localServicePort = existingPort;
+          serviceReady = true;
+          console.log('[SLP] Daemon already running on port', existingPort);
         }
-
-        updateSplashProgress({ status: 'starting', message: 'Starting SLP service...' });
-
-        const serviceStarted = await startSlpService();
-        const baseUrl = getLocalBaseUrl();
-
-        if (serviceStarted && baseUrl) {
-          // Notify renderer that the local service is ready
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
-          }
-
-          try {
-            await bootstrapSlpService(baseUrl);
-          } catch (error) {
-            console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
-          }
-        } else {
-          console.warn('[SLP] Service did not start, proceeding without local service');
-        }
-      } catch (error) {
-        console.error('[SLP] Unexpected error during startup:', error.message);
-      } finally {
-        // Show main window first, then close splash
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-        }
-        if (splashWindow && !splashWindow.isDestroyed()) {
-          splashWindow.close();
-          splashWindow = null;
-        }
+      } catch {
+        console.log('[SLP] Daemon not responding, will do full setup');
       }
-    })();
+    }
+
+    if (serviceReady) {
+      // Daemon already running — show window immediately, no splash
+      const baseUrl = getLocalBaseUrl();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
+        mainWindow.show();
+      }
+    } else {
+      // First launch or daemon not running — show splash and do full setup
+      createSplashScreen();
+
+      (async () => {
+        try {
+          // Download & install SLP binary via curl (async — won't freeze the app)
+          try {
+            await setupSlpService((progress) => {
+              updateSplashProgress(progress);
+            });
+          } catch (error) {
+            console.warn('[SLP] Setup failed, proceeding anyway:', error.message);
+          }
+
+          updateSplashProgress({ status: 'starting', message: 'Starting service...' });
+
+          const serviceStarted = await startSlpService();
+          const baseUrl = getLocalBaseUrl();
+
+          if (serviceStarted && baseUrl) {
+            // Notify renderer that the local service is ready
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
+            }
+
+            try {
+              await bootstrapSlpService(baseUrl);
+            } catch (error) {
+              console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
+            }
+          } else {
+            console.warn('[SLP] Service did not start, proceeding without local service');
+          }
+        } catch (error) {
+          console.error('[SLP] Unexpected error during startup:', error.message);
+        } finally {
+          // Show main window first, then close splash
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+          }
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+        }
+      })();
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -983,12 +1008,12 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
-  // Close database and clean up SLP service before quitting
+  // Close database and clean up before quitting
   database.closeDatabase();
   if (getLocalBaseUrl()) {
     event.preventDefault();
-    await unloadModel();
-    stopSlpService();
+    await unloadModel();  // Free GPU memory
+    // Don't stop service — it runs as a daemon
     app.exit(0);
   }
 });

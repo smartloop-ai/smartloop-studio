@@ -88,10 +88,10 @@ class StorageService {
     }
   }
 
-  async getConversations(projectId?: string): Promise<any[]> {
+  async getConversations(projectId?: string, order?: 'asc' | 'desc'): Promise<any[]> {
     if (!this.db) return [];
     try {
-      return await this.db.getConversations(projectId || null);
+      return await this.db.getConversations(projectId || null, order);
     } catch (error) {
       console.error('Error getting conversations:', error);
       return [];

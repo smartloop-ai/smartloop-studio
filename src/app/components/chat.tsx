@@ -437,26 +437,44 @@ export default function Chat(props: {
         conversationId: conversationId
       });
 
-      // Prepare the message object (local server only accepts role + content)
+      // Filter to only file attachments for the SLP server request
+      // Project attachments (project-*) are handled via project_id param, not needed as attachments
+      // SLP server expects attachment IDs as plain strings (the asset_id without the "file-" prefix)
+      const fileAttachmentIds = currentAttachments
+        .filter((att: any) => att.file_id && att.file_id.startsWith('file-'))
+        .map((att: any) => att.file_id.replace(/^file-/, ''));
+
+      // Prepare the message object — SLP expects attachments inside each message
       const messageObject: any = {
         role: 'user',
-        content: userMessage
+        content: userMessage,
       };
+      if (fileAttachmentIds.length > 0) {
+        messageObject.attachments = fileAttachmentIds;
+      }
 
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
       // Create streaming chat completion
       // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
-      const createParams: any = {
-          model: 'gemma3-1b',
-          messages: [messageObject],
-          stream: true,
-          session_id: conversationId,
+      // Use body override to include custom fields (session_id, project_id)
+      // that the OpenAI SDK would otherwise strip from the first arg
+      const requestBody: any = {
+        model: 'gemma3-1b',
+        messages: [messageObject],
+        stream: true,
+        session_id: conversationId,
       };
       if (projectId) {
-        createParams.project_id = projectId;
+        requestBody.project_id = projectId;
       }
-      let stream = await openai.chat.completions.create(createParams) as any;
+      let stream = await openai.chat.completions.create({
+        model: 'gemma3-1b',
+        messages: [messageObject],
+        stream: true,
+      }, {
+        body: requestBody,
+      }) as any;
 
       // Process the stream
       for await (const chunk of stream) {

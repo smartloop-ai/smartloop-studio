@@ -31,25 +31,20 @@ if (typeof window !== 'undefined' && window.electronAPI?.onSlpServiceReady) {
  */
 export const getLocalApiEndpoint = async () => {
   if (_localApiUrl) return _localApiUrl;
-  if (_localApiUrlPromise) return _localApiUrlPromise;
 
-  _localApiUrlPromise = (async () => {
-    try {
-      if (typeof window !== 'undefined' && window.electronAPI?.getLocalApiUrl) {
-        const url = await window.electronAPI.getLocalApiUrl();
-        if (url) {
-          _localApiUrl = url;
-          return url;
-        }
+  try {
+    if (typeof window !== 'undefined' && window.electronAPI?.getLocalApiUrl) {
+      const url = await window.electronAPI.getLocalApiUrl();
+      if (url) {
+        _localApiUrl = url;
+        return url;
       }
-    } catch (e) {
-      console.warn('[Constants] Failed to get local API URL from Electron:', e);
     }
-    // No fallback — return null if service isn't ready yet
-    return null;
-  })();
-
-  return _localApiUrlPromise;
+  } catch (e) {
+    console.warn('[Constants] Failed to get local API URL from Electron:', e);
+  }
+  // Return null if service isn't ready — don't cache so next call retries
+  return null;
 };
 
 export const APP_DESCRIPTION = (

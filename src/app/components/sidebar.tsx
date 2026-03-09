@@ -17,7 +17,7 @@ import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
+import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -73,62 +73,39 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setLiveUser(user);
   }, [user]);
 
-  // Fetch projects from local SLP server, enriched with local metadata (color)
+  // Load projects from local API (enriched with local UI metadata like color)
   const loadLocalProjects = async () => {
     try {
-      const localBase = await getLocalApiEndpoint();
-      if (!localBase) return;
-      const res = await fetch(`${localBase}/v1/projects`);
-      if (res.ok) {
-        const data = await res.json();
-        const rawProjects = Array.isArray(data) ? data : (data.projects || []);
-        // Enrich with local metadata (color) from SQLite
-        const localMeta = await storageService.getAllProjectMeta();
-        const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
-        const mapped = rawProjects.map((p: any) => {
-          const meta = metaMap.get(p.id);
-          return {
-            ...p,
-            title: p.title || p.name,
-            color: meta?.color || p.color || null,
-            documents: p.documents || [],
-            config: p.config || { rules: '', memory: true },
-          };
-        });
-        // Ensure a system project exists
-        const hasSystemProject = mapped.some((p: any) => p.system === true);
-        if (!hasSystemProject) {
-          mapped.unshift({
-            id: 'general',
-            title: 'General Chat',
-            name: 'General Chat',
-            system: true,
-            documents: [],
-            config: { rules: '', memory: true },
-          });
-        }
-        setLocalProjects(mapped);
+      const result = await projectService.getProjects();
+      if (result.success && result.data) {
+        const projects = Array.isArray(result.data) ? result.data : [];
+        setLocalProjects(projects);
       }
     } catch {
       // keep current state
     }
   };
 
-  // Load projects on mount and when service becomes ready
+  // Load projects and conversations when user is available
   useEffect(() => {
     if (user) {
       loadLocalProjects();
+      refreshConversations();
     }
+  }, [user]);
+
+  // Reload when SLP service becomes ready (may fire after initial load failed)
+  useEffect(() => {
     const handleServiceReady = () => { loadLocalProjects(); refreshConversations(); };
     window.addEventListener('slpServiceReady', handleServiceReady);
     return () => window.removeEventListener('slpServiceReady', handleServiceReady);
-  }, [user?.email]);
+  }, []);
 
   // Load conversations from SQLite (local mode) or user service (remote)
   const refreshConversations = async () => {
     try {
       if (isElectron) {
-        const convos = await storageService.getConversations();
+        const convos = await storageService.getConversations(undefined, 'desc');
         setConversations(convos);
       } else {
         const user = await userService.get();
@@ -140,9 +117,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Refresh user data on demand (skip for guest users — no remote API)
+  // Refresh user data on demand (skip for guest/Electron users — no remote API)
   const refreshUserData = async () => {
-    if (user?.guest) return;
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+    if (user?.guest || isElectron) return;
     try {
       const updatedUser = await userService.get();
       if (updatedUser) {
@@ -164,8 +142,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       // Update user and conversations from the event detail (no need to fetch)
       if (event.detail) {
         setLiveUser(event.detail);
-        const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
-        setConversations(conversations);
+        // In Electron mode, conversations come from SQLite — don't overwrite with user object
+        if (!isElectron) {
+          const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
+          setConversations(conversations);
+        }
       }
     };
 
@@ -181,8 +162,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       refreshConversations();
     };
 
-    // Listen for project deletion to refresh user data and conversations
-    const handleProjectDeleted = async () => {
+    // Listen for project changes to refresh project list
+    const handleProjectChanged = async () => {
       await loadLocalProjects();
     };
 
@@ -191,7 +172,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     window.addEventListener('conversationCreated', handleConversationCreated);
     window.addEventListener('conversationDeleted', handleConversationDeleted);
     window.addEventListener('conversationUpdated', handleConversationUpdated);
-    window.addEventListener('projectDeleted', handleProjectDeleted);
+    window.addEventListener('projectDeleted', handleProjectChanged);
+    window.addEventListener('projectUpdated', handleProjectChanged);
 
     return () => {
       window.removeEventListener('refreshUserTokens', handleRefresh);
@@ -199,7 +181,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       window.removeEventListener('conversationCreated', handleConversationCreated);
       window.removeEventListener('conversationDeleted', handleConversationDeleted);
       window.removeEventListener('conversationUpdated', handleConversationUpdated);
-      window.removeEventListener('projectDeleted', handleProjectDeleted);
+      window.removeEventListener('projectDeleted', handleProjectChanged);
+      window.removeEventListener('projectUpdated', handleProjectChanged);
     };
   }, []);
 
@@ -250,15 +233,32 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         // Reload conversations from local storage
         await refreshConversations();
 
+        // Check remaining conversation count from SQLite
+        const remaining = await storageService.getConversations();
+
         // Dispatch event for other components to react to conversation deletion
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
           detail: { conversationId: conversationToDelete }
         }));
 
-        // If currently viewing this conversation, navigate to home
-        const currentPath = location.pathname + location.search;
-        if (currentPath.includes(conversationToDelete)) {
-          navigate('/');
+        if (remaining.length === 0) {
+          // No conversations left — go to welcome screen
+          navigate('/', { replace: true });
+        } else {
+          // If currently viewing this conversation, navigate to most recent
+          const currentPath = location.pathname + location.search;
+          if (currentPath.includes(conversationToDelete)) {
+            const sorted = remaining.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id;
+            if (projectId) {
+              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+            } else {
+              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
+            }
+          }
         }
 
         // Close dialog
@@ -313,7 +313,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       projects = projects.filter((project: any) => {
-        const title = (project.title || project.name || '').toLowerCase();
+        const title = (project.name || '').toLowerCase();
         return title.includes(query);
       });
     }
@@ -418,30 +418,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
     try {
       const result = await projectService.createProject({
-        title: newProjectTitle.trim(),
-        temperature: 0.3,
+        name: newProjectTitle.trim(),
         color: selectedColor
       });
 
       if (result.success && result.data) {
-        // Map local API response (name) to UI expected format (title)
-        // Include defaults for fields the UI expects (documents, config)
-        const newProject = {
-          ...result.data,
-          title: result.data.title || result.data.name,
-          documents: result.data.documents || [],
-          config: result.data.config || { rules: '', memory: true },
-        };
+        const projectId = result.data.id;
 
-        // Refresh projects from local API
+        // Reload projects from local API (enriched with SQLite metadata)
         await loadLocalProjects();
 
         handleCloseCreateProjectDialog();
 
-        // Navigate after a tick so React processes the state update first
-        setTimeout(() => {
-          navigate(`/?project=${newProject.id}`);
-        }, 50);
+        // Navigate to the new project
+        navigate(`/?project=${projectId}`);
       } else {
         setCreateProjectError(result.error || 'Failed to create project');
       }
@@ -460,8 +450,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const handleDeleteProject = async () => {
     if (!projectToDelete) return;
 
-    const projectTitle = projectToDelete.title || projectToDelete.name || '';
-    if (deleteProjectConfirm !== projectTitle) {
+    const projectName = projectToDelete.name || '';
+    if (deleteProjectConfirm !== projectName) {
       setDeleteProjectError('Project name does not match');
       return;
     }
@@ -645,7 +635,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               {filteredProjects && filteredProjects.length > 0 && (
                 filteredProjects.map((project: any) => {
                   const isActive = currentProjectId === project.id;
-                  const projectName = project.title || project.name || 'Untitled Project';
+                  const projectName = project.name || 'Untitled Project';
 
                   return (
                     <Box
@@ -1376,7 +1366,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 Delete Project
               </h3>
               <p className="text-gray-400 text-sm leading-relaxed">
-                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.title || projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
+                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
               </p>
             </Box>
           </Box>
@@ -1387,7 +1377,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </Box>
             <TextField
               fullWidth
-              placeholder={`Type "${projectToDelete?.title || projectToDelete?.name}" to confirm`}
+              placeholder={`Type "${projectToDelete?.name}" to confirm`}
               value={deleteProjectConfirm}
               onChange={(e) => setDeleteProjectConfirm(e.target.value)}
               error={!!deleteProjectError}
@@ -1425,7 +1415,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </button>
             <button
               onClick={handleDeleteProject}
-              disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.title || projectToDelete?.name)}
+              disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.name)}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDeletingProject ? (

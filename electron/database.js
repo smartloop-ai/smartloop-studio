@@ -147,13 +147,14 @@ function getConversation(id) {
   return row ? formatConversation(row) : null;
 }
 
-function getConversations(projectId) {
+function getConversations(projectId, order = 'asc') {
   const d = openDatabase();
+  const dir = order === 'desc' ? 'DESC' : 'ASC';
   if (projectId) {
-    return d.prepare('SELECT * FROM conversations WHERE project_id = ? ORDER BY updated_at DESC')
+    return d.prepare(`SELECT * FROM conversations WHERE project_id = ? ORDER BY created_at ${dir}`)
       .all(projectId).map(formatConversation);
   }
-  return d.prepare('SELECT * FROM conversations ORDER BY updated_at DESC')
+  return d.prepare(`SELECT * FROM conversations ORDER BY created_at ${dir}`)
     .all().map(formatConversation);
 }
 

@@ -9,11 +9,6 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
 import CableIcon from '@mui/icons-material/Cable';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
-import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
-import MemoryIcon from '@mui/icons-material/Memory';
-import TuneIcon from '@mui/icons-material/Tune';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -45,7 +40,7 @@ export default function RightSidebar({
   user,
   setUser,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | 'settings' | null>(null);
+  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -97,12 +92,15 @@ export default function RightSidebar({
     setActiveSection(null);
   }, [selectedProject?.id]);
 
-  // Ensure sidebar is collapsed for system projects (only for rules/documents/settings, NOT for mcp)
+  // Ensure sidebar is collapsed for system projects or guest users
   useEffect(() => {
-    if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents' || activeSection === 'settings')) {
+    if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents')) {
       setActiveSection(null);
     }
-  }, [selectedProject?.system, activeSection]);
+    if (user?.guest && (activeSection === 'rules' || activeSection === 'documents' || activeSection === 'mcp')) {
+      setActiveSection(null);
+    }
+  }, [selectedProject?.system, user?.guest, activeSection]);
 
   // Reset states when project changes
   useEffect(() => {
@@ -495,7 +493,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Info' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && currentProjectData?.documents?.length > 0 && (
               <button
@@ -1046,140 +1044,6 @@ export default function RightSidebar({
           </div>
         )}
 
-        {/* Settings/Project Info Section */}
-        {activeSection === 'settings' && selectedProject && currentProjectData && (
-          <div className="space-y-4">
-            {/* Stats Grid */}
-            <Box className="grid grid-cols-2 gap-3">
-              {/* Documents Count */}
-              <Box
-                sx={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  bgcolor: 'rgba(236, 72, 153, 0.08)',
-                  border: '1px solid rgba(236, 72, 153, 0.15)',
-                }}
-              >
-                <Box className="flex items-center gap-2 mb-1">
-                  <ArticleOutlinedIcon sx={{ fontSize: 14, color: '#ec4899' }} />
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Docs</span>
-                </Box>
-                <div className="text-xl font-semibold text-white">
-                  {currentProjectData.documents?.length || 0}
-                </div>
-              </Box>
-
-              {/* Inference - 1.0 = excellent (green), < 0.5 = poor (red) */}
-              <Box
-                sx={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  bgcolor: (selectedProject.inference ?? 1.0) >= 0.8
-                    ? 'rgba(34, 197, 94, 0.08)'
-                    : (selectedProject.inference ?? 1.0) >= 0.5
-                      ? 'rgba(234, 179, 8, 0.08)'
-                      : 'rgba(239, 68, 68, 0.08)',
-                  border: (selectedProject.inference ?? 1.0) >= 0.8
-                    ? '1px solid rgba(34, 197, 94, 0.15)'
-                    : (selectedProject.inference ?? 1.0) >= 0.5
-                      ? '1px solid rgba(234, 179, 8, 0.15)'
-                      : '1px solid rgba(239, 68, 68, 0.15)',
-                }}
-              >
-                <Box className="flex items-center gap-2 mb-1">
-                  <TuneIcon sx={{ fontSize: 14, color: (selectedProject.inference ?? 1.0) >= 0.8 ? '#22c55e' : (selectedProject.inference ?? 1.0) >= 0.5 ? '#eab308' : '#ef4444' }} />
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider">Inference</span>
-                </Box>
-                <div
-                  className={`text-xl font-semibold ${
-                    (selectedProject.inference ?? 1.0) >= 0.8
-                      ? 'text-green-400'
-                      : (selectedProject.inference ?? 1.0) >= 0.5
-                        ? 'text-yellow-400'
-                        : 'text-red-400'
-                  }`}
-                >
-                  {(selectedProject.inference ?? 1.0).toFixed(1)}
-                </div>
-              </Box>
-            </Box>
-
-            {/* Additional Info */}
-            <Box
-              sx={{
-                padding: '16px',
-                borderRadius: '8px',
-                bgcolor: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-              }}
-            >
-              <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">Details</div>
-
-              <Box className="space-y-3">
-                {/* Created Date */}
-                {selectedProject.created_at && (
-                  <Box className="flex items-center justify-between">
-                    <Box className="flex items-center gap-2">
-                      <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
-                      <span className="text-xs text-gray-400">Created</span>
-                    </Box>
-                    <span className="text-xs text-gray-300">
-                      {new Date(selectedProject.created_at).toLocaleDateString()}
-                    </span>
-                  </Box>
-                )}
-
-                {/* Last Modified */}
-                {selectedProject.updated_at && (
-                  <Box className="flex items-center justify-between">
-                    <Box className="flex items-center gap-2">
-                      <CalendarTodayOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
-                      <span className="text-xs text-gray-400">Last Modified</span>
-                    </Box>
-                    <span className="text-xs text-gray-300">
-                      {new Date(selectedProject.updated_at).toLocaleDateString()}
-                    </span>
-                  </Box>
-                )}
-
-                {/* Memory Status */}
-                <Box className="flex items-center justify-between">
-                  <Box className="flex items-center gap-2">
-                    <MemoryIcon sx={{ fontSize: 14, color: '#6b7280' }} />
-                    <span className="text-xs text-gray-400">Memory</span>
-                  </Box>
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    currentProjectData.config?.memory !== false
-                      ? 'bg-green-500/20 text-green-400'
-                      : 'bg-gray-700 text-gray-400'
-                  }`}>
-                    {currentProjectData.config?.memory !== false ? 'Enabled' : 'Disabled'}
-                  </span>
-                </Box>
-
-                {/* Rules Status */}
-                <Box className="flex items-center justify-between">
-                  <Box className="flex items-center gap-2">
-                    <RuleOutlinedIcon sx={{ fontSize: 14, color: '#6b7280' }} />
-                    <span className="text-xs text-gray-400">Rules</span>
-                  </Box>
-                  <span className={`text-xs px-2 py-0.5 rounded ${
-                    projectRules && projectRules.trim()
-                      ? 'bg-pink-500/20 text-pink-400'
-                      : 'bg-gray-700 text-gray-400'
-                  }`}>
-                    {projectRules && projectRules.trim() ? 'Configured' : 'Not Set'}
-                  </span>
-                </Box>
-              </Box>
-            </Box>
-
-            {/* Help Text */}
-            <p className="text-gray-500 text-[10px] leading-relaxed">
-              Project info shows an overview of your project settings and statistics. Use the other tabs to manage documents, rules, and MCP servers.
-            </p>
-          </div>
-        )}
         </Box>
       )}
 
@@ -1196,20 +1060,20 @@ export default function RightSidebar({
           bgcolor: 'rgba(0, 0, 0, 0.2)',
         }}
       >
-        <Tooltip title={selectedProject?.system ? "Documents (Disabled for General)" : "Documents"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={selectedProject?.system || user?.guest ? "Documents (Disabled)" : "Documents"} placement="left">
+          <span className={selectedProject?.system || user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'documents' ? null : 'documents')}
-              disabled={selectedProject?.system}
+              onClick={() => !selectedProject?.system && !user?.guest && setActiveSection(activeSection === 'documents' ? null : 'documents')}
+              disabled={selectedProject?.system || user?.guest}
               sx={{
                 color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                cursor: selectedProject?.system || user?.guest ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system || user?.guest ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system || user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
                 },
                 '&.Mui-disabled': {
                   color: '#6b7280',
@@ -1225,20 +1089,20 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={selectedProject?.system ? "Rules (Disabled for General)" : "Rules"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={selectedProject?.system || user?.guest ? "Rules (Disabled)" : "Rules"} placement="left">
+          <span className={selectedProject?.system || user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'rules' ? null : 'rules')}
-              disabled={selectedProject?.system}
+              onClick={() => !selectedProject?.system && !user?.guest && setActiveSection(activeSection === 'rules' ? null : 'rules')}
+              disabled={selectedProject?.system || user?.guest}
               sx={{
                 color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                cursor: selectedProject?.system || user?.guest ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system || user?.guest ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system || user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
                 },
                 '&.Mui-disabled': {
                   color: '#6b7280',
@@ -1254,45 +1118,20 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="MCP Servers" placement="left">
-          <span>
+        <Tooltip title={user?.guest ? "MCP Servers (Disabled)" : "MCP Servers"} placement="left">
+          <span className={user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => setActiveSection(activeSection === 'mcp' ? null : 'mcp')}
+              onClick={() => !user?.guest && setActiveSection(activeSection === 'mcp' ? null : 'mcp')}
+              disabled={user?.guest}
               sx={{
                 color: activeSection === 'mcp' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'mcp' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: 'pointer',
+                cursor: user?.guest ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: '#ec4899',
-                  bgcolor: 'rgba(236, 72, 153, 0.1)',
-                },
-              }}
-              size="small"
-            >
-              <CableIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-
-        {/* Spacer to push settings to bottom */}
-        <Box sx={{ flex: 1 }} />
-
-        <Tooltip title={selectedProject?.system ? "Project Info (Disabled for General)" : "Project Info"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
-            <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'settings' ? null : 'settings')}
-              disabled={selectedProject?.system}
-              sx={{
-                color: activeSection === 'settings' ? '#ec4899' : '#9ca3af',
-                bgcolor: activeSection === 'settings' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
-                '&:hover': {
-                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: user?.guest ? '#9ca3af' : '#ec4899',
+                  bgcolor: user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
                 },
                 '&.Mui-disabled': {
                   color: '#6b7280',
@@ -1304,10 +1143,11 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <InfoOutlinedIcon fontSize="small" />
+              <CableIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
+
       </Box>
     </Box>
   );

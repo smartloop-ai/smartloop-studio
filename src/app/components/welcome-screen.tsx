@@ -14,7 +14,7 @@ export default function WelcomeScreen({
   const [message, setMessage] = useState('');
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'black' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', bgcolor: 'black', minHeight: '100vh' }}>
       {/* Top bar with login button */}
       <Box className="flex items-center justify-end px-6 py-4">
         <button
@@ -25,8 +25,8 @@ export default function WelcomeScreen({
         </button>
       </Box>
 
-      {/* Center content - vertically and horizontally centered */}
-      <Box className="flex-1 flex items-center justify-center px-4">
+      {/* Center content - shifted slightly above true center */}
+      <Box className="flex-1 flex items-center justify-center px-4" sx={{ paddingBottom: '12vh' }}>
         <Box className="max-w-3xl w-full">
           {/* Logo - bigger with padding */}
           <Box className="flex justify-center mb-6" sx={{ padding: '10px' }}>
@@ -41,7 +41,7 @@ export default function WelcomeScreen({
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type your prompt (e.g. what is a quantum?)"
+              placeholder="Type your prompt.. (e.g. what are best coffee shop in San Francisco?)"
               className="w-full bg-transparent text-white placeholder-gray-500 outline-none resize-none"
               style={{ minHeight: '80px' }}
             />
@@ -88,8 +88,11 @@ export default function WelcomeScreen({
               Ready to assist you with anything you need.
             </Box>
           </Box>
+          {/* Additional spacing at the bottom */}
+          <Box sx={{ height: '40px' }} />
         </Box>
       </Box>
+
     </Box>
   );
 }

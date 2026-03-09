@@ -65,13 +65,43 @@ export default function Home() {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
-  const previousUrlParamsRef = useRef<string>(''); // Track previous URL params to avoid unnecessary tab changes
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+  const [hasConversations, setHasConversations] = useState(false);
 
+  // Load a single project from local API (enriched with local UI metadata)
+  const loadProjectFromApi = async (projectId: string) => {
+    try {
+      const result = await projectService.getProjects();
+      if (result.success && result.data) {
+        const projects = Array.isArray(result.data) ? result.data : [];
+        return projects.find((p: any) => p.id === projectId) || null;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Check if any conversations exist in SQLite
+  useEffect(() => {
+    const checkConversations = async () => {
+      const conversations = await storageService.getConversations();
+      setHasConversations(conversations.length > 0);
+    };
+
+    checkConversations();
+
+    const handleChange = () => { checkConversations(); };
+    window.addEventListener('conversationCreated', handleChange);
+    window.addEventListener('conversationDeleted', handleChange);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleChange);
+      window.removeEventListener('conversationDeleted', handleChange);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -88,44 +118,38 @@ export default function Home() {
       if (deletedConversationId && conversation?.id === deletedConversationId) {
         console.log('Currently opened conversation was deleted');
 
-        // Get remaining conversations from storage
-        // Ensure conversations is always an array, never null or undefined
-        const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+        const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+        const currentProjectId = selectedProject?.id;
 
-        if (remaining && remaining.length > 0) {
-          // Filter conversations by current project
-          const currentProjectId = selectedProject?.id;
-          const projectConversations = remaining.filter((conv: any) =>
-            conv.project_id === currentProjectId
+        // Get remaining conversations — from SQLite in Electron, from user object otherwise
+        let projectConvos: any[] = [];
+        if (isElectron && currentProjectId) {
+          const allConvos = await storageService.getConversations(currentProjectId);
+          projectConvos = allConvos.filter((c: any) => c.id !== deletedConversationId);
+        } else {
+          const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+          projectConvos = remaining.filter((conv: any) =>
+            conv.project_id === currentProjectId && conv.id !== deletedConversationId
           );
+        }
 
-          if (projectConversations.length > 0) {
-            // Sort by created_at descending and select the most recent from the same project
-            const lastConversation = projectConversations.sort((a: any, b: any) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0];
+        if (projectConvos.length > 0) {
+          // Sort by created_at descending and select the most recent from the same project
+          const lastConversation = projectConvos.sort((a: any, b: any) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
 
-            console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
+          console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
 
-            // Navigate to the previous conversation
-            if (currentProjectId) {
-              navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
-            }
-          } else {
-            // No conversations left in the current project, navigate to project home
-            console.log('No conversations remaining in current project, navigating to project home');
-            if (currentProjectId) {
-              navigate(`/?project=${currentProjectId}`);
-            }
-            setShowChat(false);
-            setConversation(null);
-            setChatMessage(null);
-            setMessage('');
+          if (currentProjectId) {
+            navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
           }
         } else {
-          // No conversations left at all, navigate to project home
-          console.log('No conversations remaining, navigating to project home');
-          if (selectedProject) {
+          // No conversations left in the current project, navigate to project home
+          console.log('No conversations remaining in current project, navigating to project home');
+          if (currentProjectId) {
+            navigate(`/?project=${currentProjectId}`);
+          } else if (selectedProject) {
             navigate(`/?project=${selectedProject.id}`);
           }
           setShowChat(false);
@@ -179,8 +203,8 @@ export default function Home() {
             if (prev.some((c: any) => c.id === newConversation.id)) {
               return prev;
             }
-            // Add new conversation to the beginning
-            return [newConversation, ...prev];
+            // Add new conversation to the end (tabs ordered by creation time)
+            return [...prev, newConversation];
           });
         }
       }
@@ -194,79 +218,73 @@ export default function Home() {
   }, [selectedProject]);
 
 
-  // Handle conversation ID from URL parameter
-  // For Electron/local mode: load from SQLite. For remote: use user.conversations.
+  // Handle conversation ID from URL parameter — load from SQLite and local API
   useEffect(() => {
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
 
-    // Create a string representation of current URL params to detect actual URL changes
-    const currentUrlParams = `${urlConversationId || ''}-${urlProjectId || ''}`;
-    const urlParamsChanged = previousUrlParamsRef.current !== currentUrlParams;
-    previousUrlParamsRef.current = currentUrlParams;
-
     if (!user) return;
 
-    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
-
     if (urlConversationId) {
-      // Try user.conversations first (remote mode), then fall back to SQLite (local mode)
-      const conversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      let foundConversation = conversations.find((c: any) => c.id === urlConversationId);
-
       const loadAndSetConversation = async () => {
-        // In Electron mode, always load conversation and messages from SQLite
-        if (isElectron) {
-          const stored = await storageService.getConversation(urlConversationId);
-          if (stored) {
-            const messages = await storageService.getMessages(urlConversationId);
-            foundConversation = { ...stored, messages: messages || [] };
-          }
-        }
+        // Load conversation and messages from SQLite
+        const stored = await storageService.getConversation(urlConversationId);
+        if (!stored) return;
 
-        if (foundConversation) {
-          // Update conversation if it's different or messages may have changed
-          if (!conversation || conversation.id !== foundConversation.id || urlParamsChanged) {
-            console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
-            setConversation({ ...foundConversation });
-            setShowChat(true);
-            if (urlParamsChanged) {
-              setActiveTab(0);
-            }
-          }
+        const messages = await storageService.getMessages(urlConversationId);
+        const foundConversation = { ...stored, messages: messages || [] };
 
-          // Set project based on conversation's project_id
-          if (foundConversation.project_id) {
-            const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-            if (!selectedProject || selectedProject.id !== foundConversation.project_id) {
-              console.log('[Home] Setting project from conversation:', foundConversation.project_id);
-              setSelectedProject(project || null);
-            }
-          } else {
-            const systemProject = user.projects?.find((p: any) => p.system === true);
-            if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
-              setSelectedProject(systemProject);
-            }
+        console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
+        setConversation({ ...foundConversation });
+        setShowChat(true);
+        setActiveTab(0);
+
+        // Set project from conversation's project_id via local API (already enriched with local metadata)
+        if (foundConversation.project_id) {
+          const project = await loadProjectFromApi(foundConversation.project_id);
+          if (project) {
+            setSelectedProject(project);
           }
         }
       };
 
       loadAndSetConversation();
     } else if (urlProjectId) {
-      if (urlParamsChanged || !selectedProject || selectedProject.id !== urlProjectId) {
-        setConversation(null);
-        const project = user.projects?.find((p: any) => p.id === urlProjectId);
-        setSelectedProject(project || null);
-      }
+      setConversation(null);
+      // Load project from local API (already enriched with local metadata)
+      (async () => {
+        const project = await loadProjectFromApi(urlProjectId);
+        if (project) {
+          setSelectedProject(project);
+        }
+      })();
     } else {
       if (urlParamsChanged) {
-        setConversation(null);
-        setShowChat(false);
-        setChatMessage(null);
-        setSelectedProject(null);
+        // No URL params — if conversations exist, auto-select the most recent one
+        const autoSelect = async () => {
+          const allConversations = await storageService.getConversations();
+          if (allConversations.length > 0) {
+            const sorted = allConversations.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id;
+            if (projectId) {
+              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+            } else {
+              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
+            }
+          } else {
+            setConversation(null);
+            setShowChat(false);
+            setChatMessage(null);
+            setSelectedProject(null);
+          }
+        };
+        autoSelect();
       }
     }
-  }, [searchParams, user?.conversations, user?.projects]);
+  }, [searchParams]);
 
   // Clear chatMessage after it's been passed to Chat component
   useEffect(() => {
@@ -348,36 +366,54 @@ export default function Home() {
     }
   }, [selectedProject]);
 
-  // Filter conversations by selected project
-  useEffect(() => {
+  // Load conversations for the selected project
+  const loadProjectConversations = async () => {
     if (!user) return;
 
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-    const loadProjectConversations = async () => {
-      const projectId = selectedProject?.id ||
-        user.projects?.find((p: any) => p.system === true)?.id;
+    const projectId = selectedProject?.id ||
+      user.projects?.find((p: any) => p.system === true)?.id;
 
-      if (!projectId) {
-        setProjectConversations([]);
-        return;
-      }
+    if (!projectId) {
+      return;
+    }
 
-      if (isElectron) {
-        // Load from SQLite — already ordered by updated_at DESC
-        const convos = await storageService.getConversations(projectId);
-        setProjectConversations(convos);
-      } else {
-        const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-        const filtered = allConversations.filter(
-          (conv: any) => conv.project_id === projectId
-        );
-        setProjectConversations(filtered);
-      }
-    };
+    if (isElectron) {
+      // Load from SQLite — already ordered by updated_at DESC
+      const convos = await storageService.getConversations(projectId);
+      setProjectConversations(convos);
+    } else {
+      const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      const filtered = allConversations.filter(
+        (conv: any) => conv.project_id === projectId
+      );
+      setProjectConversations(filtered);
+    }
+  };
 
+  // Reload when project or user conversations change
+  useEffect(() => {
     loadProjectConversations();
   }, [user?.conversations, selectedProject]);
+
+  // In Electron mode, also refresh from SQLite when conversations are created/updated/deleted
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+    if (!isElectron) return;
+
+    const handleRefresh = () => { loadProjectConversations(); };
+
+    window.addEventListener('conversationCreated', handleRefresh);
+    window.addEventListener('conversationUpdated', handleRefresh);
+    window.addEventListener('conversationDeleted', handleRefresh);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleRefresh);
+      window.removeEventListener('conversationUpdated', handleRefresh);
+      window.removeEventListener('conversationDeleted', handleRefresh);
+    };
+  }, [selectedProject, user]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -401,7 +437,7 @@ export default function Home() {
     const filteredProjects = user.projects.filter((project: any) => {
       // Exclude system projects
       if (project.system) return false;
-      const projectName = (project.title || project.name || '').toLowerCase();
+      const projectName = (project.name || '').toLowerCase();
       // If no search term, show all projects
       if (!searchTerm) return true;
       // Otherwise filter by search term
@@ -410,7 +446,7 @@ export default function Home() {
 
     const suggestions: ProjectSuggestion[] = filteredProjects.map((project: any) => ({
       id: project.id,
-      display: project.title || project.name || 'Untitled Project',
+      display: project.name || 'Untitled Project',
       color: project.color || DEFAULT_COLOR
     }));
 
@@ -488,7 +524,7 @@ export default function Home() {
     // 1. If mentions exist → set project (typing /project adds the project)
     if (projectMentions.length > 0) {
       const project = projectMentions[projectMentions.length - 1];
-      console.log('[handleMentionChange] Project selected via mention:', project.title || project.name, project.id);
+      console.log('[handleMentionChange] Project selected via mention:', project.name, project.id);
       setSelectedProject(project);
     }
     // 2. If no mentions but previous message had mention markup → clear project (explicit removal)
@@ -540,12 +576,12 @@ export default function Home() {
       if (projectForMessage?.id) {
         console.log('[handleSendMessage] Adding project as attachment (first message only):', {
           projectId: projectForMessage.id,
-          projectName: projectForMessage.title || projectForMessage.name,
+          projectName: projectForMessage.name,
           file_id: `project-${projectForMessage.id}`
         });
         attachmentsToSend.push({
           file_id: `project-${projectForMessage.id}`,
-          name: projectForMessage.title || projectForMessage.name || 'Project'
+          name: projectForMessage.name || 'Project'
         });
       }
       console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
@@ -572,8 +608,8 @@ export default function Home() {
             if (prev.some((c: any) => c.id === newConversation.id)) {
               return prev;
             }
-            // Add new conversation to the beginning
-            return [newConversation, ...prev];
+            // Add new conversation to the end (tabs ordered by creation time)
+            return [...prev, newConversation];
           });
 
           setMessageAttachments(attachmentsToSend);
@@ -633,13 +669,28 @@ export default function Home() {
         setShowDeleteDialog(false);
 
         // Refresh user data to remove deleted conversation
-        const updatedUser = await userService.get();
-        if (updatedUser) {
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        let currentUser = user;
+        if (!isElectron) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+            currentUser = updatedUser;
+          }
+        } else {
+          // In Electron, filter out deleted conversation from local state
+          const filteredConversations = (user?.conversations || []).filter(
+            (c: any) => c.id !== deletedConversationId
+          );
+          const updatedUser = { ...user, conversations: filteredConversations };
           setUser(updatedUser);
+          currentUser = updatedUser;
+        }
 
+        if (currentUser) {
           // Navigate to another conversation in the same project or clear
           // Ensure conversations is always an array before filtering
-          const conversations = (updatedUser.conversations && Array.isArray(updatedUser.conversations)) ? updatedUser.conversations : [];
+          const conversations = (currentUser.conversations && Array.isArray(currentUser.conversations)) ? currentUser.conversations : [];
           const remainingConversations = conversations.filter(
             (c: any) => c.project_id === projectId
           );
@@ -709,44 +760,59 @@ export default function Home() {
           targetConversation = projectConversations[currentIndex + 1];
         }
 
-        // Navigate to target conversation or clear if no conversations left
+        // Navigate to target conversation or welcome screen if none left
         if (targetConversation) {
           const projectId = selectedProject?.id;
           if (projectId) {
             navigate(`/?conversation=${targetConversation.id}&project=${projectId}`);
           }
         } else {
-          // No conversations left, navigate to project home
-          const projectId = selectedProject?.id;
-          if (projectId) {
-            navigate(`/?project=${projectId}`);
+          // Check if any conversations remain globally
+          const allRemaining = await storageService.getConversations();
+          if (allRemaining.length === 0) {
+            // No conversations left anywhere — go to welcome screen
+            navigate('/', { replace: true });
+            setConversation(null);
+            setShowChat(false);
+            setSelectedProject(null);
+          } else {
+            // Other projects still have conversations — select most recent
+            const sorted = allRemaining.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id;
+            if (projectId) {
+              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+            } else {
+              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
+            }
           }
-          setConversation(null);
-          setShowChat(false);
         }
       }
 
-      // Refresh user data to sync with server
-      console.log('[Home] Refreshing user data after delete...');
+      // Refresh user data to sync with server (skip in Electron — already updated locally above)
+      const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+      if (!isElectron) {
+        console.log('[Home] Refreshing user data after delete...');
 
-      // Add a small delay to ensure backend has processed the delete
-      await new Promise(resolve => setTimeout(resolve, 500));
+        // Add a small delay to ensure backend has processed the delete
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-      const updatedUser = await userService.get();
-      if (updatedUser.success) {
-        console.log('[Home] User data refreshed. Conversations count:', updatedUser.data?.conversations?.length);
-        console.log('[Home] Conversations after refresh:', updatedUser.data?.conversations?.map((c: any) => ({ id: c.id, title: c.title })));
-        setUser(updatedUser.data);
+        const updatedUser = await userService.get();
+        if (updatedUser.success) {
+          console.log('[Home] User data refreshed. Conversations count:', updatedUser.data?.conversations?.length);
+          setUser(updatedUser.data);
 
-        // Double check if deleted conversation is still in the list
-        const stillExists = updatedUser.data?.conversations?.some((c: any) => c.id === convId);
-        if (stillExists) {
-          console.error('[Home] WARNING: Deleted conversation still exists in refreshed data!');
-          // Force filter it out from the local state
-          setUser({
-            ...updatedUser.data,
-            conversations: updatedUser.data.conversations.filter((c: any) => c.id !== convId)
-          });
+          // Double check if deleted conversation is still in the list
+          const stillExists = updatedUser.data?.conversations?.some((c: any) => c.id === convId);
+          if (stillExists) {
+            console.error('[Home] WARNING: Deleted conversation still exists in refreshed data!');
+            setUser({
+              ...updatedUser.data,
+              conversations: updatedUser.data.conversations.filter((c: any) => c.id !== convId)
+            });
+          }
         }
       }
 
@@ -774,24 +840,22 @@ export default function Home() {
     }
 
     const newName = editedProjectName.trim();
-    if (newName === (selectedProject.title || selectedProject.name)) {
+    if (newName === (selectedProject.name)) {
       setIsEditingProjectName(false);
       return;
     }
 
     try {
-      const result = await projectService.updateProject(selectedProject.id, { title: newName });
+      const result = await projectService.updateProject(selectedProject.id, { name: newName });
 
       if (result.success) {
-        // Update local state
-        setSelectedProject({ ...selectedProject, title: newName, name: newName });
-
-        // Refresh user data to sync with sidebar
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        // Reload project from API to get fresh state
+        const updated = await loadProjectFromApi(selectedProject.id);
+        if (updated) {
+          setSelectedProject(updated);
         }
+        // Dispatch event so sidebar reloads projects
+        window.dispatchEvent(new CustomEvent('projectUpdated'));
       } else {
         console.error('Failed to rename project:', result.error);
       }
@@ -839,8 +903,9 @@ export default function Home() {
       detail: { conversation: newConversation }
     }));
 
-    // For remote users, also refresh user data from server
-    if (!user?.guest) {
+    // For remote users, also refresh user data from server (skip in Electron)
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+    if (!user?.guest && !isElectron) {
       try {
         const updatedUser = await userService.get();
         if (updatedUser) {
@@ -876,8 +941,9 @@ export default function Home() {
           detail: { conversationId: updatedConversation.id }
         }));
 
-        // For remote users, also refresh user data from server
-        if (!user?.guest) {
+        // For remote users, also refresh user data from server (skip in Electron)
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        if (!user?.guest && !isElectron) {
           const updatedUser = await userService.get();
           if (updatedUser) {
             setUser(updatedUser);
@@ -929,10 +995,20 @@ export default function Home() {
       const result = await projectService.deleteProject(selectedProject.id);
 
       if (result.success) {
-        // Refresh user data
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
+        // Refresh user data (skip remote call in Electron)
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        if (!isElectron) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
+        } else {
+          // In Electron, remove project from local user state
+          const updatedProjects = (user?.projects || []).filter((p: any) => p.id !== selectedProject.id);
+          const updatedConversations = (user?.conversations || []).filter(
+            (c: any) => c.project_id !== selectedProject.id
+          );
+          setUser({ ...user, projects: updatedProjects, conversations: updatedConversations });
         }
 
         // Dispatch projectDeleted event to update sidebar
@@ -1149,12 +1225,15 @@ export default function Home() {
             }}
             onSuccess={() => {
               setShowFileUploadDialog(false);
-              // Refresh user data
-              userService.get().then((result) => {
-                if (result.success) {
-                  setUser(result.data);
-                }
-              });
+              // Refresh user data (skip in Electron — state already updated locally)
+              const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+              if (!isElectron) {
+                userService.get().then((result) => {
+                  if (result.success) {
+                    setUser(result.data);
+                  }
+                });
+              }
             }}
             user={user}
             setUser={setUser}
@@ -1247,7 +1326,7 @@ export default function Home() {
                         Warning: This action cannot be undone
                       </Typography>
                       <Typography className="text-gray-300 text-sm">
-                        Deleting "{selectedProject?.title || selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
+                        Deleting "{selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
                       </Typography>
                     </Box>
                   </Box>
@@ -1431,10 +1510,10 @@ export default function Home() {
 
           <Box className="min-h-screen bg-black text-white">
             {(() => {
-              // Show chat detail view when: showChat is true, we have a conversation, or project selected from sidebar (URL param)
+              // Show main view when conversations exist in database, or there's an active conversation/project
               const urlConversationId = searchParams.get('conversation');
               const urlProjectId = searchParams.get('project');
-              return showChat || conversation || urlConversationId || urlProjectId;
+              return hasConversations || showChat || conversation || urlConversationId || urlProjectId || projectConversations.length > 0;
             })() ? (
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
@@ -1489,26 +1568,13 @@ export default function Home() {
                             className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
                             onClick={() => {
                               if (selectedProject && !selectedProject.system) {
-                                setEditedProjectName(selectedProject.title || selectedProject.name || '');
+                                setEditedProjectName(selectedProject.name || '');
                                 setIsEditingProjectName(true);
                               }
                             }}
                             title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
                           >
-                            {(() => {
-                              if (selectedProject) {
-                                return selectedProject.title || selectedProject.name;
-                              }
-                              // Check URL param for project to handle race condition
-                              const urlProjectId = searchParams.get('project');
-                              if (urlProjectId && user) {
-                                const project = user.projects?.find((p: any) => p.id === urlProjectId);
-                                if (project) {
-                                  return project.title || project.name;
-                                }
-                              }
-                              return 'General';
-                            })()}
+                            {selectedProject?.name || 'General'}
                           </div>
                         )}
                       </Box>
@@ -1587,6 +1653,17 @@ export default function Home() {
             ) : (
               // Main prompt screen with no active conversation
               <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'black' }}>
+                {/* Top bar with login button for guest users */}
+                {user?.guest && (
+                  <Box className="flex items-center justify-end px-6 py-4">
+                    <button
+                      onClick={() => navigate('/login')}
+                      className="px-4 py-1.5 rounded-sm border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-pink-500/50 hover:bg-gray-900/50 transition-all"
+                    >
+                      Login
+                    </button>
+                  </Box>
+                )}
                 <Box className="flex-1 flex items-center justify-center px-4">
                   <Box className="max-w-3xl w-full">
                     {/* Logo */}
@@ -1602,7 +1679,7 @@ export default function Home() {
                       <MentionsInput
                         value={message}
                         onChange={handleMentionChange}
-                        placeholder="Type your prompt (e.g. what is a quantum?)"
+                        placeholder="Type your prompt.. (e.g. what are best coffee shop in San Francisco?)"
                         className="mentions"
                         allowSuggestionsAboveCursor={true}
                         style={{
@@ -1644,7 +1721,7 @@ export default function Home() {
                             icon={
                               <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: selectedProject?.color || DEFAULT_COLOR, flexShrink: 0 }} />
                             }
-                            label={selectedProject?.title || selectedProject?.name || 'General Chat'}
+                            label={selectedProject?.name || 'General Chat'}
                             size="small"
                             onClick={() => {/* TODO: project picker */}}
                             sx={{

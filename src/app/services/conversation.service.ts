@@ -58,7 +58,7 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('conversationCreated', {
-          detail: { conversationId: conversation.id }
+          detail: { conversationId: conversation.id, conversation }
         }));
       }
 

@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Conversations
     createConversation: (conv) => ipcRenderer.invoke('db-create-conversation', conv),
     getConversation: (id) => ipcRenderer.invoke('db-get-conversation', id),
-    getConversations: (projectId) => ipcRenderer.invoke('db-get-conversations', projectId),
+    getConversations: (projectId, order) => ipcRenderer.invoke('db-get-conversations', projectId, order),
     updateConversation: (id, updates) => ipcRenderer.invoke('db-update-conversation', id, updates),
     deleteConversation: (id) => ipcRenderer.invoke('db-delete-conversation', id),
     // Messages

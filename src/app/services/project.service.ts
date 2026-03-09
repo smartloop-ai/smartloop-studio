@@ -3,13 +3,12 @@ import { storageService } from "./storage.service";
 
 /**
  * Project Service
- * Handles project CRUD against the local SLP service.
- * Stores UI metadata (color, temperature) in local SQLite.
+ * API is the source of truth for project data (id, name, description, model_name, current, system).
+ * Local SQLite stores UI-only metadata (color).
  */
 
 interface CreateProjectParams {
-  title: string;
-  temperature?: number;
+  name: string;
   color?: string;
   system?: boolean;
 }
@@ -21,48 +20,31 @@ interface ProjectServiceResponse {
 }
 
 /**
- * Create a new project
- * Local API uses `name` field instead of `title`
+ * Create a new project in the local API, then save UI metadata to SQLite.
  */
 const createProject = async (params: CreateProjectParams): Promise<ProjectServiceResponse> => {
   try {
-    const { title, temperature = 0.3, color, system = false } = params;
+    const { name, color, system = false } = params;
 
-    if (!title || !title.trim()) {
-      return {
-        success: false,
-        error: 'Project title is required'
-      };
-    }
-
-    const requestBody: any = {
-      name: title.trim(),
-      description: '',
-      temperature,
-      system
-    };
-
-    if (color) {
-      requestBody.color = color;
+    if (!name || !name.trim()) {
+      return { success: false, error: 'Project name is required' };
     }
 
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/projects`;
-    const response = await fetch(url, {
+    const response = await fetch(`${localBase}/v1/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify({ name: name.trim(), description: '', system })
     });
 
     if (response.status === 200 || response.status === 201) {
       const project = await response.json();
 
-      // Store UI metadata in local SQLite
+      // Save UI metadata to local SQLite
       await storageService.upsertProject({
         id: project.id,
-        name: project.name || title.trim(),
-        color: color,
-        temperature,
+        name: project.name,
+        color,
         system,
       });
 
@@ -70,21 +52,15 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to create project'
-    };
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to create project' };
   } catch (error: any) {
     console.error('Error creating project:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while creating the project'
-    };
+    return { success: false, error: error.message || 'An error occurred while creating the project' };
   }
 };
 
 /**
- * Delete a project
+ * Delete a project from the local API and remove UI metadata from SQLite.
  */
 const deleteProject = async (projectId: string): Promise<ProjectServiceResponse> => {
   try {
@@ -93,73 +69,54 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     }
 
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/projects/${projectId}`;
-    const response = await fetch(url, { method: 'DELETE' });
+    const response = await fetch(`${localBase}/v1/projects/${projectId}`, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
-      // Remove from local SQLite
       await storageService.deleteProjectMeta(projectId);
       return { success: true, data: { projectId } };
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to delete project'
-    };
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to delete project' };
   } catch (error: any) {
     console.error('Error deleting project:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while deleting the project'
-    };
+    return { success: false, error: error.message || 'An error occurred while deleting the project' };
   }
 };
 
 /**
- * Get all projects from local service, enriched with local metadata
+ * Get all projects from local API, enriched with UI metadata from SQLite.
  */
 const getProjects = async (): Promise<ProjectServiceResponse> => {
   try {
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/projects`;
-    const response = await fetch(url);
+    const response = await fetch(`${localBase}/v1/projects`);
 
     if (response.ok) {
       const projects = await response.json();
 
-      // Enrich with local metadata (color, etc.)
+      // Enrich with local UI metadata (color)
       const localMeta = await storageService.getAllProjectMeta();
       const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
 
       const enriched = (Array.isArray(projects) ? projects : []).map((p: any) => {
         const meta = metaMap.get(p.id);
-        return {
-          ...p,
-          color: meta?.color || p.color || null,
-          temperature: meta?.temperature ?? p.temperature,
-        };
+        return { ...p, color: meta?.color || null };
       });
 
       return { success: true, data: enriched };
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to fetch projects'
-    };
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to fetch projects' };
   } catch (error: any) {
     console.error('Error fetching projects:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while fetching projects'
-    };
+    return { success: false, error: error.message || 'An error occurred while fetching projects' };
   }
 };
 
 /**
- * Update project details
+ * Update a project in the local API and sync UI metadata to SQLite.
  */
 const updateProject = async (projectId: string, updates: Partial<CreateProjectParams>): Promise<ProjectServiceResponse> => {
   try {
@@ -167,29 +124,20 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
       return { success: false, error: 'Project ID is required' };
     }
 
-    // Map title to name for local API
-    const body: any = { ...updates };
-    if (body.title) {
-      body.name = body.title;
-      delete body.title;
-    }
-
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/projects/${projectId}`;
-    const response = await fetch(url, {
+    const response = await fetch(`${localBase}/v1/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(updates)
     });
 
     if (response.status === 200) {
       const project = await response.json();
 
-      // Update local metadata
+      // Update local UI metadata
       const metaUpdates: any = {};
-      if (updates.title) metaUpdates.name = updates.title;
+      if (updates.name) metaUpdates.name = updates.name;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
-      if (updates.temperature !== undefined) metaUpdates.temperature = updates.temperature;
       if (Object.keys(metaUpdates).length > 0) {
         await storageService.updateProjectMeta(projectId, metaUpdates);
       }
@@ -198,16 +146,10 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to update project'
-    };
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to update project' };
   } catch (error: any) {
     console.error('Error updating project:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while updating the project'
-    };
+    return { success: false, error: error.message || 'An error occurred while updating the project' };
   }
 };
 
