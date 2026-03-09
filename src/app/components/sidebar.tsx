@@ -1,23 +1,17 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
+import { Box, IconButton, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import PersonIcon from '@mui/icons-material/Person';
-import LogoutIcon from '@mui/icons-material/Logout';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
-import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import AddIcon from '@mui/icons-material/Add';
-import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
+import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -33,12 +27,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const menuOpen = Boolean(anchorEl);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [liveUser, setLiveUser] = useState(user);
-  const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
+  const [slpConfig, setSlpConfig] = useState<any>(null);
+  const [slpHealth, setSlpHealth] = useState<any>(null);
+  const [systemInfo, setSystemInfo] = useState<{ cpu: string; cores: number; totalMemGb: number; freeMemGb: number; gpu: string | null } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -55,23 +48,54 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [localProjects, setLocalProjects] = useState<any[]>([]);
 
-  // Update live user and load conversations
+  // Load conversations on user change
   useEffect(() => {
-    if (!user) {
-      setLiveUser(user);
-      return;
-    }
-
-    // In local/Electron mode, load conversations from SQLite
+    if (!user) return;
     if (isElectron) {
       refreshConversations();
     } else {
       const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
       setConversations(conversations);
     }
-    lastTokenCount.current = user?.number_of_tokens_processed || 0;
-    setLiveUser(user);
   }, [user]);
+
+  // Load SLP config for model info
+  useEffect(() => {
+    const loadConfig = async () => {
+      if (isElectron && window.electronAPI?.getSlpConfig) {
+        const config = await window.electronAPI.getSlpConfig();
+        setSlpConfig(config);
+      }
+    };
+    loadConfig();
+    window.addEventListener('slpServiceReady', loadConfig);
+    return () => window.removeEventListener('slpServiceReady', loadConfig);
+  }, []);
+
+  // Load SLP service health and system hardware info
+  useEffect(() => {
+    const loadHealth = async () => {
+      try {
+        const baseUrl = isElectron && window.electronAPI?.getLocalApiUrl
+          ? await window.electronAPI.getLocalApiUrl()
+          : null;
+        if (baseUrl) {
+          const res = await fetch(`${baseUrl}/health`);
+          if (res.ok) setSlpHealth(await res.json());
+        }
+      } catch {}
+
+      try {
+        if (isElectron && window.electronAPI?.getSystemInfo) {
+          const info = await window.electronAPI.getSystemInfo();
+          setSystemInfo(info);
+        }
+      } catch {}
+    };
+    loadHealth();
+    window.addEventListener('slpServiceReady', loadHealth);
+    return () => window.removeEventListener('slpServiceReady', loadHealth);
+  }, []);
 
   // Load projects from local API (enriched with local UI metadata like color)
   const loadLocalProjects = async () => {
@@ -81,10 +105,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Re-load projects and conversations whenever user changes (also runs on mount).
-  // The API calls don't require a user, so this covers Electron/local mode where
-  // user may be null or arrive late.
+  // Load projects and conversations on mount
+  const sidebarInitRef = useRef(false);
   useEffect(() => {
+    if (sidebarInitRef.current) return;
+    sidebarInitRef.current = true;
     loadLocalProjects();
     refreshConversations();
   }, [user]);
@@ -96,114 +121,53 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     return () => window.removeEventListener('slpServiceReady', handleServiceReady);
   }, []);
 
+  // Auto-select the system project on initial load when no project is in the URL
+  useEffect(() => {
+    if (pathname !== '/') return;
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('project') || urlParams.get('conversation')) return;
+
+    const allProjects = localProjects.length > 0 ? localProjects : (user?.projects || []);
+    const systemProject = allProjects.find((p: any) => p.system === true);
+    if (systemProject) {
+      handleProjectClick(systemProject.id);
+    }
+  }, [localProjects, user, pathname, location.search]);
+
   // Load conversations from SQLite (local mode) or user service (remote)
-  const refreshConversations = async () => {
+  const refreshConversations = async (): Promise<any[]> => {
     try {
-      if (isElectron) {
-        const convos = await storageService.getConversations(undefined, 'desc');
-        setConversations(convos);
-      } else {
-        const user = await userService.get();
-        const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-        setConversations(conversations);
-      }
+      const convos = await storageService.getConversations(undefined, 'desc');
+      setConversations(convos);
+      return convos;
     } catch (error) {
       console.error('Error loading conversations:', error);
+      return [];
     }
   };
 
-  // Refresh user data on demand (skip for guest/Electron users — no remote API)
-  const refreshUserData = async () => {
-    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
-    if (user?.guest || isElectron) return;
-    try {
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setLiveUser(updatedUser);
-        lastTokenCount.current = updatedUser.number_of_tokens_processed || 0;
-      }
-    } catch (error) {
-      console.error('Error refreshing user data:', error);
-    }
-  };
-
-  // Expose refresh method via custom event
+  // Listen for conversation and project changes
   useEffect(() => {
-    const handleRefresh = () => {
-      refreshUserData();
-    };
+    const handleConversationChange = () => { refreshConversations(); };
+    const handleProjectChanged = async () => { await loadLocalProjects(); };
 
-    const handleUserUpdated = (event: CustomEvent) => {
-      // Update user and conversations from the event detail (no need to fetch)
-      if (event.detail) {
-        setLiveUser(event.detail);
-        // In Electron mode, conversations come from SQLite — don't overwrite with user object
-        if (!isElectron) {
-          const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
-          setConversations(conversations);
-        }
-      }
-    };
-
-    const handleConversationCreated = () => {
-      refreshConversations();
-    };
-
-    const handleConversationDeleted = () => {
-      refreshConversations();
-    };
-
-    const handleConversationUpdated = () => {
-      refreshConversations();
-    };
-
-    // Listen for project changes to refresh project list
-    const handleProjectChanged = async () => {
-      await loadLocalProjects();
-    };
-
-    window.addEventListener('refreshUserTokens', handleRefresh);
-    window.addEventListener('userUpdated', handleUserUpdated as EventListener);
-    window.addEventListener('conversationCreated', handleConversationCreated);
-    window.addEventListener('conversationDeleted', handleConversationDeleted);
-    window.addEventListener('conversationUpdated', handleConversationUpdated);
+    window.addEventListener('conversationCreated', handleConversationChange);
+    window.addEventListener('conversationDeleted', handleConversationChange);
+    window.addEventListener('conversationUpdated', handleConversationChange);
     window.addEventListener('projectDeleted', handleProjectChanged);
     window.addEventListener('projectUpdated', handleProjectChanged);
 
     return () => {
-      window.removeEventListener('refreshUserTokens', handleRefresh);
-      window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
-      window.removeEventListener('conversationCreated', handleConversationCreated);
-      window.removeEventListener('conversationDeleted', handleConversationDeleted);
-      window.removeEventListener('conversationUpdated', handleConversationUpdated);
+      window.removeEventListener('conversationCreated', handleConversationChange);
+      window.removeEventListener('conversationDeleted', handleConversationChange);
+      window.removeEventListener('conversationUpdated', handleConversationChange);
       window.removeEventListener('projectDeleted', handleProjectChanged);
       window.removeEventListener('projectUpdated', handleProjectChanged);
     };
   }, []);
 
-  const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLogout = async () => {
-    await userService.logout();
-    navigate('/login');
-    handleMenuClose();
-  };
-
-  const handleProfile = () => {
-    navigate('/profile');
-    handleMenuClose();
-    onMobileClose?.();
-  };
-
   const handleSettings = () => {
     navigate('/settings');
-    handleMenuClose();
     onMobileClose?.();
   };
 
@@ -287,12 +251,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
-          projectId: conversation.project_id || null,
+          project_id: conversation.project_id || null,
           lastMessage,
           createdAt: conversation.created_at || new Date(),
         };
       })
-      .filter((conv: any) => conv.id && conv.projectId)
+      .filter((conv: any) => conv.id && conv.project_id)
       .slice(0, 3);
 
     return recentConversations;
@@ -339,15 +303,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleProjectClick = async (projectId: string | null) => {
     // Refresh conversations first to ensure we have the latest data including newly created ones
-    await refreshConversations();
+    const freshConversations = await refreshConversations();
 
-    // Use the conversations state which is now up-to-date
-    const allConversations = (conversations && Array.isArray(conversations)) ? conversations : [];
+    // Use the returned data directly (React state may not be updated yet)
+    const allConversations = (freshConversations && Array.isArray(freshConversations)) ? freshConversations : [];
 
     // If no projectId provided, navigate to system project
     if (!projectId) {
       // Find system project
-      const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+      const systemProject = user?.projects?.find((p: any) => p.system === true);
       if (systemProject) {
         projectId = systemProject.id;
       } else {
@@ -421,7 +385,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         const projectId = result.data.id;
 
         // Reload projects from local API (enriched with SQLite metadata)
-        await loadLocalProjects();
+        const updatedProjects = await projectService.getProjects();
+        setLocalProjects(updatedProjects);
+
+        // Update AuthContext user with the refreshed projects list
+        if (user) {
+          const updatedUser = { ...user, projects: updatedProjects };
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
 
         handleCloseCreateProjectDialog();
 
@@ -766,7 +737,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
                 } else {
                   // Conversation without project_id - find system project or navigate without project
-                  const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+                  const systemProject = user?.projects?.find((p: any) => p.system === true);
                   if (systemProject) {
                     navigate(`/?conversation=${chat.id}&project=${systemProject.id}`);
                   } else {
@@ -833,293 +804,51 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         )}
       </Box>
 
-      {/* Credits & Upgrade Section */}
-      {liveUser && (() => {
-        // Calculate credits using the same logic as profile page
-        const isPremium = liveUser.is_premium;
-        const isPro = liveUser.is_paid;
-        const planTokens = isPremium ? Infinity : (isPro ? 300000 : 30000);
-        const totalTokens = isPremium ? Infinity : (liveUser.tokens && liveUser.tokens > 0 ? liveUser.tokens : planTokens);
-        const processedTokens = liveUser.number_of_tokens_processed || 0;
-        const remainingTokens = isPremium ? Infinity : Math.max(0, totalTokens - processedTokens);
+      {/* Model / Hardware Info */}
+      {(() => {
+        const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
+        const modelName = (activeModel?.model_name || 'No model').replace(/-/g, ' ').toUpperCase();
+        const quantize = activeModel?.config?.quantize || '';
 
-        const totalCredits = isPremium ? Infinity : Math.floor(totalTokens / 100);
-        const usedCredits = Math.floor(processedTokens / 100);
-        const remainingCredits = isPremium ? Infinity : Math.floor(remainingTokens / 100);
-        const usagePercentage = isPremium ? 0 : (totalTokens > 0 ? (processedTokens / totalTokens) * 100 : 0);
-
-        console.log('[Upgrade] Render check - isPremium:', isPremium, 'isPro:', isPro, 'Show button:', !isPremium && !isPro);
+        const hwParts: string[] = [];
+        if (systemInfo?.totalMemGb) {
+          const usedGb = (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1);
+          hwParts.push(`${usedGb}/${systemInfo.totalMemGb} GB`);
+        }
+        if (slpHealth?.memory_percent !== undefined) hwParts.push(`${slpHealth.memory_percent}% mem footprint`);
 
         return (
           <Box sx={{
             px: 2.5,
-            py: 2,
+            py: 1.5,
             borderTop: '1px solid rgba(255, 255, 255, 0.06)',
             bgcolor: 'rgba(255, 255, 255, 0.02)',
           }}>
-            {/* Credits Progress */}
-            <Box sx={{ mb: 2 }}>
-              <Box className="flex items-center justify-between mb-2">
-                <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', fontWeight: 600, letterSpacing: '0.3px' }}>CREDITS</span>
-                {isPremium ? (
-                  <Box className="flex items-center gap-1">
-                    <AllInclusiveIcon sx={{ fontSize: 14, color: '#ec4899' }} />
-                    <span className="text-xs text-pink-400 font-medium">Unlimited</span>
-                  </Box>
-                ) : (
-                  <span className="text-xs text-white font-medium">
-                    {remainingCredits.toLocaleString()} / {totalCredits.toLocaleString()}
+            <Box className="flex items-center justify-between gap-1">
+              <Box className="flex items-center gap-1.5">
+                <Box className={`w-2.5 h-2.5 rounded-sm flex-shrink-0 ${activeModel ? 'bg-green-500' : 'bg-gray-500'}`} />
+                <span className="text-[11px] text-white/70 font-medium truncate">
+                  {modelName}
+                </span>
+                {quantize && (
+                  <span className="text-[9px] text-white/30 px-1 rounded-sm font-medium flex-shrink-0">
+                    {quantize.toUpperCase()}
                   </span>
                 )}
               </Box>
-              <Box
-                sx={{
-                  width: '100%',
-                  height: '4px',
-                  bgcolor: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: '2px',
-                  overflow: 'hidden',
-                }}
-              >
-                <Box
-                  sx={{
-                    width: isPremium ? '100%' : `${100 - Math.min(100, usagePercentage)}%`,
-                    height: '100%',
-                    bgcolor: isPremium ? '#ec4899' : (remainingCredits > totalCredits * 0.2 ? '#ec4899' : '#ef4444'),
-                    transition: 'width 0.3s ease',
-                    boxShadow: isPremium ? '0 0 8px rgba(236, 72, 153, 0.5)' : 'none',
-                  }}
-                />
-              </Box>
-              <Box className="flex items-center justify-between mt-1">
-                <span className="text-xs text-gray-600">Used: {usedCredits.toLocaleString()}</span>
-                {isPremium ? (
-                  <span className="text-xs text-pink-400">No limits</span>
-                ) : (
-                  <span className="text-xs text-gray-600">{Math.round(100 - usagePercentage)}% left</span>
-                )}
-              </Box>
+              <SettingsIcon
+                onClick={handleSettings}
+                sx={{ fontSize: 14, color: 'rgba(255,255,255,0.2)', cursor: 'pointer', flexShrink: 0, transition: 'color 0.12s', '&:hover': { color: 'rgba(255,255,255,0.6)' } }}
+              />
             </Box>
-
-            {/* Upgrade Button */}
-            {!isPremium && !isPro && (
-              <Box
-                onClick={() => {
-                  console.log('[Upgrade] Opening pricing page:', `${APP_URL}/pricing`);
-                  if (isElectron) {
-                    // For Electron, open in external browser
-                    window.open(`${APP_URL}/pricing`, '_blank');
-                  } else {
-                    // For web, open in same window
-                    window.location.href = `${APP_URL}/pricing`;
-                  }
-                  onMobileClose?.();
-                }}
-                sx={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  px: 2,
-                  py: 1.5,
-                  bgcolor: '#ec4899',
-                  borderRadius: '7px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: 'white',
-                  transition: 'all 0.15s ease',
-                  border: '1px solid rgba(236, 72, 153, 0.3)',
-                  boxShadow: '0 2px 8px rgba(236, 72, 153, 0.25)',
-                  '&:hover': {
-                    bgcolor: '#db2777',
-                    transform: 'translateY(-1px)',
-                    boxShadow: '0 4px 12px rgba(236, 72, 153, 0.35)',
-                  },
-                  '&:active': {
-                    transform: 'translateY(0px)',
-                  },
-                }}
-              >
-                <RocketLaunchIcon sx={{ fontSize: 17 }} />
-                <span>Upgrade to Pro</span>
-              </Box>
+            {hwParts.length > 0 && (
+              <span className="text-[9px] text-white/20 truncate block mt-0.5">
+                {hwParts.join(' · ')}
+              </span>
             )}
           </Box>
         );
       })()}
-
-      {/* User Profile at bottom */}
-      {user?.guest && (
-        <Box sx={{
-          p: 2,
-          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-          bgcolor: 'rgba(255, 255, 255, 0.02)',
-        }}>
-          <Box
-            onClick={() => navigate('/login')}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '8px',
-              padding: '10px',
-              border: '1px solid rgba(107, 114, 128, 0.3)',
-              transition: 'all 0.12s ease',
-              '&:hover': {
-                bgcolor: 'rgba(236, 72, 153, 0.1)',
-                borderColor: 'rgba(236, 72, 153, 0.4)',
-              },
-            }}
-          >
-            <span className="text-sm text-gray-300">Login</span>
-          </Box>
-        </Box>
-      )}
-      {user && !user.guest && (
-        <>
-          <Box sx={{
-            p: 2,
-            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-            bgcolor: 'rgba(255, 255, 255, 0.02)',
-          }}>
-            <Box
-              onClick={handleMenuClick}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                cursor: 'pointer',
-                borderRadius: '8px',
-                padding: '8px',
-                transition: 'all 0.12s ease',
-                '&:hover': {
-                  bgcolor: 'rgba(255, 255, 255, 0.06)',
-                },
-              }}
-            >
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '8px',
-                  bgcolor: 'rgba(236, 72, 153, 0.15)',
-                  border: '1.5px solid rgba(236, 72, 153, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                }}
-              >
-                {user.name ? (
-                  <span className="text-pink-500 text-xs font-bold">
-                    {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-                  </span>
-                ) : (
-                  <span className="text-pink-500 text-xs font-bold">U</span>
-                )}
-              </Box>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{
-                  color: 'white',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {user.name || 'User'}
-                </Box>
-                <Box sx={{
-                  color: 'rgba(255, 255, 255, 0.4)',
-                  fontSize: '11px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-
-                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
-                </Box>
-              </Box>
-              <ExpandMoreIcon
-                sx={{
-                  fontSize: 16,
-                  color: 'rgba(255, 255, 255, 0.4)',
-                  transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s ease'
-                }}
-              />
-            </Box>
-          </Box>
-
-          <Menu
-            anchorEl={anchorEl}
-            open={menuOpen}
-            onClose={handleMenuClose}
-            transformOrigin={{ horizontal: 'left', vertical: 'bottom' }}
-            anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
-            PaperProps={{
-              sx: {
-                bgcolor: 'rgba(0, 0, 0, 0.98)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '8px',
-                minWidth: '200px',
-                mt: -1,
-                ml: 1,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-              }
-            }}
-          >
-            <MenuItem
-              onClick={handleProfile}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' }
-              }}
-            >
-              <PersonIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
-              Profile
-            </MenuItem>
-            <MenuItem
-              onClick={handleSettings}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' }
-              }}
-            >
-              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
-              Settings
-            </MenuItem>
-            <Box sx={{ height: '1px', bgcolor: 'rgba(255, 255, 255, 0.06)', my: 0.5, mx: 1 }} />
-            <MenuItem
-              onClick={handleLogout}
-              sx={{
-                color: '#ef4444',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' }
-              }}
-            >
-              <LogoutIcon sx={{ fontSize: 17, mr: 1.5, color: '#ef4444' }} />
-              Logout
-            </MenuItem>
-          </Menu>
-        </>
-      )}
     </>
   );
 

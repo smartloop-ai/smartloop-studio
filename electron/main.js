@@ -284,6 +284,49 @@ ipcMain.handle('get-slp-config', async () => {
   }
 });
 
+// IPC: get system hardware info (CPU, RAM, GPU)
+ipcMain.handle('get-system-info', async () => {
+  const cpus = os.cpus();
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+
+  let gpuName = null;
+
+  // Try nvidia-smi first
+  try {
+    const result = execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits'], { timeout: 3000 }).toString().trim();
+    gpuName = result.split('\n')[0].trim() || null;
+  } catch {}
+
+  // Fallback: lspci on Linux
+  if (!gpuName && process.platform === 'linux') {
+    try {
+      const { execSync } = require('child_process');
+      const result = execSync("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display'", { timeout: 3000, shell: true }).toString();
+      const match = result.match(/:\s+(.+)$/m);
+      if (match) gpuName = match[1].trim();
+    } catch {}
+  }
+
+  // Fallback: system_profiler on macOS
+  if (!gpuName && process.platform === 'darwin') {
+    try {
+      const { execSync } = require('child_process');
+      const result = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model'", { timeout: 3000, shell: true }).toString();
+      const match = result.match(/Chipset Model:\s+(.+)$/m);
+      if (match) gpuName = match[1].trim();
+    } catch {}
+  }
+
+  return {
+    cpu: cpus[0]?.model?.replace(/\s+/g, ' ').trim() || 'Unknown CPU',
+    cores: cpus.length,
+    totalMemGb: Math.round(totalMem / (1024 ** 3) * 10) / 10,
+    freeMemGb: Math.round(freeMem / (1024 ** 3) * 10) / 10,
+    gpu: gpuName || null,
+  };
+});
+
 // IPC: start/stop SLP service from renderer
 ipcMain.handle('slp-service-start', async () => {
   const result = await startSlpService();

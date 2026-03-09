@@ -11,7 +11,6 @@ import AddIcon from '@mui/icons-material/Add';
 import SortIcon from '@mui/icons-material/Sort';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
-import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
@@ -134,8 +133,9 @@ export default function ProjectsList() {
       const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
+        // Refresh projects from local API and update user
+        const updatedProjects = await projectService.getProjects();
+        const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
         handleCloseDeleteDialog();
       } else {
@@ -177,14 +177,14 @@ export default function ProjectsList() {
     try {
       // Use project service to create project
       const result = await projectService.createProject({
-        title: newProjectTitle.trim(),
-        temperature: 0.3,
+        name: newProjectTitle.trim(),
         color: selectedColor
       });
 
       if (result.success && result.data) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
+        // Refresh projects from local API and update user
+        const updatedProjects = await projectService.getProjects();
+        const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
         handleCloseCreateDialog();
       } else {

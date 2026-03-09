@@ -109,19 +109,19 @@ async function downloadAndInstall(onProgress = null) {
 
   if (needsDownload) {
     console.log('[SLP Setup] Downloading slp', VERSION, 'from', archiveUrl);
-    if (onProgress) onProgress({ status: 'downloading', message: 'Downloading SLP framework...' });
+    if (onProgress) onProgress({ status: 'downloading', message: 'Downloading framework...' });
 
     // Use curl async — this is the key fix to prevent "not responding"
     await runAsync('curl', ['-fSL', '-o', cachedArchive, archiveUrl], { timeout: 300000 }, (data) => {
       // curl progress output
-      if (onProgress) onProgress({ status: 'downloading', message: `Downloading SLP framework...` });
+      if (onProgress) onProgress({ status: 'downloading', message: `Downloading framework...` });
     });
 
     verifyChecksum(cachedArchive, expectedHash);
     console.log('[SLP Setup] Checksum verified');
   }
 
-  if (onProgress) onProgress({ status: 'installing', message: 'Installing SLP framework...' });
+  if (onProgress) onProgress({ status: 'installing', message: 'Installing framework...' });
 
   // Extract to a temp dir, then move to INSTALL_DIR
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-'));

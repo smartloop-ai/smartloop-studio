@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Local SLP service
   getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
   // SLP service lifecycle

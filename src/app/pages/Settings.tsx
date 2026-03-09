@@ -6,6 +6,10 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import MemoryIcon from '@mui/icons-material/Memory';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+
+const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
 interface GlobalSettings {
     default_memory: boolean;
@@ -25,6 +29,39 @@ export default function SettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState('');
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Model / hardware info
+    const [slpConfig, setSlpConfig] = useState<any>(null);
+    const [slpHealth, setSlpHealth] = useState<any>(null);
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+
+    useEffect(() => {
+        const load = async () => {
+            if (!isElectron) return;
+            const api = (window as any).electronAPI;
+            if (api?.getSlpConfig) {
+                const cfg = await api.getSlpConfig();
+                setSlpConfig(cfg);
+            }
+            if (api?.getLocalApiUrl) {
+                const baseUrl = await api.getLocalApiUrl();
+                if (baseUrl) {
+                    try {
+                        const res = await fetch(`${baseUrl}/health`);
+                        if (res.ok) setSlpHealth(await res.json());
+                    } catch {}
+                }
+            }
+        };
+        load();
+    }, []);
+
+    const copyToClipboard = (text: string, field: string) => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopiedField(field);
+            setTimeout(() => setCopiedField(null), 1500);
+        });
+    };
 
     // Load settings from user object
     useEffect(() => {
@@ -135,6 +172,44 @@ export default function SettingsPage() {
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Global Settings</h1>
                         <p className="text-gray-400 text-sm md:text-base">Configure default settings for new projects</p>
                     </Box>
+
+                    {/* Active Model Info */}
+                    {isElectron && slpConfig && (() => {
+                        const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
+                        if (!activeModel) return null;
+                        const rows: { label: string; value: string; key: string }[] = [
+                            { label: 'Model', value: activeModel.model_name || '—', key: 'model_name' },
+                            { label: 'Quantization', value: activeModel.config?.quantize?.toUpperCase() || '—', key: 'quantize' },
+                            { label: 'Context', value: activeModel.config?.ctx_size ? `${activeModel.config.ctx_size.toLocaleString()} tokens` : '—', key: 'ctx' },
+                            { label: 'Status', value: slpHealth?.model_loaded ? 'Loaded' : 'Not loaded', key: 'status' },
+                            ...(slpHealth?.memory_percent !== undefined ? [{ label: 'Mem pressure', value: `${slpHealth.memory_percent}%`, key: 'mem' }] : []),
+                        ];
+                        return (
+                            <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                                <Box className="flex items-center gap-2 mb-4">
+                                    <SmartToyOutlinedIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 22 } }} />
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Active Model</h2>
+                                    <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: slpHealth?.model_loaded ? '#22c55e' : '#6b7280', ml: 0.5 }} />
+                                </Box>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                    {rows.map(({ label, value, key }) => (
+                                        <Box key={key} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.25, bgcolor: 'rgba(0,0,0,0.3)', borderRadius: '8px' }}>
+                                            <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', fontWeight: 500 }}>{label}</span>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)', fontFamily: key === 'model_name' || key === 'quantize' ? 'monospace' : 'inherit' }}>{value}</span>
+                                                {(key === 'model_name' || key === 'quantize') && value !== '—' && (
+                                                    <ContentCopyIcon
+                                                        onClick={() => copyToClipboard(value, key)}
+                                                        sx={{ fontSize: 14, color: copiedField === key ? '#22c55e' : 'rgba(255,255,255,0.2)', cursor: 'pointer', '&:hover': { color: 'rgba(255,255,255,0.6)' } }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        </Box>
+                                    ))}
+                                </Box>
+                            </Box>
+                        );
+                    })()}
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">

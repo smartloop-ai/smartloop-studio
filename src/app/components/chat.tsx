@@ -339,8 +339,7 @@ export default function Chat(props: {
       const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
       try {
-        // Ensure project_id is always set — fallback to 'general' system project
-        const projectId = props.project?.id || 'general';
+        const projectId = props.project?.id || null;
         const conversationResult = await conversationService.createConversation({
           title: conversationTitle,
           project_id: projectId

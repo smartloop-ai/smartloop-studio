@@ -72,13 +72,15 @@ export default function Home() {
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
   const [hasConversations, setHasConversations] = useState(false);
 
-  // Load a single project from local API (enriched with local UI metadata)
+  // Load a single project — try local API first, fall back to user.projects
   const loadProjectFromApi = async (projectId: string) => {
     try {
       const projects = await projectService.getProjects();
-      return projects.find((p: any) => p.id === projectId) || null;
+      const found = projects.find((p: any) => p.id === projectId);
+      if (found) return found;
     } catch { }
-    return null;
+    // Fall back to user.projects when local API is unavailable
+    return user?.projects?.find((p: any) => p.id === projectId) || null;
   };
 
   // Check if any conversations exist in SQLite
@@ -215,12 +217,20 @@ export default function Home() {
   }, [selectedProject]);
 
 
+  // Track whether user has loaded at least once (avoid re-running URL effect on every user update)
+  const userLoadedRef = useRef(false);
+  useEffect(() => {
+    if (user && !userLoadedRef.current) {
+      userLoadedRef.current = true;
+    }
+  }, [user]);
+
   // Handle conversation ID from URL parameter — load from SQLite and local API
   useEffect(() => {
+    if (!userLoadedRef.current && !user) return;
+
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
-
-    if (!user) return;
 
     if (urlConversationId) {
       const loadAndSetConversation = async () => {
@@ -304,18 +314,6 @@ export default function Home() {
         setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
       }
 
-      // Unload and reload model when switching between projects
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.unloadModel && prevProjectIdRef.current && prevProjectIdRef.current !== selectedProject.id) {
-        (async () => {
-          try {
-            await electronAPI.unloadModel();
-            await electronAPI.loadModel();
-          } catch (e: any) {
-            console.warn('[Home] Model reload on project switch failed:', e.message);
-          }
-        })();
-      }
       prevProjectIdRef.current = selectedProject.id;
 
       // Load documents + rules from local service
@@ -329,13 +327,14 @@ export default function Home() {
             const docsData = await docsRes.json();
             const docs: any[] = docsData.documents || docsData || [];
             setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
-            // Keep user.projects in sync
-            if (user) {
-              const updatedProjects = (user.projects || []).map((p: any) =>
+            // Keep user.projects in sync (use functional update to avoid stale closure)
+            setUser((prev: any) => {
+              if (!prev) return prev;
+              const updatedProjects = (prev.projects || []).map((p: any) =>
                 p.id === selectedProject.id ? { ...p, documents: docs } : p
               );
-              setUser({ ...user, projects: updatedProjects });
-            }
+              return { ...prev, projects: updatedProjects };
+            });
           }
 
           // Fetch rules
@@ -371,9 +370,24 @@ export default function Home() {
     if (!projectId) return;
 
     if (isElectron) {
-      // Load from SQLite — no user required
+      // Load from SQLite — include conversations for this project
       const convos = await storageService.getConversations(projectId);
-      setProjectConversations(convos);
+
+      // Also include orphaned conversations (no project_id) and assign them to this project
+      const allConvos = await storageService.getConversations();
+      const orphaned = allConvos.filter((c: any) => !c.project_id);
+      for (const conv of orphaned) {
+        conv.project_id = projectId;
+        await storageService.saveConversation(conv);
+      }
+
+      // Reload after fixing orphaned conversations
+      if (orphaned.length > 0) {
+        const updated = await storageService.getConversations(projectId);
+        setProjectConversations(updated);
+      } else {
+        setProjectConversations(convos);
+      }
     } else {
       if (!user) return;
       const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
@@ -406,6 +420,26 @@ export default function Home() {
       window.removeEventListener('conversationDeleted', handleRefresh);
     };
   }, [selectedProject, user]);
+
+  // When SLP service comes online, re-enrich selectedProject with API data and reload conversations
+  useEffect(() => {
+    const handleServiceReady = async () => {
+      const urlProjectId = searchParams.get('project');
+      const projectId = urlProjectId || selectedProject?.id;
+      if (projectId) {
+        const project = await loadProjectFromApi(projectId);
+        if (project) {
+          setSelectedProject(project);
+        }
+      }
+      loadProjectConversations();
+    };
+
+    window.addEventListener('slpServiceReady', handleServiceReady);
+    return () => {
+      window.removeEventListener('slpServiceReady', handleServiceReady);
+    };
+  }, [selectedProject, searchParams]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -542,14 +576,15 @@ export default function Home() {
 
     let activeConversationId = conversation?.id;
 
-    // If no project is selected, auto-select the system project
+    // If no project is selected, auto-select the system project or first available project
     let projectForMessage = selectedProject;
     if (!projectForMessage && !activeConversationId) {
       const systemProject = user?.projects?.find((p: any) => p.system === true);
-      if (systemProject) {
-        console.log('[handleSendMessage] No project selected, auto-selecting system project:', systemProject.id);
-        projectForMessage = systemProject;
-        setSelectedProject(systemProject);
+      const fallbackProject = systemProject || user?.projects?.[0];
+      if (fallbackProject) {
+        console.log('[handleSendMessage] No project selected, auto-selecting project:', fallbackProject.id);
+        projectForMessage = fallbackProject;
+        setSelectedProject(fallbackProject);
       }
     }
 

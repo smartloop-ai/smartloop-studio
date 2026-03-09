@@ -1,153 +1,42 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
-import { storageService } from '../services/storage.service';
 
 /**
- * Custom hook for authentication
- * Automatically fetches user and redirects to login/verify if needed
- * Handles invalid or expired tokens by redirecting to login
- * @returns [user, setUser] tuple - user object (or null) and setter function
+ * Custom hook for local-only authentication
+ * Loads projects from local SLP service — no remote login required
+ * @returns [user, setUser, authReady] tuple
  */
 export function useAuth(): [any, (user: any) => void, boolean] {
   const [user, setUser] = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
-  const navigate = useNavigate();
-  const location = useLocation();
   const isAuthCheckingRef = useRef(false);
 
   useEffect(() => {
-    // Don't check auth on public pages
-    const publicPages = ['/welcome', '/login', '/signup', '/forgot', '/reset', '/verify', '/resend', '/oauth-callback', '/terms'];
-    if (publicPages.includes(location.pathname)) {
-      return;
-    }
-
-    // Prevent multiple simultaneous auth checks
-    if (isAuthCheckingRef.current) {
-      return;
-    }
-
+    if (isAuthCheckingRef.current) return;
     isAuthCheckingRef.current = true;
 
-    const checkAuth = async () => {
+    const init = async () => {
       try {
-        // Check if token exists in localStorage
-        let token = await userService.token();
-
-        // If running in Electron, check persistent storage
-        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
-        if (!token && isElectron && window.electronAPI) {
-          console.log('useAuth: Token not in localStorage, checking persistent storage...');
-          token = await storageService.getItem('token');
+        let projects: any[] = [];
+        try {
+          const localProjects = await projectService.getProjects();
+          projects = Array.isArray(localProjects) ? localProjects : [];
+        } catch (err) {
+          console.warn('useAuth: Could not load local projects:', err);
         }
-
-        if (!token || isElectron) {
-          // No token or Electron — use local guest mode (skip remote user service)
-          if (isElectron) {
-            let projects: any[] = [];
-            try {
-              const localProjectsResult = await projectService.getProjects();
-              if (localProjectsResult.success && localProjectsResult.data) {
-                projects = Array.isArray(localProjectsResult.data) ? localProjectsResult.data : [];
-              }
-            } catch (err) {
-              console.warn('useAuth: Could not load local projects for guest mode:', err);
-            }
-            console.log(`useAuth: Guest mode — loaded ${projects.length} project(s) from local SLP`);
-            setUser({ name: 'Guest', guest: true, projects, conversations: [] });
-            return;
-          }
-          // Not in Electron — redirect to welcome page
-          if (location.pathname !== '/welcome') {
-            navigate('/welcome', { replace: true });
-          }
-          return;
-        }
-
-        // Fetch user data (only reached in non-Electron mode with valid token)
-        let u = await userService.get();
-
-        if (!u) {
-          // Could be network error or invalid token
-          // Check if we have cached user data
-          const cachedUser = await storageService.getItem('u');
-          if (cachedUser) {
-            try {
-              const parsedUser = JSON.parse(cachedUser);
-              // Ensure conversations is always an array, never null
-              if (!parsedUser.conversations || !Array.isArray(parsedUser.conversations)) {
-                parsedUser.conversations = [];
-              }
-              console.log('useAuth: Using cached user data due to network error');
-              setUser(parsedUser);
-              // Don't redirect - allow user to continue with cached data
-              return;
-            } catch (e) {
-              console.error('useAuth: Error parsing cached user:', e);
-            }
-          }
-
-          // No cached data or invalid cache - redirect to welcome screen
-          console.log('useAuth: Failed to fetch user and no cached data, redirecting to welcome');
-          userService.logout();
-          navigate('/welcome', { replace: true });
-        }
-        else {
-          // Always use local SLP as the source of truth for projects in Electron
-          if (isElectron) {
-            try {
-              const localProjectsResult = await projectService.getProjects();
-              if (localProjectsResult.success && localProjectsResult.data) {
-                const projects = Array.isArray(localProjectsResult.data) ? localProjectsResult.data : [];
-                console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
-                u = { ...u, projects };
-              }
-            } catch (err) {
-              console.warn('useAuth: Could not load projects from local SLP:', err);
-            }
-          }
-
-          setUser(u);
-
-          // Initialize token refresh in the background
-          userService.initializeTokenRefresh();
-        }
-      } catch (error: any) {
-        console.error('useAuth: Error during authentication check:', error);
-
-        // Check if we have cached user data for network errors
-        if (error.message?.includes('Network error') || error.message?.includes('fetch')) {
-          const cachedUser = await storageService.getItem('u');
-          if (cachedUser) {
-            try {
-              const parsedUser = JSON.parse(cachedUser);
-              // Ensure conversations is always an array, never null
-              if (!parsedUser.conversations || !Array.isArray(parsedUser.conversations)) {
-                parsedUser.conversations = [];
-              }
-              console.log('useAuth: Using cached user data due to network error');
-              setUser(parsedUser);
-              return; // Don't redirect on network errors if we have cache
-            } catch (e) {
-              console.error('useAuth: Error parsing cached user:', e);
-            }
-          }
-        }
-
-        // Redirect to welcome screen on other errors
-        console.log('useAuth: Redirecting to welcome screen due to error');
-        userService.logout();
-        navigate('/welcome', { replace: true });
+        console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
+        setUser({ name: 'Local', guest: true, projects, conversations: [] });
+      } catch (error) {
+        console.error('useAuth: Error during init:', error);
+        setUser({ name: 'Local', guest: true, projects: [], conversations: [] });
       } finally {
         isAuthCheckingRef.current = false;
         setAuthReady(true);
       }
     };
 
-    checkAuth();
-  }, [navigate, location.pathname]);
+    init();
+  }, []);
 
   // Listen for userUpdated events (e.g., when a project is created)
   useEffect(() => {
@@ -158,8 +47,21 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     };
 
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
+
+    // When SLP service comes online, refresh projects in user state
+    const handleSlpReady = async () => {
+      try {
+        const projects = await projectService.getProjects();
+        if (projects.length > 0) {
+          setUser((prev: any) => prev ? { ...prev, projects } : prev);
+        }
+      } catch {}
+    };
+    window.addEventListener('slpServiceReady', handleSlpReady);
+
     return () => {
       window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
+      window.removeEventListener('slpServiceReady', handleSlpReady);
     };
   }, []);
 
