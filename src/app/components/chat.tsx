@@ -251,7 +251,7 @@ export default function Chat(props: {
     }
   };
 
-  const sendMessage = async (_: any, messageOverride?: string) => {
+  const sendMessage = async (_: any, messageOverride?: string, retryAfterRestart = false) => {
     // Prevent duplicate sends
     if (isLoading || sendingMessageRef.current) {
       console.log('[Chat] Already sending a message, skipping duplicate send');
@@ -558,8 +558,52 @@ export default function Chat(props: {
     } catch (error: any) {
       if (error.message === 'AbortError' || error.name === 'AbortError') {
         console.log('Request aborted');
+      } else if (
+        (error.name === 'APIConnectionError' || error.message?.includes('Failed to fetch') || error.message?.includes('Connection error')) &&
+        !retryAfterRestart
+      ) {
+        // SLP server not reachable — try to start it and retry once
+        console.warn('[Chat] Connection error — attempting to start SLP service and retry...');
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? { ...msg, is_new: true, content: 'Reconnecting to server...' } : msg
+          )
+        );
+        try {
+          if (window.electronAPI?.slpServiceStart) {
+            await window.electronAPI.slpServiceStart();
+            // Wait for the service to become ready (poll health for up to 30s)
+            const localBaseUrl = await getLocalApiEndpoint();
+            let ready = false;
+            for (let i = 0; i < 30; i++) {
+              try {
+                const res = await fetch(`${localBaseUrl}/health`);
+                if (res.ok) { ready = true; break; }
+              } catch (_) { /* not ready yet */ }
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            if (ready) {
+              console.log('[Chat] SLP service restarted — retrying message...');
+              sendingMessageRef.current = false;
+              setIsLoading(false);
+              sendMessage(null, userMessage, true);
+              return;
+            }
+          }
+        } catch (restartErr) {
+          console.error('[Chat] Failed to restart SLP service:', restartErr);
+        }
+        // If restart failed, fall through to show error
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? {
+              ...msg, is_new: false, isError: true, errorIconType: 'build',
+              content: 'Unable to connect to the local server. Please check that the service is running.'
+            } : msg
+          )
+        );
+        hasLocalErrorRef.current = true;
       } else {
-        console.error('Error sending message:', error);
 
         // Check for 429 rate limit / out of credits error
         let errorMessage = 'An error occurred while processing your message. Please try again.';

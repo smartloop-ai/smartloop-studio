@@ -27,6 +27,7 @@ import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
+import WelcomeScreen from '@/app/components/welcome-screen';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 // Extend SuggestionDataItem to include color property
@@ -1678,115 +1679,27 @@ export default function Home() {
                 </Box>
               </Box>
             ) : (
-              // Main prompt screen with no active conversation
-              <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'black' }}>
-                {/* Top bar with login button for guest users */}
-                {user?.guest && (
-                  <Box className="flex items-center justify-end px-6 py-4">
-                    <button
-                      onClick={() => navigate('/login')}
-                      className="px-4 py-1.5 rounded-sm border border-gray-700 text-sm text-gray-300 hover:text-white hover:border-pink-500/50 hover:bg-gray-900/50 transition-all"
-                    >
-                      Login
-                    </button>
-                  </Box>
-                )}
-                <Box className="flex-1 flex items-center justify-center px-4">
-                  <Box className="max-w-3xl w-full">
-                    {/* Logo */}
-                    <Box className="flex justify-center mb-6" sx={{ padding: '10px' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <span className="text-5xl font-semibold text-white tracking-tight">smartloop</span>
-                        <span className="text-pink-500 text-5xl font-semibold">.</span>
-                      </Box>
-                    </Box>
-
-                    {/* Prompt input */}
-                    <Box className="bg-gray-900/50 border rounded-2xl p-4 relative transition-all border-gray-700 hover:border-pink-500/50">
-                      <MentionsInput
-                        value={message}
-                        onChange={handleMentionChange}
-                        placeholder="Type your prompt.. (e.g. what are best coffee shop in San Francisco?)"
-                        className="mentions"
-                        allowSuggestionsAboveCursor={true}
-                        style={{
-                          control: { minHeight: '80px', border: 'none', outline: 'none', boxShadow: 'none' },
-                          input: { color: 'white', minHeight: '80px', border: 'none', outline: 'none', boxShadow: 'none' },
-                          highlighter: { minHeight: '80px', border: 'none', outline: 'none', boxShadow: 'none' },
-                          suggestions: { backgroundColor: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '8px', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)', zIndex: 10000 },
-                        }}
-                        inputRef={textareaRef}
-                        onKeyDown={(e: any) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                      >
-                        <Mention
-                          trigger="/"
-                          data={fetchProjects}
-                          renderSuggestion={renderProjectSuggestion}
-                          displayTransform={(_id: string, _display: string) => ''}
-                          markup="/[__display__](__id__)"
-                          isLoading={false}
-                          onAdd={(id: string | number) => {
-                            const project = user?.projects?.find((p: any) => p.id === id);
-                            if (project) {
-                              setSelectedProject(project);
-                              setMessage('');
-                              previousMessageRef.current = '';
-                            }
-                          }}
-                          style={{ backgroundColor: 'transparent' }}
-                        />
-                      </MentionsInput>
-
-                      <Box className="flex items-center justify-between mt-3">
-                        <Box className="flex items-center gap-2">
-                          <Chip
-                            icon={
-                              <Box sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: selectedProject?.color || DEFAULT_COLOR, flexShrink: 0 }} />
-                            }
-                            label={selectedProject?.name || 'General Chat'}
-                            size="small"
-                            onClick={() => {/* TODO: project picker */ }}
-                            sx={{
-                              height: '28px', borderRadius: '2px',
-                              bgcolor: 'rgba(236, 72, 153, 0.08)', color: '#9ca3af',
-                              border: '1px solid rgba(107, 114, 128, 0.3)', fontSize: '12px',
-                              cursor: 'pointer',
-                              '&:hover': { bgcolor: 'rgba(236, 72, 153, 0.15)', borderColor: 'rgba(236, 72, 153, 0.4)', color: '#ec4899' },
-                            }}
-                          />
-                          <FileAttacher
-                            conversation={conversation}
-                            onSuccess={handleFileAttached}
-                            onError={(error) => console.error('File upload error:', error)}
-                            size="small"
-                            showDragDrop={true}
-                            clearTrigger={clearAttachmentTrigger}
-                          />
-                        </Box>
-                        <button
-                          disabled={message.trim().length <= 1}
-                          className="rounded-full p-2 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center"
-                          onClick={handleSendMessage}
-                        >
-                          <ArrowUpwardIcon sx={{ color: '#fff', fontSize: 20 }} />
-                        </button>
-                      </Box>
-                    </Box>
-
-                    {/* Footer text */}
-                    <Box className="mt-4">
-                      <Box className="text-xs text-gray-500 text-center">
-                        Ready to assist you with anything you need.
-                      </Box>
-                    </Box>
-                  </Box>
-                </Box>
-              </Box>
+              <WelcomeScreen
+                message={message}
+                onMessageChange={handleMentionChange}
+                onSend={handleSendMessage}
+                onFileAttached={handleFileAttached}
+                selectedProject={selectedProject}
+                conversation={conversation}
+                clearAttachmentTrigger={clearAttachmentTrigger}
+                fetchProjects={fetchProjects}
+                renderProjectSuggestion={renderProjectSuggestion}
+                onProjectSelected={(id) => {
+                  const project = user?.projects?.find((p: any) => p.id === id);
+                  if (project) {
+                    setSelectedProject(project);
+                    setMessage('');
+                    previousMessageRef.current = '';
+                  }
+                }}
+                isGuest={user?.guest}
+                onLoginClick={() => navigate('/login')}
+              />
             )}
           </Box>
         </>
