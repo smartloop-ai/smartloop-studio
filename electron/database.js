@@ -182,6 +182,13 @@ function deleteConversation(id) {
   d.prepare('DELETE FROM conversations WHERE id = ?').run(id);
 }
 
+function deleteConversationsByProject(projectId) {
+  const d = openDatabase();
+  // Messages cascade-deleted via FK on each conversation
+  d.prepare('DELETE FROM conversations WHERE project_id = ?').run(projectId);
+}
+
+
 function formatConversation(row) {
   return {
     id: row.id,
@@ -260,6 +267,7 @@ module.exports = {
   getConversations,
   updateConversation,
   deleteConversation,
+  deleteConversationsByProject,
   // Messages
   addMessage,
   addMessages,

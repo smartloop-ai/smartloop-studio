@@ -149,7 +149,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   // Listen for conversation and project changes
   useEffect(() => {
     const handleConversationChange = () => { refreshConversations(); };
-    const handleProjectChanged = async () => { await loadLocalProjects(); };
+    const handleProjectChanged = async () => { await loadLocalProjects(); await refreshConversations(); };
 
     window.addEventListener('conversationCreated', handleConversationChange);
     window.addEventListener('conversationDeleted', handleConversationChange);
@@ -429,8 +429,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
-        // Refresh projects from local API
+        // Refresh projects and notify listeners that conversations were removed
         await loadLocalProjects();
+        window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { projectId: projectToDelete.id } }));
         window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
 
         // Navigate to home after deletion

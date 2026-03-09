@@ -218,6 +218,15 @@ class StorageService {
     }
   }
 
+  async deleteConversationsByProject(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteConversationsByProject(projectId);
+    } catch (error) {
+      console.error('Error deleting conversations for project:', error);
+    }
+  }
+
   async deleteProjectMeta(projectId: string): Promise<void> {
     if (!this.db) return;
     try {

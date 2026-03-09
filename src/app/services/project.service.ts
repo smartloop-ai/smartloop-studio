@@ -74,6 +74,8 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     const response = await fetch(`${localBase}/v1/projects/${projectId}`, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
+      // Delete all local conversations (and their messages via cascade) for this project
+      await storageService.deleteConversationsByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
       return { success: true, data: { projectId } };
     }
