@@ -69,6 +69,8 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     }
 
     const localBase = await getLocalApiEndpoint();
+    if (!localBase) return { success: false, error: 'Local API service is not ready' };
+
     const response = await fetch(`${localBase}/v1/projects/${projectId}`, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
@@ -86,32 +88,33 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
 
 /**
  * Get all projects from local API, enriched with UI metadata from SQLite.
+ * Returns the enriched array directly, or an empty array on failure.
  */
-const getProjects = async (): Promise<ProjectServiceResponse> => {
+const getProjects = async (): Promise<any[]> => {
   try {
     const localBase = await getLocalApiEndpoint();
+    if (!localBase) return [];
+
     const response = await fetch(`${localBase}/v1/projects`);
+    if (!response.ok) return [];
 
-    if (response.ok) {
-      const projects = await response.json();
+    const data = await response.json();
 
-      // Enrich with local UI metadata (color)
-      const localMeta = await storageService.getAllProjectMeta();
-      const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
+    // API may return a raw array or { projects: [...] }
+    const projects = Array.isArray(data) ? data : (Array.isArray(data?.projects) ? data.projects : []);
 
-      const enriched = (Array.isArray(projects) ? projects : []).map((p: any) => {
-        const meta = metaMap.get(p.id);
-        return { ...p, color: meta?.color || null };
-      });
+    // Enrich with local UI metadata (color)
+    const localMeta = await storageService.getAllProjectMeta();
+    const metaMap = new Map(localMeta.map((m: any) => [m.id, m]));
 
-      return { success: true, data: enriched };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return { success: false, error: errorData.detail || errorData.message || 'Failed to fetch projects' };
+    const enriched = projects.map((p: any) => {
+      const meta = metaMap.get(p.id);
+      return { ...p, color: meta?.color || null };
+    });
+    return enriched;
   } catch (error: any) {
     console.error('Error fetching projects:', error);
-    return { success: false, error: error.message || 'An error occurred while fetching projects' };
+    return [];
   }
 };
 
@@ -125,6 +128,8 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
     }
 
     const localBase = await getLocalApiEndpoint();
+    if (!localBase) return { success: false, error: 'Local API service is not ready' };
+
     const response = await fetch(`${localBase}/v1/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

@@ -14,7 +14,7 @@ export default function WelcomeScreen({
   const [message, setMessage] = useState('');
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', bgcolor: 'black', minHeight: '100vh' }}>
+    <Box className="flex flex-col bg-black min-h-screen">
       {/* Top bar with login button */}
       <Box className="flex items-center justify-end px-6 py-4">
         <button
@@ -26,7 +26,7 @@ export default function WelcomeScreen({
       </Box>
 
       {/* Center content - shifted slightly above true center */}
-      <Box className="flex-1 flex items-center justify-center px-4" sx={{ paddingBottom: '12vh' }}>
+      <Box className="flex-1 flex items-center justify-center px-4">
         <Box className="max-w-3xl w-full">
           {/* Logo - bigger with padding */}
           <Box className="flex justify-center mb-6" sx={{ padding: '10px' }}>

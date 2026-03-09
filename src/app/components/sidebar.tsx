@@ -75,23 +75,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Load projects from local API (enriched with local UI metadata like color)
   const loadLocalProjects = async () => {
-    try {
-      const result = await projectService.getProjects();
-      if (result.success && result.data) {
-        const projects = Array.isArray(result.data) ? result.data : [];
-        setLocalProjects(projects);
-      }
-    } catch {
-      // keep current state
+    const projects = await projectService.getProjects();
+    if (projects.length > 0) {
+      setLocalProjects(projects);
     }
   };
 
-  // Load projects and conversations when user is available
+  // Re-load projects and conversations whenever user changes (also runs on mount).
+  // The API calls don't require a user, so this covers Electron/local mode where
+  // user may be null or arrive late.
   useEffect(() => {
-    if (user) {
-      loadLocalProjects();
-      refreshConversations();
-    }
+    loadLocalProjects();
+    refreshConversations();
   }, [user]);
 
   // Reload when SLP service becomes ready (may fire after initial load failed)
@@ -1045,7 +1040,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   whiteSpace: 'nowrap'
                 }}>
 
-                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{ capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
+                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
                 </Box>
               </Box>
               <ExpandMoreIcon

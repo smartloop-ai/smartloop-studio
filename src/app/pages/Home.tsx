@@ -75,12 +75,9 @@ export default function Home() {
   // Load a single project from local API (enriched with local UI metadata)
   const loadProjectFromApi = async (projectId: string) => {
     try {
-      const result = await projectService.getProjects();
-      if (result.success && result.data) {
-        const projects = Array.isArray(result.data) ? result.data : [];
-        return projects.find((p: any) => p.id === projectId) || null;
-      }
-    } catch {}
+      const projects = await projectService.getProjects();
+      return projects.find((p: any) => p.id === projectId) || null;
+    } catch { }
     return null;
   };
 
@@ -259,30 +256,28 @@ export default function Home() {
         }
       })();
     } else {
-      if (urlParamsChanged) {
-        // No URL params — if conversations exist, auto-select the most recent one
-        const autoSelect = async () => {
-          const allConversations = await storageService.getConversations();
-          if (allConversations.length > 0) {
-            const sorted = allConversations.sort((a: any, b: any) =>
-              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
-            );
-            const mostRecent = sorted[0];
-            const projectId = mostRecent.project_id;
-            if (projectId) {
-              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
-            } else {
-              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
-            }
+      // No URL params — if conversations exist, auto-select the most recent one
+      const autoSelect = async () => {
+        const allConversations = await storageService.getConversations();
+        if (allConversations.length > 0) {
+          const sorted = allConversations.sort((a: any, b: any) =>
+            new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+          );
+          const mostRecent = sorted[0];
+          const projectId = mostRecent.project_id;
+          if (projectId) {
+            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
           } else {
-            setConversation(null);
-            setShowChat(false);
-            setChatMessage(null);
-            setSelectedProject(null);
+            navigate(`/?conversation=${mostRecent.id}`, { replace: true });
           }
-        };
-        autoSelect();
-      }
+        } else {
+          setConversation(null);
+          setShowChat(false);
+          setChatMessage(null);
+          setSelectedProject(null);
+        }
+      };
+      autoSelect();
     }
   }, [searchParams]);
 
@@ -368,22 +363,19 @@ export default function Home() {
 
   // Load conversations for the selected project
   const loadProjectConversations = async () => {
-    if (!user) return;
-
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
     const projectId = selectedProject?.id ||
-      user.projects?.find((p: any) => p.system === true)?.id;
+      user?.projects?.find((p: any) => p.system === true)?.id;
 
-    if (!projectId) {
-      return;
-    }
+    if (!projectId) return;
 
     if (isElectron) {
-      // Load from SQLite — already ordered by updated_at DESC
+      // Load from SQLite — no user required
       const convos = await storageService.getConversations(projectId);
       setProjectConversations(convos);
     } else {
+      if (!user) return;
       const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
       const filtered = allConversations.filter(
         (conv: any) => conv.project_id === projectId
@@ -1723,7 +1715,7 @@ export default function Home() {
                             }
                             label={selectedProject?.name || 'General Chat'}
                             size="small"
-                            onClick={() => {/* TODO: project picker */}}
+                            onClick={() => {/* TODO: project picker */ }}
                             sx={{
                               height: '28px', borderRadius: '2px',
                               bgcolor: 'rgba(236, 72, 153, 0.08)', color: '#9ca3af',
