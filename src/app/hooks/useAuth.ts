@@ -24,6 +24,23 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         } catch (err) {
           console.warn('useAuth: Could not load local projects:', err);
         }
+
+        // Auto-create a system project if none exist
+        if (projects.length === 0) {
+          try {
+            const result = await projectService.createProject({
+              name: 'General',
+              system: true,
+            });
+            if (result.success && result.data) {
+              projects = [result.data];
+              console.log('useAuth: Auto-created system project:', result.data.id);
+            }
+          } catch (err) {
+            console.warn('useAuth: Could not auto-create system project:', err);
+          }
+        }
+
         console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
         setUser({ name: 'Local', guest: true, projects, conversations: [] });
       } catch (error) {
