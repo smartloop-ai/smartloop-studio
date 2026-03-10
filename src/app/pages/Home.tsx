@@ -306,10 +306,13 @@ export default function Home() {
             navigate(`/?conversation=${mostRecent.id}`, { replace: true });
           }
         } else {
+          // No conversations — auto-select system project so Chat has a valid project context
           setConversation(null);
           setShowChat(false);
           setChatMessage(null);
-          setSelectedProject(null);
+          const systemProject = user?.projects?.find((p: any) => p.system === true);
+          const fallbackProject = systemProject || user?.projects?.[0] || null;
+          setSelectedProject(fallbackProject);
         }
       };
       autoSelect();
@@ -630,11 +633,12 @@ export default function Home() {
           // Check if any conversations remain globally
           const allRemaining = await storageService.getConversations();
           if (allRemaining.length === 0) {
-            // No conversations left anywhere — go to home
+            // No conversations left anywhere — go to home with system project
             navigate('/', { replace: true });
             setConversation(null);
             setShowChat(false);
-            setSelectedProject(null);
+            const systemProject = user?.projects?.find((p: any) => p.system === true);
+            setSelectedProject(systemProject || user?.projects?.[0] || null);
           } else {
             // Other projects still have conversations — select most recent
             const sorted = allRemaining.sort((a: any, b: any) =>
