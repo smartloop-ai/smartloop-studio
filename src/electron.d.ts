@@ -31,6 +31,7 @@ export interface ElectronAPI {
   unloadModel: () => Promise<any>;
   // SLP service lifecycle
   slpServiceStatus: () => Promise<{ running: boolean; port?: number; health?: any }>;
+  slpServiceStart: () => Promise<{ success: boolean; error?: string }>;
   // System hardware info
   getSystemInfo: () => Promise<{
     cpu: string;

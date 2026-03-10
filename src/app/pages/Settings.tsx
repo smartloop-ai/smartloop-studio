@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, TextField, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, TextField } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { API_ENDPOINT } from '@/app/constants';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import MemoryIcon from '@mui/icons-material/Memory';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -432,13 +431,6 @@ export default function SettingsPage() {
         } finally {
             setIsSaving(false);
         }
-    };
-
-    const handleReset = async () => {
-        setSettings(DEFAULT_SETTINGS);
-        await autoSave(DEFAULT_SETTINGS);
-        setSaveMessage('Settings reset to defaults');
-        setTimeout(() => setSaveMessage(''), 2000);
     };
 
     const handleChange = (key: keyof GlobalSettings, value: any) => {
