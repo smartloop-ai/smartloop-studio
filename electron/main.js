@@ -1158,16 +1158,17 @@ if (!gotTheLock) {
           const baseUrl = getLocalBaseUrl();
 
           if (serviceStarted && baseUrl) {
-            // Notify renderer that the local service is ready
             refreshTray();
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
-            }
 
             try {
               await bootstrapSlpService(baseUrl);
             } catch (error) {
               console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
+            }
+
+            // Notify renderer after bootstrap so projects are available
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
             }
 
             // Mark final step as active
