@@ -47,9 +47,16 @@ function openDatabase() {
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS memory_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_percent REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_usage_created ON memory_usage(created_at DESC);
   `);
 
   console.log('[DB] Database opened at', DB_PATH);
@@ -205,7 +212,7 @@ function addMessage({ id, conversation_id, role, content }) {
   const d = openDatabase();
   const now = new Date().toISOString();
   d.prepare(`
-    INSERT OR IGNORE INTO messages (id, conversation_id, role, content, created_at)
+    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at)
     VALUES (?, ?, ?, ?, ?)
   `).run(id, conversation_id, role, content, now);
 
@@ -217,7 +224,7 @@ function addMessages(conversation_id, messages) {
   const d = openDatabase();
   const now = new Date().toISOString();
   const insert = d.prepare(`
-    INSERT OR IGNORE INTO messages (id, conversation_id, role, content, created_at)
+    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at)
     VALUES (?, ?, ?, ?, ?)
   `);
 
@@ -252,6 +259,28 @@ function formatMessage(row) {
   };
 }
 
+// --- Memory Usage ---
+
+function addMemoryUsage(memoryPercent) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare('INSERT INTO memory_usage (memory_percent, created_at) VALUES (?, ?)').run(memoryPercent, now);
+
+  // Keep only last 1000 entries to avoid unbounded growth
+  d.prepare(`
+    DELETE FROM memory_usage WHERE id NOT IN (
+      SELECT id FROM memory_usage ORDER BY created_at DESC LIMIT 1000
+    )
+  `).run();
+}
+
+function getMemoryUsage(limit = 60) {
+  const d = openDatabase();
+  return d.prepare('SELECT memory_percent, created_at FROM memory_usage ORDER BY created_at DESC LIMIT ?')
+    .all(limit)
+    .reverse(); // Return in chronological order
+}
+
 module.exports = {
   openDatabase,
   closeDatabase,
@@ -273,4 +302,7 @@ module.exports = {
   addMessages,
   getMessages,
   deleteMessages,
+  // Memory usage
+  addMemoryUsage,
+  getMemoryUsage,
 };

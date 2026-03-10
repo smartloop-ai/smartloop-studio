@@ -1,6 +1,7 @@
 
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
+import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
@@ -112,6 +113,20 @@ export default function Chat(props: {
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
+  const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
+  const [isModelLoading, setIsModelLoading] = useState(false);
+
+  // Track model init status from Settings
+  useEffect(() => {
+    const handler = (e: any) => {
+      const loading = e.detail?.loading ?? false;
+      modelLoadingRef.current = loading;
+      setIsModelLoading(loading);
+      console.log('[Chat] Model init status:', e.detail);
+    };
+    window.addEventListener('modelInitStatus', handler);
+    return () => window.removeEventListener('modelInitStatus', handler);
+  }, []);
 
   // Log project prop for debugging
   useEffect(() => {
@@ -454,12 +469,43 @@ export default function Chat(props: {
 
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
+      // Wait for model init to finish if one is in progress
+      if (modelLoadingRef.current) {
+        console.log('[Chat] Waiting for model init to complete...');
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? { ...msg, content: 'Waiting for model to load...' } : msg
+          )
+        );
+        await new Promise<void>((resolve) => {
+          const check = (e: any) => {
+            if (!e.detail?.loading) {
+              window.removeEventListener('modelInitStatus', check);
+              resolve();
+            }
+          };
+          window.addEventListener('modelInitStatus', check);
+          // Also poll in case the event was already fired
+          const interval = setInterval(() => {
+            if (!modelLoadingRef.current) {
+              clearInterval(interval);
+              window.removeEventListener('modelInitStatus', check);
+              resolve();
+            }
+          }, 500);
+        });
+        console.log('[Chat] Model init complete, proceeding with message');
+      }
+
+      // Get the selected model from storage (set in Settings), fallback to default
+      const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
+
       // Create streaming chat completion
       // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
       // Use body override to include custom fields (session_id, project_id)
       // that the OpenAI SDK would otherwise strip from the first arg
       const requestBody: any = {
-        model: 'gemma3-1b',
+        model: selectedModel,
         messages: [messageObject],
         stream: true,
         session_id: conversationId,
@@ -468,7 +514,7 @@ export default function Chat(props: {
         requestBody.project_id = projectId;
       }
       let stream = await openai.chat.completions.create({
-        model: 'gemma3-1b',
+        model: selectedModel,
         messages: [messageObject],
         stream: true,
       }, {
@@ -557,7 +603,32 @@ export default function Chat(props: {
 
     } catch (error: any) {
       if (error.message === 'AbortError' || error.name === 'AbortError') {
-        console.log('Request aborted');
+        console.log('Request aborted by user');
+        // Keep the partial response as-is, just mark it as complete
+        setMessages((prevMessages: any) => {
+          const finalMessages = prevMessages.map((msg: any) => {
+            if (msg.id === responseId) {
+              // If there's partial content, keep it; if empty, remove the message
+              if (msg.content && msg.content.trim().length > 0) {
+                return { ...msg, is_new: false };
+              }
+              return null; // Remove empty response
+            }
+            return msg;
+          }).filter(Boolean);
+
+          // Notify parent with updated conversation
+          if (conversationId && props.onConversationUpdate) {
+            props.onConversationUpdate({
+              ...props.conversation,
+              id: conversationId,
+              messages: finalMessages,
+              updated_at: new Date().toISOString()
+            });
+          }
+
+          return finalMessages;
+        });
       } else if (
         (error.name === 'APIConnectionError' || error.message?.includes('Failed to fetch') || error.message?.includes('Connection error')) &&
         !retryAfterRestart
@@ -1005,8 +1076,13 @@ export default function Chat(props: {
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
             onSend={() => sendMessage(null)}
-            placeholder="Enter your prompt..."
-            disabled={false}
+            onStop={() => {
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+              }
+            }}
+            placeholder={isModelLoading ? "Loading model..." : "Enter your prompt..."}
+            disabled={isModelLoading}
             isLoading={isLoading}
             allowAttachments={true}
             conversation={props.conversation}

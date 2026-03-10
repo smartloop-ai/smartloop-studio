@@ -92,15 +92,12 @@ export default function RightSidebar({
     setActiveSection(null);
   }, [selectedProject?.id]);
 
-  // Ensure sidebar is collapsed for system projects or guest users
+  // Ensure sidebar is collapsed for system projects
   useEffect(() => {
     if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents')) {
       setActiveSection(null);
     }
-    if (user?.guest && (activeSection === 'rules' || activeSection === 'documents' || activeSection === 'mcp')) {
-      setActiveSection(null);
-    }
-  }, [selectedProject?.system, user?.guest, activeSection]);
+  }, [selectedProject?.system, activeSection]);
 
   // Reset states when project changes
   useEffect(() => {
@@ -668,7 +665,7 @@ export default function RightSidebar({
                   .filter((doc: any) => {
                     if (!searchQuery) return true;
                     const query = searchQuery.toLowerCase();
-                    const filename = (doc.path ? (doc.path.split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
+                    const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
                     const summary = (doc.summary || '').toLowerCase();
                     const markdown = (doc.markdown || '').toLowerCase();
                     return filename.includes(query) || summary.includes(query) || markdown.includes(query);
@@ -713,7 +710,7 @@ export default function RightSidebar({
                       <Box className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <span className="text-xs text-white font-medium truncate">
-                            {doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
+                            {(doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
                           </span>
                           {/* Delete Icon - Appears on Hover */}
                           <Tooltip title="Delete Document" arrow>
@@ -1060,20 +1057,20 @@ export default function RightSidebar({
           bgcolor: 'rgba(0, 0, 0, 0.2)',
         }}
       >
-        <Tooltip title={selectedProject?.system || user?.guest ? "Documents (Disabled)" : "Documents"} placement="left">
-          <span className={selectedProject?.system || user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && !user?.guest && setActiveSection(activeSection === 'documents' ? null : 'documents')}
-              disabled={selectedProject?.system || user?.guest}
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'documents' ? null : 'documents')}
+              disabled={selectedProject?.system}
               sx={{
                 color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system || user?.guest ? 'not-allowed' : 'pointer',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system || user?.guest ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system || user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
                 },
                 '&.Mui-disabled': {
                   color: '#6b7280',
@@ -1089,20 +1086,20 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={selectedProject?.system || user?.guest ? "Rules (Disabled)" : "Rules"} placement="left">
-          <span className={selectedProject?.system || user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={selectedProject?.system ? "Rules (Disabled)" : "Rules"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && !user?.guest && setActiveSection(activeSection === 'rules' ? null : 'rules')}
-              disabled={selectedProject?.system || user?.guest}
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'rules' ? null : 'rules')}
+              disabled={selectedProject?.system}
               sx={{
                 color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system || user?.guest ? 'not-allowed' : 'pointer',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system || user?.guest ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system || user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
+                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
                 },
                 '&.Mui-disabled': {
                   color: '#6b7280',
@@ -1118,11 +1115,11 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={user?.guest ? "MCP Servers (Disabled)" : "MCP Servers"} placement="left">
-          <span className={user?.guest ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title="MCP Servers (Coming Soon)" placement="left">
+          <span className='cursor-not-allowed'>
             <IconButton
-              onClick={() => !user?.guest && setActiveSection(activeSection === 'mcp' ? null : 'mcp')}
-              disabled={user?.guest}
+              onClick={() => {}}
+              disabled={true}
               sx={{
                 color: activeSection === 'mcp' ? '#ec4899' : '#9ca3af',
                 bgcolor: activeSection === 'mcp' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',

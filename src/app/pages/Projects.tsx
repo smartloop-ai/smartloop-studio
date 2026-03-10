@@ -12,6 +12,7 @@ import SortIcon from '@mui/icons-material/Sort';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
 import { projectService } from '@/app/services/project.service';
+import { storageService } from '@/app/services/storage.service';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
@@ -176,9 +177,11 @@ export default function ProjectsList() {
 
     try {
       // Use project service to create project
+      const selectedModel = await storageService.getItem('selected_model') || '';
       const result = await projectService.createProject({
         name: newProjectTitle.trim(),
-        color: selectedColor
+        color: selectedColor,
+        model_name: selectedModel,
       });
 
       if (result.success && result.data) {

@@ -72,6 +72,82 @@ export default function Home() {
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
   const [hasConversations, setHasConversations] = useState(false);
+  const [activeModelName, setActiveModelName] = useState('');
+
+  // Determine if we're showing the main chat view or welcome screen
+  const urlConversationId = searchParams.get('conversation');
+  const urlProjectId = searchParams.get('project');
+  const showMainView = hasConversations || showChat || conversation || urlConversationId || urlProjectId || projectConversations.length > 0;
+
+  // Hide left sidebar when on welcome screen
+  useEffect(() => {
+    if (showMainView) {
+      document.body.removeAttribute('data-hide-sidebar');
+    } else {
+      document.body.setAttribute('data-hide-sidebar', 'true');
+    }
+    return () => document.body.removeAttribute('data-hide-sidebar');
+  }, [showMainView]);
+
+  // Load active model name and load model when project changes
+  useEffect(() => {
+    const loadModel = async () => {
+      // Determine model name: project-specific or global default
+      let modelName = '';
+      if (selectedProject?.model_name) {
+        modelName = selectedProject.model_name;
+      } else {
+        modelName = await storageService.getItem('selected_model') || '';
+      }
+      if (modelName) setActiveModelName(modelName);
+
+      // Call /v1/models/load to ensure the model is loaded for this project
+      if (modelName && selectedProject?.id) {
+        const api = (window as any).electronAPI;
+        const baseUrl = api?.getLocalApiUrl ? await api.getLocalApiUrl() : null;
+        if (!baseUrl) return;
+
+        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: true, model: modelName } }));
+
+        const attemptLoad = async (retries = 3): Promise<boolean> => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              // Check health first
+              const health = await fetch(`${baseUrl}/health`).catch(() => null);
+              if (!health?.ok) {
+                console.log(`[Home] SLP not ready, retrying (${i + 1}/${retries})...`);
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+              }
+
+              const res = await fetch(`${baseUrl}/v1/models/load`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_name: modelName }),
+              });
+
+              if (res.ok && res.body) {
+                const reader = res.body.getReader();
+                while (true) {
+                  const { done } = await reader.read();
+                  if (done) break;
+                }
+              }
+              return true;
+            } catch (err) {
+              console.warn(`[Home] Load model attempt ${i + 1} failed:`, err);
+              if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+          return false;
+        };
+
+        await attemptLoad();
+        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: false, model: modelName } }));
+      }
+    };
+    loadModel();
+  }, [selectedProject]);
 
   // Load a single project — try local API first, fall back to user.projects
   const loadProjectFromApi = async (projectId: string) => {
@@ -1537,12 +1613,7 @@ export default function Home() {
 
 
           <Box className="min-h-screen bg-black text-white">
-            {(() => {
-              // Show main view when conversations exist in database, or there's an active conversation/project
-              const urlConversationId = searchParams.get('conversation');
-              const urlProjectId = searchParams.get('project');
-              return hasConversations || showChat || conversation || urlConversationId || urlProjectId || projectConversations.length > 0;
-            })() ? (
+            {showMainView ? (
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
@@ -1607,6 +1678,18 @@ export default function Home() {
                         )}
                       </Box>
                     </Box>
+                    {activeModelName && (
+                      <Box sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        bgcolor: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: '6px',
+                        flexShrink: 0,
+                      }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontWeight: 500 }}>{activeModelName}</span>
+                      </Box>
+                    )}
                   </Box>
                 </Box>
 
@@ -1661,7 +1744,7 @@ export default function Home() {
                   </Box>
 
                   {/* Right Sidebar - Rules & Documents */}
-                  {selectedProject && activeTab !== 1 && (
+                  {activeTab !== 1 && (
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}
@@ -1697,8 +1780,6 @@ export default function Home() {
                     previousMessageRef.current = '';
                   }
                 }}
-                isGuest={user?.guest}
-                onLoginClick={() => navigate('/login')}
               />
             )}
           </Box>

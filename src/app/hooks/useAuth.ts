@@ -42,7 +42,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
   useEffect(() => {
     const handleUserUpdated = (event: CustomEvent) => {
       if (event.detail) {
-        setUser(event.detail);
+        setUser({ ...event.detail, guest: false });
       }
     };
 

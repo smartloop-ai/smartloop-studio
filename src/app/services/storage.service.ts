@@ -235,6 +235,27 @@ class StorageService {
       console.error('Error deleting project meta:', error);
     }
   }
+
+  // --- Memory Usage (SQLite) ---
+
+  async addMemoryUsage(memoryPercent: number): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.addMemoryUsage(memoryPercent);
+    } catch (error) {
+      console.error('Error adding memory usage:', error);
+    }
+  }
+
+  async getMemoryUsage(limit: number = 60): Promise<{ memory_percent: number; created_at: string }[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.getMemoryUsage(limit);
+    } catch (error) {
+      console.error('Error getting memory usage:', error);
+      return [];
+    }
+  }
 }
 
 export const storageService = new StorageService();

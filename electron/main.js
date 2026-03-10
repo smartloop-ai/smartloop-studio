@@ -110,6 +110,10 @@ ipcMain.handle('db-add-messages', (event, conversationId, msgs) => database.addM
 ipcMain.handle('db-get-messages', (event, conversationId) => database.getMessages(conversationId));
 ipcMain.handle('db-delete-messages', (event, conversationId) => database.deleteMessages(conversationId));
 
+// Memory usage
+ipcMain.handle('db-add-memory-usage', (event, memoryPercent) => database.addMemoryUsage(memoryPercent));
+ipcMain.handle('db-get-memory-usage', (event, limit) => database.getMemoryUsage(limit));
+
 // --- Local SLP service helpers ---
 
 function getSlpDir() {

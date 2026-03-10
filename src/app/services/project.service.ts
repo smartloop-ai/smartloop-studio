@@ -11,6 +11,7 @@ interface CreateProjectParams {
   name: string;
   color?: string;
   system?: boolean;
+  model_name?: string;
 }
 
 interface ProjectServiceResponse {
@@ -24,17 +25,20 @@ interface ProjectServiceResponse {
  */
 const createProject = async (params: CreateProjectParams): Promise<ProjectServiceResponse> => {
   try {
-    const { name, color, system = false } = params;
+    const { name, color, system = false, model_name } = params;
 
     if (!name || !name.trim()) {
       return { success: false, error: 'Project name is required' };
     }
 
     const localBase = await getLocalApiEndpoint();
+    const body: any = { name: name.trim(), description: '', system };
+    if (model_name) body.model_name = model_name;
+
     const response = await fetch(`${localBase}/v1/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), description: '', system })
+      body: JSON.stringify(body)
     });
 
     if (response.status === 200 || response.status === 201) {

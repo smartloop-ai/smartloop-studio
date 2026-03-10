@@ -1,5 +1,5 @@
-import { useRef } from 'react';
-import { Box, CircularProgress, InputBase, InputAdornment } from '@mui/material';
+import { useRef, useEffect, useCallback } from 'react';
+import { Box, InputBase, InputAdornment } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CloseIcon from '@mui/icons-material/Close';
@@ -10,6 +10,7 @@ interface MessageInputProps {
   message: string;
   onMessageChange: (message: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   placeholder?: string;
   disabled?: boolean;
@@ -30,6 +31,7 @@ export default function MessageInput({
   message,
   onMessageChange,
   onSend,
+  onStop,
   onKeyDown,
   placeholder = "Enter your prompt...",
   disabled = false,
@@ -46,6 +48,22 @@ export default function MessageInput({
   onQuoteClear,
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Global Escape key listener to stop generation (input is disabled during loading)
+  const onStopRef = useRef(onStop);
+  onStopRef.current = onStop;
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onStopRef.current) {
+        e.preventDefault();
+        onStopRef.current();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isLoading]);
 
   const handleKeyDownInternal = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -75,7 +93,7 @@ export default function MessageInput({
           inputRef={inputRef}
           name="message"
           autoComplete="off"
-          placeholder={isLoading ? "Thinking..." : placeholder}
+          placeholder={isLoading ? "Generating response..." : placeholder}
           type="text"
           multiline={true}
           minRows={minRows}
@@ -169,18 +187,53 @@ export default function MessageInput({
             )}
           </Box>
 
-          {/* Right side - Send button */}
-          <button
-            disabled={disabled || isLoading || !message.trim()}
-            className="p-2 md:p-3 rounded-lg bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg"
-            onClick={onSend}
-          >
-            {isLoading ? (
-              <CircularProgress size={20} sx={{ color: '#fff' }} />
-            ) : (
+          {/* Right side - Send / Stop button */}
+          {isLoading ? (
+            <button
+              className="p-2 md:p-3 rounded-lg transition-colors shadow-lg"
+              style={{
+                backgroundColor: 'rgba(236, 72, 153, 0.15)',
+                border: '1.5px solid rgba(236, 72, 153, 0.3)',
+              }}
+              onClick={onStop}
+              title="Stop generating (Esc)"
+            >
+              <Box
+                component="span"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: { xs: 18, md: 20 },
+                  height: { xs: 18, md: 20 },
+                  animation: 'pulseStop 1.5s ease-in-out infinite',
+                  '@keyframes pulseStop': {
+                    '0%': { opacity: 1, transform: 'scale(1)' },
+                    '50%': { opacity: 0.5, transform: 'scale(0.85)' },
+                    '100%': { opacity: 1, transform: 'scale(1)' },
+                  },
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    width: { xs: 12, md: 14 },
+                    height: { xs: 12, md: 14 },
+                    borderRadius: '3px',
+                    bgcolor: '#ec4899',
+                  }}
+                />
+              </Box>
+            </button>
+          ) : (
+            <button
+              disabled={disabled || !message.trim()}
+              className="p-2 md:p-3 rounded-lg bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg"
+              onClick={onSend}
+            >
               <ArrowUpwardIcon sx={{ color: '#fff', fontSize: { xs: 18, md: 20 } }} />
-            )}
-          </button>
+            </button>
+          )}
         </Box>
       </Box>
     </Box>

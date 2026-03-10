@@ -1,14 +1,18 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import LogoutIcon from '@mui/icons-material/Logout';
+import LoginIcon from '@mui/icons-material/Login';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
+import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
@@ -29,9 +33,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const pathname = location.pathname;
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [slpConfig, setSlpConfig] = useState<any>(null);
-  const [slpHealth, setSlpHealth] = useState<any>(null);
-  const [systemInfo, setSystemInfo] = useState<{ cpu: string; cores: number; totalMemGb: number; freeMemGb: number; gpu: string | null } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -47,6 +48,140 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [localProjects, setLocalProjects] = useState<any[]>([]);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(anchorEl);
+  const [authUser, setAuthUser] = useState<any>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Check auth status on mount and listen for changes
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const token = await storageService.getItem('token');
+        if (token) {
+          const userData = await storageService.getItem('u');
+          if (userData) {
+            setAuthUser(typeof userData === 'string' ? JSON.parse(userData) : userData);
+          }
+        } else {
+          setAuthUser(null);
+        }
+      } catch { setAuthUser(null); }
+    };
+    checkAuth();
+
+    const handleUserUpdated = () => checkAuth();
+    window.addEventListener('userUpdated', handleUserUpdated);
+    window.addEventListener('tokenRefreshed', handleUserUpdated);
+    return () => {
+      window.removeEventListener('userUpdated', handleUserUpdated);
+      window.removeEventListener('tokenRefreshed', handleUserUpdated);
+    };
+  }, []);
+
+  // Listen for OAuth callback (browser-based login flow)
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return;
+
+    window.electronAPI.removeOAuthCallbackListener?.();
+    window.electronAPI.onOAuthCallback(async ({ accessToken, error }: any) => {
+      if (error) {
+        console.error('OAuth error:', error);
+        setIsLoggingIn(false);
+        return;
+      }
+      if (accessToken) {
+        const validation = await window.electronAPI!.validateToken(accessToken);
+        if (validation.valid) {
+          await storageService.setItem('token', accessToken);
+          if (validation.user) {
+            await storageService.setItem('u', JSON.stringify(validation.user));
+            setAuthUser(validation.user);
+          } else {
+            const userData = await userService.fetchAndStoreUser(accessToken);
+            if (userData) setAuthUser(userData);
+          }
+
+          // Ensure a developer token exists — check remote first, create if needed
+          try {
+            const { API_ENDPOINT } = await import('@/app/constants');
+            const tokenName = `Smartloop Studio:${crypto.randomUUID().slice(0, 8)}`;
+
+            // Check if user already has a Smartloop Studio token
+            const listRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
+            });
+
+            if (listRes.ok) {
+              const tokens = await listRes.json();
+              const existing = Array.isArray(tokens)
+                ? tokens.find((t: any) => t.name?.startsWith('Smartloop Studio'))
+                : null;
+
+              if (existing?.token) {
+                await storageService.setItem('dev_token', existing.token);
+                console.log('[Sidebar] Existing developer token restored');
+              } else {
+                // Create a new one with a unique name
+                const createRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                  },
+                  body: JSON.stringify({ name: tokenName }),
+                });
+                if (createRes.ok) {
+                  const result = await createRes.json();
+                  if (result?.token) {
+                    await storageService.setItem('dev_token', result.token);
+                    console.log('[Sidebar] Developer token created and stored');
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('[Sidebar] Failed to setup developer token:', err);
+          }
+
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: validation.user }));
+        }
+        setIsLoggingIn(false);
+      }
+    });
+
+    return () => { window.electronAPI?.removeOAuthCallbackListener?.(); };
+  }, []);
+
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      if (isElectron && window.electronAPI) {
+        await window.electronAPI.oauthLogin();
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await userService.logout();
+    setAuthUser(null);
+    setAnchorEl(null);
+  };
+
+  const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
 
   // Load conversations on user change
   useEffect(() => {
@@ -59,43 +194,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   }, [user]);
 
-  // Load SLP config for model info
-  useEffect(() => {
-    const loadConfig = async () => {
-      if (isElectron && window.electronAPI?.getSlpConfig) {
-        const config = await window.electronAPI.getSlpConfig();
-        setSlpConfig(config);
-      }
-    };
-    loadConfig();
-    window.addEventListener('slpServiceReady', loadConfig);
-    return () => window.removeEventListener('slpServiceReady', loadConfig);
-  }, []);
 
-  // Load SLP service health and system hardware info
-  useEffect(() => {
-    const loadHealth = async () => {
-      try {
-        const baseUrl = isElectron && window.electronAPI?.getLocalApiUrl
-          ? await window.electronAPI.getLocalApiUrl()
-          : null;
-        if (baseUrl) {
-          const res = await fetch(`${baseUrl}/health`);
-          if (res.ok) setSlpHealth(await res.json());
-        }
-      } catch {}
-
-      try {
-        if (isElectron && window.electronAPI?.getSystemInfo) {
-          const info = await window.electronAPI.getSystemInfo();
-          setSystemInfo(info);
-        }
-      } catch {}
-    };
-    loadHealth();
-    window.addEventListener('slpServiceReady', loadHealth);
-    return () => window.removeEventListener('slpServiceReady', loadHealth);
-  }, []);
 
   // Load projects from local API (enriched with local UI metadata like color)
   const loadLocalProjects = async () => {
@@ -376,9 +475,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setCreateProjectError('');
 
     try {
+      const selectedModel = await storageService.getItem('selected_model') || '';
       const result = await projectService.createProject({
         name: newProjectTitle.trim(),
-        color: selectedColor
+        color: selectedColor,
+        model_name: selectedModel,
       });
 
       if (result.success && result.data) {
@@ -805,51 +906,171 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         )}
       </Box>
 
-      {/* Model / Hardware Info */}
-      {(() => {
-        const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
-        const modelName = (activeModel?.model_name || 'No model').replace(/-/g, ' ').toUpperCase();
-        const quantize = activeModel?.config?.quantize || '';
-
-        const hwParts: string[] = [];
-        if (systemInfo?.totalMemGb) {
-          const usedGb = (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1);
-          hwParts.push(`${usedGb}/${systemInfo.totalMemGb} GB`);
-        }
-        if (slpHealth?.memory_percent !== undefined) hwParts.push(`${slpHealth.memory_percent}% mem footprint`);
-
-        return (
+      {/* Login / User Profile */}
+      {authUser ? (
+        <>
           <Box sx={{
-            px: 2.5,
-            py: 1.5,
+            p: 2,
             borderTop: '1px solid rgba(255, 255, 255, 0.06)',
             bgcolor: 'rgba(255, 255, 255, 0.02)',
           }}>
-            <Box className="flex items-center justify-between gap-1">
-              <Box className="flex items-center gap-1.5">
-                <Box className={`w-2.5 h-2.5 rounded-sm flex-shrink-0 ${activeModel ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-[11px] text-white/70 font-medium truncate">
-                  {modelName}
+            <Box
+              onClick={handleMenuClick}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                cursor: 'pointer',
+                borderRadius: '8px',
+                padding: '8px',
+                transition: 'all 0.12s ease',
+                '&:hover': {
+                  bgcolor: 'rgba(255, 255, 255, 0.06)',
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '8px',
+                  bgcolor: 'rgba(236, 72, 153, 0.15)',
+                  border: '1.5px solid rgba(236, 72, 153, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span className="text-pink-500 text-xs font-bold">
+                  {authUser.name ? authUser.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U'}
                 </span>
-                {quantize && (
-                  <span className="text-[9px] text-white/30 px-1 rounded-sm font-medium flex-shrink-0">
-                    {quantize.toUpperCase()}
-                  </span>
-                )}
               </Box>
-              <SettingsIcon
-                onClick={handleSettings}
-                sx={{ fontSize: 14, color: 'rgba(255,255,255,0.2)', cursor: 'pointer', flexShrink: 0, transition: 'color 0.12s', '&:hover': { color: 'rgba(255,255,255,0.6)' } }}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ color: 'white', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {authUser.name || 'User'}
+                </Box>
+                <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }}>
+                  {authUser.is_paid || authUser.is_premium ? 'Pro' : 'Free'} Plan
+                </Box>
+              </Box>
+              <ExpandMoreIcon
+                sx={{
+                  fontSize: 16,
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s ease'
+                }}
               />
             </Box>
-            {hwParts.length > 0 && (
-              <span className="text-[9px] text-white/20 truncate block mt-0.5">
-                {hwParts.join(' · ')}
-              </span>
+          </Box>
+
+          <Menu
+            anchorEl={anchorEl}
+            open={menuOpen}
+            onClose={handleMenuClose}
+            transformOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+            anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
+            PaperProps={{
+              sx: {
+                bgcolor: 'rgba(0, 0, 0, 0.98)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                minWidth: '200px',
+                mt: -1,
+                ml: 1,
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+              }
+            }}
+          >
+            <MenuItem
+              onClick={() => { handleSettings(); handleMenuClose(); }}
+              sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' } }}
+            >
+              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
+              Settings
+            </MenuItem>
+            <Box sx={{ height: '1px', bgcolor: 'rgba(255, 255, 255, 0.06)', my: 0.5, mx: 1 }} />
+            <MenuItem
+              onClick={handleLogout}
+              sx={{ color: '#ef4444', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
+            >
+              <LogoutIcon sx={{ fontSize: 17, mr: 1.5, color: '#ef4444' }} />
+              Logout
+            </MenuItem>
+          </Menu>
+        </>
+      ) : (
+        <Box sx={{
+          px: 2.5,
+          py: 2,
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          bgcolor: 'rgba(255, 255, 255, 0.02)',
+        }}>
+          <Box
+            onClick={handleLogin}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+              px: 2,
+              py: 1.5,
+              bgcolor: 'rgba(236, 72, 153, 0.12)',
+              border: '1px solid rgba(236, 72, 153, 0.25)',
+              borderRadius: '8px',
+              cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: '#ec4899',
+              transition: 'all 0.15s ease',
+              opacity: isLoggingIn ? 0.6 : 1,
+              '&:hover': {
+                bgcolor: 'rgba(236, 72, 153, 0.2)',
+                border: '1px solid rgba(236, 72, 153, 0.4)',
+              },
+            }}
+          >
+            {isLoggingIn ? (
+              <>
+                <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                <span>Signing in...</span>
+              </>
+            ) : (
+              <>
+                <LoginIcon sx={{ fontSize: 18 }} />
+                <span>Login</span>
+              </>
             )}
           </Box>
-        );
-      })()}
+
+          {/* Settings link for guests */}
+          <Box
+            onClick={handleSettings}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              mt: 1,
+              px: 2,
+              py: 1,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              transition: 'all 0.12s ease',
+              '&:hover': {
+                color: 'rgba(255, 255, 255, 0.7)',
+                bgcolor: 'rgba(255, 255, 255, 0.05)',
+              },
+            }}
+          >
+            <SettingsIcon sx={{ fontSize: 14 }} />
+            <span>Settings</span>
+          </Box>
+        </Box>
+      )}
     </>
   );
 

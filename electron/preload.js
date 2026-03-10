@@ -95,6 +95,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addMessages: (conversationId, msgs) => ipcRenderer.invoke('db-add-messages', conversationId, msgs),
     getMessages: (conversationId) => ipcRenderer.invoke('db-get-messages', conversationId),
     deleteMessages: (conversationId) => ipcRenderer.invoke('db-delete-messages', conversationId),
+    // Memory usage
+    addMemoryUsage: (memoryPercent) => ipcRenderer.invoke('db-add-memory-usage', memoryPercent),
+    getMemoryUsage: (limit) => ipcRenderer.invoke('db-get-memory-usage', limit),
   },
   // Check if running in Electron
   isElectron: true,
