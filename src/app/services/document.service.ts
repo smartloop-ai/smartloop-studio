@@ -48,8 +48,33 @@ const getLocalDocuments = async (): Promise<DocumentServiceResponse> => {
  * @param filePath - Absolute path to the file on disk
  * @returns Promise with document data or error
  */
-const addLocalDocument = async (filePath: string): Promise<DocumentServiceResponse> => {
+const addLocalDocument = async (
+  filePath: string,
+  onProgress?: (progress: { percent: number; status: string }) => void
+): Promise<DocumentServiceResponse> => {
   try {
+    const api = (window as any).electronAPI;
+
+    // Use IPC proxy through main process to avoid CORS/Broken Pipe
+    if (api?.slpAddDocument) {
+      // Listen for progress events from main process
+      if (onProgress && api.onSlpDocumentProgress) {
+        api.removeSlpDocumentProgressListener?.();
+        api.onSlpDocumentProgress((data: { percent: number; status: string }) => {
+          onProgress(data);
+        });
+      }
+
+      const result = await api.slpAddDocument(filePath);
+
+      // Clean up listener
+      api.removeSlpDocumentProgressListener?.();
+      if (onProgress) onProgress({ percent: 100, status: 'Complete' });
+
+      return result;
+    }
+
+    // Fallback: direct fetch (non-Electron)
     const localBase = await getLocalApiEndpoint();
     const url = `${localBase}/v1/documents`;
     const response = await fetch(url, {

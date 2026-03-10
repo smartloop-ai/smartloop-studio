@@ -23,6 +23,10 @@ export interface ElectronAPI {
   getMachineId: () => Promise<string | null>;
   // Save a file to a temp directory for local SLP document upload
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
+  // SLP document upload (proxied through main process)
+  slpAddDocument: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  onSlpDocumentProgress: (callback: (data: { percent: number; status: string }) => void) => void;
+  removeSlpDocumentProgressListener: () => void;
   // SLP service
   getSlpConfig: () => Promise<any>;
   getLocalApiUrl: () => Promise<string | null>;
