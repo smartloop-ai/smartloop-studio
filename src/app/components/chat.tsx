@@ -15,7 +15,7 @@ import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
 import { marked, Renderer, Tokens } from 'marked';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
@@ -897,21 +897,21 @@ export default function Chat(props: {
 
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
-                      <KeyboardArrowRightIcon sx={{ color: '#ec4899', fontSize: 20, mt: 0.3, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Ask specific questions:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <KeyboardArrowRightIcon sx={{ color: '#ec4899', fontSize: 20, mt: 0.3, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Customize with project rules:</span> Visit the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium">Settings</span> tab to define project rules that refine how the AI responds to your specific needs
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <KeyboardArrowRightIcon sx={{ color: '#ec4899', fontSize: 20, mt: 0.3, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple sources
                       </p>
