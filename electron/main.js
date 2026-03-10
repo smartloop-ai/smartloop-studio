@@ -517,7 +517,6 @@ function resolveStepIndex(data) {
   const status = data.status;
   if (status === 'downloading' && !(data.total > 0)) return 0;
   if (status === 'installing') return 0;
-  if (status === 'verifying') return 1;
   if (status === 'preparing') return 1;
   if (status === 'downloading' && data.total > 0) return 2;
   if (status === 'starting') return 3;
@@ -528,6 +527,8 @@ function resolveStepIndex(data) {
 
 /**
  * Update the splash screen with bootstrap/download progress.
+ * Only touches DOM elements whose state actually changed to avoid
+ * restarting CSS animations (e.g. the spinner) on every tick.
  */
 function updateSplashProgress(data) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
@@ -544,7 +545,7 @@ function updateSplashProgress(data) {
     totalMB = (data.total / (1024 * 1024)).toFixed(1);
   }
 
-  const stepLabels = ['Downloading framework...', 'Verifying framework...', 'Downloading model...', 'Starting up...'];
+  const stepLabels = ['Downloading framework...', 'Starting service...', 'Downloading model...', 'Starting up...'];
   const statusMsg = showProgress
     ? `Downloading... ${downloadedMB} / ${totalMB} MB (${pct}%)`
     : stepLabels[currentSplashStep] || '';
@@ -552,28 +553,40 @@ function updateSplashProgress(data) {
   splashWindow.webContents.executeJavaScript(`
     (function() {
       var current = ${currentSplashStep};
+      // Only update steps whose state actually changed (avoids restarting spinner animation)
       for (var i = 0; i < 4; i++) {
         var stepEl = document.getElementById('step-' + i);
         var iconEl = document.getElementById('icon-' + i);
-        if (i < current) {
-          stepEl.className = 'step completed';
-          iconEl.innerHTML = '<span class="icon-check">\\u2713</span>';
-        } else if (i === current) {
-          stepEl.className = 'step active';
-          iconEl.innerHTML = '<span class="icon-active"></span>';
-        } else {
-          stepEl.className = 'step';
-          iconEl.innerHTML = '<span class="icon-pending"></span>';
+        var newState = i < current ? 'completed' : (i === current ? 'active' : 'pending');
+        if (stepEl.dataset.state !== newState) {
+          stepEl.dataset.state = newState;
+          stepEl.className = 'step' + (newState === 'pending' ? '' : ' ' + newState);
+          if (newState === 'completed') {
+            iconEl.innerHTML = '<span class="icon-check">\\u2713</span>';
+          } else if (newState === 'active') {
+            iconEl.innerHTML = '<span class="icon-active"></span>';
+          } else {
+            iconEl.innerHTML = '<span class="icon-pending"></span>';
+          }
         }
       }
       var pw = document.getElementById('progress-wrapper');
       var pb = document.getElementById('progress-bar');
       if (${showProgress}) {
-        pw.style.display = 'block';
+        // New download phase — reset bar instantly while hidden, then fade in
+        if (pw.dataset.phase !== '' + current) {
+          pb.style.transition = 'none';
+          pb.style.width = '0%';
+          void pb.offsetHeight;
+          pb.style.transition = 'width 0.3s ease';
+          pw.dataset.phase = '' + current;
+        }
+        pw.style.opacity = '1';
+        pw.style.maxHeight = '22px';
         pb.style.width = '${pct}%';
       } else {
-        pw.style.display = 'none';
-        pb.style.width = '0%';
+        pw.style.opacity = '0';
+        pw.style.maxHeight = '0';
       }
       document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
     })();
@@ -725,7 +738,10 @@ function createSplashScreen() {
           }
           .progress-wrapper {
             margin-bottom: 16px;
-            display: none;
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: opacity 0.3s ease, max-height 0.3s ease;
           }
           .progress-track {
             width: 100%;
@@ -755,24 +771,24 @@ function createSplashScreen() {
             <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
           </div>
           <ul class="steps">
-            <li class="step active" id="step-0">
+            <li class="step active" id="step-0" data-state="active">
               <span class="step-icon" id="icon-0"><span class="icon-active"></span></span>
               <span>Downloading framework</span>
             </li>
-            <li class="step" id="step-1">
+            <li class="step" id="step-1" data-state="pending">
               <span class="step-icon" id="icon-1"><span class="icon-pending"></span></span>
-              <span>Verifying framework</span>
+              <span>Starting service</span>
             </li>
-            <li class="step" id="step-2">
+            <li class="step" id="step-2" data-state="pending">
               <span class="step-icon" id="icon-2"><span class="icon-pending"></span></span>
               <span>Downloading model</span>
             </li>
-            <li class="step" id="step-3">
+            <li class="step" id="step-3" data-state="pending">
               <span class="step-icon" id="icon-3"><span class="icon-pending"></span></span>
               <span>Starting up</span>
             </li>
           </ul>
-          <div class="progress-wrapper" id="progress-wrapper">
+          <div class="progress-wrapper" id="progress-wrapper" data-phase="-1">
             <div class="progress-track">
               <div class="progress-fill" id="progress-bar"></div>
             </div>
@@ -1159,8 +1175,8 @@ if (!gotTheLock) {
 
     app.on('activate', () => {
       if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
+        if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.focus();
       } else if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
