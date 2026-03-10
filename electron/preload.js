@@ -58,6 +58,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Local SLP service
   getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
+  slpAddDocument: (filePath) => ipcRenderer.invoke('slp-add-document', filePath),
+  onSlpDocumentProgress: (callback) => {
+    ipcRenderer.on('slp-document-progress', (event, data) => callback(data));
+  },
+  removeSlpDocumentProgressListener: () => {
+    ipcRenderer.removeAllListeners('slp-document-progress');
+  },
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),

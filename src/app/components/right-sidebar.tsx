@@ -45,6 +45,7 @@ export default function RightSidebar({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ percent: number; status: string } | null>(null);
   const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
@@ -405,7 +406,11 @@ export default function RightSidebar({
 
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
-      const localResult = await documentService.addLocalDocument(tempPath);
+      setUploadProgress({ percent: 0, status: 'Processing...' });
+      const localResult = await documentService.addLocalDocument(tempPath, (progress) => {
+        setUploadProgress(progress);
+      });
+      setUploadProgress(null);
       if (!localResult.success) {
         throw new Error(localResult.error || 'Upload failed');
       }
@@ -785,9 +790,34 @@ export default function RightSidebar({
                   }`}
                 >
                   {isUploading ? (
-                    <Box className="flex flex-col items-center gap-3">
-                      <CircularProgress size={48} sx={{ color: '#ec4899' }} />
-                      <Box className="text-gray-300 text-sm">Uploading...</Box>
+                    <Box className="flex flex-col items-center gap-3 py-2">
+                      <CloudUploadIcon sx={{ fontSize: 40, color: '#ec4899' }} />
+                      <Box className="text-gray-300 text-sm">
+                        {uploadProgress ? `${uploadProgress.status}` : 'Uploading...'}
+                      </Box>
+                      {uploadProgress && (
+                        <Box sx={{ width: '100%', px: 2 }}>
+                          <Box sx={{
+                            width: '100%',
+                            height: 6,
+                            bgcolor: '#2a2a2a',
+                            borderRadius: '3px',
+                            overflow: 'hidden',
+                          }}>
+                            <Box sx={{
+                              height: '100%',
+                              width: `${uploadProgress.percent}%`,
+                              bgcolor: '#ec4899',
+                              borderRadius: '3px',
+                              transition: 'width 0.3s ease',
+                            }} />
+                          </Box>
+                          <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '6px', textAlign: 'center' }}>
+                            {uploadProgress.percent > 0 ? `${uploadProgress.percent}%` : ''}
+                          </span>
+                        </Box>
+                      )}
+                      {!uploadProgress && <CircularProgress size={24} sx={{ color: '#ec4899' }} />}
                     </Box>
                   ) : (
                     <>

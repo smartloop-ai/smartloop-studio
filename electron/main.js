@@ -277,6 +277,88 @@ ipcMain.handle('get-local-api-url', async () => {
   return getLocalBaseUrl();
 });
 
+// IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
+ipcMain.handle('slp-add-document', async (event, filePath) => {
+  const http = require('http');
+  const baseUrl = getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'SLP service not running' };
+
+  const url = new URL(`${baseUrl}/v1/documents`);
+  const body = JSON.stringify({ source: filePath });
+
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let buffer = '';
+      let lastDocument = null;
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('event:')) continue;
+          const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+          try {
+            const data = JSON.parse(payload);
+            // Send progress to renderer
+            if (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined) {
+              const pct = data.progress !== undefined
+                ? Math.round(data.progress * 100)
+                : (data.percent ?? data.percentage);
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('slp-document-progress', { percent: pct, status: data.status || 'Processing...' });
+              }
+            }
+            // Track last document-like object
+            if (data.id || data.source || data.document_id) {
+              lastDocument = data;
+            }
+          } catch { /* skip non-JSON */ }
+        }
+      });
+
+      res.on('end', () => {
+        // Process any remaining buffer
+        if (buffer.trim()) {
+          try {
+            const payload = buffer.trim().startsWith('data: ') ? buffer.trim().slice(6) : buffer.trim();
+            const data = JSON.parse(payload);
+            if (data.id || data.source || data.document_id) lastDocument = data;
+          } catch {}
+        }
+
+        if (res.statusCode === 200 || res.statusCode === 201) {
+          resolve({ success: true, data: lastDocument || {} });
+        } else {
+          resolve({ success: false, error: `Server returned ${res.statusCode}` });
+        }
+      });
+
+      res.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(body);
+    req.end();
+  });
+});
+
 // IPC: get SLP config
 ipcMain.handle('get-slp-config', async () => {
   try {

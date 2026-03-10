@@ -700,7 +700,19 @@ export default function SettingsPage() {
                             }))
                             .filter(m => m.name && (m.accessLevel === 'free' || isPaidUser));
 
-                        if (availableModels.length === 0) return null;
+                        if (availableModels.length === 0) {
+                            return (
+                                <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                                    <Box className="flex items-center gap-2 mb-3">
+                                        <DownloadIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                                        <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                    </Box>
+                                    <p className="text-sm text-gray-400">
+                                        Log in to browse and download available models.
+                                    </p>
+                                </Box>
+                            );
+                        }
 
                         return (
                             <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
