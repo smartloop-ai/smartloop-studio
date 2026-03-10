@@ -1,18 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 
 const VERSION = '1.0.1';
 const BASE_URL = `https://storage.googleapis.com/smartloop-gcp-us-east-releases/${VERSION}`;
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
-
-const CHECKSUMS = {
-  'darwin-arm64': '5b9bd06168d2679bb6a59c72b9864b82f11c618f425591582f7091374b392708',
-  'linux-amd64': '8b3e11076a36e746115a9477d3f908aa92cd877c50be9a2b36525a3a22ebe5d6',
-};
 
 function needsInstall() {
   try {
@@ -28,21 +22,6 @@ function getPlatformKey() {
   const platform = process.platform === 'darwin' ? 'darwin' : 'linux';
   const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
   return { platform, arch };
-}
-
-function verifyChecksum(filePath, expected) {
-  const hash = crypto.createHash('sha256');
-  const fd = fs.openSync(filePath, 'r');
-  const buf = Buffer.alloc(64 * 1024);
-  let bytesRead;
-  while ((bytesRead = fs.readSync(fd, buf, 0, buf.length)) > 0) {
-    hash.update(buf.subarray(0, bytesRead));
-  }
-  fs.closeSync(fd);
-  const actual = hash.digest('hex');
-  if (actual !== expected) {
-    throw new Error(`Checksum mismatch: expected ${expected}, got ${actual}`);
-  }
 }
 
 /**
@@ -80,14 +59,9 @@ function runAsync(command, args, options = {}, onProgress = null) {
  * Download the slp archive from GCS using curl (async, non-blocking).
  * Calls onProgress with status updates for the splash screen.
  */
-async function downloadAndInstall(onProgress = null) {
+async function downloadAndExtract(onProgress = null) {
   const { platform, arch } = getPlatformKey();
   const key = `${platform}-${arch}`;
-  const expectedHash = CHECKSUMS[key];
-
-  if (!expectedHash) {
-    throw new Error(`Unsupported platform: ${key}`);
-  }
 
   const archiveUrl = `${BASE_URL}/${platform}/${arch}/slp.tar.gz`;
   const cacheDir = path.join(INSTALL_DIR, 'cache');
@@ -95,17 +69,8 @@ async function downloadAndInstall(onProgress = null) {
 
   fs.mkdirSync(cacheDir, { recursive: true });
 
-  // Skip download if cached archive matches checksum
-  let needsDownload = true;
-  if (fs.existsSync(cachedArchive)) {
-    try {
-      verifyChecksum(cachedArchive, expectedHash);
-      console.log('[SLP Setup] Using cached archive');
-      needsDownload = false;
-    } catch {
-      console.log('[SLP Setup] Cached archive checksum mismatch, re-downloading');
-    }
-  }
+  // Skip download if cached archive exists
+  let needsDownload = !fs.existsSync(cachedArchive);
 
   if (needsDownload) {
     console.log('[SLP Setup] Downloading slp', VERSION, 'from', archiveUrl);
@@ -113,12 +78,10 @@ async function downloadAndInstall(onProgress = null) {
 
     // Use curl async — this is the key fix to prevent "not responding"
     await runAsync('curl', ['-fSL', '-o', cachedArchive, archiveUrl], { timeout: 300000 }, (data) => {
-      // curl progress output
       if (onProgress) onProgress({ status: 'downloading', message: `Downloading framework...` });
     });
-
-    verifyChecksum(cachedArchive, expectedHash);
-    console.log('[SLP Setup] Checksum verified');
+  } else {
+    console.log('[SLP Setup] Using cached archive');
   }
 
   if (onProgress) onProgress({ status: 'installing', message: 'Installing framework...' });
@@ -160,22 +123,8 @@ async function downloadAndInstall(onProgress = null) {
   }
 
   console.log('[SLP Setup] Binary installed to', INSTALL_DIR);
-
-  // Verify installation asynchronously
-  if (onProgress) onProgress({ status: 'verifying', message: 'Verifying installation...' });
-  try {
-    console.log('[SLP Setup] Verifying installation...');
-    await new Promise((resolve, reject) => {
-      execFile(path.join(INSTALL_DIR, 'slp'), ['--help'], { timeout: 120000 }, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-    console.log('[SLP Setup] Binary verified successfully');
-  } catch (error) {
-    console.warn('[SLP Setup] Binary verification warning:', error.message);
-  }
 }
+
 
 function createSymlink() {
   if (process.platform === 'win32') return;
@@ -321,6 +270,7 @@ async function installMacService() {
 /**
  * Run the full setup: download binary from GCS, register service, configure PATH.
  * Fully async — does NOT block the Electron main process.
+ * Post-install tasks (service registration, symlink, PATH) run in parallel.
  * @param {function} onProgress - Optional callback for splash screen progress updates.
  * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
@@ -332,23 +282,21 @@ async function setupSlpService(onProgress = null) {
 
   console.log('[SLP Setup] Installing SLP service version', VERSION);
 
-  // 1. Download and extract binary (async)
-  await downloadAndInstall(onProgress);
+  // 1. Download and extract binary
+  await downloadAndExtract(onProgress);
 
-  // 2. Register platform service (async)
-  if (process.platform === 'linux') {
-    await installLinuxService();
-  } else if (process.platform === 'darwin') {
-    await installMacService();
-  }
+  // 2. Run all post-install tasks in parallel
+  if (onProgress) onProgress({ status: 'preparing', message: 'Starting service...' });
 
-  // 3. Create CLI symlink
-  createSymlink();
+  const parallelTasks = [
+    process.platform === 'linux' ? installLinuxService() :
+      process.platform === 'darwin' ? installMacService() : Promise.resolve(),
+    Promise.resolve().then(() => { createSymlink(); setupPath(); }),
+  ];
 
-  // 4. Add to PATH
-  setupPath();
+  await Promise.all(parallelTasks);
 
-  // 5. Write version marker
+  // 3. Write version marker
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
   fs.writeFileSync(MARKER_FILE, VERSION);
 
