@@ -12,8 +12,6 @@ export interface ElectronAPI {
   stopTokenRefresh: () => Promise<{ success: boolean }>;
   onTokenRefreshed: (callback: (data: { success: boolean; token?: string; error?: string; requiresReauth?: boolean }) => void) => void;
   removeTokenRefreshListener: () => void;
-  // System project initialization
-  initializeSystemProject: (token: string) => Promise<{ success: boolean; project?: any; existed?: boolean; error?: string }>;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;
@@ -23,6 +21,29 @@ export interface ElectronAPI {
   storageGetAll: () => Promise<Record<string, any>>;
   // Machine ID
   getMachineId: () => Promise<string | null>;
+  // Save a file to a temp directory for local SLP document upload
+  saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
+  // SLP document upload (proxied through main process)
+  slpAddDocument: (filePath: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  onSlpDocumentProgress: (callback: (data: { percent: number; status: string }) => void) => void;
+  removeSlpDocumentProgressListener: () => void;
+  // SLP service
+  getSlpConfig: () => Promise<any>;
+  getLocalApiUrl: () => Promise<string | null>;
+  onSlpServiceReady: (callback: (data: any) => void) => void;
+  // Model management
+  unloadModel: () => Promise<any>;
+  // SLP service lifecycle
+  slpServiceStatus: () => Promise<{ running: boolean; port?: number; health?: any }>;
+  slpServiceStart: () => Promise<{ success: boolean; error?: string }>;
+  // System hardware info
+  getSystemInfo: () => Promise<{
+    cpu: string;
+    cores: number;
+    totalMemGb: number;
+    freeMemGb: number;
+    gpu: string | null;
+  }>;
   // System info
   isElectron: boolean;
   platform: string;

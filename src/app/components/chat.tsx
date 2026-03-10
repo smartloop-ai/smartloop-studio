@@ -1,6 +1,7 @@
 
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
+import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
@@ -9,7 +10,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 import MessageInput from './message-input';
 
-import { API_ENDPOINT } from '@/app/constants';
+import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
 
 import { marked, Renderer, Tokens } from 'marked';
 
@@ -112,6 +113,20 @@ export default function Chat(props: {
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
+  const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
+  const [isModelLoading, setIsModelLoading] = useState(false);
+
+  // Track model init status from Settings
+  useEffect(() => {
+    const handler = (e: any) => {
+      const loading = e.detail?.loading ?? false;
+      modelLoadingRef.current = loading;
+      setIsModelLoading(loading);
+      console.log('[Chat] Model init status:', e.detail);
+    };
+    window.addEventListener('modelInitStatus', handler);
+    return () => window.removeEventListener('modelInitStatus', handler);
+  }, []);
 
   // Log project prop for debugging
   useEffect(() => {
@@ -251,7 +266,7 @@ export default function Chat(props: {
     }
   };
 
-  const sendMessage = async (_: any, messageOverride?: string) => {
+  const sendMessage = async (_: any, messageOverride?: string, retryAfterRestart = false) => {
     // Prevent duplicate sends
     if (isLoading || sendingMessageRef.current) {
       console.log('[Chat] Already sending a message, skipping duplicate send');
@@ -339,8 +354,7 @@ export default function Chat(props: {
       const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
 
       try {
-        // Ensure project_id is set if project is selected (not general)
-        const projectId = props.project?.id ? props.project.id : undefined;
+        const projectId = props.project?.id || null;
         const conversationResult = await conversationService.createConversation({
           title: conversationTitle,
           project_id: projectId
@@ -418,13 +432,12 @@ export default function Chat(props: {
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
     try {
-      // Get the auth token (async)
-      const authToken = await userService.token();
+      // Initialize OpenAI client pointing to local SLP service
+      const localBaseUrl = await getLocalApiEndpoint();
 
-      // Initialize OpenAI client
       const openai = new OpenAI({
-        baseURL: `${API_ENDPOINT}/openai`,
-        apiKey: authToken || '',
+        baseURL: `${localBaseUrl}/v1`,
+        apiKey: 'local',
         dangerouslyAllowBrowser: true
       });
 
@@ -438,27 +451,75 @@ export default function Chat(props: {
         conversationId: conversationId
       });
 
-      // Prepare the message object with attachments
+      // Filter to only file attachments for the SLP server request
+      // Project attachments (project-*) are handled via project_id param, not needed as attachments
+      // SLP server expects attachment IDs as plain strings (the asset_id without the "file-" prefix)
+      const fileAttachmentIds = currentAttachments
+        .filter((att: any) => att.file_id && att.file_id.startsWith('file-'))
+        .map((att: any) => att.file_id.replace(/^file-/, ''));
+
+      // Prepare the message object — SLP expects attachments inside each message
       const messageObject: any = {
         role: 'user',
-        content: userMessage
+        content: userMessage,
       };
-
-      // Add attachments to the message object if they exist
-      if (currentAttachments.length > 0) {
-        console.log('[Chat sendMessage] Adding attachments to message object:', currentAttachments);
-        messageObject.attachments = currentAttachments;
+      if (fileAttachmentIds.length > 0) {
+        messageObject.attachments = fileAttachmentIds;
       }
 
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
-      // Create streaming chat completion with custom fields
+      // Wait for model init to finish if one is in progress
+      if (modelLoadingRef.current) {
+        console.log('[Chat] Waiting for model init to complete...');
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? { ...msg, content: 'Waiting for model to load...' } : msg
+          )
+        );
+        await new Promise<void>((resolve) => {
+          const check = (e: any) => {
+            if (!e.detail?.loading) {
+              window.removeEventListener('modelInitStatus', check);
+              resolve();
+            }
+          };
+          window.addEventListener('modelInitStatus', check);
+          // Also poll in case the event was already fired
+          const interval = setInterval(() => {
+            if (!modelLoadingRef.current) {
+              clearInterval(interval);
+              window.removeEventListener('modelInitStatus', check);
+              resolve();
+            }
+          }, 500);
+        });
+        console.log('[Chat] Model init complete, proceeding with message');
+      }
+
+      // Get the selected model from storage (set in Settings), fallback to default
+      const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
+
+      // Create streaming chat completion
+      // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
+      // Use body override to include custom fields (session_id, project_id)
+      // that the OpenAI SDK would otherwise strip from the first arg
+      const requestBody: any = {
+        model: selectedModel,
+        messages: [messageObject],
+        stream: true,
+        session_id: conversationId,
+      };
+      if (projectId) {
+        requestBody.project_id = projectId;
+      }
       let stream = await openai.chat.completions.create({
-          model: 'slp-model-001',
-          messages: [messageObject],
-          stream: true,
-          conversation_id: conversationId
-      } as any) as any;
+        model: selectedModel,
+        messages: [messageObject],
+        stream: true,
+      }, {
+        body: requestBody,
+      }) as any;
 
       // Process the stream
       for await (const chunk of stream) {
@@ -466,6 +527,9 @@ export default function Chat(props: {
         if (abortControllerRef.current?.signal.aborted) {
           throw new Error('AbortError');
         }
+
+        // Skip status/non-standard chunks from local SLP server
+        if (!chunk.choices || !chunk.choices[0]) continue;
 
         const content = chunk.choices[0]?.delta?.content;
 
@@ -539,9 +603,78 @@ export default function Chat(props: {
 
     } catch (error: any) {
       if (error.message === 'AbortError' || error.name === 'AbortError') {
-        console.log('Request aborted');
+        console.log('Request aborted by user');
+        // Keep the partial response as-is, just mark it as complete
+        setMessages((prevMessages: any) => {
+          const finalMessages = prevMessages.map((msg: any) => {
+            if (msg.id === responseId) {
+              // If there's partial content, keep it; if empty, remove the message
+              if (msg.content && msg.content.trim().length > 0) {
+                return { ...msg, is_new: false };
+              }
+              return null; // Remove empty response
+            }
+            return msg;
+          }).filter(Boolean);
+
+          // Notify parent with updated conversation
+          if (conversationId && props.onConversationUpdate) {
+            props.onConversationUpdate({
+              ...props.conversation,
+              id: conversationId,
+              messages: finalMessages,
+              updated_at: new Date().toISOString()
+            });
+          }
+
+          return finalMessages;
+        });
+      } else if (
+        (error.name === 'APIConnectionError' || error.message?.includes('Failed to fetch') || error.message?.includes('Connection error')) &&
+        !retryAfterRestart
+      ) {
+        // SLP server not reachable — try to start it and retry once
+        console.warn('[Chat] Connection error — attempting to start SLP service and retry...');
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? { ...msg, is_new: true, content: 'Reconnecting to server...' } : msg
+          )
+        );
+        try {
+          if (window.electronAPI?.slpServiceStart) {
+            await window.electronAPI.slpServiceStart();
+            // Wait for the service to become ready (poll health for up to 30s)
+            const localBaseUrl = await getLocalApiEndpoint();
+            let ready = false;
+            for (let i = 0; i < 30; i++) {
+              try {
+                const res = await fetch(`${localBaseUrl}/health`);
+                if (res.ok) { ready = true; break; }
+              } catch (_) { /* not ready yet */ }
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            if (ready) {
+              console.log('[Chat] SLP service restarted — retrying message...');
+              sendingMessageRef.current = false;
+              setIsLoading(false);
+              sendMessage(null, userMessage, true);
+              return;
+            }
+          }
+        } catch (restartErr) {
+          console.error('[Chat] Failed to restart SLP service:', restartErr);
+        }
+        // If restart failed, fall through to show error
+        setMessages((prev: any) =>
+          prev.map((msg: any) =>
+            msg.id === responseId ? {
+              ...msg, is_new: false, isError: true, errorIconType: 'build',
+              content: 'Unable to connect to the local server. Please check that the service is running.'
+            } : msg
+          )
+        );
+        hasLocalErrorRef.current = true;
       } else {
-        console.error('Error sending message:', error);
 
         // Check for 429 rate limit / out of credits error
         let errorMessage = 'An error occurred while processing your message. Please try again.';
@@ -943,8 +1076,13 @@ export default function Chat(props: {
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
             onSend={() => sendMessage(null)}
-            placeholder="Enter your prompt..."
-            disabled={false}
+            onStop={() => {
+              if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+              }
+            }}
+            placeholder={isModelLoading ? "Loading model..." : "Enter your prompt..."}
+            disabled={isModelLoading}
             isLoading={isLoading}
             allowAttachments={true}
             conversation={props.conversation}

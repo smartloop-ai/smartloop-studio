@@ -7,14 +7,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
 import { SuggestionDataItem } from 'react-mentions';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import ManageSearchIcon from '@mui/icons-material/ManageSearch';
 import DocumentPolling from '@/app/components/document-polling';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import DocumentsTab from '@/app/components/documents-tab';
@@ -23,8 +18,10 @@ import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { projectService } from '@/app/services/project.service';
+import { documentService } from '@/app/services/document.service';
+import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { API_ENDPOINT, DEFAULT_COLOR } from '@/app/constants';
+import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
@@ -43,13 +40,11 @@ export default function Home() {
   const [selectedProject, setSelectedProject]: any = useState(null);
   const [showChat, setShowChat] = useState(false);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [showProjectInfoDialog, setShowProjectInfoDialog] = useState(false);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
   const [conversation, setConversation] = useState<any>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -61,27 +56,129 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState(0);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
   const [projectRules, setProjectRules] = useState('');
-  const [projectMemory, setProjectMemory] = useState(true);
+  const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
   const lastSavedRulesRef = useRef<string>('');
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
   const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
-  const previousUrlParamsRef = useRef<string>(''); // Track previous URL params to avoid unnecessary tab changes
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
+  const [hasConversations, setHasConversations] = useState(false);
+  const [activeModelName, setActiveModelName] = useState('');
 
+  // Determine if we're showing the main chat view or welcome screen
+  const urlConversationId = searchParams.get('conversation');
+  const urlProjectId = searchParams.get('project');
+  const showMainView = hasConversations || showChat || conversation || urlConversationId || urlProjectId || projectConversations.length > 0;
+
+  // Hide left sidebar when on welcome screen
+  useEffect(() => {
+    if (showMainView) {
+      document.body.removeAttribute('data-hide-sidebar');
+    } else {
+      document.body.setAttribute('data-hide-sidebar', 'true');
+    }
+    return () => document.body.removeAttribute('data-hide-sidebar');
+  }, [showMainView]);
+
+  // Load active model name and load model when project changes
+  useEffect(() => {
+    const loadModel = async () => {
+      // Determine model name: project-specific or global default
+      let modelName = '';
+      if (selectedProject?.model_name) {
+        modelName = selectedProject.model_name;
+      } else {
+        modelName = await storageService.getItem('selected_model') || '';
+      }
+      if (modelName) setActiveModelName(modelName);
+
+      // Call /v1/models/load to ensure the model is loaded for this project
+      if (modelName && selectedProject?.id) {
+        const api = (window as any).electronAPI;
+        const baseUrl = api?.getLocalApiUrl ? await api.getLocalApiUrl() : null;
+        if (!baseUrl) return;
+
+        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: true, model: modelName } }));
+
+        const attemptLoad = async (retries = 3): Promise<boolean> => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              // Check health first
+              const health = await fetch(`${baseUrl}/health`).catch(() => null);
+              if (!health?.ok) {
+                console.log(`[Home] SLP not ready, retrying (${i + 1}/${retries})...`);
+                await new Promise(r => setTimeout(r, 2000));
+                continue;
+              }
+
+              const res = await fetch(`${baseUrl}/v1/models/load`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_name: modelName }),
+              });
+
+              if (res.ok && res.body) {
+                const reader = res.body.getReader();
+                while (true) {
+                  const { done } = await reader.read();
+                  if (done) break;
+                }
+              }
+              return true;
+            } catch (err) {
+              console.warn(`[Home] Load model attempt ${i + 1} failed:`, err);
+              if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+          return false;
+        };
+
+        await attemptLoad();
+        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: false, model: modelName } }));
+      }
+    };
+    loadModel();
+  }, [selectedProject]);
+
+  // Load a single project — try local API first, fall back to user.projects
+  const loadProjectFromApi = async (projectId: string) => {
+    try {
+      const projects = await projectService.getProjects();
+      const found = projects.find((p: any) => p.id === projectId);
+      if (found) return found;
+    } catch { }
+    // Fall back to user.projects when local API is unavailable
+    return user?.projects?.find((p: any) => p.id === projectId) || null;
+  };
+
+  // Check if any conversations exist in SQLite
+  useEffect(() => {
+    const checkConversations = async () => {
+      const conversations = await storageService.getConversations();
+      setHasConversations(conversations.length > 0);
+    };
+
+    checkConversations();
+
+    const handleChange = () => { checkConversations(); };
+    window.addEventListener('conversationCreated', handleChange);
+    window.addEventListener('conversationDeleted', handleChange);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleChange);
+      window.removeEventListener('conversationDeleted', handleChange);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
       setIsLoading(false);
-      if (!user.onboarded) {
-        setShowOnboarding(true);
-      }
     }
   }, [user]);
 
@@ -94,44 +191,38 @@ export default function Home() {
       if (deletedConversationId && conversation?.id === deletedConversationId) {
         console.log('Currently opened conversation was deleted');
 
-        // Get remaining conversations from storage
-        // Ensure conversations is always an array, never null or undefined
-        const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+        const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+        const currentProjectId = selectedProject?.id;
 
-        if (remaining && remaining.length > 0) {
-          // Filter conversations by current project
-          const currentProjectId = selectedProject?.id;
-          const projectConversations = remaining.filter((conv: any) =>
-            conv.project_id === currentProjectId
+        // Get remaining conversations — from SQLite in Electron, from user object otherwise
+        let projectConvos: any[] = [];
+        if (isElectron && currentProjectId) {
+          const allConvos = await storageService.getConversations(currentProjectId);
+          projectConvos = allConvos.filter((c: any) => c.id !== deletedConversationId);
+        } else {
+          const remaining = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+          projectConvos = remaining.filter((conv: any) =>
+            conv.project_id === currentProjectId && conv.id !== deletedConversationId
           );
+        }
 
-          if (projectConversations.length > 0) {
-            // Sort by created_at descending and select the most recent from the same project
-            const lastConversation = projectConversations.sort((a: any, b: any) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0];
+        if (projectConvos.length > 0) {
+          // Sort by created_at descending and select the most recent from the same project
+          const lastConversation = projectConvos.sort((a: any, b: any) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
 
-            console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
+          console.log('Auto-selecting previous conversation from same project:', lastConversation.id);
 
-            // Navigate to the previous conversation
-            if (currentProjectId) {
-              navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
-            }
-          } else {
-            // No conversations left in the current project, navigate to project home
-            console.log('No conversations remaining in current project, navigating to project home');
-            if (currentProjectId) {
-              navigate(`/?project=${currentProjectId}`);
-            }
-            setShowChat(false);
-            setConversation(null);
-            setChatMessage(null);
-            setMessage('');
+          if (currentProjectId) {
+            navigate(`/?conversation=${lastConversation.id}&project=${currentProjectId}`);
           }
         } else {
-          // No conversations left at all, navigate to project home
-          console.log('No conversations remaining, navigating to project home');
-          if (selectedProject) {
+          // No conversations left in the current project, navigate to project home
+          console.log('No conversations remaining in current project, navigating to project home');
+          if (currentProjectId) {
+            navigate(`/?project=${currentProjectId}`);
+          } else if (selectedProject) {
             navigate(`/?project=${selectedProject.id}`);
           }
           setShowChat(false);
@@ -185,8 +276,8 @@ export default function Home() {
             if (prev.some((c: any) => c.id === newConversation.id)) {
               return prev;
             }
-            // Add new conversation to the beginning
-            return [newConversation, ...prev];
+            // Add new conversation to the end (tabs ordered by creation time)
+            return [...prev, newConversation];
           });
         }
       }
@@ -200,79 +291,79 @@ export default function Home() {
   }, [selectedProject]);
 
 
-  // Handle conversation ID from URL parameter - simple lookup from user.conversations
+  // Track whether user has loaded at least once (avoid re-running URL effect on every user update)
+  const userLoadedRef = useRef(false);
   useEffect(() => {
+    if (user && !userLoadedRef.current) {
+      userLoadedRef.current = true;
+    }
+  }, [user]);
+
+  // Handle conversation ID from URL parameter — load from SQLite and local API
+  useEffect(() => {
+    if (!userLoadedRef.current && !user) return;
+
     const urlConversationId = searchParams.get('conversation');
     const urlProjectId = searchParams.get('project');
 
-    // Create a string representation of current URL params to detect actual URL changes
-    const currentUrlParams = `${urlConversationId || ''}-${urlProjectId || ''}`;
-    const urlParamsChanged = previousUrlParamsRef.current !== currentUrlParams;
-    previousUrlParamsRef.current = currentUrlParams;
-
-    if (!user) return;
-
     if (urlConversationId) {
-      // Find conversation in user.conversations (source of truth)
-      // Ensure conversations is always an array before using find
-      const conversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      const foundConversation = conversations.find((c: any) => c.id === urlConversationId);
+      const loadAndSetConversation = async () => {
+        // Load conversation and messages from SQLite
+        const stored = await storageService.getConversation(urlConversationId);
+        if (!stored) return;
 
-      if (foundConversation) {
-        // Only update conversation if it's different from current or URL changed
-        if (!conversation || conversation.id !== foundConversation.id) {
-          console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
-          setConversation({ ...foundConversation });
-          setShowChat(true);
-          // Only change tab if URL actually changed
-          if (urlParamsChanged) {
-            setActiveTab(0);
+        const messages = await storageService.getMessages(urlConversationId);
+        const foundConversation = { ...stored, messages: messages || [] };
+
+        console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
+        setConversation({ ...foundConversation });
+        setShowChat(true);
+        setActiveTab(0);
+
+        // Set project from conversation's project_id via local API (already enriched with local metadata)
+        if (foundConversation.project_id) {
+          const project = await loadProjectFromApi(foundConversation.project_id);
+          if (project) {
+            setSelectedProject(project);
           }
         }
+      };
 
-        // Set project based on conversation's project_id - conversation is the source of truth
-        if (foundConversation.project_id) {
-          const project = user.projects?.find((p: any) => p.id === foundConversation.project_id);
-          // Always update if project changed or doesn't match
-          if (!selectedProject || selectedProject.id !== foundConversation.project_id) {
-            console.log('[Home] Setting project from conversation:', foundConversation.project_id);
-            setSelectedProject(project || null);
+      loadAndSetConversation();
+    } else if (urlProjectId) {
+      setConversation(null);
+      // Load project from local API (already enriched with local metadata)
+      (async () => {
+        const project = await loadProjectFromApi(urlProjectId);
+        if (project) {
+          setSelectedProject(project);
+        }
+      })();
+    } else {
+      // No URL params — if conversations exist, auto-select the most recent one
+      const autoSelect = async () => {
+        const allConversations = await storageService.getConversations();
+        if (allConversations.length > 0) {
+          const sorted = allConversations.sort((a: any, b: any) =>
+            new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+          );
+          const mostRecent = sorted[0];
+          const projectId = mostRecent.project_id;
+          if (projectId) {
+            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+          } else {
+            navigate(`/?conversation=${mostRecent.id}`, { replace: true });
           }
         } else {
-          // Conversation has no project_id - should not happen with system project logic
-          // But handle gracefully by finding system project
-          const systemProject = user.projects?.find((p: any) => p.system === true);
-          if (systemProject && (!selectedProject || selectedProject.id !== systemProject.id)) {
-            console.log('[Home] Setting system project for conversation without project_id');
-            setSelectedProject(systemProject);
-          }
+          setConversation(null);
+          setShowChat(false);
+          setChatMessage(null);
+          setSelectedProject(null);
         }
-      }
-    } else if (urlProjectId) {
-      // Only update if URL actually changed (not just user data update)
-      if (urlParamsChanged || !selectedProject || selectedProject.id !== urlProjectId) {
-        setConversation(null);
-        // Don't set showChat to true here - let the activeTab state control it
-        // Don't change activeTab automatically - let explicit navigation control it
-        // This prevents the gear icon from switching to tab 0 before going to configuration
-
-        // Project selected but no conversation - clear conversation, set project
-        const project = user.projects?.find((p: any) => p.id === urlProjectId);
-        setSelectedProject(project || null);
-      }
-
-    } else {
-      // No conversation or project - welcome screen without auto-selecting project
-      // Only update if URL actually changed
-      if (urlParamsChanged) {
-        setConversation(null);
-        setShowChat(false);
-        setChatMessage(null);
-        // Do not auto-select system project - let user choose or auto-select on message send
-        setSelectedProject(null);
-      }
+      };
+      autoSelect();
     }
-  }, [searchParams, user?.conversations, user?.projects]);
+  }, [searchParams]);
 
   // Clear chatMessage after it's been passed to Chat component
   useEffect(() => {
@@ -287,16 +378,55 @@ export default function Home() {
   }, [chatMessage, showChat, conversation]);
 
 
-  // Load project data when selected
+  // Load project data when selected, unload/load model on switch
+  const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (selectedProject && user) {
       const project = user.projects?.find((p: any) => p.id === selectedProject.id);
       if (project) {
         setCurrentProjectData(project);
-        setProjectRules(project.config?.rules || '');
         setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
-        lastSavedRulesRef.current = project.config?.rules || '';
       }
+
+      prevProjectIdRef.current = selectedProject.id;
+
+      // Load documents + rules from local service
+      (async () => {
+        try {
+          const localBase = await getLocalApiEndpoint();
+
+          // Fetch documents for this project from local SLP
+          const docsRes = await fetch(`${localBase}/v1/documents`);
+          if (docsRes.ok) {
+            const docsData = await docsRes.json();
+            const docs: any[] = docsData.documents || docsData || [];
+            setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
+            // Keep user.projects in sync (use functional update to avoid stale closure)
+            setUser((prev: any) => {
+              if (!prev) return prev;
+              const updatedProjects = (prev.projects || []).map((p: any) =>
+                p.id === selectedProject.id ? { ...p, documents: docs } : p
+              );
+              return { ...prev, projects: updatedProjects };
+            });
+          }
+
+          // Fetch rules
+          const res = await fetch(`${localBase}/v1/rules`);
+          if (res.ok) {
+            const data = await res.json();
+            const rules = data.rule || data.rules || '';
+            setProjectRules(rules);
+            lastSavedRulesRef.current = rules;
+          } else {
+            setProjectRules('');
+            lastSavedRulesRef.current = '';
+          }
+        } catch {
+          setProjectRules('');
+          lastSavedRulesRef.current = '';
+        }
+      })();
     } else {
       setCurrentProjectData(null);
       setProjectRules('');
@@ -304,33 +434,86 @@ export default function Home() {
     }
   }, [selectedProject]);
 
-  // Filter conversations by selected project
-  useEffect(() => {
-    if (!user) return;
+  // Load conversations for the selected project
+  const loadProjectConversations = async () => {
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-    // Ensure conversations is always an array, never null
-    const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+    const projectId = selectedProject?.id ||
+      user?.projects?.find((p: any) => p.system === true)?.id;
 
-    if (!selectedProject) {
-      // No project selected - this shouldn't happen with system project, but handle gracefully
-      // Find system project conversations
-      const systemProject = user.projects?.find((p: any) => p.system === true);
-      if (systemProject) {
-        const filtered = allConversations.filter(
-          (conv: any) => conv.project_id === systemProject.id
-        );
-        setProjectConversations(filtered);
+    if (!projectId) return;
+
+    if (isElectron) {
+      // Load from SQLite — include conversations for this project
+      const convos = await storageService.getConversations(projectId);
+
+      // Also include orphaned conversations (no project_id) and assign them to this project
+      const allConvos = await storageService.getConversations();
+      const orphaned = allConvos.filter((c: any) => !c.project_id);
+      for (const conv of orphaned) {
+        conv.project_id = projectId;
+        await storageService.saveConversation(conv);
+      }
+
+      // Reload after fixing orphaned conversations
+      if (orphaned.length > 0) {
+        const updated = await storageService.getConversations(projectId);
+        setProjectConversations(updated);
       } else {
-        setProjectConversations([]);
+        setProjectConversations(convos);
       }
     } else {
-      // Filter by project
+      if (!user) return;
+      const allConversations = (user.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
       const filtered = allConversations.filter(
-        (conv: any) => conv.project_id === selectedProject.id
+        (conv: any) => conv.project_id === projectId
       );
       setProjectConversations(filtered);
     }
+  };
+
+  // Reload when project or user conversations change
+  useEffect(() => {
+    loadProjectConversations();
   }, [user?.conversations, selectedProject]);
+
+  // In Electron mode, also refresh from SQLite when conversations are created/updated/deleted
+  useEffect(() => {
+    const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+    if (!isElectron) return;
+
+    const handleRefresh = () => { loadProjectConversations(); };
+
+    window.addEventListener('conversationCreated', handleRefresh);
+    window.addEventListener('conversationUpdated', handleRefresh);
+    window.addEventListener('conversationDeleted', handleRefresh);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleRefresh);
+      window.removeEventListener('conversationUpdated', handleRefresh);
+      window.removeEventListener('conversationDeleted', handleRefresh);
+    };
+  }, [selectedProject, user]);
+
+  // When SLP service comes online, re-enrich selectedProject with API data and reload conversations
+  useEffect(() => {
+    const handleServiceReady = async () => {
+      const urlProjectId = searchParams.get('project');
+      const projectId = urlProjectId || selectedProject?.id;
+      if (projectId) {
+        const project = await loadProjectFromApi(projectId);
+        if (project) {
+          setSelectedProject(project);
+        }
+      }
+      loadProjectConversations();
+    };
+
+    window.addEventListener('slpServiceReady', handleServiceReady);
+    return () => {
+      window.removeEventListener('slpServiceReady', handleServiceReady);
+    };
+  }, [selectedProject, searchParams]);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
@@ -339,19 +522,6 @@ export default function Home() {
     };
   }, []);
 
-  const handleCloseOnboarding = async () => {
-    setShowOnboarding(false);
-
-    // Save onboarded status to user object
-    try {
-      const updatedUser = await userService.updateSettings({ onboarded: true });
-      if (updatedUser) {
-        setUser(updatedUser);
-      }
-    } catch (error) {
-      console.error('Failed to save onboarding status:', error);
-    }
-  };
 
   // Fetch projects for mentions
   const fetchProjects = async (search: string, callback: (data: ProjectSuggestion[]) => void) => {
@@ -367,7 +537,7 @@ export default function Home() {
     const filteredProjects = user.projects.filter((project: any) => {
       // Exclude system projects
       if (project.system) return false;
-      const projectName = (project.title || project.name || '').toLowerCase();
+      const projectName = (project.name || '').toLowerCase();
       // If no search term, show all projects
       if (!searchTerm) return true;
       // Otherwise filter by search term
@@ -376,7 +546,7 @@ export default function Home() {
 
     const suggestions: ProjectSuggestion[] = filteredProjects.map((project: any) => ({
       id: project.id,
-      display: project.title || project.name || 'Untitled Project',
+      display: project.name || 'Untitled Project',
       color: project.color || DEFAULT_COLOR
     }));
 
@@ -410,31 +580,20 @@ export default function Home() {
 
     setIsSavingRules(true);
 
-    const url = `${API_ENDPOINT}/projects/${selectedProject.id}/config`;
-    const payload = {
-      rules: rules,
-      memory: projectMemory
-    };
-
     try {
+      const localBase = await getLocalApiEndpoint();
+      const url = `${localBase}/v1/rules`;
+      const payload = { rule: rules };
+
       const response = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await userService.token()}`
-        },
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (response.status === 200) {
+      if (response.ok) {
         lastSavedRulesRef.current = rules;
-        // Update projectRules state after successful save
         setProjectRules(rules);
-        // Refresh user data
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-        }
       } else {
         console.error('Failed to save project rules. Status:', response.status);
       }
@@ -465,7 +624,7 @@ export default function Home() {
     // 1. If mentions exist → set project (typing /project adds the project)
     if (projectMentions.length > 0) {
       const project = projectMentions[projectMentions.length - 1];
-      console.log('[handleMentionChange] Project selected via mention:', project.title || project.name, project.id);
+      console.log('[handleMentionChange] Project selected via mention:', project.name, project.id);
       setSelectedProject(project);
     }
     // 2. If no mentions but previous message had mention markup → clear project (explicit removal)
@@ -491,14 +650,15 @@ export default function Home() {
 
     let activeConversationId = conversation?.id;
 
-    // If no project is selected, auto-select the system project
+    // If no project is selected, auto-select the system project or first available project
     let projectForMessage = selectedProject;
     if (!projectForMessage && !activeConversationId) {
       const systemProject = user?.projects?.find((p: any) => p.system === true);
-      if (systemProject) {
-        console.log('[handleSendMessage] No project selected, auto-selecting system project:', systemProject.id);
-        projectForMessage = systemProject;
-        setSelectedProject(systemProject);
+      const fallbackProject = systemProject || user?.projects?.[0];
+      if (fallbackProject) {
+        console.log('[handleSendMessage] No project selected, auto-selecting project:', fallbackProject.id);
+        projectForMessage = fallbackProject;
+        setSelectedProject(fallbackProject);
       }
     }
 
@@ -517,12 +677,12 @@ export default function Home() {
       if (projectForMessage?.id) {
         console.log('[handleSendMessage] Adding project as attachment (first message only):', {
           projectId: projectForMessage.id,
-          projectName: projectForMessage.title || projectForMessage.name,
+          projectName: projectForMessage.name,
           file_id: `project-${projectForMessage.id}`
         });
         attachmentsToSend.push({
           file_id: `project-${projectForMessage.id}`,
-          name: projectForMessage.title || projectForMessage.name || 'Project'
+          name: projectForMessage.name || 'Project'
         });
       }
       console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
@@ -549,8 +709,8 @@ export default function Home() {
             if (prev.some((c: any) => c.id === newConversation.id)) {
               return prev;
             }
-            // Add new conversation to the beginning
-            return [newConversation, ...prev];
+            // Add new conversation to the end (tabs ordered by creation time)
+            return [...prev, newConversation];
           });
 
           setMessageAttachments(attachmentsToSend);
@@ -562,7 +722,11 @@ export default function Home() {
 
           // Navigate to conversation page with project
           // Use replace: true to avoid adding to history and ensure URL is updated immediately
-          navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
+          if (projectId) {
+            navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
+          } else {
+            navigate(`/?conversation=${activeConversationId}`, { replace: true });
+          }
         } else {
           console.error('Failed to create conversation');
           return;
@@ -606,13 +770,28 @@ export default function Home() {
         setShowDeleteDialog(false);
 
         // Refresh user data to remove deleted conversation
-        const updatedUser = await userService.get();
-        if (updatedUser) {
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        let currentUser = user;
+        if (!isElectron) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+            currentUser = updatedUser;
+          }
+        } else {
+          // In Electron, filter out deleted conversation from local state
+          const filteredConversations = (user?.conversations || []).filter(
+            (c: any) => c.id !== deletedConversationId
+          );
+          const updatedUser = { ...user, conversations: filteredConversations };
           setUser(updatedUser);
+          currentUser = updatedUser;
+        }
 
+        if (currentUser) {
           // Navigate to another conversation in the same project or clear
           // Ensure conversations is always an array before filtering
-          const conversations = (updatedUser.conversations && Array.isArray(updatedUser.conversations)) ? updatedUser.conversations : [];
+          const conversations = (currentUser.conversations && Array.isArray(currentUser.conversations)) ? currentUser.conversations : [];
           const remainingConversations = conversations.filter(
             (c: any) => c.project_id === projectId
           );
@@ -682,44 +861,59 @@ export default function Home() {
           targetConversation = projectConversations[currentIndex + 1];
         }
 
-        // Navigate to target conversation or clear if no conversations left
+        // Navigate to target conversation or welcome screen if none left
         if (targetConversation) {
           const projectId = selectedProject?.id;
           if (projectId) {
             navigate(`/?conversation=${targetConversation.id}&project=${projectId}`);
           }
         } else {
-          // No conversations left, navigate to project home
-          const projectId = selectedProject?.id;
-          if (projectId) {
-            navigate(`/?project=${projectId}`);
+          // Check if any conversations remain globally
+          const allRemaining = await storageService.getConversations();
+          if (allRemaining.length === 0) {
+            // No conversations left anywhere — go to welcome screen
+            navigate('/', { replace: true });
+            setConversation(null);
+            setShowChat(false);
+            setSelectedProject(null);
+          } else {
+            // Other projects still have conversations — select most recent
+            const sorted = allRemaining.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id;
+            if (projectId) {
+              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+            } else {
+              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
+            }
           }
-          setConversation(null);
-          setShowChat(false);
         }
       }
 
-      // Refresh user data to sync with server
-      console.log('[Home] Refreshing user data after delete...');
+      // Refresh user data to sync with server (skip in Electron — already updated locally above)
+      const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+      if (!isElectron) {
+        console.log('[Home] Refreshing user data after delete...');
 
-      // Add a small delay to ensure backend has processed the delete
-      await new Promise(resolve => setTimeout(resolve, 500));
+        // Add a small delay to ensure backend has processed the delete
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-      const updatedUser = await userService.get();
-      if (updatedUser.success) {
-        console.log('[Home] User data refreshed. Conversations count:', updatedUser.data?.conversations?.length);
-        console.log('[Home] Conversations after refresh:', updatedUser.data?.conversations?.map((c: any) => ({ id: c.id, title: c.title })));
-        setUser(updatedUser.data);
+        const updatedUser = await userService.get();
+        if (updatedUser.success) {
+          console.log('[Home] User data refreshed. Conversations count:', updatedUser.data?.conversations?.length);
+          setUser(updatedUser.data);
 
-        // Double check if deleted conversation is still in the list
-        const stillExists = updatedUser.data?.conversations?.some((c: any) => c.id === convId);
-        if (stillExists) {
-          console.error('[Home] WARNING: Deleted conversation still exists in refreshed data!');
-          // Force filter it out from the local state
-          setUser({
-            ...updatedUser.data,
-            conversations: updatedUser.data.conversations.filter((c: any) => c.id !== convId)
-          });
+          // Double check if deleted conversation is still in the list
+          const stillExists = updatedUser.data?.conversations?.some((c: any) => c.id === convId);
+          if (stillExists) {
+            console.error('[Home] WARNING: Deleted conversation still exists in refreshed data!');
+            setUser({
+              ...updatedUser.data,
+              conversations: updatedUser.data.conversations.filter((c: any) => c.id !== convId)
+            });
+          }
         }
       }
 
@@ -747,24 +941,22 @@ export default function Home() {
     }
 
     const newName = editedProjectName.trim();
-    if (newName === (selectedProject.title || selectedProject.name)) {
+    if (newName === (selectedProject.name)) {
       setIsEditingProjectName(false);
       return;
     }
 
     try {
-      const result = await projectService.updateProject(selectedProject.id, { title: newName });
+      const result = await projectService.updateProject(selectedProject.id, { name: newName });
 
       if (result.success) {
-        // Update local state
-        setSelectedProject({ ...selectedProject, title: newName, name: newName });
-
-        // Refresh user data to sync with sidebar
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        // Reload project from API to get fresh state
+        const updated = await loadProjectFromApi(selectedProject.id);
+        if (updated) {
+          setSelectedProject(updated);
         }
+        // Dispatch event so sidebar reloads projects
+        window.dispatchEvent(new CustomEvent('projectUpdated'));
       } else {
         console.error('Failed to rename project:', result.error);
       }
@@ -798,6 +990,8 @@ export default function Home() {
     // Navigate to the new conversation URL
     if (projectId) {
       navigate(`/?conversation=${newConversation.id}&project=${projectId}`, { replace: true });
+    } else {
+      navigate(`/?conversation=${newConversation.id}`, { replace: true });
     }
 
     // Set state immediately
@@ -805,20 +999,23 @@ export default function Home() {
     setShowChat(true);
     setActiveTab(0);
 
-    // Refresh user data to include new conversation and dispatch event
-    try {
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setUser(updatedUser);
-        // Dispatch userUpdated event to update sidebar with the refreshed user object
-        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-        // Also dispatch conversationCreated for other components that might need it
-        window.dispatchEvent(new CustomEvent('conversationCreated', {
-          detail: { conversation: newConversation }
-        }));
+    // Dispatch conversationCreated event so sidebar refreshes from SQLite
+    window.dispatchEvent(new CustomEvent('conversationCreated', {
+      detail: { conversation: newConversation }
+    }));
+
+    // For remote users, also refresh user data from server (skip in Electron)
+    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+    if (!user?.guest && !isElectron) {
+      try {
+        const updatedUser = await userService.get();
+        if (updatedUser) {
+          setUser(updatedUser);
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
+        }
+      } catch (error) {
+        console.error('[Home] Failed to refresh user after conversation created:', error);
       }
-    } catch (error) {
-      console.error('[Home] Failed to refresh user after conversation created:', error);
     }
   };
 
@@ -831,24 +1028,27 @@ export default function Home() {
     // Update local conversation state
     setConversation(updatedConversation);
 
-    // Sync messages to server using the new method that accepts messages directly
+    // Sync messages to storage
     if (updatedConversation.id && updatedConversation.messages) {
       try {
-        // Sync messages directly to server (no local storage)
         await conversationService.updateConversationMessages(
           updatedConversation.id,
           updatedConversation.messages
         );
-        console.log('[Home] Synced conversation to server');
+        console.log('[Home] Synced conversation messages');
 
-        // Refresh user data to update user.conversations
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
-          // Dispatch event to update sidebar
-          window.dispatchEvent(new CustomEvent('conversationUpdated', {
-            detail: { conversationId: updatedConversation.id }
-          }));
+        // Dispatch event to update sidebar conversation list
+        window.dispatchEvent(new CustomEvent('conversationUpdated', {
+          detail: { conversationId: updatedConversation.id }
+        }));
+
+        // For remote users, also refresh user data from server (skip in Electron)
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        if (!user?.guest && !isElectron) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
         }
       } catch (error) {
         console.error('[Home] Failed to sync conversation:', error);
@@ -896,10 +1096,20 @@ export default function Home() {
       const result = await projectService.deleteProject(selectedProject.id);
 
       if (result.success) {
-        // Refresh user data
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setUser(updatedUser);
+        // Refresh user data (skip remote call in Electron)
+        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+        if (!isElectron) {
+          const updatedUser = await userService.get();
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
+        } else {
+          // In Electron, remove project from local user state
+          const updatedProjects = (user?.projects || []).filter((p: any) => p.id !== selectedProject.id);
+          const updatedConversations = (user?.conversations || []).filter(
+            (c: any) => c.project_id !== selectedProject.id
+          );
+          setUser({ ...user, projects: updatedProjects, conversations: updatedConversations });
         }
 
         // Dispatch projectDeleted event to update sidebar
@@ -961,12 +1171,9 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
-      const response = await userService.makeAuthenticatedRequest(url, {
-        method: 'DELETE',
-      });
+      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
 
-      if (response && (response.status === 200 || response.status === 204)) {
+      if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
         if (user && selectedProject) {
           const updatedProjects = user.projects.map((p: any) => {
@@ -990,7 +1197,7 @@ export default function Home() {
 
         handleCloseDeleteDocDialog();
       } else {
-        setDeleteDocError('Failed to delete document. Please try again.');
+        setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
       }
     } catch (error: any) {
       console.error('Error deleting document:', error);
@@ -1015,193 +1222,6 @@ export default function Home() {
       />
       {user && (
         <>
-          {/* Sidebar is now rendered in App.tsx for persistence across routes */}
-          {/* <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} /> */}
-
-          {/* Onboarding Dialog */}
-          <Dialog
-            open={showOnboarding}
-            onClose={handleCloseOnboarding}
-            maxWidth="md"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paperWide
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative">
-              {/* Close Button */}
-              <IconButton
-                onClick={handleCloseOnboarding}
-                sx={{
-                  position: 'absolute',
-                  right: 16,
-                  top: 16,
-                  color: '#9ca3af',
-                  '&:hover': {
-                    color: '#fff',
-                    bgcolor: 'rgba(236, 72, 153, 0.1)',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-
-              {/* Header */}
-              <Box className="p-8 pb-4">
-                <Box className="flex items-center gap-3 mb-3">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
-                      border: '1px solid rgba(236, 72, 153, 0.2)',
-                    }}
-                  >
-                    <RocketLaunchIcon sx={{ color: '#ec4899', fontSize: 28 }} />
-                  </Box>
-                  <h2 className="text-2xl font-bold text-white">Welcome to Smartloop!</h2>
-                </Box>
-                <p className="text-gray-400 text-sm">
-                  Let's get you started with a quick tour of how to make the most of your AI-powered workspace
-                </p>
-              </Box>
-
-              {/* Steps */}
-              <Box className="px-8 pb-8 space-y-6">
-                {/* Step 1 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
-                      border: '1px solid rgba(236, 72, 153, 0.2)',
-                    }}
-                  >
-                    <FolderOpenIcon sx={{ color: '#ec4899', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-pink-400 text-sm">01</span>
-                      Understand Projects
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      A project is like a folder that lets you group related documents together. Each project keeps your information organized and isolated from others.
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 2 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(59, 130, 246, 0.1)',
-                      border: '1px solid rgba(59, 130, 246, 0.2)',
-                    }}
-                  >
-                    <CreateNewFolderIcon sx={{ color: '#3b82f6', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-blue-400 text-sm">02</span>
-                      Create or Select a Project
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed mb-2">
-                      Type <span className="px-2 py-0.5 bg-gray-800 text-pink-400 rounded font-mono text-xs">/project-name</span> in the message box to select an existing project or create a new one instantly.
-                    </p>
-                    <p className="text-gray-500 text-xs italic">
-                      Example: Type <span className="text-pink-400">/marketing</span> to create a "marketing" project
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 3 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(168, 85, 247, 0.1)',
-                      border: '1px solid rgba(168, 85, 247, 0.2)',
-                    }}
-                  >
-                    <UploadFileIcon sx={{ color: '#a855f7', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-purple-400 text-sm">03</span>
-                      Upload Your Documents
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Add PDFs, Word documents, or text files to your project. The AI will analyze them and make the information instantly accessible.
-                    </p>
-                  </Box>
-                </Box>
-
-                {/* Step 4 */}
-                <Box className="flex gap-4">
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      flexShrink: 0,
-                      borderRadius: '10px',
-                      bgcolor: 'rgba(34, 197, 94, 0.1)',
-                      border: '1px solid rgba(34, 197, 94, 0.2)',
-                    }}
-                  >
-                    <ManageSearchIcon sx={{ color: '#22c55e', fontSize: 22 }} />
-                  </Box>
-                  <Box className="flex-1">
-                    <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-                      <span className="text-green-400 text-sm">04</span>
-                      Start Extracting Information
-                    </h3>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      Ask questions, request summaries, or generate content based on your documents. The AI searches across all project files to give you accurate answers.
-                    </p>
-                  </Box>
-                </Box>
-              </Box>
-
-              {/* Footer Button */}
-              <Box className="px-8 pb-8">
-                <button
-                  onClick={handleCloseOnboarding}
-                  className="w-full py-3 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-semibold transition-all shadow-lg shadow-pink-500/20"
-                >
-                  Let's Go! 🚀
-                </button>
-              </Box>
-            </Box>
-          </Dialog>
 
           {/* Project Selection Info Dialog */}
           <Dialog
@@ -1306,12 +1326,15 @@ export default function Home() {
             }}
             onSuccess={() => {
               setShowFileUploadDialog(false);
-              // Refresh user data
-              userService.get().then((result) => {
-                if (result.success) {
-                  setUser(result.data);
-                }
-              });
+              // Refresh user data (skip in Electron — state already updated locally)
+              const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
+              if (!isElectron) {
+                userService.get().then((result) => {
+                  if (result.success) {
+                    setUser(result.data);
+                  }
+                });
+              }
             }}
             user={user}
             setUser={setUser}
@@ -1404,7 +1427,7 @@ export default function Home() {
                         Warning: This action cannot be undone
                       </Typography>
                       <Typography className="text-gray-300 text-sm">
-                        Deleting "{selectedProject?.title || selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
+                        Deleting "{selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
                       </Typography>
                     </Box>
                   </Box>
@@ -1587,12 +1610,7 @@ export default function Home() {
 
 
           <Box className="min-h-screen bg-black text-white">
-            {(() => {
-              // Show chat detail view when: showChat is true, we have a conversation, or project selected from sidebar (URL param)
-              const urlConversationId = searchParams.get('conversation');
-              const urlProjectId = searchParams.get('project');
-              return showChat || conversation || urlConversationId || urlProjectId;
-            })() ? (
+            {showMainView ? (
               // Chat View with 2-column layout
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
@@ -1646,35 +1664,34 @@ export default function Home() {
                             className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
                             onClick={() => {
                               if (selectedProject && !selectedProject.system) {
-                                setEditedProjectName(selectedProject.title || selectedProject.name || '');
+                                setEditedProjectName(selectedProject.name || '');
                                 setIsEditingProjectName(true);
                               }
                             }}
                             title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
                           >
-                            {(() => {
-                              if (selectedProject) {
-                                return selectedProject.title || selectedProject.name;
-                              }
-                              // Check URL param for project to handle race condition
-                              const urlProjectId = searchParams.get('project');
-                              if (urlProjectId && user) {
-                                const project = user.projects?.find((p: any) => p.id === urlProjectId);
-                                if (project) {
-                                  return project.title || project.name;
-                                }
-                              }
-                              return 'General';
-                            })()}
+                            {selectedProject?.name || 'General'}
                           </div>
                         )}
                       </Box>
                     </Box>
+                    {activeModelName && (
+                      <Box sx={{
+                        px: 1.5,
+                        py: 0.5,
+                        bgcolor: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: '6px',
+                        flexShrink: 0,
+                      }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontWeight: 500 }}>{activeModelName}</span>
+                      </Box>
+                    )}
                   </Box>
                 </Box>
 
                 {/* Tabs - show each conversation as tab plus Configuration */}
-                {(selectedProject || searchParams.get('project')) && (
+                {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
                   <ConversationTabs
                     projectConversations={projectConversations}
                     currentConversation={conversation}
@@ -1690,7 +1707,7 @@ export default function Home() {
                 )}
 
                 {/* Main Content Area - 2 columns */}
-                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
                   {/* Left Column - Chat or Documents Tab */}
                   <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
                     {activeTab === 1 && selectedProject ? (
@@ -1724,7 +1741,7 @@ export default function Home() {
                   </Box>
 
                   {/* Right Sidebar - Rules & Documents */}
-                  {selectedProject && activeTab !== 1 && (
+                  {activeTab !== 1 && (
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}
@@ -1742,32 +1759,21 @@ export default function Home() {
                 </Box>
               </Box>
             ) : (
-              // Welcome Screen
               <WelcomeScreen
-                user={user}
                 message={message}
+                onMessageChange={handleMentionChange}
+                onSend={handleSendMessage}
+                onFileAttached={handleFileAttached}
                 selectedProject={selectedProject}
                 conversation={conversation}
                 clearAttachmentTrigger={clearAttachmentTrigger}
-                textareaRef={textareaRef}
-                handleMentionChange={handleMentionChange}
-                handleSendMessage={handleSendMessage}
-                handleFileAttached={handleFileAttached}
                 fetchProjects={fetchProjects}
                 renderProjectSuggestion={renderProjectSuggestion}
-                onNavigate={navigate}
-                onClearProject={() => {
-                  setSelectedProject(null);
-                  previousMessageRef.current = ''; // Reset previous message tracking
-                }}
-                onProjectSelected={(id: string | number) => {
-                  // Handle project selection when user explicitly selects from dropdown
+                onProjectSelected={(id) => {
                   const project = user?.projects?.find((p: any) => p.id === id);
                   if (project) {
                     setSelectedProject(project);
-                    // Clear the /command from message after selection
                     setMessage('');
-                    // Reset previous message ref so typing doesn't trigger mention removal logic
                     previousMessageRef.current = '';
                   }
                 }}

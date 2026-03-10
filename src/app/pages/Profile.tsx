@@ -12,16 +12,12 @@ import ChatIcon from '@mui/icons-material/Chat';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
-import MobileNav from '@/app/components/mobile-nav';
 import { useAuthContext } from '@/app/contexts/AuthContext';
-import Sidebar from '@/app/components/sidebar';
 
 export default function Profile() {
     const navigate = useNavigate();
     const [user] = useAuthContext();
     const [loading, setLoading] = useState(true);
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
     useEffect(() => {
         if (user) {
             setLoading(false);
@@ -76,11 +72,8 @@ export default function Profile() {
         <>
             {user && (
                 <>
-                    <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
                     <Box className="min-h-screen bg-black text-white" >
                         <Box className="p-4">
-                            <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
-
                             {loading ? (
                                 <Box className="flex justify-center items-center" sx={{ minHeight: '400px' }}>
                                     <CircularProgress sx={{ color: '#ec4899' }} size={48} />

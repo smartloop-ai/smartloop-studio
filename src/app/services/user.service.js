@@ -15,7 +15,8 @@ const getToken = async () => {
 const logout = async () => {
   await storageService.removeItem("token");
   await storageService.removeItem("u");
-  // Stop token refresh when logging out
+  await storageService.removeItem("dev_token");
+  sessionStorage.clear();
   stopTokenRefresh();
 }
 

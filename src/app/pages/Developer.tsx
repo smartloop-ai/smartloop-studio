@@ -3,7 +3,6 @@ import { userService } from '@/app/services/user.service';
 import { OAuthUtils } from '@/app/shared/utils'; // Add this import
 
 import { API_ENDPOINT } from '@/app/constants';
-import Sidebar from '@/app/components/sidebar';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { CircularProgress, Box } from '@mui/material';
 import AddBoxIcon from '@mui/icons-material/AddBox';
@@ -11,7 +10,6 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
-import MobileNav from '@/app/components/mobile-nav';
 import moment from 'moment';
 
 export default function Developers() {
@@ -26,7 +24,6 @@ export default function Developers() {
   const [rawToken, setRawToken] = useState<string | null>(null);
   const [brewCommandsCopied, setBrewCommandsCopied] = useState(false);
   const [showTokenList, setShowTokenList] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 
   const getTokens = async () => {
@@ -145,11 +142,8 @@ export default function Developers() {
     <>
       {user && (
         <>
-          <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} />
-
-          <Box className="min-h-screen bg-black text-white" sx={{ marginLeft: { xs: 0, md: '280px' } }}>
+          <Box className="min-h-screen bg-black text-white">
             <Box className="px-4 md:px-8 pb-6 md:pb-8 pt-4">
-              <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
               <Box className="welcome-page mt-10">
                 <Box className="welcome-page__container">
                   <Box className="welcome-page__body max-w-4xl mx-auto">

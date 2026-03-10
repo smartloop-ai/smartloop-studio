@@ -79,43 +79,29 @@ export default function FileAttacher({
     setUploadError('');
 
     try {
-      // Upload document using /v2/documents endpoint (decoupled from conversations)
-      const uploadResult = await documentService.uploadDocument(file);
+      // Upload as asset to local SLP server (POST /v1/assets)
+      const uploadResult = await documentService.uploadAsset(file);
 
       if (!uploadResult.success || !uploadResult.data) {
-        throw new Error(uploadResult.error || 'Failed to upload document');
+        throw new Error(uploadResult.error || 'Failed to upload asset');
       }
 
-      const document = uploadResult.data;
+      const asset = uploadResult.data;
 
-      // Update status to show processing
-      setUploadError('Processing attachment...');
-
-      // Note: Since we're using v2/documents, we may not have conversationId yet
-      // The processing check will be handled differently
-      // For now, we'll use a simpler approach - just check if document has an ID
-      if (document.id) {
-        // Success - store document ID and notify parent
+      if (asset.id) {
         setUploadError('');
         setIsUploading(false);
-        onSuccess(document.id, file.name);
+        onSuccess(asset.id, file.name);
       } else {
-        throw new Error('Document upload did not return a valid ID');
+        throw new Error('Asset upload did not return a valid ID');
       }
     } catch (error: any) {
-      console.error('Failed to upload document:', error);
-      const errorMessage = error.message || 'Failed to upload document';
+      console.error('Failed to upload asset:', error);
+      const errorMessage = error.message || 'Failed to upload asset';
       setUploadError(errorMessage);
       setIsUploading(false);
       if (onError) onError(errorMessage);
-
-      // Don't clear file for credit limit or token limit errors so user can see the error
-      const isCreditLimitError = errorMessage.toLowerCase().includes('credit') || errorMessage.toLowerCase().includes('limit exceeded');
-      const isTokenLimitError = error.is_token_limit_reached === true || errorMessage.toLowerCase().includes('token limit');
-
-      if (!isCreditLimitError && !isTokenLimitError) {
-        setSelectedFile(null);
-      }
+      setSelectedFile(null);
     }
   };
 
@@ -176,7 +162,7 @@ export default function FileAttacher({
   if (selectedFile) {
     return (
       <Box
-        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700"
+        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm"
         sx={{ height: isSmall ? '28px' : '40px' }}
       >
         {isUploading ? (
@@ -232,7 +218,7 @@ export default function FileAttacher({
       )}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
+        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
         style={{ height: isSmall ? '28px' : '40px' }}
         disabled={disabled || isUploading}
       >

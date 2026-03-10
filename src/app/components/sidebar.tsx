@@ -1,23 +1,21 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, capitalize } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
+import LoginIcon from '@mui/icons-material/Login';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
-import AllInclusiveIcon from '@mui/icons-material/AllInclusive';
 import AddIcon from '@mui/icons-material/Add';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { APP_URL, PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
+import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -33,12 +31,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const menuOpen = Boolean(anchorEl);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [liveUser, setLiveUser] = useState(user);
-  const lastTokenCount = useRef(user?.number_of_tokens_processed || 0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -53,96 +47,133 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [localProjects, setLocalProjects] = useState<any[]>([]);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(anchorEl);
+  const [authUser, setAuthUser] = useState<any>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // Update live user when prop changes
+  // Check auth status on mount and listen for changes
   useEffect(() => {
-    setLiveUser(user);
-    // Ensure conversations is always an array, never null or undefined
-    const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-    setConversations(conversations);
-    lastTokenCount.current = user?.number_of_tokens_processed || 0;
-  }, [user]);
-
-
-  // Load conversations from local storage
-  const refreshConversations = async () => {
-    try {
-      const user = await userService.get();
-      // Ensure conversations is always an array, never null or undefined
-      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      setConversations(conversations);
-    } catch (error) {
-      console.error('Error loading conversations from storage:', error);
-    }
-  };
-
-  // Refresh user data on demand
-  const refreshUserData = async () => {
-    try {
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setLiveUser(updatedUser);
-        lastTokenCount.current = updatedUser.number_of_tokens_processed || 0;
-      }
-    } catch (error) {
-      console.error('Error refreshing user data:', error);
-    }
-  };
-
-  // Expose refresh method via custom event
-  useEffect(() => {
-    const handleRefresh = () => {
-      refreshUserData();
+    const checkAuth = async () => {
+      try {
+        const token = await storageService.getItem('token');
+        if (token) {
+          const userData = await storageService.getItem('u');
+          if (userData) {
+            setAuthUser(typeof userData === 'string' ? JSON.parse(userData) : userData);
+          }
+        } else {
+          setAuthUser(null);
+        }
+      } catch { setAuthUser(null); }
     };
+    checkAuth();
 
-    const handleUserUpdated = (event: CustomEvent) => {
-      // Update user and conversations from the event detail (no need to fetch)
-      if (event.detail) {
-        setLiveUser(event.detail);
-        const conversations = (event.detail.conversations && Array.isArray(event.detail.conversations)) ? event.detail.conversations : [];
-        setConversations(conversations);
-      }
-    };
-
-    const handleConversationCreated = () => {
-      // No longer need to refresh - userUpdated event will handle it
-      // But keep this for backward compatibility if other code depends on it
-    };
-
-    const handleConversationDeleted = () => {
-      refreshConversations();
-    };
-
-    const handleConversationUpdated = () => {
-      refreshConversations();
-    };
-
-    // Listen for project deletion to refresh user data and conversations
-    const handleProjectDeleted = async () => {
-      // Refresh user data to get updated projects list
-      const updatedUser = await userService.get();
-      if (updatedUser) {
-        setLiveUser(updatedUser);
-        setConversations(updatedUser.conversations || []);
-      }
-    };
-
-    window.addEventListener('refreshUserTokens', handleRefresh);
-    window.addEventListener('userUpdated', handleUserUpdated as EventListener);
-    window.addEventListener('conversationCreated', handleConversationCreated);
-    window.addEventListener('conversationDeleted', handleConversationDeleted);
-    window.addEventListener('conversationUpdated', handleConversationUpdated);
-    window.addEventListener('projectDeleted', handleProjectDeleted);
-
+    const handleUserUpdated = () => checkAuth();
+    window.addEventListener('userUpdated', handleUserUpdated);
+    window.addEventListener('tokenRefreshed', handleUserUpdated);
     return () => {
-      window.removeEventListener('refreshUserTokens', handleRefresh);
-      window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
-      window.removeEventListener('conversationCreated', handleConversationCreated);
-      window.removeEventListener('conversationDeleted', handleConversationDeleted);
-      window.removeEventListener('conversationUpdated', handleConversationUpdated);
-      window.removeEventListener('projectDeleted', handleProjectDeleted);
+      window.removeEventListener('userUpdated', handleUserUpdated);
+      window.removeEventListener('tokenRefreshed', handleUserUpdated);
     };
   }, []);
+
+  // Listen for OAuth callback (browser-based login flow)
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI) return;
+
+    window.electronAPI.removeOAuthCallbackListener?.();
+    window.electronAPI.onOAuthCallback(async ({ accessToken, error }: any) => {
+      if (error) {
+        console.error('OAuth error:', error);
+        setIsLoggingIn(false);
+        return;
+      }
+      if (accessToken) {
+        const validation = await window.electronAPI!.validateToken(accessToken);
+        if (validation.valid) {
+          await storageService.setItem('token', accessToken);
+          if (validation.user) {
+            await storageService.setItem('u', JSON.stringify(validation.user));
+            setAuthUser(validation.user);
+          } else {
+            const userData = await userService.fetchAndStoreUser(accessToken);
+            if (userData) setAuthUser(userData);
+          }
+
+          // Ensure a developer token exists — check remote first, create if needed
+          try {
+            const { API_ENDPOINT } = await import('@/app/constants');
+            const tokenName = `Smartloop Studio:${crypto.randomUUID().slice(0, 8)}`;
+
+            // Check if user already has a Smartloop Studio token
+            const listRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+              },
+            });
+
+            if (listRes.ok) {
+              const tokens = await listRes.json();
+              const existing = Array.isArray(tokens)
+                ? tokens.find((t: any) => t.name?.startsWith('Smartloop Studio'))
+                : null;
+
+              if (existing?.token) {
+                await storageService.setItem('dev_token', existing.token);
+                console.log('[Sidebar] Existing developer token restored');
+              } else {
+                // Create a new one with a unique name
+                const createRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`,
+                  },
+                  body: JSON.stringify({ name: tokenName }),
+                });
+                if (createRes.ok) {
+                  const result = await createRes.json();
+                  if (result?.token) {
+                    await storageService.setItem('dev_token', result.token);
+                    console.log('[Sidebar] Developer token created and stored');
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('[Sidebar] Failed to setup developer token:', err);
+          }
+
+          window.dispatchEvent(new CustomEvent('userUpdated', { detail: validation.user }));
+        }
+        setIsLoggingIn(false);
+      }
+    });
+
+    return () => { window.electronAPI?.removeOAuthCallbackListener?.(); };
+  }, []);
+
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      if (isElectron && window.electronAPI) {
+        await window.electronAPI.oauthLogin();
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await userService.logout();
+    setAuthUser(null);
+    setAnchorEl(null);
+  };
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -152,24 +183,90 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setAnchorEl(null);
   };
 
-  const handleLogout = async () => {
-    // Only clear auth tokens, keep chat history
-    await storageService.removeItem('token');
-    await storageService.removeItem('u');
-    sessionStorage.clear();
-    navigate('/login');
-    handleMenuClose();
+  // Load conversations on user change
+  useEffect(() => {
+    if (!user) return;
+    if (isElectron) {
+      refreshConversations();
+    } else {
+      const conversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
+      setConversations(conversations);
+    }
+  }, [user]);
+
+
+
+  // Load projects from local API (enriched with local UI metadata like color)
+  const loadLocalProjects = async () => {
+    const projects = await projectService.getProjects();
+    if (projects.length > 0) {
+      setLocalProjects(projects);
+    }
   };
 
-  const handleProfile = () => {
-    navigate('/profile');
-    handleMenuClose();
-    onMobileClose?.();
+  // Load projects and conversations on mount
+  const sidebarInitRef = useRef(false);
+  useEffect(() => {
+    if (sidebarInitRef.current) return;
+    sidebarInitRef.current = true;
+    loadLocalProjects();
+    refreshConversations();
+  }, [user]);
+
+  // Reload when SLP service becomes ready (may fire after initial load failed)
+  useEffect(() => {
+    const handleServiceReady = () => { loadLocalProjects(); refreshConversations(); };
+    window.addEventListener('slpServiceReady', handleServiceReady);
+    return () => window.removeEventListener('slpServiceReady', handleServiceReady);
+  }, []);
+
+  // Auto-select the system project on initial load when no project is in the URL
+  useEffect(() => {
+    if (pathname !== '/') return;
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('project') || urlParams.get('conversation')) return;
+
+    const allProjects = localProjects.length > 0 ? localProjects : (user?.projects || []);
+    const systemProject = allProjects.find((p: any) => p.system === true);
+    if (systemProject) {
+      handleProjectClick(systemProject.id);
+    }
+  }, [localProjects, user, pathname, location.search]);
+
+  // Load conversations from SQLite (local mode) or user service (remote)
+  const refreshConversations = async (): Promise<any[]> => {
+    try {
+      const convos = await storageService.getConversations(undefined, 'desc');
+      setConversations(convos);
+      return convos;
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+      return [];
+    }
   };
+
+  // Listen for conversation and project changes
+  useEffect(() => {
+    const handleConversationChange = () => { refreshConversations(); };
+    const handleProjectChanged = async () => { await loadLocalProjects(); await refreshConversations(); };
+
+    window.addEventListener('conversationCreated', handleConversationChange);
+    window.addEventListener('conversationDeleted', handleConversationChange);
+    window.addEventListener('conversationUpdated', handleConversationChange);
+    window.addEventListener('projectDeleted', handleProjectChanged);
+    window.addEventListener('projectUpdated', handleProjectChanged);
+
+    return () => {
+      window.removeEventListener('conversationCreated', handleConversationChange);
+      window.removeEventListener('conversationDeleted', handleConversationChange);
+      window.removeEventListener('conversationUpdated', handleConversationChange);
+      window.removeEventListener('projectDeleted', handleProjectChanged);
+      window.removeEventListener('projectUpdated', handleProjectChanged);
+    };
+  }, []);
 
   const handleSettings = () => {
     navigate('/settings');
-    handleMenuClose();
     onMobileClose?.();
   };
 
@@ -194,15 +291,32 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         // Reload conversations from local storage
         await refreshConversations();
 
+        // Check remaining conversation count from SQLite
+        const remaining = await storageService.getConversations();
+
         // Dispatch event for other components to react to conversation deletion
         window.dispatchEvent(new CustomEvent('conversationDeleted', {
           detail: { conversationId: conversationToDelete }
         }));
 
-        // If currently viewing this conversation, navigate to home
-        const currentPath = location.pathname + location.search;
-        if (currentPath.includes(conversationToDelete)) {
-          navigate('/');
+        if (remaining.length === 0) {
+          // No conversations left — go to welcome screen
+          navigate('/', { replace: true });
+        } else {
+          // If currently viewing this conversation, navigate to most recent
+          const currentPath = location.pathname + location.search;
+          if (currentPath.includes(conversationToDelete)) {
+            const sorted = remaining.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id;
+            if (projectId) {
+              navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+            } else {
+              navigate(`/?conversation=${mostRecent.id}`, { replace: true });
+            }
+          }
         }
 
         // Close dialog
@@ -236,16 +350,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         return {
           id: conversation.id,
           name: conversation.title || 'Untitled Conversation',
-          projectId: conversation.project_id || null,
+          project_id: conversation.project_id || null,
           lastMessage,
           createdAt: conversation.created_at || new Date(),
         };
       })
-      // Filter to show only conversations with project_id (belongs to actual projects)
-      .filter((conv: any) => conv.id && conv.projectId)
-      // Sort by most recently updated
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      // Limit to 3 most recent
+      .filter((conv: any) => conv.id && conv.project_id)
       .slice(0, 3);
 
     return recentConversations;
@@ -255,13 +365,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Search functionality - filter projects only
   const filteredProjects = useMemo(() => {
-    let projects = liveUser?.projects || [];
+    let projects = localProjects;
 
     // Apply search filter if there's a query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       projects = projects.filter((project: any) => {
-        const title = (project.title || project.name || '').toLowerCase();
+        const title = (project.name || '').toLowerCase();
         return title.includes(query);
       });
     }
@@ -275,7 +385,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       // For non-system projects, maintain original order (or could sort by name)
       return 0;
     });
-  }, [searchQuery, liveUser]);
+  }, [searchQuery, localProjects]);
 
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
@@ -292,15 +402,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleProjectClick = async (projectId: string | null) => {
     // Refresh conversations first to ensure we have the latest data including newly created ones
-    await refreshConversations();
+    const freshConversations = await refreshConversations();
 
-    // Use the conversations state which is now up-to-date
-    const allConversations = (conversations && Array.isArray(conversations)) ? conversations : [];
+    // Use the returned data directly (React state may not be updated yet)
+    const allConversations = (freshConversations && Array.isArray(freshConversations)) ? freshConversations : [];
 
     // If no projectId provided, navigate to system project
     if (!projectId) {
       // Find system project
-      const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+      const systemProject = user?.projects?.find((p: any) => p.system === true);
       if (systemProject) {
         projectId = systemProject.id;
       } else {
@@ -365,23 +475,30 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setCreateProjectError('');
 
     try {
+      const selectedModel = await storageService.getItem('selected_model') || '';
       const result = await projectService.createProject({
-        title: newProjectTitle.trim(),
-        temperature: 0.3,
-        color: selectedColor
+        name: newProjectTitle.trim(),
+        color: selectedColor,
+        model_name: selectedModel,
       });
 
       if (result.success && result.data) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setLiveUser(updatedUser);
-          // Emit event to refresh user data globally
+        const projectId = result.data.id;
+
+        // Reload projects from local API (enriched with SQLite metadata)
+        const updatedProjects = await projectService.getProjects();
+        setLocalProjects(updatedProjects);
+
+        // Update AuthContext user with the refreshed projects list
+        if (user) {
+          const updatedUser = { ...user, projects: updatedProjects };
           window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-          // Auto-select newly created project
-          navigate(`/?project=${result.data.id}`);
         }
+
         handleCloseCreateProjectDialog();
+
+        // Navigate to the new project
+        navigate(`/?project=${projectId}`);
       } else {
         setCreateProjectError(result.error || 'Failed to create project');
       }
@@ -400,8 +517,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const handleDeleteProject = async () => {
     if (!projectToDelete) return;
 
-    const projectTitle = projectToDelete.title || projectToDelete.name || '';
-    if (deleteProjectConfirm !== projectTitle) {
+    const projectName = projectToDelete.name || '';
+    if (deleteProjectConfirm !== projectName) {
       setDeleteProjectError('Project name does not match');
       return;
     }
@@ -413,15 +530,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
-        // Refresh user data to remove deleted project
-        const updatedUser = await userService.get();
-        if (updatedUser) {
-          setLiveUser(updatedUser);
-          setConversations(updatedUser.conversations || []);
-          // Emit event to refresh user data globally
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-          window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
-        }
+        // Refresh projects and notify listeners that conversations were removed
+        await loadLocalProjects();
+        window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { projectId: projectToDelete.id } }));
+        window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
 
         // Navigate to home after deletion
         navigate('/');
@@ -591,7 +703,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               {filteredProjects && filteredProjects.length > 0 && (
                 filteredProjects.map((project: any) => {
                   const isActive = currentProjectId === project.id;
-                  const projectName = project.title || project.name || 'Untitled Project';
+                  const projectName = project.name || 'Untitled Project';
 
                   return (
                     <Box
@@ -726,10 +838,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 if (chat.project_id) {
                   navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
                 } else {
-                  // Conversation without project_id - find system project
-                  const systemProject = liveUser?.projects?.find((p: any) => p.system === true);
+                  // Conversation without project_id - find system project or navigate without project
+                  const systemProject = user?.projects?.find((p: any) => p.system === true);
                   if (systemProject) {
                     navigate(`/?conversation=${chat.id}&project=${systemProject.id}`);
+                  } else {
+                    navigate(`/?conversation=${chat.id}`);
                   }
                 }
                 onMobileClose?.();
@@ -792,125 +906,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         )}
       </Box>
 
-      {/* Credits & Upgrade Section */}
-      {liveUser && (() => {
-        // Calculate credits using the same logic as profile page
-        const isPremium = liveUser.is_premium;
-        const isPro = liveUser.is_paid;
-        const planTokens = isPremium ? Infinity : (isPro ? 300000 : 30000);
-        const totalTokens = isPremium ? Infinity : (liveUser.tokens && liveUser.tokens > 0 ? liveUser.tokens : planTokens);
-        const processedTokens = liveUser.number_of_tokens_processed || 0;
-        const remainingTokens = isPremium ? Infinity : Math.max(0, totalTokens - processedTokens);
-
-        const totalCredits = isPremium ? Infinity : Math.floor(totalTokens / 100);
-        const usedCredits = Math.floor(processedTokens / 100);
-        const remainingCredits = isPremium ? Infinity : Math.floor(remainingTokens / 100);
-        const usagePercentage = isPremium ? 0 : (totalTokens > 0 ? (processedTokens / totalTokens) * 100 : 0);
-
-        console.log('[Upgrade] Render check - isPremium:', isPremium, 'isPro:', isPro, 'Show button:', !isPremium && !isPro);
-
-        return (
-          <Box sx={{
-            px: 2.5,
-            py: 2,
-            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-            bgcolor: 'rgba(255, 255, 255, 0.02)',
-          }}>
-            {/* Credits Progress */}
-            <Box sx={{ mb: 2 }}>
-              <Box className="flex items-center justify-between mb-2">
-                <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)', fontWeight: 600, letterSpacing: '0.3px' }}>CREDITS</span>
-                {isPremium ? (
-                  <Box className="flex items-center gap-1">
-                    <AllInclusiveIcon sx={{ fontSize: 14, color: '#ec4899' }} />
-                    <span className="text-xs text-pink-400 font-medium">Unlimited</span>
-                  </Box>
-                ) : (
-                  <span className="text-xs text-white font-medium">
-                    {remainingCredits.toLocaleString()} / {totalCredits.toLocaleString()}
-                  </span>
-                )}
-              </Box>
-              <Box
-                sx={{
-                  width: '100%',
-                  height: '4px',
-                  bgcolor: 'rgba(255, 255, 255, 0.08)',
-                  borderRadius: '2px',
-                  overflow: 'hidden',
-                }}
-              >
-                <Box
-                  sx={{
-                    width: isPremium ? '100%' : `${100 - Math.min(100, usagePercentage)}%`,
-                    height: '100%',
-                    bgcolor: isPremium ? '#ec4899' : (remainingCredits > totalCredits * 0.2 ? '#ec4899' : '#ef4444'),
-                    transition: 'width 0.3s ease',
-                    boxShadow: isPremium ? '0 0 8px rgba(236, 72, 153, 0.5)' : 'none',
-                  }}
-                />
-              </Box>
-              <Box className="flex items-center justify-between mt-1">
-                <span className="text-xs text-gray-600">Used: {usedCredits.toLocaleString()}</span>
-                {isPremium ? (
-                  <span className="text-xs text-pink-400">No limits</span>
-                ) : (
-                  <span className="text-xs text-gray-600">{Math.round(100 - usagePercentage)}% left</span>
-                )}
-              </Box>
-            </Box>
-
-            {/* Upgrade Button */}
-            {!isPremium && !isPro && (
-              <Box
-                onClick={() => {
-                  console.log('[Upgrade] Opening pricing page:', `${APP_URL}/pricing`);
-                  if (isElectron) {
-                    // For Electron, open in external browser
-                    window.open(`${APP_URL}/pricing`, '_blank');
-                  } else {
-                    // For web, open in same window
-                    window.location.href = `${APP_URL}/pricing`;
-                  }
-                  onMobileClose?.();
-                }}
-                sx={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  px: 2,
-                  py: 1.5,
-                  bgcolor: '#ec4899',
-                  borderRadius: '7px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: 'white',
-                  transition: 'all 0.15s ease',
-                  border: '1px solid rgba(236, 72, 153, 0.3)',
-                  boxShadow: '0 2px 8px rgba(236, 72, 153, 0.25)',
-                  '&:hover': {
-                    bgcolor: '#db2777',
-                    transform: 'translateY(-1px)',
-                    boxShadow: '0 4px 12px rgba(236, 72, 153, 0.35)',
-                  },
-                  '&:active': {
-                    transform: 'translateY(0px)',
-                  },
-                }}
-              >
-                <RocketLaunchIcon sx={{ fontSize: 17 }} />
-                <span>Upgrade to Pro</span>
-              </Box>
-            )}
-          </Box>
-        );
-      })()}
-
-      {/* User Profile at bottom */}
-      {user && (
+      {/* Login / User Profile */}
+      {authUser ? (
         <>
           <Box sx={{
             p: 2,
@@ -942,37 +939,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  overflow: 'hidden',
                 }}
               >
-                {user.name ? (
-                  <span className="text-pink-500 text-xs font-bold">
-                    {user.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-                  </span>
-                ) : (
-                  <span className="text-pink-500 text-xs font-bold">U</span>
-                )}
+                <span className="text-pink-500 text-xs font-bold">
+                  {authUser.name ? authUser.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U'}
+                </span>
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{
-                  color: 'white',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {user.name || 'User'}
+                <Box sx={{ color: 'white', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {authUser.name || 'User'}
                 </Box>
-                <Box sx={{
-                  color: 'rgba(255, 255, 255, 0.4)',
-                  fontSize: '11px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-
-                  <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }} >{ capitalize(user.is_paid || user.is_premium ? 'pro' : 'free')} Plan</Box>
+                <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }}>
+                  {authUser.is_paid || authUser.is_premium ? 'Pro' : 'Free'} Plan
                 </Box>
               </Box>
               <ExpandMoreIcon
@@ -1007,29 +985,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             }}
           >
             <MenuItem
-              onClick={handleProfile}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' }
-              }}
-            >
-              <PersonIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
-              Profile
-            </MenuItem>
-            <MenuItem
-              onClick={handleSettings}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' }
-              }}
+              onClick={() => { handleSettings(); handleMenuClose(); }}
+              sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' } }}
             >
               <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
               Settings
@@ -1037,20 +994,82 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <Box sx={{ height: '1px', bgcolor: 'rgba(255, 255, 255, 0.06)', my: 0.5, mx: 1 }} />
             <MenuItem
               onClick={handleLogout}
-              sx={{
-                color: '#ef4444',
-                fontSize: '13px',
-                fontWeight: 500,
-                py: 1.25,
-                px: 2,
-                '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' }
-              }}
+              sx={{ color: '#ef4444', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
             >
               <LogoutIcon sx={{ fontSize: 17, mr: 1.5, color: '#ef4444' }} />
               Logout
             </MenuItem>
           </Menu>
         </>
+      ) : (
+        <Box sx={{
+          px: 2.5,
+          py: 2,
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          bgcolor: 'rgba(255, 255, 255, 0.02)',
+        }}>
+          <Box
+            onClick={handleLogin}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.5,
+              px: 2,
+              py: 1.5,
+              bgcolor: 'rgba(236, 72, 153, 0.12)',
+              border: '1px solid rgba(236, 72, 153, 0.25)',
+              borderRadius: '8px',
+              cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              color: '#ec4899',
+              transition: 'all 0.15s ease',
+              opacity: isLoggingIn ? 0.6 : 1,
+              '&:hover': {
+                bgcolor: 'rgba(236, 72, 153, 0.2)',
+                border: '1px solid rgba(236, 72, 153, 0.4)',
+              },
+            }}
+          >
+            {isLoggingIn ? (
+              <>
+                <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                <span>Signing in...</span>
+              </>
+            ) : (
+              <>
+                <LoginIcon sx={{ fontSize: 18 }} />
+                <span>Login</span>
+              </>
+            )}
+          </Box>
+
+          {/* Settings link for guests */}
+          <Box
+            onClick={handleSettings}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              mt: 1,
+              px: 2,
+              py: 1,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              transition: 'all 0.12s ease',
+              '&:hover': {
+                color: 'rgba(255, 255, 255, 0.7)',
+                bgcolor: 'rgba(255, 255, 255, 0.05)',
+              },
+            }}
+          >
+            <SettingsIcon sx={{ fontSize: 14 }} />
+            <span>Settings</span>
+          </Box>
+        </Box>
       )}
     </>
   );
@@ -1293,7 +1312,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 Delete Project
               </h3>
               <p className="text-gray-400 text-sm leading-relaxed">
-                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.title || projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
+                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
               </p>
             </Box>
           </Box>
@@ -1304,7 +1323,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </Box>
             <TextField
               fullWidth
-              placeholder={`Type "${projectToDelete?.title || projectToDelete?.name}" to confirm`}
+              placeholder={`Type "${projectToDelete?.name}" to confirm`}
               value={deleteProjectConfirm}
               onChange={(e) => setDeleteProjectConfirm(e.target.value)}
               error={!!deleteProjectError}
@@ -1342,7 +1361,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </button>
             <button
               onClick={handleDeleteProject}
-              disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.title || projectToDelete?.name)}
+              disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.name)}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDeletingProject ? (

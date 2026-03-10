@@ -3,6 +3,13 @@ import { userService } from "./user.service";
 import { storageService } from "./storage.service";
 
 /**
+ * Check if we're running in local mode (local SLP service available)
+ */
+const isLocalMode = (): boolean => {
+  return typeof window !== 'undefined' && !!(window as any).electronAPI?.getLocalApiUrl;
+};
+
+/**
  * Conversation Service
  * Handles conversation creation and management with local storage
  */
@@ -33,6 +40,29 @@ const createConversation = async (params: CreateConversationParams): Promise<Con
         success: false,
         error: 'Conversation title is required'
       };
+    }
+
+    // In local mode, create conversation locally (session ID tracked by SLP server via chat)
+    if (isLocalMode()) {
+      const conversation: any = {
+        id: crypto.randomUUID(),
+        title: title.trim(),
+        project_id: project_id || null,
+        document_ids: document_ids || [],
+        messages: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      await storageService.saveConversation(conversation);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('conversationCreated', {
+          detail: { conversationId: conversation.id, conversation }
+        }));
+      }
+
+      return { success: true, data: conversation };
     }
 
     const requestBody: any = {
@@ -154,17 +184,23 @@ const getDocumentStatus = async (conversationId: string, documentId: string): Pr
 const updateConversation = async (conversationId: string, title: string): Promise<ConversationServiceResponse> => {
   try {
     if (!conversationId || !conversationId.trim()) {
-      return {
-        success: false,
-        error: 'Conversation ID is required'
-      };
+      return { success: false, error: 'Conversation ID is required' };
     }
 
     if (!title || !title.trim()) {
-      return {
-        success: false,
-        error: 'Conversation title is required'
-      };
+      return { success: false, error: 'Conversation title is required' };
+    }
+
+    // In local mode, update only in local storage
+    if (isLocalMode()) {
+      const existing = await storageService.getConversation(conversationId);
+      if (existing) {
+        existing.title = title.trim();
+        existing.updated_at = new Date().toISOString();
+        await storageService.saveConversation(existing);
+        return { success: true, data: existing };
+      }
+      return { success: false, error: 'Conversation not found' };
     }
 
     const url = `${API_ENDPOINT}/conversations/${conversationId}`;
@@ -219,10 +255,21 @@ const updateConversation = async (conversationId: string, title: string): Promis
 const deleteConversation = async (conversationId: string): Promise<ConversationServiceResponse> => {
   try {
     if (!conversationId) {
-      return {
-        success: false,
-        error: 'Conversation ID is required'
-      };
+      return { success: false, error: 'Conversation ID is required' };
+    }
+
+    // In local mode, just delete from local storage
+    if (isLocalMode()) {
+      await storageService.deleteConversation(conversationId);
+      console.log('[ConversationService] Deleted conversation from local storage:', conversationId);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('conversationDeleted', {
+          detail: { conversationId }
+        }));
+      }
+
+      return { success: true };
     }
 
     const url = `${API_ENDPOINT}/conversations/${conversationId}`;
@@ -338,6 +385,13 @@ const getAllConversations = async (): Promise<ConversationServiceResponse> => {
  * @returns Promise with synced conversations or error
  */
 const syncConversationsFromServer = async (): Promise<ConversationServiceResponse> => {
+  // Skip remote sync in local mode
+  if (isLocalMode()) {
+    console.log('[ConversationService] Local mode - skipping remote sync');
+    const conversations = await storageService.getConversations();
+    return { success: true, data: conversations };
+  }
+
   try {
     const url = `${API_ENDPOINT}/conversations`;
     const response = await userService.makeAuthenticatedRequest(url, {
@@ -385,6 +439,11 @@ const syncConversationsFromServer = async (): Promise<ConversationServiceRespons
  * @returns Promise with conversation data including messages or error
  */
 const getConversationFromServer = async (conversationId: string): Promise<ConversationServiceResponse> => {
+  // In local mode, just return from local storage
+  if (isLocalMode()) {
+    return getConversation(conversationId);
+  }
+
   try {
     if (!conversationId) {
       return {
@@ -509,6 +568,12 @@ const addMessageToConversation = async (conversationId: string, message: any): P
  * @returns Promise indicating success or failure
  */
 const syncMessagesToServer = async (conversationId: string): Promise<ConversationServiceResponse> => {
+  // Skip remote sync in local mode
+  if (isLocalMode()) {
+    console.log('[ConversationService] Local mode - skipping remote message sync');
+    return { success: true };
+  }
+
   try {
     if (!conversationId) {
       return {
@@ -605,6 +670,13 @@ const addMessageAndSync = async (conversationId: string, message: any): Promise<
  * @returns Promise indicating success or failure
  */
 const updateConversationMessages = async (conversationId: string, messages: any[]): Promise<ConversationServiceResponse> => {
+  // Skip remote sync in local mode - just save locally
+  if (isLocalMode()) {
+    console.log(`[ConversationService] Local mode - saving ${messages.length} messages locally`);
+    await storageService.saveMessages(conversationId, messages);
+    return { success: true, data: messages };
+  }
+
   try {
     if (!conversationId) {
       return {
