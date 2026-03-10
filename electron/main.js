@@ -20,6 +20,7 @@ if (process.env.NODE_ENV === 'development') {
 
 let mainWindow;
 let splashWindow;
+let currentSplashStep = 0;
 let tokenRefreshInterval = null;
 let localServicePort = null;
 
@@ -510,43 +511,73 @@ async function bootstrapSlpService(baseUrl) {
 }
 
 /**
+ * Map a progress event to one of the 4 splash step indices.
+ */
+function resolveStepIndex(data) {
+  const status = data.status;
+  if (status === 'downloading' && !(data.total > 0)) return 0;
+  if (status === 'installing') return 0;
+  if (status === 'verifying') return 1;
+  if (status === 'preparing') return 1;
+  if (status === 'downloading' && data.total > 0) return 2;
+  if (status === 'starting') return 3;
+  // Any event after we've reached step 2 should map to step 3
+  if (currentSplashStep >= 2) return 3;
+  return currentSplashStep;
+}
+
+/**
  * Update the splash screen with bootstrap/download progress.
  */
 function updateSplashProgress(data) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
 
-  if (data.status === 'downloading' && data.total > 0) {
-    // Show download progress bar
-    const pct = Math.round((data.downloaded / data.total) * 100);
-    const downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(1);
-    const totalMB = (data.total / (1024 * 1024)).toFixed(1);
-    splashWindow.webContents.executeJavaScript(`
-      (function() {
-        var pb = document.getElementById('progress-bar');
-        var lt = document.querySelector('.loading-text');
-        if (!pb) {
-          var container = document.querySelector('.splash-container');
-          var wrapper = document.createElement('div');
-          wrapper.className = 'progress-wrapper';
-          wrapper.innerHTML = '<div class="progress-track"><div id="progress-bar" class="progress-fill" style="width:0%"></div></div>';
-          container.insertBefore(wrapper, lt);
-          pb = document.getElementById('progress-bar');
-        }
-        pb.style.width = '${pct}%';
-        lt.textContent = 'Downloading model... ${downloadedMB} / ${totalMB} MB (${pct}%)';
-      })();
-    `).catch(() => {});
-  } else {
-    // Text-only status update
-    const msg = data.message || data.status;
-    splashWindow.webContents.executeJavaScript(`
-      (function() {
-        var pb = document.getElementById('progress-bar');
-        if (pb) pb.parentElement.parentElement.remove();
-        document.querySelector('.loading-text').textContent = ${JSON.stringify(msg)};
-      })();
-    `).catch(() => {});
+  const stepIndex = resolveStepIndex(data);
+  currentSplashStep = Math.max(currentSplashStep, stepIndex);
+
+  // Show progress bar only during downloads with byte totals
+  const showProgress = data.status === 'downloading' && data.total > 0;
+  let pct = 0, downloadedMB = '0', totalMB = '0';
+  if (showProgress) {
+    pct = Math.round((data.downloaded / data.total) * 100);
+    downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(1);
+    totalMB = (data.total / (1024 * 1024)).toFixed(1);
   }
+
+  const stepLabels = ['Downloading framework...', 'Verifying framework...', 'Downloading model...', 'Starting up...'];
+  const statusMsg = showProgress
+    ? `Downloading... ${downloadedMB} / ${totalMB} MB (${pct}%)`
+    : stepLabels[currentSplashStep] || '';
+
+  splashWindow.webContents.executeJavaScript(`
+    (function() {
+      var current = ${currentSplashStep};
+      for (var i = 0; i < 4; i++) {
+        var stepEl = document.getElementById('step-' + i);
+        var iconEl = document.getElementById('icon-' + i);
+        if (i < current) {
+          stepEl.className = 'step completed';
+          iconEl.innerHTML = '<span class="icon-check">\\u2713</span>';
+        } else if (i === current) {
+          stepEl.className = 'step active';
+          iconEl.innerHTML = '<span class="icon-active"></span>';
+        } else {
+          stepEl.className = 'step';
+          iconEl.innerHTML = '<span class="icon-pending"></span>';
+        }
+      }
+      var pw = document.getElementById('progress-wrapper');
+      var pb = document.getElementById('progress-bar');
+      if (${showProgress}) {
+        pw.style.display = 'block';
+        pb.style.width = '${pct}%';
+      } else {
+        pw.style.display = 'none';
+        pb.style.width = '0%';
+      }
+      document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
+    })();
+  `).catch(() => {});
 }
 
 // Load model via API (used for subsequent loads after bootstrap)
@@ -606,10 +637,11 @@ const PROTOCOL = 'smartloop';
 
 function createSplashScreen() {
   splashWindow = new BrowserWindow({
-    width: 400,
-    height: 400,
+    width: 560,
+    height: 420,
     transparent: true,
     frame: false,
+    resizable: false,
     alwaysOnTop: true,
     webPreferences: {
       nodeIntegration: false,
@@ -617,7 +649,6 @@ function createSplashScreen() {
     }
   });
 
-  // Create splash screen HTML content
   const splashHTML = `
     <!DOCTYPE html>
     <html>
@@ -634,57 +665,87 @@ function createSplashScreen() {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           }
           .splash-container {
-            text-align: center;
             background: #000000;
-            border-radius: 5px;
-            padding: 60px 40px;
+            border-radius: 8px;
+            padding: 40px 48px;
             border: 1px solid #2a2a2a;
+            width: 460px;
           }
           .logo {
-            font-size: 48px;
+            font-size: 36px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 32px;
+            text-align: center;
           }
-          .logo-text {
-            color: white;
+          .logo-text { color: white; }
+          .logo-dot { color: #ec4899; }
+          .steps { list-style: none; padding: 0; margin: 0 0 24px 0; }
+          .step {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0;
+            color: #6b7280;
+            font-size: 15px;
+            transition: color 0.3s;
           }
-          .logo-dot {
-            color: #ec4899;
+          .step.active { color: #e5e7eb; }
+          .step.completed { color: #9ca3af; }
+          .step-icon {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
           }
-          .spinner {
-            width: 40px;
-            height: 40px;
-            margin: 20px auto;
-            border: 4px solid #2a2a2a;
-            border-top: 4px solid #ec4899;
+          .icon-pending {
+            width: 12px; height: 12px;
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            background: #374151;
+          }
+          .icon-active {
+            width: 18px; height: 18px;
+            box-sizing: border-box;
+            border: 2.5px solid #2a2a2a;
+            border-top-color: #ec4899;
+            border-right-color: #ec4899;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+          }
+          .icon-check {
+            color: #ec4899;
+            font-size: 18px;
+            font-weight: bold;
+            line-height: 1;
           }
           @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
-          .loading-text {
-            color: #9ca3af;
-            font-size: 14px;
-            margin-top: 10px;
-          }
           .progress-wrapper {
-            margin-top: 16px;
-            width: 100%;
+            margin-bottom: 16px;
+            display: none;
           }
           .progress-track {
             width: 100%;
             height: 6px;
-            background: #2a2a2a;
+            background: #1f2937;
             border-radius: 3px;
             overflow: hidden;
           }
           .progress-fill {
             height: 100%;
+            width: 0%;
             background: #ec4899;
             border-radius: 3px;
             transition: width 0.3s ease;
+          }
+          .status-text {
+            color: #6b7280;
+            font-size: 13px;
+            text-align: center;
+            min-height: 18px;
           }
         </style>
       </head>
@@ -693,8 +754,30 @@ function createSplashScreen() {
           <div class="logo">
             <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
           </div>
-          <div class="spinner"></div>
-          <div class="loading-text">Getting things ready...</div>
+          <ul class="steps">
+            <li class="step active" id="step-0">
+              <span class="step-icon" id="icon-0"><span class="icon-active"></span></span>
+              <span>Downloading framework</span>
+            </li>
+            <li class="step" id="step-1">
+              <span class="step-icon" id="icon-1"><span class="icon-pending"></span></span>
+              <span>Verifying framework</span>
+            </li>
+            <li class="step" id="step-2">
+              <span class="step-icon" id="icon-2"><span class="icon-pending"></span></span>
+              <span>Downloading model</span>
+            </li>
+            <li class="step" id="step-3">
+              <span class="step-icon" id="icon-3"><span class="icon-pending"></span></span>
+              <span>Starting up</span>
+            </li>
+          </ul>
+          <div class="progress-wrapper" id="progress-wrapper">
+            <div class="progress-track">
+              <div class="progress-fill" id="progress-bar"></div>
+            </div>
+          </div>
+          <div class="status-text" id="status-text">Getting things ready...</div>
         </div>
       </body>
     </html>
@@ -1014,20 +1097,28 @@ if (!gotTheLock) {
       }
     } else {
       // First launch or daemon not running — show splash and do full setup
+      currentSplashStep = 0;
       createSplashScreen();
 
       (async () => {
         try {
           // Download & install SLP binary via curl (async — won't freeze the app)
+          let alreadyInstalled = false;
           try {
-            await setupSlpService((progress) => {
+            const setupResult = await setupSlpService((progress) => {
               updateSplashProgress(progress);
             });
+            alreadyInstalled = setupResult === false;
           } catch (error) {
             console.warn('[SLP] Setup failed, proceeding anyway:', error.message);
           }
 
-          updateSplashProgress({ status: 'starting', message: 'Starting service...' });
+          // If already installed, fast-forward steps 0-1
+          if (alreadyInstalled) {
+            currentSplashStep = 2;
+          }
+
+          updateSplashProgress({ status: 'preparing', message: 'Preparing service...' });
 
           const serviceStarted = await startSlpService();
           const baseUrl = getLocalBaseUrl();
@@ -1043,12 +1134,17 @@ if (!gotTheLock) {
             } catch (error) {
               console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
             }
+
+            // Mark final step as active
+            updateSplashProgress({ status: 'starting', message: 'Starting up...' });
           } else {
             console.warn('[SLP] Service did not start, proceeding without local service');
           }
         } catch (error) {
           console.error('[SLP] Unexpected error during startup:', error.message);
         } finally {
+          // Brief delay so user sees the final step complete
+          await new Promise((r) => setTimeout(r, 500));
           // Show main window first, then close splash
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.show();
@@ -1062,7 +1158,11 @@ if (!gotTheLock) {
     }
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      } else if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
       }
     });
