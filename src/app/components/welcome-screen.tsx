@@ -53,7 +53,7 @@ export default function WelcomeScreen({
             <MentionsInput
               value={message}
               onChange={onMessageChange}
-              placeholder="Type your prompt.. (e.g. what are best coffee shop in San Francisco?)"
+              placeholder="Type your prompt.. (e.g. what are best coffee shops in San Francisco?)"
               className="mentions"
               allowSuggestionsAboveCursor={true}
               style={{
