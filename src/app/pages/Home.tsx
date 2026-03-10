@@ -1,14 +1,11 @@
 'use client';
 
 import '../styles/home.css';
-import '../styles/mentions.css';
 import '../styles/markdown-editor.css';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
-import { SuggestionDataItem } from 'react-mentions';
 import CloseIcon from '@mui/icons-material/Close';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentPolling from '@/app/components/document-polling';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
@@ -25,25 +22,16 @@ import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import LoadingSpinner from '@/app/components/loading-spinner';
 import ConversationTabs from '@/app/components/conversation-tabs';
-import WelcomeScreen from '@/app/components/welcome-screen';
 import { useAuthContext } from '@/app/contexts/AuthContext';
-
-// Extend SuggestionDataItem to include color property
-interface ProjectSuggestion extends SuggestionDataItem {
-  color?: string;
-}
 
 export default function Home() {
   const [user, setUser] = useAuthContext();
   const [isLoading, setIsLoading] = useState(true);
-  const [message, setMessage] = useState('');
   const [selectedProject, setSelectedProject]: any = useState(null);
   const [showChat, setShowChat] = useState(false);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
-  const [showProjectInfoDialog, setShowProjectInfoDialog] = useState(false);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
-  const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
   const [conversation, setConversation] = useState<any>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -62,29 +50,12 @@ export default function Home() {
   const lastSavedRulesRef = useRef<string>('');
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editedProjectName, setEditedProjectName] = useState('');
-  const previousMessageRef = useRef<string>(''); // Track previous message to detect mention removal
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
-  const [hasConversations, setHasConversations] = useState(false);
   const [activeModelName, setActiveModelName] = useState('');
-
-  // Determine if we're showing the main chat view or welcome screen
-  const urlConversationId = searchParams.get('conversation');
-  const urlProjectId = searchParams.get('project');
-  const showMainView = hasConversations || showChat || conversation || urlConversationId || urlProjectId || projectConversations.length > 0;
-
-  // Hide left sidebar when on welcome screen
-  useEffect(() => {
-    if (showMainView) {
-      document.body.removeAttribute('data-hide-sidebar');
-    } else {
-      document.body.setAttribute('data-hide-sidebar', 'true');
-    }
-    return () => document.body.removeAttribute('data-hide-sidebar');
-  }, [showMainView]);
 
   // Load active model name and load model when project changes
   useEffect(() => {
@@ -157,25 +128,6 @@ export default function Home() {
     return user?.projects?.find((p: any) => p.id === projectId) || null;
   };
 
-  // Check if any conversations exist in SQLite
-  useEffect(() => {
-    const checkConversations = async () => {
-      const conversations = await storageService.getConversations();
-      setHasConversations(conversations.length > 0);
-    };
-
-    checkConversations();
-
-    const handleChange = () => { checkConversations(); };
-    window.addEventListener('conversationCreated', handleChange);
-    window.addEventListener('conversationDeleted', handleChange);
-
-    return () => {
-      window.removeEventListener('conversationCreated', handleChange);
-      window.removeEventListener('conversationDeleted', handleChange);
-    };
-  }, [user]);
-
   useEffect(() => {
     if (user) {
       setIsLoading(false);
@@ -228,7 +180,6 @@ export default function Home() {
           setShowChat(false);
           setConversation(null);
           setChatMessage(null);
-          setMessage('');
         }
       }
     };
@@ -523,56 +474,6 @@ export default function Home() {
   }, []);
 
 
-  // Fetch projects for mentions
-  const fetchProjects = async (search: string, callback: (data: ProjectSuggestion[]) => void) => {
-    if (!user?.projects) {
-      callback([]);
-      return;
-    }
-
-    // Show all projects when search is empty (just typed /)
-    // Otherwise filter by search term
-    const searchTerm = search.toLowerCase().trim();
-
-    const filteredProjects = user.projects.filter((project: any) => {
-      // Exclude system projects
-      if (project.system) return false;
-      const projectName = (project.name || '').toLowerCase();
-      // If no search term, show all projects
-      if (!searchTerm) return true;
-      // Otherwise filter by search term
-      return projectName.includes(searchTerm);
-    });
-
-    const suggestions: ProjectSuggestion[] = filteredProjects.map((project: any) => ({
-      id: project.id,
-      display: project.name || 'Untitled Project',
-      color: project.color || DEFAULT_COLOR
-    }));
-
-    callback(suggestions);
-  };
-
-  // Render mention suggestions
-  const renderProjectSuggestion = (_suggestion: ProjectSuggestion, _search: string, highlightedDisplay: React.ReactNode) => {
-    return (
-      <div className="mention-project-item">
-        <Box
-          sx={{
-            width: 12,
-            height: 12,
-            borderRadius: '2px',
-            bgcolor: _suggestion.color,
-            flexShrink: 0,
-          }}
-        />
-        <div className="mention-project-name">{highlightedDisplay}</div>
-      </div>
-    );
-  };
-
-  // Handle mention changes
-
   const saveProjectRules = async (rules: string) => {
     if (!selectedProject || !rules) return;
 
@@ -604,149 +505,7 @@ export default function Home() {
     }
   };
 
-  const handleMentionChange = (_event: any, newValue: string, _newPlainTextValue: string, mentions: any[]) => {
-    setMessage(newValue);
 
-    // Extract mentioned projects from the mentions array
-    const projectMentions = mentions
-      .filter((m: any) => m && m.id)
-      .map((m: any) => {
-        const project = user?.projects?.find((p: any) => p.id === m.id);
-        return project;
-      })
-      .filter(Boolean);
-
-    // Check if current and previous messages contain mention markup: /[display](id)
-    const hasMentionMarkup = /\/\[([^\]]+)\]\([^)]+\)/.test(newValue);
-    const previousHadMentionMarkup = /\/\[([^\]]+)\]\([^)]+\)/.test(previousMessageRef.current);
-
-    // Simple logic:
-    // 1. If mentions exist → set project (typing /project adds the project)
-    if (projectMentions.length > 0) {
-      const project = projectMentions[projectMentions.length - 1];
-      console.log('[handleMentionChange] Project selected via mention:', project.name, project.id);
-      setSelectedProject(project);
-    }
-    // 2. If no mentions but previous message had mention markup → clear project (explicit removal)
-    else if (previousHadMentionMarkup && !hasMentionMarkup) {
-      console.log('[handleMentionChange] Project removed - mention markup was explicitly deleted');
-      setSelectedProject(null);
-    }
-    // 3. Otherwise → keep current project (user is just typing normally)
-
-    // Update previous message ref for next comparison
-    previousMessageRef.current = newValue;
-  };
-
-  const handleSendMessage = async () => {
-    // Remove /command markup before checking message
-    // The markup format is: /[display](id)
-    const cleanMessage = message.replace(/\/\[([^\]]+)\]\([^)]+\)/g, '').trim();
-
-    // Only proceed if there's a valid message
-    if (!cleanMessage) {
-      return;
-    }
-
-    let activeConversationId = conversation?.id;
-
-    // If no project is selected, auto-select the system project or first available project
-    let projectForMessage = selectedProject;
-    if (!projectForMessage && !activeConversationId) {
-      const systemProject = user?.projects?.find((p: any) => p.system === true);
-      const fallbackProject = systemProject || user?.projects?.[0];
-      if (fallbackProject) {
-        console.log('[handleSendMessage] No project selected, auto-selecting project:', fallbackProject.id);
-        projectForMessage = fallbackProject;
-        setSelectedProject(fallbackProject);
-      }
-    }
-
-    // Generate title from first 5 words of message
-    const words = cleanMessage.split(' ');
-    const titleWords = words.slice(0, 5).join(' ');
-    const conversationTitle = words.length > 5 ? `${titleWords}...` : titleWords;
-
-    // Prepare attachments array
-    const attachmentsToSend = [...messageAttachments];
-
-    // Create or update conversation
-    if (!activeConversationId) {
-      // Only add project as attachment when creating a new conversation (first message)
-      // Once conversation exists, backend uses memory and project_id, so no need to send attachment again
-      if (projectForMessage?.id) {
-        console.log('[handleSendMessage] Adding project as attachment (first message only):', {
-          projectId: projectForMessage.id,
-          projectName: projectForMessage.name,
-          file_id: `project-${projectForMessage.id}`
-        });
-        attachmentsToSend.push({
-          file_id: `project-${projectForMessage.id}`,
-          name: projectForMessage.name || 'Project'
-        });
-      }
-      console.log('[handleSendMessage] Final attachments to send (new conversation):', attachmentsToSend);
-      // Create a new conversation with the selected project
-      try {
-        const projectId = projectForMessage?.id;
-        const conversationResult = await conversationService.createConversation({
-          title: conversationTitle,
-          project_id: projectId
-        });
-
-        if (conversationResult.success && conversationResult.data) {
-          const newConversation = conversationResult.data;
-          activeConversationId = newConversation.id;
-
-          // Set all state updates together before navigation to avoid race conditions
-          setConversation(newConversation);
-          setActiveTab(0); // Select chat tab 0
-          setShowChat(true); // Set showChat immediately after creating conversation
-
-          // Immediately add to projectConversations so tab appears right away
-          setProjectConversations(prev => {
-            // Check if conversation already exists in list
-            if (prev.some((c: any) => c.id === newConversation.id)) {
-              return prev;
-            }
-            // Add new conversation to the end (tabs ordered by creation time)
-            return [...prev, newConversation];
-          });
-
-          setMessageAttachments(attachmentsToSend);
-          setChatMessage(cleanMessage);
-          setMessage('');
-          setClearAttachmentTrigger(prev => prev + 1);
-
-          // Note: conversationCreated event is already dispatched by conversationService.createConversation()
-
-          // Navigate to conversation page with project
-          // Use replace: true to avoid adding to history and ensure URL is updated immediately
-          if (projectId) {
-            navigate(`/?conversation=${activeConversationId}&project=${projectId}`, { replace: true });
-          } else {
-            navigate(`/?conversation=${activeConversationId}`, { replace: true });
-          }
-        } else {
-          console.error('Failed to create conversation');
-          return;
-        }
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        return;
-      }
-    } else {
-      // Existing conversation - filter out project attachments (backend uses memory and project_id)
-      const attachmentsWithoutProject = attachmentsToSend.filter(
-        (att: any) => !att.file_id || !att.file_id.startsWith('project-')
-      );
-      console.log('[handleSendMessage] Existing conversation - filtered attachments (no project):', attachmentsWithoutProject);
-      setMessageAttachments(attachmentsWithoutProject);
-      setChatMessage(cleanMessage);
-      setMessage('');
-      setClearAttachmentTrigger(prev => prev + 1);
-    }
-  };
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
     console.log('[Home handleFileAttached] Called with:', documentId, fileName);
@@ -861,7 +620,7 @@ export default function Home() {
           targetConversation = projectConversations[currentIndex + 1];
         }
 
-        // Navigate to target conversation or welcome screen if none left
+        // Navigate to target conversation or home if none left
         if (targetConversation) {
           const projectId = selectedProject?.id;
           if (projectId) {
@@ -871,7 +630,7 @@ export default function Home() {
           // Check if any conversations remain globally
           const allRemaining = await storageService.getConversations();
           if (allRemaining.length === 0) {
-            // No conversations left anywhere — go to welcome screen
+            // No conversations left anywhere — go to home
             navigate('/', { replace: true });
             setConversation(null);
             setShowChat(false);
@@ -971,7 +730,6 @@ export default function Home() {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
     setChatMessage(null);
-    setMessage('');
     setShowChat(true);
     setActiveTab(0);
 
@@ -1126,7 +884,6 @@ export default function Home() {
         setShowChat(false);
         setConversation(null);
         setChatMessage(null);
-        setMessage('');
         setSelectedProject(null);
         setMessageAttachments([]);
       } else {
@@ -1222,102 +979,6 @@ export default function Home() {
       />
       {user && (
         <>
-
-          {/* Project Selection Info Dialog */}
-          <Dialog
-            open={showProjectInfoDialog}
-            onClose={() => setShowProjectInfoDialog(false)}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paper
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative p-6">
-              {/* Close Button */}
-              <IconButton
-                onClick={() => setShowProjectInfoDialog(false)}
-                sx={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  color: '#6b7280',
-                  '&:hover': {
-                    color: '#fff',
-                    bgcolor: '#1a1a1a',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-
-              {/* Icon and Title */}
-              <Box className="flex items-start gap-3 mb-4">
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '40px',
-                    height: '40px',
-                    flexShrink: 0,
-                    borderRadius: '10px',
-                    bgcolor: 'rgba(59, 130, 246, 0.1)',
-                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                  }}
-                >
-                  <InfoOutlinedIcon sx={{ color: '#3b82f6', fontSize: 24 }} />
-                </Box>
-                <Box className="flex-1">
-                  <h3 className="text-white font-semibold text-lg mb-1">
-                    Project Selection Required
-                  </h3>
-                  <p className="text-gray-400 text-sm leading-relaxed">
-                    To add files, you need to select or create a project first.
-                  </p>
-                </Box>
-              </Box>
-
-              {/* Instructions */}
-              <Box className="bg-gray-900/50 border border-gray-800 rounded-lg p-4 mb-4">
-                <h4 className="text-white text-sm font-medium mb-2">How to select a project:</h4>
-                <Box className="space-y-2">
-                  <Box className="flex items-start gap-2 text-sm text-gray-400">
-                    <span className="text-pink-400 font-semibold">1.</span>
-                    <span>Type <span className="px-2 py-0.5 bg-gray-800 text-pink-400 rounded font-mono text-xs">/</span> in the message box</span>
-                  </Box>
-                  <Box className="flex items-start gap-2 text-sm text-gray-400">
-                    <span className="text-pink-400 font-semibold">2.</span>
-                    <span>Enter a project name or select from the list</span>
-                  </Box>
-                  <Box className="flex items-start gap-2 text-sm text-gray-400">
-                    <span className="text-pink-400 font-semibold">3.</span>
-                    <span>Press <span className="px-2 py-0.5 bg-gray-800 text-blue-400 rounded font-mono text-xs">Enter</span> to confirm</span>
-                  </Box>
-                </Box>
-              </Box>
-
-              {/* Example */}
-              <Box className="bg-pink-500/5 border border-pink-500/20 rounded-lg p-3 mb-4">
-                <p className="text-xs text-gray-500 mb-1">Example:</p>
-                <p className="text-sm text-gray-300">
-                  Type <span className="text-pink-400 font-mono">/marketing</span> to select or create a "marketing" project
-                </p>
-              </Box>
-
-              {/* Action Button */}
-              <button
-                onClick={() => setShowProjectInfoDialog(false)}
-                className="w-full py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg font-medium transition-all text-sm"
-              >
-                Got it!
-              </button>
-            </Box>
-          </Dialog>
-
           {/* File Upload Dialog */}
           <DocumentUploadDialog
             open={showFileUploadDialog}
@@ -1610,8 +1271,7 @@ export default function Home() {
 
 
           <Box className="min-h-screen bg-black text-white">
-            {showMainView ? (
-              // Chat View with 2-column layout
+              {/* Chat View with 2-column layout */}
               <Box className="h-screen flex flex-col bg-black">
                 {/* Chat Header - matches project page style */}
                 <Box className="flex-none p-4">
@@ -1758,27 +1418,6 @@ export default function Home() {
                   )}
                 </Box>
               </Box>
-            ) : (
-              <WelcomeScreen
-                message={message}
-                onMessageChange={handleMentionChange}
-                onSend={handleSendMessage}
-                onFileAttached={handleFileAttached}
-                selectedProject={selectedProject}
-                conversation={conversation}
-                clearAttachmentTrigger={clearAttachmentTrigger}
-                fetchProjects={fetchProjects}
-                renderProjectSuggestion={renderProjectSuggestion}
-                onProjectSelected={(id) => {
-                  const project = user?.projects?.find((p: any) => p.id === id);
-                  if (project) {
-                    setSelectedProject(project);
-                    setMessage('');
-                    previousMessageRef.current = '';
-                  }
-                }}
-              />
-            )}
           </Box>
         </>
       )}
