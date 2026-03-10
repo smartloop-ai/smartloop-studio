@@ -683,9 +683,11 @@ export default function SettingsPage() {
 
                     {/* Available Models */}
                     {isElectron && (() => {
-                        const localModelName = slpConfig?.workspace?.models?.find((m: any) => m.is_active)?.model_name || '';
                         const localModelNames = new Set(localModels.map((m: any) => m.name || m.id || m.model).filter(Boolean));
-                        localModelNames.add(localModelName);
+                        // Also include all models from SLP config (downloaded but not necessarily loaded)
+                        (slpConfig?.workspace?.models || []).forEach((m: any) => {
+                            if (m.model_name) localModelNames.add(m.model_name);
+                        });
                         const isPaidUser = user?.is_paid || user?.is_premium;
 
                         // Collect all unique models from remote that aren't already the active one

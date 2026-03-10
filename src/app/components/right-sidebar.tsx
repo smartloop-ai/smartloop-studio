@@ -582,8 +582,8 @@ export default function RightSidebar({
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-          {selectedProject && currentProjectData ? (
-            currentProjectData.documents && currentProjectData.documents.length > 0 ? (
+          {selectedProject ? (
+            currentProjectData?.documents && currentProjectData.documents.length > 0 ? (
               <>
                 {/* Hidden file input */}
                 <input
