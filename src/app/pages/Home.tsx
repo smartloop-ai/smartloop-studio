@@ -128,17 +128,30 @@ export default function Home() {
     return user?.projects?.find((p: any) => p.id === projectId) || null;
   };
 
-  // Wait for slpServiceReady to load projects from local service before dismissing loader
+  // Wait for local SLP service to load projects before dismissing loader
   useEffect(() => {
-    const handleReady = async () => {
+    const loadProjects = async () => {
       const projects = await projectService.getProjects();
       if (projects.length > 0) {
         setUser((prev: any) => prev ? { ...prev, projects } : prev);
+        setIsLoading(false);
+        return true;
       }
-      setIsLoading(false);
+      return false;
     };
-    window.addEventListener('slpServiceReady', handleReady);
-    return () => window.removeEventListener('slpServiceReady', handleReady);
+
+    // Check if SLP is already ready (event may have fired before mount)
+    loadProjects().then((loaded) => {
+      if (!loaded) {
+        // Not ready yet — wait for the event
+        const handleReady = async () => {
+          await loadProjects();
+          setIsLoading(false);
+          window.removeEventListener('slpServiceReady', handleReady);
+        };
+        window.addEventListener('slpServiceReady', handleReady);
+      }
+    });
   }, []);
 
   // Listen for conversation deletion events
