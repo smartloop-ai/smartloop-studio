@@ -128,11 +128,18 @@ export default function Home() {
     return user?.projects?.find((p: any) => p.id === projectId) || null;
   };
 
+  // Wait for slpServiceReady to load projects from local service before dismissing loader
   useEffect(() => {
-    if (user) {
+    const handleReady = async () => {
+      const projects = await projectService.getProjects();
+      if (projects.length > 0) {
+        setUser((prev: any) => prev ? { ...prev, projects } : prev);
+      }
       setIsLoading(false);
-    }
-  }, [user]);
+    };
+    window.addEventListener('slpServiceReady', handleReady);
+    return () => window.removeEventListener('slpServiceReady', handleReady);
+  }, []);
 
   // Listen for conversation deletion events
   useEffect(() => {
