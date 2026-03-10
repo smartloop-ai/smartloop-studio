@@ -134,6 +134,26 @@ export default function Home() {
       const projects = await projectService.getProjects();
       if (projects.length > 0) {
         setUser((prev: any) => prev ? { ...prev, projects } : prev);
+
+        // Auto-select default project and latest conversation if nothing is in the URL
+        if (!searchParams.get('project') && !searchParams.get('conversation')) {
+          const systemProject = projects.find((p: any) => p.system === true);
+          const defaultProject = systemProject || projects[0];
+          setSelectedProject(defaultProject);
+
+          const allConversations = await storageService.getConversations();
+          if (allConversations.length > 0) {
+            const sorted = allConversations.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id || defaultProject.id;
+            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+          } else {
+            navigate(`/?project=${defaultProject.id}`, { replace: true });
+          }
+        }
+
         setIsLoading(false);
         return true;
       }
@@ -484,7 +504,21 @@ export default function Home() {
         const projects = await projectService.getProjects();
         if (projects.length > 0) {
           const systemProject = projects.find((p: any) => p.system === true);
-          setSelectedProject(systemProject || projects[0]);
+          const defaultProject = systemProject || projects[0];
+          setSelectedProject(defaultProject);
+
+          // Auto-select the most recent conversation for this project
+          const allConversations = await storageService.getConversations();
+          if (allConversations.length > 0) {
+            const sorted = allConversations.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            const mostRecent = sorted[0];
+            const projectId = mostRecent.project_id || defaultProject.id;
+            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
+          } else {
+            navigate(`/?project=${defaultProject.id}`, { replace: true });
+          }
         }
       }
       loadProjectConversations();
