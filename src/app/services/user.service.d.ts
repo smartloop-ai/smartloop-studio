@@ -6,6 +6,8 @@ export interface UserService {
   get(): Promise<any>;
   updateSettings(settings: any): Promise<any>;
   makeAuthenticatedRequest(url: string, options?: RequestInit): Promise<Response | null>;
+  fetchAndStoreUser(token: string): Promise<any>;
+  redirectToLogin(): void;
   initializeTokenRefresh(): void;
   stopTokenRefresh(): void;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { userService } from '@/app/services/user.service';
+import { documentService } from '@/app/services/document.service';
 
 interface DocumentPollingProps {
   user: any;
@@ -26,83 +26,46 @@ export default function DocumentPolling({
 
     const interval = setInterval(async () => {
       try {
-        const updatedUser = await userService.get();
-        if (updatedUser && user) {
-          // Only update if there are actual changes to document processing status
-          let hasChanges = false;
-          let hasProcessing = false;
+        if (!selectedProject) return;
 
-          const updatedProjects = user.projects.map((project: any) => {
-            if (!selectedProject || project.id === selectedProject.id) {
-              const updatedProject = updatedUser.projects?.find((p: any) => p.id === project.id);
-              if (updatedProject) {
-                // Check if documents have changed
-                const oldDocs = project.documents || [];
-                const newDocs = updatedProject.documents || [];
+        const result = await documentService.getLocalDocuments();
+        if (!result.success || !result.data) return;
 
-                // Check for new documents (documents in newDocs but not in oldDocs)
-                const oldDocumentIds = new Set(oldDocs.map((d: any) => d.id));
-                const hasNewDocuments = newDocs.some((newDoc: any) => !oldDocumentIds.has(newDoc.id));
+        const newDocs: any[] = result.data.documents || result.data;
+        const oldDocs: any[] = selectedProject.documents || [];
 
-                // Compare document processing status for existing documents
-                const docsChanged = oldDocs.some((oldDoc: any) => {
-                  const newDoc = newDocs.find((d: any) => d.id === oldDoc.id);
-                  if (newDoc) {
-                    // Check if processing status changed
-                    const statusChanged = oldDoc.is_processing !== newDoc.is_processing ||
-                                        oldDoc.num_of_tokens !== newDoc.num_of_tokens;
-                    if (statusChanged) hasChanges = true;
+        // Check for changes in processing status
+        const oldDocIds = new Set(oldDocs.map((d: any) => d.id));
+        let hasChanges = newDocs.some((newDoc: any) => !oldDocIds.has(newDoc.id));
+        let hasProcessing = false;
 
-                    // Check if still processing
-                    if (newDoc.is_processing || (!newDoc.num_of_tokens && newDoc.num_of_tokens !== 0)) {
-                      hasProcessing = true;
-                    }
-                    return statusChanged;
-                  }
-                  return false;
-                });
-
-                // Check processing status for new documents
-                if (hasNewDocuments) {
-                  hasChanges = true;
-                  newDocs.forEach((newDoc: any) => {
-                    if (!oldDocumentIds.has(newDoc.id)) {
-                      // This is a new document - check if it's processing
-                      if (newDoc.is_processing || (!newDoc.num_of_tokens && newDoc.num_of_tokens !== 0)) {
-                        hasProcessing = true;
-                      }
-                    }
-                  });
-                }
-
-                // Return updated project if docs changed or new docs added, otherwise return old project
-                return (docsChanged || hasNewDocuments) ? updatedProject : project;
-              }
-            }
-            return project;
+        if (!hasChanges) {
+          hasChanges = oldDocs.some((oldDoc: any) => {
+            const newDoc = newDocs.find((d: any) => d.id === oldDoc.id);
+            return newDoc && oldDoc.status !== newDoc.status;
           });
+        }
 
-          // Only update state if there were actual changes
-          if (hasChanges) {
-            const updatedUserState = { ...user, projects: updatedProjects };
-            setUser(updatedUserState);
+        // Check if any docs are still processing — always false, status not tracked
+        newDocs.forEach((_doc: any) => {
+          // no-op: both pending and processed are treated as completed
+        });
 
-            // Update current project data if it changed
-            if (selectedProject) {
-              const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
-              if (updatedProject) {
-                setCurrentProjectData(updatedProject);
-                setSelectedProject(updatedProject);
-              }
-            }
-          }
+        if (hasChanges && user) {
+          const updatedProject = { ...selectedProject, documents: newDocs };
+          const updatedProjects = (user.projects || []).map((p: any) =>
+            p.id === selectedProject.id ? updatedProject : p
+          );
+          const updatedUserState = { ...user, projects: updatedProjects };
+          setUser(updatedUserState);
+          setCurrentProjectData(updatedProject);
+          setSelectedProject(updatedProject);
+        }
 
-          // Stop polling if nothing is processing
-          if (!hasProcessing) {
-            clearInterval(interval);
-            pollingIntervalRef.current = null;
-            setPollingInterval(null);
-          }
+        if (!hasProcessing) {
+          clearInterval(interval);
+          pollingIntervalRef.current = null;
+          setPollingInterval(null);
         }
       } catch (error) {
         console.error('Error polling for document status:', error);

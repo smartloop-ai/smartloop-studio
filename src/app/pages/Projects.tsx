@@ -11,8 +11,8 @@ import AddIcon from '@mui/icons-material/Add';
 import SortIcon from '@mui/icons-material/Sort';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import CheckIcon from '@mui/icons-material/Check';
-import { userService } from '@/app/services/user.service';
 import { projectService } from '@/app/services/project.service';
+import { storageService } from '@/app/services/storage.service';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
@@ -134,8 +134,9 @@ export default function ProjectsList() {
       const result = await projectService.deleteProject(projectToDelete.id);
 
       if (result.success) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
+        // Refresh projects from local API and update user
+        const updatedProjects = await projectService.getProjects();
+        const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
         handleCloseDeleteDialog();
       } else {
@@ -176,15 +177,17 @@ export default function ProjectsList() {
 
     try {
       // Use project service to create project
+      const selectedModel = await storageService.getItem('selected_model') || '';
       const result = await projectService.createProject({
-        title: newProjectTitle.trim(),
-        temperature: 0.3,
-        color: selectedColor
+        name: newProjectTitle.trim(),
+        color: selectedColor,
+        model_name: selectedModel,
       });
 
       if (result.success && result.data) {
-        // Refresh user data to get updated projects list
-        const updatedUser = await userService.get();
+        // Refresh projects from local API and update user
+        const updatedProjects = await projectService.getProjects();
+        const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
         handleCloseCreateDialog();
       } else {
@@ -202,13 +205,8 @@ export default function ProjectsList() {
     <>
       {user && (
         <>
-          {/* Sidebar is now rendered in App.tsx for persistence across routes */}
-          {/* <Sidebar user={user} mobileOpen={mobileMenuOpen} onMobileClose={() => setMobileMenuOpen(false)} /> */}
-
           <Box className="min-h-screen bg-black text-white">
             <Box className="p-4">
-              {/* MobileNav is now rendered in App.tsx for persistence across routes */}
-              {/* <MobileNav onMenuClick={() => setMobileMenuOpen(true)} /> */}
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
               {/* Header */}
               <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">

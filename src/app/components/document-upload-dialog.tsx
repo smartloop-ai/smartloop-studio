@@ -5,9 +5,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import FolderIcon from '@mui/icons-material/Folder';
-import { userService } from '@/app/services/user.service';
+import { documentService } from '@/app/services/document.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { API_ENDPOINT } from '@/app/constants';
 
 interface DocumentUploadDialogProps {
   open: boolean;
@@ -115,38 +114,32 @@ export default function DocumentUploadDialog({
       }
 
       const targetProject = selectedProject;
+      const file = uploadFiles[0];
 
-      const formData = new FormData();
-      formData.append('file', uploadFiles[0]);
-
-      const token = await userService.token();
-      const url = `${API_ENDPOINT}/projects/${targetProject.id}/documents`;
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.detail || result.message || 'Upload failed');
+      // Save file to a temp path then upload via local SLP POST /v1/documents
+      if (!window.electronAPI?.saveTempFile) {
+        throw new Error('Local file upload is not available outside of the desktop app');
       }
 
-      // Get the uploaded document from response
-      const uploadedDocument = await response.json();
+      const buffer = await file.arrayBuffer();
+      const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
+      const localResult = await documentService.addLocalDocument(tempPath);
+      if (!localResult.success) {
+        throw new Error(localResult.error || 'Upload failed');
+      }
+      const result = localResult.data;
 
       // Update user state incrementally - only update the specific project
-      if (user) {
+      if (user && result) {
+        const documents: any[] = Array.isArray(result?.documents) ? result.documents : [result];
+        const uploadedDoc = documents[documents.length - 1];
         const updatedProjects = user.projects.map((p: any) => {
           if (p.id === targetProject.id) {
-            const updatedDocs = [...(p.documents || []), uploadedDocument];
+            const updatedDocs = [...(p.documents || []), uploadedDoc];
             return { ...p, documents: updatedDocs };
           }
           return p;
         });
-
         const updatedUser = { ...user, projects: updatedProjects };
         setUser(updatedUser);
       }

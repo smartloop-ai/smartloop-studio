@@ -1,5 +1,4 @@
-import { API_ENDPOINT } from "@/app/constants";
-import { userService } from "./user.service";
+import { getLocalApiEndpoint } from "@/app/constants";
 import { storageService } from "./storage.service";
 
 /**
@@ -153,8 +152,9 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
       };
     }
 
-    const url = `${API_ENDPOINT}/projects/${projectId}/mcp-servers`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/mcp`;
+    const response = await fetch(url, {
       method: 'GET'
     });
 
@@ -209,8 +209,9 @@ const registerMcpServer = async (projectId: string, serverUrl: string): Promise<
       };
     }
 
-    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/register`;
-    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+    const localBase = await getLocalApiEndpoint();
+    const apiUrl = `${localBase}/v1/mcp/register`;
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -279,8 +280,9 @@ const authenticateWithToken = async (projectId: string, serverUrl: string, token
       };
     }
 
-    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/token-auth`;
-    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+    const localBase = await getLocalApiEndpoint();
+    const apiUrl = `${localBase}/v1/mcp/token-auth`;
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -350,8 +352,9 @@ const initiateOAuth = async (projectId: string, name: string, serverUrl: string)
       };
     }
 
-    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/oauth/initiate`;
-    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+    const localBase = await getLocalApiEndpoint();
+    const apiUrl = `${localBase}/v1/mcp/oauth/initiate`;
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -421,8 +424,9 @@ const createMcpServer = async (projectId: string, name: string, url: string): Pr
       };
     }
 
-    const apiUrl = `${API_ENDPOINT}/projects/${projectId}/mcp-servers`;
-    const response = await userService.makeAuthenticatedRequest(apiUrl, {
+    const localBase = await getLocalApiEndpoint();
+    const apiUrl = `${localBase}/v1/mcp/remote`;
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -486,8 +490,9 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
       };
     }
 
-    const url = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/${serverId}`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/mcp/${serverId}`;
+    const response = await fetch(url, {
       method: 'GET'
     });
 
@@ -542,8 +547,9 @@ const deleteMcpServer = async (projectId: string, serverId: string): Promise<Mcp
       };
     }
 
-    const url = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/${serverId}`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/mcp/${serverId}`;
+    const response = await fetch(url, {
       method: 'DELETE'
     });
 
@@ -597,8 +603,9 @@ const connectMcpServer = async (projectId: string, serverId: string): Promise<Mc
       };
     }
 
-    const url = `${API_ENDPOINT}/projects/${projectId}/mcp-servers/${serverId}/connect`;
-    const response = await userService.makeAuthenticatedRequest(url, {
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/mcp/${serverId}/connect`;
+    const response = await fetch(url, {
       method: 'POST'
     });
 

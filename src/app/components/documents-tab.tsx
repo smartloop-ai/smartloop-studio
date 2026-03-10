@@ -7,8 +7,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-import { userService } from '@/app/services/user.service';
-import { API_ENDPOINT } from '@/app/constants';
+import { documentService } from '@/app/services/document.service';
 import { dialogStyles } from '@/app/shared/utils';
 
 interface DocumentsTabProps {
@@ -72,12 +71,9 @@ export default function DocumentsTab({
     setDeleteDocError('');
 
     try {
-      const url = `${API_ENDPOINT}/projects/${selectedProject.id}/documents/${documentToDelete.id}`;
-      const response = await userService.makeAuthenticatedRequest(url, {
-        method: 'DELETE',
-      });
+      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
 
-      if (response && (response.status === 200 || response.status === 204)) {
+      if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
         if (user && selectedProject) {
           const updatedProjects = user.projects.map((p: any) => {
@@ -169,7 +165,9 @@ export default function DocumentsTab({
                     </Box>
                     <Box className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm text-white font-medium truncate">{doc.filename || doc.name || 'Untitled Document'}</span>
+                        <span className="text-sm text-white font-medium truncate">
+                          {doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
+                        </span>
                       </div>
                       {(doc.summary || doc.markdown) && (
                         <div
@@ -182,17 +180,6 @@ export default function DocumentsTab({
                         </div>
                       )}
                       <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                        <span>{doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}</span>
-                        {doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0) ? (
-                          <span className="flex items-center gap-1.5 text-gray-400">
-                            <CircularProgress size={10} sx={{ color: '#9ca3af' }} />
-                            <span>Processing</span>
-                          </span>
-                        ) : doc.num_of_tokens && doc.num_of_tokens > 0 ? (
-                          <span className="text-gray-600">
-                            • <span style={{ color: '#ec4899' }}>$ {Math.ceil(doc.num_of_tokens / 100)} credits</span>
-                          </span>
-                        ) : null}
                       </div>
                     </Box>
                   </Box>
@@ -282,7 +269,7 @@ export default function DocumentsTab({
                     Warning: This action cannot be undone
                   </Typography>
                   <Typography className="text-gray-300 text-sm">
-                    Deleting "{documentToDelete?.filename || documentToDelete?.name || 'this document'}" will permanently remove it from your project.
+                    Deleting "{documentToDelete?.path ? (documentToDelete.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'this document') : (documentToDelete?.filename || documentToDelete?.name || 'this document')}" will permanently remove it from your project.
                   </Typography>
                 </Box>
               </Box>
