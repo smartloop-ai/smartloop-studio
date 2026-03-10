@@ -459,6 +459,13 @@ export default function Home() {
         if (project) {
           setSelectedProject(project);
         }
+      } else {
+        // No project selected — fetch projects and select the system/default one
+        const projects = await projectService.getProjects();
+        if (projects.length > 0) {
+          const systemProject = projects.find((p: any) => p.system === true);
+          setSelectedProject(systemProject || projects[0]);
+        }
       }
       loadProjectConversations();
     };
