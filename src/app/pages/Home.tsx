@@ -492,22 +492,24 @@ export default function Home() {
   // When SLP service comes online, re-enrich selectedProject with API data and reload conversations
   useEffect(() => {
     const handleServiceReady = async () => {
-      const urlProjectId = searchParams.get('project');
-      const projectId = urlProjectId || selectedProject?.id;
-      if (projectId) {
-        const project = await loadProjectFromApi(projectId);
+      // Read current URL params directly to avoid stale closure
+      const params = new URLSearchParams(window.location.search);
+      const urlProjectId = params.get('project');
+      const urlConversationId = params.get('conversation');
+
+      if (urlProjectId) {
+        const project = await loadProjectFromApi(urlProjectId);
         if (project) {
           setSelectedProject(project);
         }
-      } else {
-        // No project selected — fetch projects and select the system/default one
+      } else if (!urlConversationId) {
+        // No project or conversation in URL — select default project and latest conversation
         const projects = await projectService.getProjects();
         if (projects.length > 0) {
           const systemProject = projects.find((p: any) => p.system === true);
           const defaultProject = systemProject || projects[0];
           setSelectedProject(defaultProject);
 
-          // Auto-select the most recent conversation for this project
           const allConversations = await storageService.getConversations();
           if (allConversations.length > 0) {
             const sorted = allConversations.sort((a: any, b: any) =>
@@ -528,7 +530,7 @@ export default function Home() {
     return () => {
       window.removeEventListener('slpServiceReady', handleServiceReady);
     };
-  }, [selectedProject, searchParams]);
+  }, []);
 
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
