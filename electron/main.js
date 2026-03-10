@@ -7,6 +7,7 @@ const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, INSTALL_DIR, VERSION: SLP_VERSION } = require('./slp-setup');
 const database = require('./database');
+const { createTray, updateTrayMenu } = require('./tray');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -418,17 +419,20 @@ ipcMain.handle('get-system-info', async () => {
 // IPC: start/stop SLP service from renderer
 ipcMain.handle('slp-service-start', async () => {
   const result = await startSlpService();
+  refreshTray();
   return { success: result, port: localServicePort };
 });
 
 ipcMain.handle('slp-service-stop', async () => {
   stopSlpService();
+  refreshTray();
   return { success: true };
 });
 
 ipcMain.handle('slp-service-uninstall', async () => {
   stopSlpService();
   uninstallSlpService();
+  refreshTray();
   return { success: true };
 });
 
@@ -802,6 +806,17 @@ function createSplashScreen() {
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHTML)}`);
 }
 
+function refreshTray() {
+  updateTrayMenu({
+    localServicePort,
+    startSlpService,
+    stopSlpService,
+    unloadModel,
+    getLocalBaseUrl,
+    mainWindow,
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -1084,7 +1099,9 @@ if (!gotTheLock) {
       }, 1000);
     }
 
-    // Create main window (hidden until ready)
+    // Create system tray and main window (hidden until ready)
+    createTray();
+    refreshTray();
     createWindow();
 
     // Check if SLP daemon is already running
@@ -1107,6 +1124,7 @@ if (!gotTheLock) {
     if (serviceReady) {
       // Daemon already running — show window immediately, no splash
       const baseUrl = getLocalBaseUrl();
+      refreshTray();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
         mainWindow.show();
@@ -1141,6 +1159,7 @@ if (!gotTheLock) {
 
           if (serviceStarted && baseUrl) {
             // Notify renderer that the local service is ready
+            refreshTray();
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
             }
