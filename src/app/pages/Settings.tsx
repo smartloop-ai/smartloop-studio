@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, TextField } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, TextField, IconButton } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
@@ -9,6 +9,7 @@ import MemoryIcon from '@mui/icons-material/Memory';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
@@ -171,13 +172,13 @@ export default function SettingsPage() {
     }, []);
 
     // Fetch remote models from API if logged in
-    useEffect(() => {
-        fetchLocalModels();
+    const [isRefreshingModels, setIsRefreshingModels] = useState(false);
 
-        const fetchRemote = async () => {
-            try {
-                const token = await storageService.getItem('token');
-                if (!token) return;
+    const fetchRemoteModels = useCallback(async (showSpinner = false) => {
+        if (showSpinner) setIsRefreshingModels(true);
+        try {
+            const token = await storageService.getItem('token');
+            if (token) {
                 const res = await fetch(`${API_ENDPOINT}/models`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                 });
@@ -185,13 +186,40 @@ export default function SettingsPage() {
                     const data = await res.json();
                     const models = Array.isArray(data) ? data : (data.data || []);
                     setRemoteModels(models);
+                    // Cache to SQLite for offline access
+                    await storageService.setItem('cached_remote_models', JSON.stringify(models));
+                    return;
                 }
-            } catch (err) {
-                console.warn('Failed to fetch remote models:', err);
             }
-        };
-        fetchRemote();
-    }, [user, fetchLocalModels]);
+            // Token missing or request failed — load from cache
+            const cached = await storageService.getItem('cached_remote_models');
+            if (cached) {
+                const models = JSON.parse(cached);
+                if (Array.isArray(models) && models.length > 0) {
+                    setRemoteModels(models);
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to fetch remote models:', err);
+            // Try cache on error
+            try {
+                const cached = await storageService.getItem('cached_remote_models');
+                if (cached) {
+                    const models = JSON.parse(cached);
+                    if (Array.isArray(models) && models.length > 0) {
+                        setRemoteModels(models);
+                    }
+                }
+            } catch {}
+        } finally {
+            if (showSpinner) setIsRefreshingModels(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchLocalModels();
+        fetchRemoteModels();
+    }, [user, fetchLocalModels, fetchRemoteModels]);
 
     // Set selected model: load from storage first, fallback to local config
     useEffect(() => {
@@ -674,9 +702,19 @@ export default function SettingsPage() {
 
                         return (
                             <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                                <Box className="flex items-center gap-2 mb-4">
-                                    <DownloadIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
-                                    <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                <Box className="flex items-center justify-between mb-4">
+                                    <Box className="flex items-center gap-2">
+                                        <DownloadIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                                        <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                    </Box>
+                                    <IconButton
+                                        onClick={() => fetchRemoteModels(true)}
+                                        disabled={isRefreshingModels}
+                                        size="small"
+                                        sx={{ color: '#9ca3af', '&:hover': { color: '#ec4899' } }}
+                                    >
+                                        <RefreshIcon sx={{ fontSize: 20, animation: isRefreshingModels ? 'spin 1s linear infinite' : 'none', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                                    </IconButton>
                                 </Box>
 
                                 {/* Search */}
@@ -726,49 +764,19 @@ export default function SettingsPage() {
                                                         '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
                                                     }}
                                                 >
+                                                    {/* Top row: name + badges + button aligned horizontally */}
                                                     <Box className="flex items-center justify-between gap-3">
-                                                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                            <Box className="flex items-center gap-2">
-                                                                <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isActive ? 'white' : 'rgba(255,255,255,0.8)' }}>
-                                                                    {model.name}
-                                                                </span>
-                                                                {isActive && (
-                                                                    <span style={{ fontSize: '9px', fontWeight: 600, color: '#ec4899', padding: '1px 6px', borderRadius: '4px', background: 'rgba(236,72,153,0.15)' }}>ACTIVE</span>
-                                                                )}
-                                                                {!isActive && model.isLocal && (
-                                                                    <span style={{ fontSize: '9px', fontWeight: 600, color: '#9ca3af', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }}>DOWNLOADED</span>
-                                                                )}
-                                                            </Box>
-                                                            {model.description && (
-                                                                <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', display: 'block', marginTop: '2px' }}>
-                                                                    {model.description.length > 100 ? model.description.substring(0, 100) + '...' : model.description}
-                                                                </span>
+                                                        <Box className="flex items-center gap-2" sx={{ minWidth: 0 }}>
+                                                            <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isActive ? 'white' : 'rgba(255,255,255,0.8)' }}>
+                                                                {model.name}
+                                                            </span>
+                                                            {isActive && (
+                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#ec4899', padding: '1px 6px', borderRadius: '4px', background: 'rgba(236,72,153,0.15)' }}>ACTIVE</span>
                                                             )}
-                                                            {/* Download progress for this model */}
-                                                            {isDownloading && initProgress && (
-                                                                <Box sx={{ mt: 1.5 }}>
-                                                                    <Box sx={{
-                                                                        width: '100%',
-                                                                        height: 6,
-                                                                        bgcolor: '#2a2a2a',
-                                                                        borderRadius: '3px',
-                                                                        overflow: 'hidden',
-                                                                    }}>
-                                                                        <Box sx={{
-                                                                            height: '100%',
-                                                                            width: `${initProgress.percent}%`,
-                                                                            bgcolor: '#ec4899',
-                                                                            borderRadius: '3px',
-                                                                            transition: 'width 0.3s ease',
-                                                                        }} />
-                                                                    </Box>
-                                                                    <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '6px' }}>
-                                                                        {initProgress.status}{initProgress.percent > 0 ? ` (${Math.round(initProgress.percent)}%)` : ''}
-                                                                    </span>
-                                                                </Box>
+                                                            {!isActive && model.isLocal && (
+                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#9ca3af', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }}>DOWNLOADED</span>
                                                             )}
                                                         </Box>
-                                                        {/* Action button */}
                                                         {!isActive && (
                                                             model.isLocal ? (
                                                                 <button
@@ -804,6 +812,35 @@ export default function SettingsPage() {
                                                             )
                                                         )}
                                                     </Box>
+                                                    {/* Description */}
+                                                    {model.description && (
+                                                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', display: 'block', marginTop: '4px' }}>
+                                                            {model.description.length > 100 ? model.description.substring(0, 100) + '...' : model.description}
+                                                        </span>
+                                                    )}
+                                                    {/* Download progress */}
+                                                    {isDownloading && initProgress && (
+                                                        <Box sx={{ mt: 1.5 }}>
+                                                            <Box sx={{
+                                                                width: '100%',
+                                                                height: 6,
+                                                                bgcolor: '#2a2a2a',
+                                                                borderRadius: '3px',
+                                                                overflow: 'hidden',
+                                                            }}>
+                                                                <Box sx={{
+                                                                    height: '100%',
+                                                                    width: `${initProgress.percent}%`,
+                                                                    bgcolor: '#ec4899',
+                                                                    borderRadius: '3px',
+                                                                    transition: 'width 0.3s ease',
+                                                                }} />
+                                                            </Box>
+                                                            <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '6px' }}>
+                                                                {initProgress.status}{initProgress.percent > 0 ? ` (${Math.round(initProgress.percent)}%)` : ''}
+                                                            </span>
+                                                        </Box>
+                                                    )}
                                                 </Box>
                                             );
                                         })}
