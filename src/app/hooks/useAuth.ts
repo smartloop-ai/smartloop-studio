@@ -25,22 +25,6 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           console.warn('useAuth: Could not load local projects:', err);
         }
 
-        // Auto-create a system project if none exist
-        if (projects.length === 0) {
-          try {
-            const result = await projectService.createProject({
-              name: 'General',
-              system: true,
-            });
-            if (result.success && result.data) {
-              projects = [result.data];
-              console.log('useAuth: Auto-created system project:', result.data.id);
-            }
-          } catch (err) {
-            console.warn('useAuth: Could not auto-create system project:', err);
-          }
-        }
-
         console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
         setUser({ name: 'Local', guest: true, projects, conversations: [] });
       } catch (error) {
@@ -65,10 +49,23 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
 
-    // When SLP service comes online, refresh projects in user state
+    // When SLP service comes online, refresh projects and auto-create system project if needed
     const handleSlpReady = async () => {
       try {
-        const projects = await projectService.getProjects();
+        let projects = await projectService.getProjects();
+
+        // Auto-create a system project if none exist
+        if (projects.length === 0) {
+          const result = await projectService.createProject({
+            name: 'General',
+            system: true,
+          });
+          if (result.success && result.data) {
+            projects = [result.data];
+            console.log('useAuth: Auto-created system project:', result.data.id);
+          }
+        }
+
         if (projects.length > 0) {
           setUser((prev: any) => prev ? { ...prev, projects } : prev);
         }
