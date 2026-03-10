@@ -300,7 +300,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         }));
 
         if (remaining.length === 0) {
-          // No conversations left — go to welcome screen
+          // No conversations left — go to home
           navigate('/', { replace: true });
         } else {
           // If currently viewing this conversation, navigate to most recent
@@ -436,8 +436,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
         navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
       } else {
-        // No conversations for this project, navigate to welcome screen
-        console.log('[Sidebar] No conversations for project, showing welcome screen');
+        // No conversations for this project, navigate to project view
+        console.log('[Sidebar] No conversations for project, showing project view');
         navigate(`/?project=${projectId}`);
       }
     } catch (error) {
