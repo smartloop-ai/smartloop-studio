@@ -5,6 +5,7 @@ const { spawn, execFileSync } = require('child_process');
 const { INSTALL_DIR } = require('./slp-setup');
 
 let localServicePort = null;
+let serviceProcess = null;
 
 function getSlpDir() {
   return path.join(os.homedir(), '.smartloop');
@@ -104,8 +105,14 @@ async function startService() {
     stdio: 'ignore',
   });
 
+  serviceProcess = proc;
+
   proc.on('error', (err) => {
     console.error('[SLP] Process error:', err.message);
+  });
+
+  proc.on('exit', () => {
+    if (serviceProcess === proc) serviceProcess = null;
   });
 
   // Poll for server.port file + health check (up to 120s)
@@ -140,24 +147,33 @@ async function startService() {
 
 /**
  * Stop the SLP server.
+ * Kills the child process directly if we own it, falls back to CLI command.
  */
 function stopService() {
-  const slpBinary = getSlpBinaryPath();
+  console.log('[SLP] Stopping service...');
 
-  if (!fs.existsSync(slpBinary)) {
-    console.warn('[SLP] Binary not found, cannot stop service');
-    return;
-  }
-
-  try {
-    console.log('[SLP] Stopping service...');
-    execFileSync(slpBinary, ['server', 'stop'], {
-      env: { ...process.env },
-      timeout: 10000,
-    });
-    console.log('[SLP] Service stopped');
-  } catch (error) {
-    console.warn('[SLP] Error stopping service:', error.message);
+  if (serviceProcess && !serviceProcess.killed) {
+    try {
+      serviceProcess.kill('SIGTERM');
+      console.log('[SLP] Service process terminated');
+    } catch (error) {
+      console.warn('[SLP] Error killing service process:', error.message);
+    }
+    serviceProcess = null;
+  } else {
+    // Fallback: service was started externally or process ref lost
+    const slpBinary = getSlpBinaryPath();
+    if (fs.existsSync(slpBinary)) {
+      try {
+        execFileSync(slpBinary, ['server', 'stop'], {
+          env: { ...process.env },
+          timeout: 10000,
+        });
+        console.log('[SLP] Service stopped via CLI');
+      } catch (error) {
+        console.warn('[SLP] Error stopping service via CLI:', error.message);
+      }
+    }
   }
 
   localServicePort = null;

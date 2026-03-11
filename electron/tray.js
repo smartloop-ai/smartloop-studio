@@ -4,6 +4,7 @@ const slpService = require('./slp-service');
 
 let tray = null;
 let mainWindow = null;
+let createWindowFn = null;
 
 /**
  * Create the system tray.
@@ -21,6 +22,28 @@ function createTray() {
  */
 function setMainWindow(win) {
   mainWindow = win;
+}
+
+/**
+ * Register the createWindow function so the tray can recreate the window.
+ */
+function setCreateWindow(fn) {
+  createWindowFn = fn;
+}
+
+/**
+ * Show the main window, recreating it if it was destroyed.
+ */
+function showOrCreateWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (createWindowFn) {
+      mainWindow = createWindowFn();
+    }
+    return;
+  }
+  mainWindow.show();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
 }
 
 /**
@@ -82,11 +105,7 @@ function refreshTray() {
     {
       label: 'Show Window',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.focus();
-        }
+        showOrCreateWindow();
       },
     },
     { type: 'separator' },
@@ -99,4 +118,4 @@ function refreshTray() {
   tray.setContextMenu(contextMenu);
 }
 
-module.exports = { createTray, setMainWindow, refreshTray };
+module.exports = { createTray, setMainWindow, setCreateWindow, refreshTray };

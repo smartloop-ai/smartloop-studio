@@ -7,7 +7,7 @@ const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService } = require('./slp-setup');
 const database = require('./database');
-const { createTray, setMainWindow, refreshTray } = require('./tray');
+const { createTray, setMainWindow, setCreateWindow, refreshTray } = require('./tray');
 const slpService = require('./slp-service');
 
 // Load environment variables from .env files (development only)
@@ -617,6 +617,23 @@ function createSplashScreen() {
 }
 
 
+function createStartingSplash() {
+  splashWindow = new BrowserWindow({
+    width: 300,
+    height: 300,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  splashWindow.loadFile(path.join(__dirname, 'splash-starting.html'));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -646,7 +663,15 @@ function createWindow() {
 
   // Window is shown explicitly after installation/setup completes
 
-  // Handle window closed
+  // Hide to tray instead of destroying so re-show is instant
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
+  // Only null out on actual destroy (app quit)
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -659,6 +684,8 @@ function createWindow() {
     }
     return { action: 'allow' };
   });
+
+  return mainWindow;
 }
 
 // Handle OAuth login - open in system browser
@@ -905,6 +932,12 @@ if (!gotTheLock) {
     createTray();
     createWindow();
     setMainWindow(mainWindow);
+    setCreateWindow(() => {
+      createWindow();
+      setMainWindow(mainWindow);
+      mainWindow.show();
+      return mainWindow;
+    });
     refreshTray();
 
     // Check if SLP daemon is already running AND all install steps completed
@@ -985,22 +1018,86 @@ if (!gotTheLock) {
           mainWindow.show();
         }
       }
+    } else if (installComplete) {
+      // Framework already installed but service not running — show minimal splash
+      console.log('[SLP] Framework installed but service not running — starting service...');
+      createStartingSplash();
+
+      (async () => {
+        try {
+          const serviceStarted = await slpService.startService();
+          if (!serviceStarted) {
+            console.error('[SLP] Service failed to start');
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+            return;
+          }
+
+          const baseUrl = slpService.getLocalBaseUrl();
+          refreshTray();
+
+          // Check if bootstrap is needed (e.g. no projects yet)
+          let needsBootstrap = false;
+          try {
+            const http = require('http');
+            const url = new URL(`${baseUrl}/v1/projects`);
+            const projects = await new Promise((resolve) => {
+              http.get({ hostname: url.hostname, port: url.port, path: url.pathname }, (res) => {
+                let body = '';
+                res.on('data', (c) => { body += c; });
+                res.on('end', () => {
+                  try {
+                    const data = JSON.parse(body);
+                    resolve(Array.isArray(data) ? data : (data?.projects || []));
+                  } catch { resolve([]); }
+                });
+              }).on('error', () => resolve([]));
+            });
+            needsBootstrap = projects.length === 0;
+          } catch {
+            needsBootstrap = true;
+          }
+
+          if (needsBootstrap) {
+            console.log('[SLP] No projects — running bootstrap');
+            await bootstrapSlpService(baseUrl);
+          }
+
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+            mainWindow.show();
+          }
+        } catch (error) {
+          console.error('[SLP] Service start failed:', error.message);
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+        }
+      })();
     } else {
-      // First launch or daemon not running — show splash and start service in background
+      // First launch — show splash and run full install
       currentSplashStep = 0;
       createSplashScreen();
 
       (async () => {
         try {
           // Step 1: Download & install SLP binary
-          let alreadyInstalled = false;
           const setupResult = await setupSlpService((progress) => {
             updateSplashProgress(progress);
           });
-          alreadyInstalled = setupResult === false;
 
           // If already installed, fast-forward steps 0-1
-          if (alreadyInstalled) {
+          if (setupResult === false) {
             currentSplashStep = 2;
           }
 
@@ -1124,13 +1221,11 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async (event) => {
+app.on('before-quit', (event) => {
+  app.isQuitting = true;
   database.closeDatabase();
   if (slpService.getLocalBaseUrl()) {
-    event.preventDefault();
-    await slpService.unloadModel();
     slpService.stopService();
-    app.exit(0);
   }
 });
 
