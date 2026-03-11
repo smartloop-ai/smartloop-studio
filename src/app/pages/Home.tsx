@@ -28,7 +28,6 @@ export default function Home() {
   const [user, setUser] = useAuthContext();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedProject, setSelectedProject]: any = useState(null);
-  const [showChat, setShowChat] = useState(false);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
@@ -135,23 +134,22 @@ export default function Home() {
       if (projects.length > 0) {
         setUser((prev: any) => prev ? { ...prev, projects } : prev);
 
-        // Auto-select default project and latest conversation if nothing is in the URL
+        // Restore last selected conversation from SQLite if nothing is in the URL
         if (!searchParams.get('project') && !searchParams.get('conversation')) {
+          const selected = await storageService.getSelectedConversation();
+
+          if (selected) {
+            const projectId = selected.project_id || projects.find((p: any) => p.system)?.id;
+            navigate(`/?conversation=${selected.id}&project=${projectId}`, { replace: true });
+            setIsLoading(false);
+            return true;
+          }
+
+          // No stored selection — fall back to system project
           const systemProject = projects.find((p: any) => p.system === true);
           const defaultProject = systemProject || projects[0];
           setSelectedProject(defaultProject);
-
-          const allConversations = await storageService.getConversations();
-          if (allConversations.length > 0) {
-            const sorted = allConversations.sort((a: any, b: any) =>
-              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
-            );
-            const mostRecent = sorted[0];
-            const projectId = mostRecent.project_id || defaultProject.id;
-            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
-          } else {
-            navigate(`/?project=${defaultProject.id}`, { replace: true });
-          }
+          navigate(`/?project=${defaultProject.id}`, { replace: true });
         }
 
         setIsLoading(false);
@@ -217,7 +215,6 @@ export default function Home() {
           } else if (selectedProject) {
             navigate(`/?project=${selectedProject.id}`);
           }
-          setShowChat(false);
           setConversation(null);
           setChatMessage(null);
         }
@@ -308,8 +305,10 @@ export default function Home() {
 
         console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
         setConversation({ ...foundConversation });
-        setShowChat(true);
         setActiveTab(0);
+
+        // Persist selection in SQLite
+        await storageService.selectConversation(urlConversationId);
 
         // Set project from conversation's project_id via local API (already enriched with local metadata)
         if (foundConversation.project_id) {
@@ -322,13 +321,28 @@ export default function Home() {
 
       loadAndSetConversation();
     } else if (urlProjectId) {
-      setConversation(null);
-      // Load project from local API (already enriched with local metadata)
+      const isExplicitNew = searchParams.get('new') === '1';
       (async () => {
         const project = await loadProjectFromApi(urlProjectId);
         if (project) {
           setSelectedProject(project);
         }
+
+        // Clear selection when switching to a project
+        await storageService.clearSelectedConversation();
+
+        // Auto-select latest conversation unless user explicitly started a new one
+        if (!isExplicitNew) {
+          const convos = await storageService.getConversations(urlProjectId);
+          if (convos.length > 0) {
+            const sorted = convos.sort((a: any, b: any) =>
+              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            );
+            navigate(`/?conversation=${sorted[0].id}&project=${urlProjectId}`, { replace: true });
+            return;
+          }
+        }
+        setConversation(null);
       })();
     } else {
       // No URL params — if conversations exist, auto-select the most recent one
@@ -348,7 +362,6 @@ export default function Home() {
         } else {
           // No conversations — auto-select system project so Chat has a valid project context
           setConversation(null);
-          setShowChat(false);
           setChatMessage(null);
           const systemProject = user?.projects?.find((p: any) => p.system === true);
           const fallbackProject = systemProject || user?.projects?.[0] || null;
@@ -361,7 +374,7 @@ export default function Home() {
 
   // Clear chatMessage after it's been passed to Chat component
   useEffect(() => {
-    if (chatMessage && showChat && conversation) {
+    if (chatMessage && conversation) {
       // Clear after a short delay to ensure Chat component has received it
       const timer = setTimeout(() => {
         console.log('Clearing chatMessage after initial send');
@@ -369,7 +382,7 @@ export default function Home() {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [chatMessage, showChat, conversation]);
+  }, [chatMessage, conversation]);
 
 
   // Load project data when selected, unload/load model on switch
@@ -490,37 +503,17 @@ export default function Home() {
   }, [selectedProject, user]);
 
   // When SLP service comes online, re-enrich selectedProject with API data and reload conversations
+  // NOTE: Initial project/conversation selection is handled by the loadProjects effect above.
+  // This handler only enriches already-selected state — it does NOT navigate.
   useEffect(() => {
     const handleServiceReady = async () => {
-      // Read current URL params directly to avoid stale closure
       const params = new URLSearchParams(window.location.search);
       const urlProjectId = params.get('project');
-      const urlConversationId = params.get('conversation');
 
       if (urlProjectId) {
         const project = await loadProjectFromApi(urlProjectId);
         if (project) {
           setSelectedProject(project);
-        }
-      } else if (!urlConversationId) {
-        // No project or conversation in URL — select default project and latest conversation
-        const projects = await projectService.getProjects();
-        if (projects.length > 0) {
-          const systemProject = projects.find((p: any) => p.system === true);
-          const defaultProject = systemProject || projects[0];
-          setSelectedProject(defaultProject);
-
-          const allConversations = await storageService.getConversations();
-          if (allConversations.length > 0) {
-            const sorted = allConversations.sort((a: any, b: any) =>
-              new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
-            );
-            const mostRecent = sorted[0];
-            const projectId = mostRecent.project_id || defaultProject.id;
-            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
-          } else {
-            navigate(`/?project=${defaultProject.id}`, { replace: true });
-          }
         }
       }
       loadProjectConversations();
@@ -628,7 +621,6 @@ export default function Home() {
             // No more conversations, go to project view
             navigate(`/?project=${projectId}`);
             setConversation(null);
-            setShowChat(false);
           }
         }
       } else {
@@ -699,7 +691,6 @@ export default function Home() {
             // No conversations left anywhere — go to home with system project
             navigate('/', { replace: true });
             setConversation(null);
-            setShowChat(false);
             const systemProject = user?.projects?.find((p: any) => p.system === true);
             setSelectedProject(systemProject || user?.projects?.[0] || null);
           } else {
@@ -797,12 +788,12 @@ export default function Home() {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
     setChatMessage(null);
-    setShowChat(true);
     setActiveTab(0);
+    storageService.clearSelectedConversation();
 
-    // Update URL to remove conversation param but keep project context
+    // Update URL with new=1 to signal explicit new conversation (not auto-select)
     if (selectedProject) {
-      navigate(`/?project=${selectedProject.id}`);
+      navigate(`/?project=${selectedProject.id}&new=1`);
     }
   };
 
@@ -819,10 +810,10 @@ export default function Home() {
       navigate(`/?conversation=${newConversation.id}`, { replace: true });
     }
 
-    // Set state immediately
+    // Set state immediately and persist selection
     setConversation(newConversation);
-    setShowChat(true);
     setActiveTab(0);
+    storageService.selectConversation(newConversation.id);
 
     // Dispatch conversationCreated event so sidebar refreshes from SQLite
     window.dispatchEvent(new CustomEvent('conversationCreated', {
@@ -948,7 +939,6 @@ export default function Home() {
 
         // Navigate to home and reset all state
         navigate('/');
-        setShowChat(false);
         setConversation(null);
         setChatMessage(null);
         setSelectedProject(null);

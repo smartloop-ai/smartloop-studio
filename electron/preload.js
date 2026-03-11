@@ -97,6 +97,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateConversation: (id, updates) => ipcRenderer.invoke('db-update-conversation', id, updates),
     deleteConversation: (id) => ipcRenderer.invoke('db-delete-conversation', id),
     deleteConversationsByProject: (projectId) => ipcRenderer.invoke('db-delete-conversations-by-project', projectId),
+    selectConversation: (id) => ipcRenderer.invoke('db-select-conversation', id),
+    clearSelectedConversation: () => ipcRenderer.invoke('db-clear-selected-conversation'),
+    getSelectedConversation: () => ipcRenderer.invoke('db-get-selected-conversation'),
     // Messages
     addMessage: (msg) => ipcRenderer.invoke('db-add-message', msg),
     addMessages: (conversationId, msgs) => ipcRenderer.invoke('db-add-messages', conversationId, msgs),

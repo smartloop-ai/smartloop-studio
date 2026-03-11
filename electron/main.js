@@ -105,6 +105,9 @@ ipcMain.handle('db-get-conversations', (event, projectId, order) => database.get
 ipcMain.handle('db-update-conversation', (event, id, updates) => database.updateConversation(id, updates));
 ipcMain.handle('db-delete-conversation', (event, id) => database.deleteConversation(id));
 ipcMain.handle('db-delete-conversations-by-project', (event, projectId) => database.deleteConversationsByProject(projectId));
+ipcMain.handle('db-select-conversation', (event, id) => database.selectConversation(id));
+ipcMain.handle('db-clear-selected-conversation', () => database.clearSelectedConversation());
+ipcMain.handle('db-get-selected-conversation', () => database.getSelectedConversation());
 
 // Messages
 ipcMain.handle('db-add-message', (event, msg) => database.addMessage(msg));

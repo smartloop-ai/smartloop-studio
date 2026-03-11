@@ -176,6 +176,36 @@ class StorageService {
     }
   }
 
+  // --- Conversation selection (SQLite) ---
+
+  async selectConversation(conversationId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.selectConversation(conversationId);
+    } catch (error) {
+      console.error('Error selecting conversation:', error);
+    }
+  }
+
+  async clearSelectedConversation(): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.clearSelectedConversation();
+    } catch (error) {
+      console.error('Error clearing selected conversation:', error);
+    }
+  }
+
+  async getSelectedConversation(): Promise<any | null> {
+    if (!this.db) return null;
+    try {
+      return await this.db.getSelectedConversation();
+    } catch (error) {
+      console.error('Error getting selected conversation:', error);
+      return null;
+    }
+  }
+
   // --- Project metadata (SQLite) ---
 
   async upsertProject(project: { id: string; name: string; color?: string; temperature?: number; system?: boolean }): Promise<any> {
