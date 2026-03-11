@@ -221,19 +221,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     return () => window.removeEventListener('slpServiceReady', handleServiceReady);
   }, []);
 
-  // Auto-select the system project on initial load when no project is in the URL
-  useEffect(() => {
-    if (pathname !== '/') return;
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('project') || urlParams.get('conversation')) return;
-
-    const allProjects = localProjects.length > 0 ? localProjects : (user?.projects || []);
-    const systemProject = allProjects.find((p: any) => p.system === true);
-    if (systemProject) {
-      handleProjectClick(systemProject.id);
-    }
-  }, [localProjects, user, pathname, location.search]);
-
   // Load conversations from SQLite (local mode) or user service (remote)
   const refreshConversations = async (): Promise<any[]> => {
     try {

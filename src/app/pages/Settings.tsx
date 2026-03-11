@@ -191,23 +191,28 @@ export default function SettingsPage() {
                     return;
                 }
             }
-            // Token missing or request failed — load from cache
-            const cached = await storageService.getItem('cached_remote_models');
-            if (cached) {
-                const models = JSON.parse(cached);
-                if (Array.isArray(models) && models.length > 0) {
-                    setRemoteModels(models);
-                }
-            }
-        } catch (err) {
-            console.warn('Failed to fetch remote models:', err);
-            // Try cache on error
-            try {
+            // Token missing or request failed — only use cache if token exists
+            if (token) {
                 const cached = await storageService.getItem('cached_remote_models');
                 if (cached) {
                     const models = JSON.parse(cached);
                     if (Array.isArray(models) && models.length > 0) {
                         setRemoteModels(models);
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to fetch remote models:', err);
+            // Try cache on error only if token exists
+            try {
+                const token = await storageService.getItem('token');
+                if (token) {
+                    const cached = await storageService.getItem('cached_remote_models');
+                    if (cached) {
+                        const models = JSON.parse(cached);
+                        if (Array.isArray(models) && models.length > 0) {
+                            setRemoteModels(models);
+                        }
                     }
                 }
             } catch {}

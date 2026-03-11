@@ -29,8 +29,9 @@ export default function ConversationTabs({
       const containerWidth = containerRef.current.offsetWidth;
       const buttonWidth = 60; // Approximate width for + button and margins
       const availableWidth = containerWidth - buttonWidth;
-      // Account for "New Conversation" tab if no current conversation
-      const tabCount = projectConversations.length + (currentConversation ? 0 : 1);
+      // Account for "New Conversation" tab only when user explicitly starts one (existing conversations exist)
+      const showNewTab = !currentConversation && projectConversations.length > 0;
+      const tabCount = projectConversations.length + (showNewTab ? 1 : 0);
 
       if (tabCount === 0) {
         setTabWidth(200);
@@ -105,8 +106,8 @@ export default function ConversationTabs({
           );
         })}
 
-        {/* New Conversation Tab - shown when no current conversation */}
-        {!currentConversation && (
+        {/* New Conversation Tab - only shown when user explicitly starts a new one (existing conversations exist) */}
+        {!currentConversation && projectConversations.length > 0 && (
           <div
             style={{ width: `${tabWidth}px`, flexShrink: 0 }}
             className="
