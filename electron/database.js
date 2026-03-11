@@ -59,6 +59,13 @@ function openDatabase() {
     CREATE INDEX IF NOT EXISTS idx_memory_usage_created ON memory_usage(created_at DESC);
   `);
 
+  // Migration: add is_selected column
+  const cols = db.prepare("PRAGMA table_info(conversations)").all();
+  if (!cols.find(c => c.name === 'is_selected')) {
+    db.exec("ALTER TABLE conversations ADD COLUMN is_selected INTEGER DEFAULT 0");
+    console.log('[DB] Added is_selected column to conversations');
+  }
+
   console.log('[DB] Database opened at', DB_PATH);
   return db;
 }
@@ -196,11 +203,31 @@ function deleteConversationsByProject(projectId) {
 }
 
 
+function selectConversation(id) {
+  const d = openDatabase();
+  d.prepare('UPDATE conversations SET is_selected = 0 WHERE is_selected = 1').run();
+  if (id) {
+    d.prepare('UPDATE conversations SET is_selected = 1 WHERE id = ?').run(id);
+  }
+}
+
+function clearSelectedConversation() {
+  const d = openDatabase();
+  d.prepare('UPDATE conversations SET is_selected = 0 WHERE is_selected = 1').run();
+}
+
+function getSelectedConversation() {
+  const d = openDatabase();
+  const row = d.prepare('SELECT * FROM conversations WHERE is_selected = 1 LIMIT 1').get();
+  return row ? formatConversation(row) : null;
+}
+
 function formatConversation(row) {
   return {
     id: row.id,
     title: row.title,
     project_id: row.project_id,
+    is_selected: !!row.is_selected,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -297,6 +324,9 @@ module.exports = {
   updateConversation,
   deleteConversation,
   deleteConversationsByProject,
+  selectConversation,
+  clearSelectedConversation,
+  getSelectedConversation,
   // Messages
   addMessage,
   addMessages,

@@ -199,39 +199,27 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   // Load projects from local API (enriched with local UI metadata like color)
   const loadLocalProjects = async () => {
     const projects = await projectService.getProjects();
-    if (projects.length > 0) {
-      setLocalProjects(projects);
-    }
+    setLocalProjects(projects);
   };
 
-  // Load projects and conversations on mount
+  // Load projects and conversations on mount and when user.projects changes
   const sidebarInitRef = useRef(false);
   useEffect(() => {
-    if (sidebarInitRef.current) return;
-    sidebarInitRef.current = true;
+    if (!sidebarInitRef.current) {
+      sidebarInitRef.current = true;
+    }
     loadLocalProjects();
     refreshConversations();
-  }, [user]);
+  }, [user?.projects?.length]);
 
-  // Reload when SLP service becomes ready (may fire after initial load failed)
+  // Reload when SLP service becomes ready (may fire after initial load)
   useEffect(() => {
     const handleServiceReady = () => { loadLocalProjects(); refreshConversations(); };
     window.addEventListener('slpServiceReady', handleServiceReady);
+    // Also check immediately in case event already fired
+    loadLocalProjects();
     return () => window.removeEventListener('slpServiceReady', handleServiceReady);
   }, []);
-
-  // Auto-select the system project on initial load when no project is in the URL
-  useEffect(() => {
-    if (pathname !== '/') return;
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('project') || urlParams.get('conversation')) return;
-
-    const allProjects = localProjects.length > 0 ? localProjects : (user?.projects || []);
-    const systemProject = allProjects.find((p: any) => p.system === true);
-    if (systemProject) {
-      handleProjectClick(systemProject.id);
-    }
-  }, [localProjects, user, pathname, location.search]);
 
   // Load conversations from SQLite (local mode) or user service (remote)
   const refreshConversations = async (): Promise<any[]> => {

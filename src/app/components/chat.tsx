@@ -513,13 +513,51 @@ export default function Chat(props: {
       if (projectId) {
         requestBody.project_id = projectId;
       }
-      let stream = await openai.chat.completions.create({
-        model: selectedModel,
-        messages: [messageObject],
-        stream: true,
-      }, {
-        body: requestBody,
-      }) as any;
+
+      const createStream = async () => {
+        return await openai.chat.completions.create({
+          model: selectedModel,
+          messages: [messageObject],
+          stream: true,
+        }, {
+          body: requestBody,
+        }) as any;
+      };
+
+      let stream: any;
+      try {
+        stream = await createStream();
+      } catch (err: any) {
+        // If 503 "No model loaded", load the model and retry once
+        if (err?.status === 503 || err?.message?.includes('503')) {
+          console.log('[Chat] 503 no model loaded, calling /v1/models/load and retrying...');
+          setMessages((prev: any) =>
+            prev.map((msg: any) =>
+              msg.id === responseId ? { ...msg, content: 'Loading model...' } : msg
+            )
+          );
+          try {
+            const loadRes = await fetch(`${localBaseUrl}/v1/models/load`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model_name: selectedModel }),
+            });
+            if (loadRes.ok && loadRes.body) {
+              const reader = loadRes.body.getReader();
+              while (true) {
+                const { done } = await reader.read();
+                if (done) break;
+              }
+            }
+          } catch (loadErr) {
+            console.error('[Chat] Model load failed:', loadErr);
+            throw err; // re-throw original error
+          }
+          stream = await createStream();
+        } else {
+          throw err;
+        }
+      }
 
       // Process the stream
       for await (const chunk of stream) {
