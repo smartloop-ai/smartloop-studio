@@ -47,8 +47,7 @@ export default function Home() {
   const [isSavingRules, setIsSavingRules] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
   const lastSavedRulesRef = useRef<string>('');
-  const [isEditingProjectName, setIsEditingProjectName] = useState(false);
-  const [editedProjectName, setEditedProjectName] = useState('');
+
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
@@ -153,6 +152,17 @@ export default function Home() {
         setIsLoading(false);
         return true;
       }
+
+      // Service responded but no projects exist yet — dismiss loader
+      // so user can see the page and create a project
+      const localBase = await import('@/app/constants').then(m => m.getLocalApiEndpoint());
+      if (localBase) {
+        setUser((prev: any) => prev ? { ...prev, projects: [] } : prev);
+        setSelectedProject(null);
+        setIsLoading(false);
+        return true;
+      }
+
       return false;
     };
 
@@ -743,44 +753,7 @@ export default function Home() {
     }
   };
 
-  const handleRenameProject = async () => {
-    if (!selectedProject || !editedProjectName.trim()) {
-      setIsEditingProjectName(false);
-      return;
-    }
 
-    // Prevent renaming system projects
-    if (selectedProject.system === true) {
-      setIsEditingProjectName(false);
-      return;
-    }
-
-    const newName = editedProjectName.trim();
-    if (newName === (selectedProject.name)) {
-      setIsEditingProjectName(false);
-      return;
-    }
-
-    try {
-      const result = await projectService.updateProject(selectedProject.id, { name: newName });
-
-      if (result.success) {
-        // Reload project from API to get fresh state
-        const updated = await loadProjectFromApi(selectedProject.id);
-        if (updated) {
-          setSelectedProject(updated);
-        }
-        // Dispatch event so sidebar reloads projects
-        window.dispatchEvent(new CustomEvent('projectUpdated'));
-      } else {
-        console.error('Failed to rename project:', result.error);
-      }
-    } catch (error) {
-      console.error('Error renaming project:', error);
-    }
-
-    setIsEditingProjectName(false);
-  };
 
   const handleStartNewConversation = () => {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
@@ -1328,138 +1301,117 @@ export default function Home() {
           <Box className="min-h-screen bg-black text-white">
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-black">
-              {/* Chat Header - matches project page style */}
-              <Box className="flex-none p-4">
-                <Box className="flex items-center justify-between gap-4">
-                  <Box className="flex items-center gap-4 flex-1 min-w-0">
-                    <Box
-                      sx={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: '2px',
-                        bgcolor: getProjectColor(selectedProject),
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Box className="flex-1 min-w-0">
-                      {isEditingProjectName && selectedProject ? (
-                        <TextField
-                          autoFocus
-                          value={editedProjectName}
-                          onChange={(e) => setEditedProjectName(e.target.value)}
-                          onBlur={handleRenameProject}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleRenameProject();
-                            } else if (e.key === 'Escape') {
-                              setIsEditingProjectName(false);
-                            }
-                          }}
-                          size="small"
-                          sx={{
-                            '& .MuiOutlinedInput-root': {
-                              color: 'white',
-                              fontSize: '1.25rem',
-                              fontWeight: 'bold',
-                              bgcolor: 'transparent',
-                              '& fieldset': {
-                                borderColor: '#ec4899',
-                              },
-                              '&:hover fieldset': {
-                                borderColor: '#ec4899',
-                              },
-                              '&.Mui-focused fieldset': {
-                                borderColor: '#ec4899',
-                              },
-                            },
-                          }}
-                        />
-                      ) : (
-                        <div
-                          className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
-                          onClick={() => {
-                            if (selectedProject && !selectedProject.system) {
-                              setEditedProjectName(selectedProject.name || '');
-                              setIsEditingProjectName(true);
-                            }
-                          }}
-                          title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
-                        >
-                          {selectedProject?.name || 'General'}
-                        </div>
-                      )}
-                    </Box>
+              {/* No projects — show empty state */}
+              {!selectedProject && (!user?.projects || user.projects.length === 0) ? (
+                <Box className="flex-1 flex items-center justify-center">
+                  <Box className="text-center max-w-md">
+                    <Typography variant="h5" sx={{ color: 'white', fontWeight: 600, mb: 1 }}>
+                      Welcome to Smartloop
+                    </Typography>
+                    <Typography sx={{ color: '#9ca3af', mb: 3, fontSize: '0.95rem' }}>
+                      Create a project to get started with your first conversation.
+                    </Typography>
+                    <button
+                      onClick={() => navigate('/projects')}
+                      className="px-6 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg transition-colors text-sm font-medium"
+                    >
+                      Create Project
+                    </button>
                   </Box>
                 </Box>
-              </Box>
+              ) : (
+                <>
+                  {/* Chat Header - matches project page style */}
+                  <Box className="flex-none p-4">
+                    <Box className="flex items-center justify-between gap-4">
+                      <Box className="flex items-center gap-4 flex-1 min-w-0">
+                        <Box
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: '2px',
+                            bgcolor: getProjectColor(selectedProject),
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Box className="flex-1 min-w-0">
+                          <div className="text-xl md:text-2xl font-bold text-white truncate">
+                            {selectedProject?.name || 'General'}
+                          </div>
+                        </Box>
+                      </Box>
+                    </Box>
+                  </Box>
 
-              {/* Tabs - show each conversation as tab plus Configuration */}
-              {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
-                <ConversationTabs
-                  projectConversations={projectConversations}
-                  currentConversation={conversation}
-                  onConversationSelect={(conversationId) => {
-                    const newUrl = selectedProject
-                      ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                      : `/?conversation=${conversationId}`;
-                    navigate(newUrl);
-                  }}
-                  onConversationDelete={handleDeleteConversationFromList}
-                  onNewConversation={handleStartNewConversation}
-                />
-              )}
-
-              {/* Main Content Area - 2 columns */}
-              <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                {/* Left Column - Chat or Documents Tab */}
-                <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                  {activeTab === 1 && selectedProject ? (
-                    <DocumentsTab
-                      user={user}
-                      setUser={setUser}
-                      selectedProject={selectedProject}
-                      setSelectedProject={setSelectedProject}
-                      currentProjectData={currentProjectData}
-                      setCurrentProjectData={setCurrentProjectData}
-                      setActiveTab={setActiveTab}
-                    />
-                  ) : (
-                    // Show Chat component (it handles the case when conversation is null)
-                    <Chat
-                      project={selectedProject}
-                      initialMessage={chatMessage}
-                      attachments={messageAttachments}
-                      conversation={conversation}
-                      onFileAttached={handleFileAttached}
-                      onAttachmentsClear={() => {
-                        setMessageAttachments([]);
+                  {/* Tabs - show each conversation as tab plus Configuration */}
+                  {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
+                    <ConversationTabs
+                      projectConversations={projectConversations}
+                      currentConversation={conversation}
+                      onConversationSelect={(conversationId) => {
+                        const newUrl = selectedProject
+                          ? `/?conversation=${conversationId}&project=${selectedProject.id}`
+                          : `/?conversation=${conversationId}`;
+                        navigate(newUrl);
                       }}
-                      onTokenUpdate={() => {
-                        window.dispatchEvent(new Event('refreshUserTokens'));
-                      }}
-                      onConversationCreated={handleConversationCreated}
-                      onConversationUpdate={handleConversationUpdate}
+                      onConversationDelete={handleDeleteConversationFromList}
+                      onNewConversation={handleStartNewConversation}
                     />
                   )}
-                </Box>
 
-                {/* Right Sidebar - Rules & Documents */}
-                {activeTab !== 1 && (
-                  <RightSidebar
-                    selectedProject={selectedProject}
-                    currentProjectData={currentProjectData}
-                    projectRules={projectRules}
-                    isSavingRules={isSavingRules}
-                    onSaveRules={(rules: string) => {
-                      saveProjectRules(rules || '');
-                    }}
-                    onAddDocument={() => setShowFileUploadDialog(true)}
-                    onDeleteDocument={handleOpenDeleteDocDialog}
-                    user={user}
-                    setUser={setUser}
-                  />
-                )}
-              </Box>
+                  {/* Main Content Area - 2 columns */}
+                  <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                    {/* Left Column - Chat or Documents Tab */}
+                    <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
+                      {activeTab === 1 && selectedProject ? (
+                        <DocumentsTab
+                          user={user}
+                          setUser={setUser}
+                          selectedProject={selectedProject}
+                          setSelectedProject={setSelectedProject}
+                          currentProjectData={currentProjectData}
+                          setCurrentProjectData={setCurrentProjectData}
+                          setActiveTab={setActiveTab}
+                        />
+                      ) : (
+                        // Show Chat component (it handles the case when conversation is null)
+                        <Chat
+                          project={selectedProject}
+                          initialMessage={chatMessage}
+                          attachments={messageAttachments}
+                          conversation={conversation}
+                          onFileAttached={handleFileAttached}
+                          onAttachmentsClear={() => {
+                            setMessageAttachments([]);
+                          }}
+                          onTokenUpdate={() => {
+                            window.dispatchEvent(new Event('refreshUserTokens'));
+                          }}
+                          onConversationCreated={handleConversationCreated}
+                          onConversationUpdate={handleConversationUpdate}
+                        />
+                      )}
+                    </Box>
+
+                    {/* Right Sidebar - Rules & Documents */}
+                    {activeTab !== 1 && (
+                      <RightSidebar
+                        selectedProject={selectedProject}
+                        currentProjectData={currentProjectData}
+                        projectRules={projectRules}
+                        isSavingRules={isSavingRules}
+                        onSaveRules={(rules: string) => {
+                          saveProjectRules(rules || '');
+                        }}
+                        onAddDocument={() => setShowFileUploadDialog(true)}
+                        onDeleteDocument={handleOpenDeleteDocDialog}
+                        user={user}
+                        setUser={setUser}
+                      />
+                    )}
+                  </Box>
+                </>
+              )}
             </Box>
           </Box>
         </>
