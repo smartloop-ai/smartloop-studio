@@ -5,9 +5,10 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, INSTALL_DIR, VERSION: SLP_VERSION } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService } = require('./slp-setup');
 const database = require('./database');
-const { createTray, updateTrayMenu } = require('./tray');
+const { createTray, setMainWindow, refreshTray } = require('./tray');
+const slpService = require('./slp-service');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -23,7 +24,6 @@ let mainWindow;
 let splashWindow;
 let currentSplashStep = 0;
 let tokenRefreshInterval = null;
-let localServicePort = null;
 
 // Token refresh configuration
 const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes (before 15-min expiry)
@@ -121,171 +121,16 @@ ipcMain.handle('db-get-memory-usage', (event, limit) => database.getMemoryUsage(
 
 // --- Local SLP service helpers ---
 
-function getSlpDir() {
-  return path.join(os.homedir(), '.smartloop');
-}
-
-/**
- * Returns the path to the installed slp binary at ~/.smartloop/slp.
- * Downloaded and installed by slp-setup.js on first launch.
- */
-function getSlpBinaryPath() {
-  const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
-  return path.join(INSTALL_DIR, binaryName);
-}
-
-let slpProcess = null;
-
-/**
- * Ensure the ~/.smartloop directory exists.
- * The bootstrap API endpoint handles workspace and config creation.
- */
-function ensureSlpDir() {
-  const slpDir = getSlpDir();
-  fs.mkdirSync(slpDir, { recursive: true });
-}
-
-/**
- * Start the SLP server as a background process.
- */
-async function startSlpService() {
-  const slpBinary = getSlpBinaryPath();
-
-  if (!fs.existsSync(slpBinary)) {
-    console.error('[SLP] Binary not found at:', slpBinary);
-    return false;
-  }
-
-  // Ensure the directory exists
-  ensureSlpDir();
-
-  // Check if already running by reading server.port
-  const existingPort = readLocalServicePort();
-  if (existingPort) {
-    try {
-      const res = await fetch(`http://localhost:${existingPort}/health`);
-      if (res.ok) {
-        console.log('[SLP] Service already running on port', existingPort);
-        localServicePort = existingPort;
-        return true;
-      }
-    } catch {
-      // Not responding, stale port file — remove it so we can detect new port
-      console.log('[SLP] Stale port file, removing and starting fresh...');
-      try {
-        fs.unlinkSync(path.join(getSlpDir(), 'server.port'));
-      } catch { }
-    }
-  }
-
-  console.log('[SLP] Starting service from:', slpBinary);
-
-  // Start directly — more reliable than systemd/launchd for interactive startup
-  slpProcess = execFile(slpBinary, ['server', 'start'], {
-    env: { ...process.env },
-    detached: false,
-  }, (error, stdout, stderr) => {
-    if (error) {
-      console.error('[SLP] Server start error:', error.message);
-      if (stderr) console.error('[SLP] stderr:', stderr);
-    }
-    if (stdout) console.log('[SLP] stdout:\n', stdout);
-  });
-
-  slpProcess.on('error', (err) => {
-    console.error('[SLP] Process error:', err.message);
-  });
-
-  return new Promise((resolve) => {
-
-    // Poll for server.port file to appear (up to 120 seconds)
-    // The PyInstaller binary takes a while to unpack and load PyTorch
-    let attempts = 0;
-    const maxAttempts = 120;
-    const pollInterval = setInterval(async () => {
-      attempts++;
-      const port = readLocalServicePort();
-      if (port) {
-        // Verify the server is actually responding
-        try {
-          const res = await fetch(`http://localhost:${port}/health`);
-          if (res.ok) {
-            clearInterval(pollInterval);
-            localServicePort = port;
-            console.log('[SLP] Service started on port', port);
-            resolve(true);
-            return;
-          }
-        } catch {
-          // Port file exists but server not ready yet
-        }
-      }
-      if (attempts >= maxAttempts) {
-        clearInterval(pollInterval);
-        console.error('[SLP] Timed out waiting for service to start');
-        resolve(false);
-      }
-    }, 1000);
-  });
-}
-
-/**
- * Stop the SLP server.
- */
-function stopSlpService() {
-  const slpBinary = getSlpBinaryPath();
-
-  if (!fs.existsSync(slpBinary)) {
-    console.warn('[SLP] Binary not found, cannot stop service');
-    return;
-  }
-
-  try {
-    console.log('[SLP] Stopping service...');
-    execFileSync(slpBinary, ['server', 'stop'], {
-      env: { ...process.env },
-      timeout: 10000,
-    });
-    console.log('[SLP] Service stopped');
-  } catch (error) {
-    console.warn('[SLP] Error stopping service:', error.message);
-  }
-
-  slpProcess = null;
-  localServicePort = null;
-}
-
-function readLocalServicePort() {
-  try {
-    const portFile = path.join(getSlpDir(), 'server.port');
-    const portStr = fs.readFileSync(portFile, 'utf-8').trim();
-    const port = parseInt(portStr, 10);
-    if (!isNaN(port) && port > 0) {
-      console.log('[SLP] Local service port:', port);
-      return port;
-    }
-  } catch (error) {
-    // Silently ignore — port file may not exist yet
-  }
-  return null;
-}
-
-function getLocalBaseUrl() {
-  return localServicePort ? `http://localhost:${localServicePort}` : null;
-}
 
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {
-  if (!localServicePort) {
-    localServicePort = readLocalServicePort();
-  }
-  return getLocalBaseUrl();
+  return slpService.getLocalBaseUrl();
 });
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
 ipcMain.handle('slp-add-document', async (event, filePath) => {
   const http = require('http');
-  const baseUrl = getLocalBaseUrl();
+  const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
 
   const url = new URL(`${baseUrl}/v1/documents`);
@@ -367,7 +212,7 @@ ipcMain.handle('slp-add-document', async (event, filePath) => {
 // IPC: get SLP config
 ipcMain.handle('get-slp-config', async () => {
   try {
-    const configPath = path.join(getSlpDir(), 'config.json');
+    const configPath = path.join(slpService.getSlpDir(), 'config.json');
     const data = fs.readFileSync(configPath, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
@@ -421,31 +266,31 @@ ipcMain.handle('get-system-info', async () => {
 
 // IPC: start/stop SLP service from renderer
 ipcMain.handle('slp-service-start', async () => {
-  const result = await startSlpService();
+  const result = await slpService.startService();
   refreshTray();
-  return { success: result, port: localServicePort };
+  return { success: result, port: slpService.getPort() };
 });
 
 ipcMain.handle('slp-service-stop', async () => {
-  stopSlpService();
+  slpService.stopService();
   refreshTray();
   return { success: true };
 });
 
 ipcMain.handle('slp-service-uninstall', async () => {
-  stopSlpService();
+  slpService.stopService();
   uninstallSlpService();
   refreshTray();
   return { success: true };
 });
 
 ipcMain.handle('slp-service-status', async () => {
-  const baseUrl = getLocalBaseUrl();
+  const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { running: false };
   try {
     const res = await fetch(`${baseUrl}/health`);
     const health = await res.json();
-    return { running: true, port: localServicePort, health };
+    return { running: true, port: slpService.getPort(), health };
   } catch {
     return { running: false };
   }
@@ -454,7 +299,7 @@ ipcMain.handle('slp-service-status', async () => {
 // Bootstrap the SLP service via SSE endpoint
 // Handles workspace creation, model download, project creation, and model loading
 async function bootstrapSlpService(baseUrl) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
     const http = require('http');
     const url = new URL(`${baseUrl}/v1/bootstrap`);
@@ -467,8 +312,7 @@ async function bootstrapSlpService(baseUrl) {
       headers: { 'Content-Type': 'application/json' },
     }, (res) => {
       if (res.statusCode !== 200) {
-        console.error('[SLP] Bootstrap request failed:', res.statusCode);
-        resolve(false);
+        reject(new Error(`Bootstrap request failed with status ${res.statusCode}`));
         return;
       }
 
@@ -503,14 +347,12 @@ async function bootstrapSlpService(baseUrl) {
       });
 
       res.on('error', (err) => {
-        console.error('[SLP] Bootstrap stream error:', err.message);
-        resolve(false);
+        reject(new Error(`Bootstrap stream error: ${err.message}`));
       });
     });
 
     req.on('error', (err) => {
-      console.error('[SLP] Bootstrap request error:', err.message);
-      resolve(false);
+      reject(new Error(`Bootstrap request error: ${err.message}`));
     });
 
     req.end();
@@ -553,9 +395,12 @@ function updateSplashProgress(data) {
   }
 
   const stepLabels = ['Downloading framework...', 'Starting service...', 'Downloading model...', 'Starting up...'];
-  const statusMsg = showProgress
-    ? `Downloading... ${downloadedMB} / ${totalMB} MB (${pct}%)`
-    : stepLabels[currentSplashStep] || '';
+  const isError = data.status === 'error';
+  const statusMsg = isError
+    ? (data.message || 'An error occurred.')
+    : showProgress
+      ? `Downloading... ${downloadedMB} / ${totalMB} MB (${pct}%)`
+      : stepLabels[currentSplashStep] || '';
 
   splashWindow.webContents.executeJavaScript(`
     (function() {
@@ -600,55 +445,17 @@ function updateSplashProgress(data) {
   `).catch(() => { });
 }
 
-// Load model via API (used for subsequent loads after bootstrap)
-async function loadModel(baseUrl) {
-  try {
-    console.log('[SLP] Loading model...');
-    const res = await fetch(`${baseUrl}/v1/models/load`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'inference' })
-    });
-    if (res.ok) {
-      console.log('[SLP] Model loaded successfully');
-      return true;
-    }
-    console.error('[SLP] Model load failed:', res.status);
-    return false;
-  } catch (error) {
-    console.error('[SLP] Error loading model:', error.message);
-    return false;
-  }
-}
-
-// Unload model via API
-async function unloadModel() {
-  const baseUrl = getLocalBaseUrl();
-  if (!baseUrl) return;
-
-  try {
-    console.log('[SLP] Unloading model...');
-    await fetch(`${baseUrl}/v1/models/unload`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    });
-    console.log('[SLP] Model unloaded');
-  } catch (error) {
-    console.warn('[SLP] Error unloading model:', error.message);
-  }
-}
-
 // IPC: load model (called from renderer)
 ipcMain.handle('load-model', async () => {
-  const baseUrl = getLocalBaseUrl();
+  const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
-  const result = await loadModel(baseUrl);
+  const result = await slpService.loadModel(baseUrl);
   return { success: result };
 });
 
 // IPC: unload model (called from renderer)
 ipcMain.handle('unload-model', async () => {
-  await unloadModel();
+  await slpService.unloadModel();
   return { success: true };
 });
 
@@ -809,16 +616,6 @@ function createSplashScreen() {
   splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHTML)}`);
 }
 
-function refreshTray() {
-  updateTrayMenu({
-    localServicePort,
-    startSlpService,
-    stopSlpService,
-    unloadModel,
-    getLocalBaseUrl,
-    mainWindow,
-  });
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -847,11 +644,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist-web/index.html'));
   }
 
-  // Show window when content is ready
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  // Window is shown explicitly after installation/setup completes
 
   // Handle window closed
   mainWindow.on('closed', () => {
@@ -1110,87 +903,67 @@ if (!gotTheLock) {
 
     // Create system tray and main window (hidden until ready)
     createTray();
-    refreshTray();
     createWindow();
+    setMainWindow(mainWindow);
+    refreshTray();
 
-    // Check if SLP daemon is already running
-    const existingPort = readLocalServicePort();
-    let serviceReady = false;
+    // Check if SLP daemon is already running AND all install steps completed
+    const serviceReady = await slpService.checkHealth();
+    const installComplete = database.isFullyInstalled();
 
-    if (existingPort) {
-      try {
-        const res = await fetch(`http://localhost:${existingPort}/health`);
-        if (res.ok) {
-          localServicePort = existingPort;
-          serviceReady = true;
-          console.log('[SLP] Daemon already running on port', existingPort);
-        }
-      } catch {
-        console.log('[SLP] Daemon not responding, will do full setup');
-      }
-    }
-
-    if (serviceReady) {
+    if (serviceReady && installComplete) {
       // Daemon already running — show window immediately, no splash
-      const baseUrl = getLocalBaseUrl();
+      const baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
+        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
         mainWindow.show();
       }
     } else {
-      // First launch or daemon not running — show splash and do full setup
+      // First launch or daemon not running — show splash and start service in background
       currentSplashStep = 0;
       createSplashScreen();
 
       (async () => {
         try {
-          // Download & install SLP binary via curl (async — won't freeze the app)
+          // Step 1: Download & install SLP binary
           let alreadyInstalled = false;
-          try {
-            const setupResult = await setupSlpService((progress) => {
-              updateSplashProgress(progress);
-            });
-            alreadyInstalled = setupResult === false;
-          } catch (error) {
-            console.warn('[SLP] Setup failed, proceeding anyway:', error.message);
-          }
+          const setupResult = await setupSlpService((progress) => {
+            updateSplashProgress(progress);
+          });
+          alreadyInstalled = setupResult === false;
 
           // If already installed, fast-forward steps 0-1
           if (alreadyInstalled) {
             currentSplashStep = 2;
           }
 
+          // Step 2: Start the service as a detached background process
           updateSplashProgress({ status: 'preparing', message: 'Preparing service...' });
 
-          const serviceStarted = await startSlpService();
-          const baseUrl = getLocalBaseUrl();
-
-          if (serviceStarted && baseUrl) {
-            refreshTray();
-
-            try {
-              await bootstrapSlpService(baseUrl);
-            } catch (error) {
-              console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
-            }
-
-            // Notify renderer after bootstrap so projects are available
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
-            }
-
-            // Mark final step as active
-            updateSplashProgress({ status: 'starting', message: 'Starting up...' });
-          } else {
-            console.warn('[SLP] Service did not start, proceeding without local service');
+          const serviceStarted = await slpService.startService();
+          if (!serviceStarted) {
+            console.error('[SLP] Service failed to start — staying on splash');
+            updateSplashProgress({ status: 'error', message: 'Failed to start service. Please restart the app.' });
+            return;
           }
-        } catch (error) {
-          console.error('[SLP] Unexpected error during startup:', error.message);
-        } finally {
+
+          const baseUrl = slpService.getLocalBaseUrl();
+          refreshTray();
+
+          // Step 3: Bootstrap (workspace, model download, project setup)
+          await bootstrapSlpService(baseUrl);
+
+          // Step 4: All steps complete — transition to main window
+          updateSplashProgress({ status: 'starting', message: 'Starting up...' });
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+          }
+
           // Brief delay so user sees the final step complete
           await new Promise((r) => setTimeout(r, 500));
-          // Show main window first, then close splash
+
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.show();
           }
@@ -1198,6 +971,9 @@ if (!gotTheLock) {
             splashWindow.close();
             splashWindow = null;
           }
+        } catch (error) {
+          console.error('[SLP] Setup failed:', error.message);
+          updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });
         }
       })();
     }
@@ -1283,12 +1059,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async (event) => {
-  // Close database and clean up before quitting
   database.closeDatabase();
-  if (getLocalBaseUrl()) {
+  if (slpService.getLocalBaseUrl()) {
     event.preventDefault();
-    await unloadModel();  // Free GPU memory
-    // Don't stop service — it runs as a daemon
+    await slpService.unloadModel();
+    slpService.stopService();
     app.exit(0);
   }
 });

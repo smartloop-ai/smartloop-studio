@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile, spawn } = require('child_process');
+const database = require('./database');
 
 const VERSION = '1.0.1';
 const BASE_URL = `https://storage.googleapis.com/smartloop-gcp-us-east-releases/${VERSION}`;
@@ -269,34 +270,70 @@ async function installMacService() {
 
 /**
  * Run the full setup: download binary from GCS, register service, configure PATH.
- * Fully async — does NOT block the Electron main process.
- * Post-install tasks (service registration, symlink, PATH) run in parallel.
+ * Each of the 4 sub-steps is tracked in SQLite so a partial install (e.g. crash
+ * mid-setup) is automatically resumed on the next launch rather than restarted.
+ * If the installed version differs from VERSION all steps are reset and re-run.
  * @param {function} onProgress - Optional callback for splash screen progress updates.
  * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
 async function setupSlpService(onProgress = null) {
-  if (!needsInstall()) {
+  // If version changed, reset all step tracking so we reinstall cleanly
+  if (needsInstall()) {
+    console.log('[SLP Setup] Version changed or not installed — resetting install status');
+    database.resetInstallStatus();
+  }
+
+  const status = database.getInstallStatus();
+  const done = status.reduce((acc, s) => { acc[s.step] = s.completed === 1; return acc; }, {});
+
+  if (done[0] && done[1] && done[2] && done[3]) {
     console.log('[SLP Setup] Already installed version', VERSION);
     return false;
   }
 
-  console.log('[SLP Setup] Installing SLP service version', VERSION);
+  console.log('[SLP Setup] Installing SLP service version', VERSION,
+    '— steps completed:', Object.entries(done).filter(([, v]) => v).map(([k]) => k).join(',') || 'none');
 
-  // 1. Download and extract binary
-  await downloadAndExtract(onProgress);
+  // Step 0: Download and extract binary
+  if (!done[0]) {
+    await downloadAndExtract(onProgress);
+    database.setInstallStepComplete(0);
+    console.log('[SLP Setup] Step 0 (download_extract) complete');
+  } else {
+    console.log('[SLP Setup] Step 0 (download_extract) already done, skipping');
+  }
 
-  // 2. Run all post-install tasks in parallel
   if (onProgress) onProgress({ status: 'preparing', message: 'Starting service...' });
 
-  const parallelTasks = [
-    process.platform === 'linux' ? installLinuxService() :
-      process.platform === 'darwin' ? installMacService() : Promise.resolve(),
-    Promise.resolve().then(() => { createSymlink(); setupPath(); }),
-  ];
+  // Step 1: Register OS service
+  if (!done[1]) {
+    if (process.platform === 'linux') await installLinuxService();
+    else if (process.platform === 'darwin') await installMacService();
+    database.setInstallStepComplete(1);
+    console.log('[SLP Setup] Step 1 (service_install) complete');
+  } else {
+    console.log('[SLP Setup] Step 1 (service_install) already done, skipping');
+  }
 
-  await Promise.all(parallelTasks);
+  // Step 2: Create symlink
+  if (!done[2]) {
+    createSymlink();
+    database.setInstallStepComplete(2);
+    console.log('[SLP Setup] Step 2 (symlink_created) complete');
+  } else {
+    console.log('[SLP Setup] Step 2 (symlink_created) already done, skipping');
+  }
 
-  // 3. Write version marker
+  // Step 3: Configure PATH in shell profiles
+  if (!done[3]) {
+    setupPath();
+    database.setInstallStepComplete(3);
+    console.log('[SLP Setup] Step 3 (path_configured) complete');
+  } else {
+    console.log('[SLP Setup] Step 3 (path_configured) already done, skipping');
+  }
+
+  // Write version marker only once all steps are done
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
   fs.writeFileSync(MARKER_FILE, VERSION);
 
@@ -328,6 +365,9 @@ function uninstallSlpService() {
   if (fs.existsSync(INSTALL_DIR)) {
     fs.rmSync(INSTALL_DIR, { recursive: true, force: true });
   }
+
+  // Reset install step tracking so setup runs fresh on next launch
+  try { database.resetInstallStatus(); } catch { }
 
   console.log('[SLP Setup] Uninstall complete');
 }

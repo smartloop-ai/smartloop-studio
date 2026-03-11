@@ -1,7 +1,9 @@
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
+const slpService = require('./slp-service');
 
 let tray = null;
+let mainWindow = null;
 
 /**
  * Create the system tray.
@@ -15,21 +17,21 @@ function createTray() {
 }
 
 /**
- * Rebuild the tray context menu to reflect current service state.
- *
- * @param {object} opts
- * @param {number|null} opts.localServicePort - current port or null
- * @param {() => Promise<boolean>} opts.startSlpService
- * @param {() => void} opts.stopSlpService
- * @param {() => Promise<void>} opts.unloadModel
- * @param {() => string|null} opts.getLocalBaseUrl
- * @param {BrowserWindow|null} opts.mainWindow
+ * Set the main window reference so the tray can notify it.
  */
-function updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unloadModel, getLocalBaseUrl, mainWindow }) {
+function setMainWindow(win) {
+  mainWindow = win;
+}
+
+/**
+ * Rebuild the tray context menu to reflect current service state.
+ */
+function refreshTray() {
   if (!tray) return;
 
-  const isRunning = !!localServicePort;
-  const statusLabel = isRunning ? `Running on port ${localServicePort}` : 'Stopped';
+  const port = slpService.getPort();
+  const isRunning = !!port;
+  const statusLabel = isRunning ? `Running on port ${port}` : 'Stopped';
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Smartloop Studio', enabled: false },
@@ -40,12 +42,13 @@ function updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unl
       label: 'Start Service',
       enabled: !isRunning,
       click: async () => {
-        const result = await startSlpService();
-        if (result) {
-          updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unloadModel, getLocalBaseUrl, mainWindow });
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl: getLocalBaseUrl() });
-          }
+        const result = await slpService.startService();
+        refreshTray();
+        if (result && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('slp-service-ready', {
+            port: slpService.getPort(),
+            baseUrl: slpService.getLocalBaseUrl(),
+          });
         }
       },
     },
@@ -53,24 +56,25 @@ function updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unl
       label: 'Stop Service',
       enabled: isRunning,
       click: async () => {
-        if (getLocalBaseUrl()) await unloadModel();
-        stopSlpService();
-        updateTrayMenu({ localServicePort: null, startSlpService, stopSlpService, unloadModel, getLocalBaseUrl, mainWindow });
+        await slpService.unloadModel();
+        slpService.stopService();
+        refreshTray();
       },
     },
     {
       label: 'Restart Service',
       enabled: isRunning,
       click: async () => {
-        if (getLocalBaseUrl()) await unloadModel();
-        stopSlpService();
-        updateTrayMenu({ localServicePort: null, startSlpService, stopSlpService, unloadModel, getLocalBaseUrl, mainWindow });
-        const result = await startSlpService();
-        if (result) {
-          updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unloadModel, getLocalBaseUrl, mainWindow });
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl: getLocalBaseUrl() });
-          }
+        await slpService.unloadModel();
+        slpService.stopService();
+        refreshTray();
+        const result = await slpService.startService();
+        refreshTray();
+        if (result && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('slp-service-ready', {
+            port: slpService.getPort(),
+            baseUrl: slpService.getLocalBaseUrl(),
+          });
         }
       },
     },
@@ -95,4 +99,4 @@ function updateTrayMenu({ localServicePort, startSlpService, stopSlpService, unl
   tray.setContextMenu(contextMenu);
 }
 
-module.exports = { createTray, updateTrayMenu };
+module.exports = { createTray, setMainWindow, refreshTray };
