@@ -227,13 +227,22 @@ export default function SettingsPage() {
     }, [user, fetchLocalModels, fetchRemoteModels]);
 
     // Set selected model: load from storage first, fallback to local config
+    // Validates stored model still exists in SLP config to avoid showing stale/deleted models
     useEffect(() => {
         const loadSelectedModel = async () => {
             const stored = await storageService.getItem('selected_model');
-            if (stored) {
+            const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
+            const configModelNames = new Set(
+                (slpConfig?.workspace?.models || []).map((m: any) => m.model_name).filter(Boolean)
+            );
+
+            if (stored && configModelNames.has(stored)) {
                 setSelectedModel(stored);
-            } else if (slpConfig) {
-                const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
+            } else {
+                // Stored model not in config (deleted/stale) — fall back to active model
+                if (stored) {
+                    await storageService.removeItem('selected_model');
+                }
                 if (activeModel?.model_name) {
                     setSelectedModel(activeModel.model_name);
                     await storageService.setItem('selected_model', activeModel.model_name);
@@ -545,8 +554,10 @@ export default function SettingsPage() {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
                         if (!activeModel) return null;
 
-                        const quantize = activeModel.config?.quantize?.toUpperCase() || '—';
-                        const ctxSize = activeModel.config?.ctx_size;
+                        // Show specs for the selected model, not just the is_active one
+                        const displayModel = slpConfig?.workspace?.models?.find((m: any) => m.model_name === selectedModel) || activeModel;
+                        const quantize = displayModel.config?.quantize?.toUpperCase() || '—';
+                        const ctxSize = displayModel.config?.ctx_size;
                         const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
                         const ramTotal = systemInfo?.totalMemGb;
 
