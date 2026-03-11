@@ -54,7 +54,6 @@ export default function Home() {
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
-  const [activeModelName, setActiveModelName] = useState('');
 
   // Load active model name and load model when project changes
   useEffect(() => {
@@ -66,7 +65,6 @@ export default function Home() {
       } else {
         modelName = await storageService.getItem('selected_model') || '';
       }
-      if (modelName) setActiveModelName(modelName);
 
       // Call /v1/models/load to ensure the model is loaded for this project
       if (modelName && selectedProject?.id) {
