@@ -174,7 +174,7 @@ async function startSlpService() {
       console.log('[SLP] Stale port file, removing and starting fresh...');
       try {
         fs.unlinkSync(path.join(getSlpDir(), 'server.port'));
-      } catch {}
+      } catch { }
     }
   }
 
@@ -340,7 +340,7 @@ ipcMain.handle('slp-add-document', async (event, filePath) => {
             const payload = buffer.trim().startsWith('data: ') ? buffer.trim().slice(6) : buffer.trim();
             const data = JSON.parse(payload);
             if (data.id || data.source || data.document_id) lastDocument = data;
-          } catch {}
+          } catch { }
         }
 
         if (res.statusCode === 200 || res.statusCode === 201) {
@@ -388,7 +388,7 @@ ipcMain.handle('get-system-info', async () => {
   try {
     const result = execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits'], { timeout: 3000 }).toString().trim();
     gpuName = result.split('\n')[0].trim() || null;
-  } catch {}
+  } catch { }
 
   // Fallback: lspci on Linux
   if (!gpuName && process.platform === 'linux') {
@@ -397,7 +397,7 @@ ipcMain.handle('get-system-info', async () => {
       const result = execSync("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display'", { timeout: 3000, shell: true }).toString();
       const match = result.match(/:\s+(.+)$/m);
       if (match) gpuName = match[1].trim();
-    } catch {}
+    } catch { }
   }
 
   // Fallback: system_profiler on macOS
@@ -407,7 +407,7 @@ ipcMain.handle('get-system-info', async () => {
       const result = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model'", { timeout: 3000, shell: true }).toString();
       const match = result.match(/Chipset Model:\s+(.+)$/m);
       if (match) gpuName = match[1].trim();
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -597,7 +597,7 @@ function updateSplashProgress(data) {
       }
       document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
     })();
-  `).catch(() => {});
+  `).catch(() => { });
 }
 
 // Load model via API (used for subsequent loads after bootstrap)
@@ -846,6 +846,12 @@ function createWindow() {
     // In production, load the built Vite app
     mainWindow.loadFile(path.join(__dirname, '../dist-web/index.html'));
   }
+
+  // Show window when content is ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
   // Handle window closed
   mainWindow.on('closed', () => {
