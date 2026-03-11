@@ -1328,153 +1328,141 @@ export default function Home() {
 
 
           <Box className="min-h-screen bg-black text-white">
-              {/* Chat View with 2-column layout */}
-              <Box className="h-screen flex flex-col bg-black">
-                {/* Chat Header - matches project page style */}
-                <Box className="flex-none p-4">
-                  <Box className="flex items-center justify-between gap-4">
-                    <Box className="flex items-center gap-4 flex-1 min-w-0">
-                      <Box
-                        sx={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: '2px',
-                          bgcolor: getProjectColor(selectedProject),
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Box className="flex-1 min-w-0">
-                        {isEditingProjectName && selectedProject ? (
-                          <TextField
-                            autoFocus
-                            value={editedProjectName}
-                            onChange={(e) => setEditedProjectName(e.target.value)}
-                            onBlur={handleRenameProject}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleRenameProject();
-                              } else if (e.key === 'Escape') {
-                                setIsEditingProjectName(false);
-                              }
-                            }}
-                            size="small"
-                            sx={{
-                              '& .MuiOutlinedInput-root': {
-                                color: 'white',
-                                fontSize: '1.25rem',
-                                fontWeight: 'bold',
-                                bgcolor: 'transparent',
-                                '& fieldset': {
-                                  borderColor: '#ec4899',
-                                },
-                                '&:hover fieldset': {
-                                  borderColor: '#ec4899',
-                                },
-                                '&.Mui-focused fieldset': {
-                                  borderColor: '#ec4899',
-                                },
-                              },
-                            }}
-                          />
-                        ) : (
-                          <div
-                            className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
-                            onClick={() => {
-                              if (selectedProject && !selectedProject.system) {
-                                setEditedProjectName(selectedProject.name || '');
-                                setIsEditingProjectName(true);
-                              }
-                            }}
-                            title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
-                          >
-                            {selectedProject?.name || 'General'}
-                          </div>
-                        )}
-                      </Box>
-                    </Box>
-                    {activeModelName && (
-                      <Box sx={{
-                        px: 1.5,
-                        py: 0.5,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(255,255,255,0.06)',
-                        borderRadius: '6px',
+            {/* Chat View with 2-column layout */}
+            <Box className="h-screen flex flex-col bg-black">
+              {/* Chat Header - matches project page style */}
+              <Box className="flex-none p-4">
+                <Box className="flex items-center justify-between gap-4">
+                  <Box className="flex items-center gap-4 flex-1 min-w-0">
+                    <Box
+                      sx={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: '2px',
+                        bgcolor: getProjectColor(selectedProject),
                         flexShrink: 0,
-                      }}>
-                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', fontWeight: 500 }}>{activeModelName}</span>
-                      </Box>
-                    )}
+                      }}
+                    />
+                    <Box className="flex-1 min-w-0">
+                      {isEditingProjectName && selectedProject ? (
+                        <TextField
+                          autoFocus
+                          value={editedProjectName}
+                          onChange={(e) => setEditedProjectName(e.target.value)}
+                          onBlur={handleRenameProject}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameProject();
+                            } else if (e.key === 'Escape') {
+                              setIsEditingProjectName(false);
+                            }
+                          }}
+                          size="small"
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              color: 'white',
+                              fontSize: '1.25rem',
+                              fontWeight: 'bold',
+                              bgcolor: 'transparent',
+                              '& fieldset': {
+                                borderColor: '#ec4899',
+                              },
+                              '&:hover fieldset': {
+                                borderColor: '#ec4899',
+                              },
+                              '&.Mui-focused fieldset': {
+                                borderColor: '#ec4899',
+                              },
+                            },
+                          }}
+                        />
+                      ) : (
+                        <div
+                          className={`text-xl md:text-2xl font-bold text-white truncate ${selectedProject && !selectedProject.system ? 'cursor-pointer hover:text-pink-400 transition-colors' : ''}`}
+                          onClick={() => {
+                            if (selectedProject && !selectedProject.system) {
+                              setEditedProjectName(selectedProject.name || '');
+                              setIsEditingProjectName(true);
+                            }
+                          }}
+                          title={selectedProject && !selectedProject.system ? 'Click to rename' : undefined}
+                        >
+                          {selectedProject?.name || 'General'}
+                        </div>
+                      )}
+                    </Box>
                   </Box>
                 </Box>
+              </Box>
 
-                {/* Tabs - show each conversation as tab plus Configuration */}
-                {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
-                  <ConversationTabs
-                    projectConversations={projectConversations}
-                    currentConversation={conversation}
-                    onConversationSelect={(conversationId) => {
-                      const newUrl = selectedProject
-                        ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                        : `/?conversation=${conversationId}`;
-                      navigate(newUrl);
-                    }}
-                    onConversationDelete={handleDeleteConversationFromList}
-                    onNewConversation={handleStartNewConversation}
-                  />
-                )}
+              {/* Tabs - show each conversation as tab plus Configuration */}
+              {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
+                <ConversationTabs
+                  projectConversations={projectConversations}
+                  currentConversation={conversation}
+                  onConversationSelect={(conversationId) => {
+                    const newUrl = selectedProject
+                      ? `/?conversation=${conversationId}&project=${selectedProject.id}`
+                      : `/?conversation=${conversationId}`;
+                    navigate(newUrl);
+                  }}
+                  onConversationDelete={handleDeleteConversationFromList}
+                  onNewConversation={handleStartNewConversation}
+                />
+              )}
 
-                {/* Main Content Area - 2 columns */}
-                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                  {/* Left Column - Chat or Documents Tab */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                    {activeTab === 1 && selectedProject ? (
-                      <DocumentsTab
-                        user={user}
-                        setUser={setUser}
-                        selectedProject={selectedProject}
-                        setSelectedProject={setSelectedProject}
-                        currentProjectData={currentProjectData}
-                        setCurrentProjectData={setCurrentProjectData}
-                        setActiveTab={setActiveTab}
-                      />
-                    ) : (
-                      // Show Chat component (it handles the case when conversation is null)
-                      <Chat
-                        project={selectedProject}
-                        initialMessage={chatMessage}
-                        attachments={messageAttachments}
-                        conversation={conversation}
-                        onFileAttached={handleFileAttached}
-                        onAttachmentsClear={() => {
-                          setMessageAttachments([]);
-                        }}
-                        onTokenUpdate={() => {
-                          window.dispatchEvent(new Event('refreshUserTokens'));
-                        }}
-                        onConversationCreated={handleConversationCreated}
-                        onConversationUpdate={handleConversationUpdate}
-                      />
-                    )}
-                  </Box>
-
-                  {/* Right Sidebar - Rules & Documents */}
-                  {activeTab !== 1 && (
-                    <RightSidebar
-                      selectedProject={selectedProject}
-                      currentProjectData={currentProjectData}
-                      projectRules={projectRules}
-                      isSavingRules={isSavingRules}
-                      onSaveRules={(rules: string) => {
-                        saveProjectRules(rules || '');
-                      }}
-                      onAddDocument={() => setShowFileUploadDialog(true)}
-                      onDeleteDocument={handleOpenDeleteDocDialog}
+              {/* Main Content Area - 2 columns */}
+              <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                {/* Left Column - Chat or Documents Tab */}
+                <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
+                  {activeTab === 1 && selectedProject ? (
+                    <DocumentsTab
                       user={user}
                       setUser={setUser}
+                      selectedProject={selectedProject}
+                      setSelectedProject={setSelectedProject}
+                      currentProjectData={currentProjectData}
+                      setCurrentProjectData={setCurrentProjectData}
+                      setActiveTab={setActiveTab}
+                    />
+                  ) : (
+                    // Show Chat component (it handles the case when conversation is null)
+                    <Chat
+                      project={selectedProject}
+                      initialMessage={chatMessage}
+                      attachments={messageAttachments}
+                      conversation={conversation}
+                      onFileAttached={handleFileAttached}
+                      onAttachmentsClear={() => {
+                        setMessageAttachments([]);
+                      }}
+                      onTokenUpdate={() => {
+                        window.dispatchEvent(new Event('refreshUserTokens'));
+                      }}
+                      onConversationCreated={handleConversationCreated}
+                      onConversationUpdate={handleConversationUpdate}
                     />
                   )}
                 </Box>
+
+                {/* Right Sidebar - Rules & Documents */}
+                {activeTab !== 1 && (
+                  <RightSidebar
+                    selectedProject={selectedProject}
+                    currentProjectData={currentProjectData}
+                    projectRules={projectRules}
+                    isSavingRules={isSavingRules}
+                    onSaveRules={(rules: string) => {
+                      saveProjectRules(rules || '');
+                    }}
+                    onAddDocument={() => setShowFileUploadDialog(true)}
+                    onDeleteDocument={handleOpenDeleteDocDialog}
+                    user={user}
+                    setUser={setUser}
+                  />
+                )}
               </Box>
+            </Box>
           </Box>
         </>
       )}
