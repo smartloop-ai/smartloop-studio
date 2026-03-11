@@ -53,11 +53,25 @@ function openDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS install_status (
+      step INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      completed_at TEXT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_conversations_project ON conversations(project_id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memory_usage_created ON memory_usage(created_at DESC);
   `);
+
+  // Seed install_status rows (4 steps) if not present
+  const seedStep = db.prepare('INSERT OR IGNORE INTO install_status (step, name, completed) VALUES (?, ?, 0)');
+  seedStep.run(0, 'download_extract');
+  seedStep.run(1, 'service_install');
+  seedStep.run(2, 'symlink_created');
+  seedStep.run(3, 'path_configured');
 
   // Migration: add is_selected column
   const cols = db.prepare("PRAGMA table_info(conversations)").all();
@@ -308,6 +322,30 @@ function getMemoryUsage(limit = 60) {
     .reverse(); // Return in chronological order
 }
 
+// --- Install Status ---
+
+function setInstallStepComplete(step) {
+  const d = openDatabase();
+  d.prepare('UPDATE install_status SET completed = 1, completed_at = ? WHERE step = ?')
+    .run(new Date().toISOString(), step);
+}
+
+function getInstallStatus() {
+  const d = openDatabase();
+  return d.prepare('SELECT step, name, completed, completed_at FROM install_status ORDER BY step ASC').all();
+}
+
+function isFullyInstalled() {
+  const d = openDatabase();
+  const row = d.prepare('SELECT COUNT(*) as cnt FROM install_status WHERE completed = 0').get();
+  return row.cnt === 0;
+}
+
+function resetInstallStatus() {
+  const d = openDatabase();
+  d.prepare('UPDATE install_status SET completed = 0, completed_at = NULL').run();
+}
+
 module.exports = {
   openDatabase,
   closeDatabase,
@@ -335,4 +373,9 @@ module.exports = {
   // Memory usage
   addMemoryUsage,
   getMemoryUsage,
+  // Install status
+  setInstallStepComplete,
+  getInstallStatus,
+  isFullyInstalled,
+  resetInstallStatus,
 };
