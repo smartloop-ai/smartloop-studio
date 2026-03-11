@@ -909,15 +909,81 @@ if (!gotTheLock) {
 
     // Check if SLP daemon is already running AND all install steps completed
     const serviceReady = await slpService.checkHealth();
-    const installComplete = database.isFullyInstalled();
+    let installComplete = database.isFullyInstalled();
+
+    // If the service is already healthy but install steps weren't tracked,
+    // mark all 4 steps as complete (e.g. service was started externally).
+    if (serviceReady && !installComplete) {
+      console.log('[SLP] Service is healthy — marking all install steps as complete');
+      for (let step = 0; step < 4; step++) {
+        database.setInstallStepComplete(step);
+      }
+      installComplete = true;
+    }
 
     if (serviceReady && installComplete) {
-      // Daemon already running — show window immediately, no splash
+      // Daemon already running — check if bootstrap is needed (e.g. no projects yet)
       const baseUrl = slpService.getLocalBaseUrl();
-      refreshTray();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-        mainWindow.show();
+      let needsBootstrap = false;
+
+      try {
+        const http = require('http');
+        const url = new URL(`${baseUrl}/v1/projects`);
+        const projects = await new Promise((resolve) => {
+          http.get({ hostname: url.hostname, port: url.port, path: url.pathname }, (res) => {
+            let body = '';
+            res.on('data', (c) => { body += c; });
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(body);
+                resolve(Array.isArray(data) ? data : (data?.projects || []));
+              } catch { resolve([]); }
+            });
+          }).on('error', () => resolve([]));
+        });
+        needsBootstrap = projects.length === 0;
+      } catch {
+        needsBootstrap = true;
+      }
+
+      if (needsBootstrap) {
+        // No projects — show splash and run bootstrap (downloads model, creates default project)
+        console.log('[SLP] Service healthy but no projects — running bootstrap with splash');
+        currentSplashStep = 2;
+        createSplashScreen();
+
+        (async () => {
+          try {
+            await bootstrapSlpService(baseUrl);
+
+            updateSplashProgress({ status: 'starting', message: 'Starting up...' });
+            refreshTray();
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+            }
+
+            await new Promise((r) => setTimeout(r, 500));
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
+            }
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
+          } catch (error) {
+            console.error('[SLP] Bootstrap failed:', error.message);
+            updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });
+          }
+        })();
+      } else {
+        // Projects exist — show window immediately, no splash
+        refreshTray();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+          mainWindow.show();
+        }
       }
     } else {
       // First launch or daemon not running — show splash and start service in background
