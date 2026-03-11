@@ -105,6 +105,9 @@ ipcMain.handle('db-get-conversations', (event, projectId, order) => database.get
 ipcMain.handle('db-update-conversation', (event, id, updates) => database.updateConversation(id, updates));
 ipcMain.handle('db-delete-conversation', (event, id) => database.deleteConversation(id));
 ipcMain.handle('db-delete-conversations-by-project', (event, projectId) => database.deleteConversationsByProject(projectId));
+ipcMain.handle('db-select-conversation', (event, id) => database.selectConversation(id));
+ipcMain.handle('db-clear-selected-conversation', () => database.clearSelectedConversation());
+ipcMain.handle('db-get-selected-conversation', () => database.getSelectedConversation());
 
 // Messages
 ipcMain.handle('db-add-message', (event, msg) => database.addMessage(msg));
@@ -1158,16 +1161,17 @@ if (!gotTheLock) {
           const baseUrl = getLocalBaseUrl();
 
           if (serviceStarted && baseUrl) {
-            // Notify renderer that the local service is ready
             refreshTray();
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
-            }
 
             try {
               await bootstrapSlpService(baseUrl);
             } catch (error) {
               console.warn('[SLP] Bootstrap failed during startup, proceeding anyway:', error.message);
+            }
+
+            // Notify renderer after bootstrap so projects are available
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('slp-service-ready', { port: localServicePort, baseUrl });
             }
 
             // Mark final step as active
