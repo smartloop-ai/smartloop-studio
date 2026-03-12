@@ -115,14 +115,58 @@ export default function Chat(props: {
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const [isModelLoading, setIsModelLoading] = useState(false);
+  const [isServiceReady, setIsServiceReady] = useState(false);
+  const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
 
-  // Track model init status from Settings
+  // Check if the SLP service is already available, and listen for it to come online
   useEffect(() => {
-    const handler = (e: any) => {
+    let cancelled = false;
+    (async () => {
+      const url = await getLocalApiEndpoint();
+      if (!cancelled && url) setIsServiceReady(true);
+    })();
+    const handler = () => { if (!cancelled) setIsServiceReady(true); };
+    window.addEventListener('slpServiceReady', handler);
+    return () => { cancelled = true; window.removeEventListener('slpServiceReady', handler); };
+  }, []);
+
+  // Fetch status info (model, memory) when service is ready and periodically
+  useEffect(() => {
+    if (!isServiceReady) return;
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const model = await storageService.getItem('selected_model') || 'gemma3-1b';
+        const baseUrl = await getLocalApiEndpoint();
+        let memPct: number | null = null;
+        if (baseUrl) {
+          try {
+            const res = await fetch(`${baseUrl}/health`);
+            if (res.ok) {
+              const health = await res.json();
+              memPct = health?.memory_percent ?? health?.memory ?? null;
+            }
+          } catch {}
+        }
+        if (!cancelled) setStatusInfo({ model, memory: memPct });
+      } catch {}
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [isServiceReady]);
+
+  // Track model init status from Settings and sync status bar
+  useEffect(() => {
+    const handler = async (e: any) => {
       const loading = e.detail?.loading ?? false;
       modelLoadingRef.current = loading;
       setIsModelLoading(loading);
-      console.log('[Chat] Model init status:', e.detail);
+      // When model finishes loading, refresh the status bar
+      if (!loading) {
+        const model = e.detail?.model || await storageService.getItem('selected_model') || 'gemma3-1b';
+        setStatusInfo(prev => ({ ...prev, model }));
+      }
     };
     window.addEventListener('modelInitStatus', handler);
     return () => window.removeEventListener('modelInitStatus', handler);
@@ -1119,8 +1163,8 @@ export default function Chat(props: {
                 abortControllerRef.current.abort();
               }
             }}
-            placeholder={isModelLoading ? "Loading model..." : "Enter your prompt..."}
-            disabled={isModelLoading}
+            placeholder="Enter your prompt..."
+            disabled={!isServiceReady}
             isLoading={isLoading}
             allowAttachments={true}
             conversation={props.conversation}
@@ -1140,6 +1184,47 @@ export default function Chat(props: {
             selectedQuote={selectedQuote}
             onQuoteClear={handleQuoteClear}
           />
+          <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-gray-600 leading-none">
+            {isServiceReady ? (
+              <>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-pink-500 flex-shrink-0"></span>
+                  <span>ready</span>
+                </span>
+                {statusInfo.model && (
+                  <span className="flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                      <path d="M8 1.5C5.5 1.5 3.5 3.5 3.5 6c0 1.5.7 2.8 1.8 3.6V12a.5.5 0 00.5.5h4.4a.5.5 0 00.5-.5V9.6c1.1-.8 1.8-2.1 1.8-3.6 0-2.5-2-4.5-4.5-4.5z" stroke="#4b5563" strokeWidth="0.75" fill="none" />
+                      <line x1="5.5" y1="13.5" x2="10.5" y2="13.5" stroke="#4b5563" strokeWidth="0.75" />
+                      <line x1="5.5" y1="14.5" x2="10.5" y2="14.5" stroke="#4b5563" strokeWidth="0.75" />
+                    </svg>
+                    <span>{statusInfo.model.replace(/-/g, ' ')}</span>
+                  </span>
+                )}
+                {statusInfo.memory !== null && (
+                  <span className="flex items-center gap-1 ml-auto">
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                      <rect x="3" y="3" width="10" height="10" rx="1" stroke="#4b5563" strokeWidth="0.75" fill="none" />
+                      <rect x="5" y="5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
+                      <rect x="8.5" y="5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
+                      <rect x="5" y="8.5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
+                      <rect x="8.5" y="8.5" width="2.5" height="2.5" rx="0.3" fill={statusInfo.memory > 80 ? '#ef4444' : statusInfo.memory > 60 ? '#f59e0b' : '#4b5563'} />
+                      <line x1="1" y1="6" x2="3" y2="6" stroke="#4b5563" strokeWidth="0.75" />
+                      <line x1="1" y1="10" x2="3" y2="10" stroke="#4b5563" strokeWidth="0.75" />
+                      <line x1="13" y1="6" x2="15" y2="6" stroke="#4b5563" strokeWidth="0.75" />
+                      <line x1="13" y1="10" x2="15" y2="10" stroke="#4b5563" strokeWidth="0.75" />
+                    </svg>
+                    <span>memory pressure {Math.round(statusInfo.memory)}%</span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-yellow-500 animate-pulse flex-shrink-0"></span>
+                <span>starting</span>
+              </span>
+            )}
+          </div>
         </footer>
 
       </Box>
