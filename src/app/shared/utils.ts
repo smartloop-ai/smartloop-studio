@@ -133,28 +133,28 @@ export const OAuthUtils: OAuthUtilsType = {
 export const dialogStyles = {
   // Standard dialog paper props
   paper: {
-    bgcolor: '#000000',
-    backgroundColor: '#000000',
+    bgcolor: 'var(--sl-bg-base)',
+    backgroundColor: 'var(--sl-bg-base)',
     backgroundImage: 'none',
-    border: '1px solid #1a1a1a',
+    border: '1px solid var(--sl-border-subtle)',
     borderRadius: '12px',
     maxWidth: '480px',
   },
   // Darker backdrop
   backdrop: {
     backdropFilter: 'blur(2px)',
-    bgcolor: 'rgba(0, 0, 0, 0.4)',
+    bgcolor: 'var(--sl-black-alpha-40)',
   },
   // Wide dialog paper props (for larger dialogs)
   paperWide: {
-    bgcolor: '#000000',
-    backgroundColor: '#000000',
+    bgcolor: 'var(--sl-bg-base)',
+    backgroundColor: 'var(--sl-bg-base)',
     backgroundImage: 'none',
     backdropFilter: 'blur(10px)',
-    border: '1px solid rgba(236, 72, 153, 0.3)',
+    border: '1px solid var(--sl-brand-alpha-30)',
     borderRadius: '16px',
     maxWidth: '600px',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+    boxShadow: '0 8px 32px var(--sl-black-alpha-50)',
   },
 };
 

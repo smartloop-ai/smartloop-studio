@@ -221,12 +221,12 @@ export default function ProjectsList() {
                       size="small"
                       onClick={() => setViewMode('grid')}
                       sx={{
-                        color: viewMode === 'grid' ? '#ec4899' : '#9ca3af',
-                        bgcolor: viewMode === 'grid' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
-                        border: viewMode === 'grid' ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                        color: viewMode === 'grid' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                        bgcolor: viewMode === 'grid' ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                        border: viewMode === 'grid' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
-                          bgcolor: 'rgba(236, 72, 153, 0.1)',
-                          borderColor: 'rgba(236, 72, 153, 0.2)',
+                          bgcolor: 'var(--sl-brand-alpha-10)',
+                          borderColor: 'var(--sl-brand-alpha-20)',
                         },
                         padding: '8px',
                         borderRadius: '6px',
@@ -238,12 +238,12 @@ export default function ProjectsList() {
                       size="small"
                       onClick={() => setViewMode('list')}
                       sx={{
-                        color: viewMode === 'list' ? '#ec4899' : '#9ca3af',
-                        bgcolor: viewMode === 'list' ? 'rgba(236, 72, 153, 0.1)' : 'transparent',
-                        border: viewMode === 'list' ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                        color: viewMode === 'list' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                        bgcolor: viewMode === 'list' ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                        border: viewMode === 'list' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
-                          bgcolor: 'rgba(236, 72, 153, 0.1)',
-                          borderColor: 'rgba(236, 72, 153, 0.2)',
+                          bgcolor: 'var(--sl-brand-alpha-10)',
+                          borderColor: 'var(--sl-brand-alpha-20)',
                         },
                         padding: '8px',
                         borderRadius: '6px',
@@ -278,8 +278,8 @@ export default function ProjectsList() {
                 onClose={() => setSortMenuAnchor(null)}
                 PaperProps={{
                   sx: {
-                    bgcolor: '#1a1a1a',
-                    border: '1px solid #2a2a2a',
+                    bgcolor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     borderRadius: '8px',
                     minWidth: '180px',
                     mt: 1,
@@ -292,15 +292,15 @@ export default function ProjectsList() {
                     setSortMenuAnchor(null);
                   }}
                   sx={{
-                    color: '#e5e7eb',
+                    color: 'var(--sl-text-secondary)',
                     fontSize: '14px',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    '&:hover': { bgcolor: '#2a2a2a' }
+                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
                   }}
                 >
                   <span>By Name</span>
-                  {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: '#ec4899', ml: 2 }} />}
+                  {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -308,15 +308,15 @@ export default function ProjectsList() {
                     setSortMenuAnchor(null);
                   }}
                   sx={{
-                    color: '#e5e7eb',
+                    color: 'var(--sl-text-secondary)',
                     fontSize: '14px',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    '&:hover': { bgcolor: '#2a2a2a' }
+                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
                   }}
                 >
                   <span>By Last Used</span>
-                  {sortBy === 'lastUsed' && <CheckIcon sx={{ fontSize: 18, color: '#ec4899', ml: 2 }} />}
+                  {sortBy === 'lastUsed' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
                 </MenuItem>
               </Menu>
 
@@ -333,14 +333,14 @@ export default function ProjectsList() {
                     border: '1px solid rgba(75, 85, 99, 0.3)',
                     transition: 'all 0.2s',
                     '&:hover': {
-                      borderColor: 'rgba(236, 72, 153, 0.5)',
+                      borderColor: 'var(--sl-brand-alpha-50)',
                     },
                     '&:focus-within': {
-                      borderColor: '#ec4899',
+                      borderColor: 'var(--sl-brand-primary)',
                     },
                   }}
                 >
-                  <SearchIcon sx={{ color: '#6b7280' }} />
+                  <SearchIcon sx={{ color: 'var(--sl-text-disabled)' }} />
                   <input
                     type="text"
                     placeholder="Search projects..."
@@ -370,7 +370,7 @@ export default function ProjectsList() {
                         height: viewMode === 'grid' ? '100%' : 'auto',
                         '&:hover': {
                           bgcolor: 'rgba(17, 24, 39, 0.8)',
-                          borderColor: 'rgba(236, 72, 153, 0.4)',
+                          borderColor: 'var(--sl-brand-alpha-40)',
                         }
                       }}
                       onClick={() => handleOpenProject(project, 0)}
@@ -395,11 +395,11 @@ export default function ProjectsList() {
                               variant="outlined"
                               sx={{
                                 bgcolor: 'transparent',
-                                color: '#ec4899',
+                                color: 'var(--sl-brand-primary)',
                                 fontSize: '11px',
                                 height: '22px',
                                 fontWeight: 500,
-                                border: '1px solid rgba(236, 72, 153, 0.3)',
+                                border: '1px solid var(--sl-brand-alpha-30)',
                                 borderRadius: '4px',
                               }}
                             />
@@ -409,11 +409,11 @@ export default function ProjectsList() {
                               variant="outlined"
                               sx={{
                                 bgcolor: 'transparent',
-                                color: '#ec4899',
+                                color: 'var(--sl-brand-primary)',
                                 fontSize: '11px',
                                 height: '22px',
                                 fontWeight: 600,
-                                border: '1px solid rgba(236, 72, 153, 0.3)',
+                                border: '1px solid var(--sl-brand-alpha-30)',
                                 borderRadius: '4px',
                               }}
                             />
@@ -432,13 +432,13 @@ export default function ProjectsList() {
                               handleOpenProject(project, 0);
                             }}
                             sx={{
-                              color: '#9ca3af',
-                              bgcolor: 'rgba(236, 72, 153, 0.1)',
-                              border: '1px solid rgba(236, 72, 153, 0.2)',
+                              color: 'var(--sl-text-muted)',
+                              bgcolor: 'var(--sl-brand-alpha-10)',
+                              border: '1px solid var(--sl-brand-alpha-20)',
                               '&:hover': {
-                                color: '#ec4899',
-                                bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                borderColor: 'rgba(236, 72, 153, 0.4)',
+                                color: 'var(--sl-brand-primary)',
+                                bgcolor: 'var(--sl-brand-alpha-20)',
+                                borderColor: 'var(--sl-brand-alpha-40)',
                                 transform: 'scale(1.05)',
                               },
                               transition: 'all 0.2s',
@@ -454,11 +454,11 @@ export default function ProjectsList() {
                               handleOpenSettings(project);
                             }}
                             sx={{
-                              color: '#9ca3af',
+                              color: 'var(--sl-text-muted)',
                               bgcolor: 'rgba(168, 85, 247, 0.1)',
                               border: '1px solid rgba(168, 85, 247, 0.2)',
                               '&:hover': {
-                                color: '#a855f7',
+                                color: 'var(--sl-status-purple)',
                                 bgcolor: 'rgba(168, 85, 247, 0.2)',
                                 borderColor: 'rgba(168, 85, 247, 0.4)',
                                 transform: 'scale(1.05)',
@@ -477,13 +477,13 @@ export default function ProjectsList() {
                                 handleOpenDeleteDialog(project);
                               }}
                               sx={{
-                                color: '#9ca3af',
-                                bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                color: 'var(--sl-text-muted)',
+                                bgcolor: 'var(--sl-danger-alpha-10)',
+                                border: '1px solid var(--sl-danger-alpha-20)',
                                 '&:hover': {
-                                  color: '#ef4444',
-                                  bgcolor: 'rgba(239, 68, 68, 0.2)',
-                                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                                  color: 'var(--sl-status-error)',
+                                  bgcolor: 'var(--sl-danger-alpha-20)',
+                                  borderColor: 'var(--sl-danger-alpha-50)',
                                   transform: 'scale(1.05)',
                                 },
                                 transition: 'all 0.2s',
@@ -529,10 +529,10 @@ export default function ProjectsList() {
                   position: 'absolute',
                   right: 12,
                   top: 12,
-                  color: '#6b7280',
+                  color: 'var(--sl-text-disabled)',
                   '&:hover': {
-                    color: '#fff',
-                    bgcolor: '#1a1a1a',
+                    color: 'var(--sl-text-primary)',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                   },
                 }}
               >
@@ -546,7 +546,7 @@ export default function ProjectsList() {
               <form onSubmit={handleDeleteProject}>
                 <Box className="space-y-4">
                   <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <DeleteIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
                       <Typography className="text-red-400 font-medium mb-1">
                         Warning: This action cannot be undone
@@ -572,20 +572,20 @@ export default function ProjectsList() {
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           color: 'white',
-                          bgcolor: '#000',
+                          bgcolor: 'var(--sl-bg-base)',
                           borderRadius: '8px',
                           '& fieldset': {
-                            borderColor: '#2a2a2a',
+                            borderColor: 'var(--sl-border-default)',
                           },
                           '&:hover fieldset': {
-                            borderColor: '#3a3a3a',
+                            borderColor: 'var(--sl-border-hover)',
                           },
                           '&.Mui-focused fieldset': {
-                            borderColor: '#ef4444',
+                            borderColor: 'var(--sl-status-error)',
                           },
                         },
                         '& .MuiInputBase-input::placeholder': {
-                          color: '#6b7280',
+                          color: 'var(--sl-text-disabled)',
                           opacity: 1,
                         },
                       }}
@@ -649,10 +649,10 @@ export default function ProjectsList() {
                   position: 'absolute',
                   right: 12,
                   top: 12,
-                  color: '#6b7280',
+                  color: 'var(--sl-text-disabled)',
                   '&:hover': {
-                    color: '#fff',
-                    bgcolor: '#1a1a1a',
+                    color: 'var(--sl-text-primary)',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                   },
                 }}
               >
@@ -680,20 +680,20 @@ export default function ProjectsList() {
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           color: 'white',
-                          bgcolor: '#000',
+                          bgcolor: 'var(--sl-bg-base)',
                           borderRadius: '8px',
                           '& fieldset': {
-                            borderColor: '#2a2a2a',
+                            borderColor: 'var(--sl-border-default)',
                           },
                           '&:hover fieldset': {
-                            borderColor: '#3a3a3a',
+                            borderColor: 'var(--sl-border-hover)',
                           },
                           '&.Mui-focused fieldset': {
-                            borderColor: '#ec4899',
+                            borderColor: 'var(--sl-brand-primary)',
                           },
                         },
                         '& .MuiInputBase-input::placeholder': {
-                          color: '#6b7280',
+                          color: 'var(--sl-text-disabled)',
                           opacity: 1,
                         },
                       }}
@@ -716,12 +716,12 @@ export default function ProjectsList() {
                             borderRadius: '6px',
                             bgcolor: color.value,
                             cursor: 'pointer',
-                            border: selectedColor === color.value ? '2px solid #ec4899' : '2px solid transparent',
-                            boxShadow: selectedColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.2)' : 'none',
+                            border: selectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
+                            boxShadow: selectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
                             transition: 'all 0.2s ease',
                             '&:hover': {
                               transform: 'scale(1.1)',
-                              boxShadow: '0 0 0 2px rgba(236, 72, 153, 0.3)',
+                              boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
                             },
                           }}
                           title={color.name}

@@ -85,21 +85,21 @@ class ErrorBoundary extends Component<Props, State> {
                         alignItems: 'center',
                         justifyContent: 'center',
                         minHeight: '100vh',
-                        backgroundColor: '#000000',
-                        color: '#ffffff',
+                        backgroundColor: 'var(--sl-bg-base)',
+                        color: 'var(--sl-text-primary)',
                         padding: '2rem',
                         textAlign: 'center'
                     }}
                 >
                     {isNetworkError ? (
-                        <WifiOffIcon sx={{ fontSize: 80, color: '#f59e0b', marginBottom: 3 }} />
+                        <WifiOffIcon sx={{ fontSize: 80, color: 'var(--sl-status-warning)', marginBottom: 3 }} />
                     ) : (
-                        <ErrorOutlineIcon sx={{ fontSize: 80, color: '#ef4444', marginBottom: 3 }} />
+                        <ErrorOutlineIcon sx={{ fontSize: 80, color: 'var(--sl-status-error)', marginBottom: 3 }} />
                     )}
                     <h1 style={{ fontSize: '2rem', marginBottom: '1rem', fontWeight: 600 }}>
                         {isNetworkError ? 'Connection Issue' : 'Oops! Something went wrong'}
                     </h1>
-                    <p style={{ color: '#9ca3af', marginBottom: '2rem', maxWidth: '500px' }}>
+                    <p style={{ color: 'var(--sl-text-muted)', marginBottom: '2rem', maxWidth: '500px' }}>
                         {isNetworkError
                             ? 'Your network connection changed or was interrupted. Please check your connection and try again.'
                             : 'We encountered an unexpected error. Don\'t worry, your data is safe.'}
@@ -107,8 +107,8 @@ class ErrorBoundary extends Component<Props, State> {
                     {error && (
                         <Box
                             sx={{
-                                backgroundColor: '#1a1a1a',
-                                border: '1px solid #2a2a2a',
+                                backgroundColor: 'var(--sl-bg-surface-1)',
+                                border: '1px solid var(--sl-border-default)',
                                 borderRadius: '8px',
                                 padding: '1rem',
                                 marginBottom: '2rem',
@@ -117,7 +117,7 @@ class ErrorBoundary extends Component<Props, State> {
                                 textAlign: 'left'
                             }}
                         >
-                            <p style={{ color: isNetworkError ? '#f59e0b' : '#ef4444', fontFamily: 'monospace', fontSize: '0.875rem', margin: 0 }}>
+                            <p style={{ color: isNetworkError ? 'var(--sl-status-warning)' : 'var(--sl-status-error)', fontFamily: 'monospace', fontSize: '0.875rem', margin: 0 }}>
                                 {error.toString()}
                             </p>
                         </Box>
@@ -128,13 +128,13 @@ class ErrorBoundary extends Component<Props, State> {
                                 variant="contained"
                                 onClick={this.handleRetry}
                                 sx={{
-                                    backgroundColor: '#ec4899',
-                                    color: '#ffffff',
+                                    backgroundColor: 'var(--sl-brand-primary)',
+                                    color: 'var(--sl-text-primary)',
                                     padding: '0.75rem 2rem',
                                     fontSize: '1rem',
                                     textTransform: 'none',
                                     '&:hover': {
-                                        backgroundColor: '#db2777'
+                                        backgroundColor: 'var(--sl-brand-hover)'
                                     }
                                 }}
                             >
@@ -145,15 +145,15 @@ class ErrorBoundary extends Component<Props, State> {
                             variant={isNetworkError ? 'outlined' : 'contained'}
                             onClick={this.handleReload}
                             sx={{
-                                backgroundColor: isNetworkError ? 'transparent' : '#ec4899',
-                                borderColor: '#ec4899',
-                                color: '#ffffff',
+                                backgroundColor: isNetworkError ? 'transparent' : 'var(--sl-brand-primary)',
+                                borderColor: 'var(--sl-brand-primary)',
+                                color: 'var(--sl-text-primary)',
                                 padding: '0.75rem 2rem',
                                 fontSize: '1rem',
                                 textTransform: 'none',
                                 '&:hover': {
-                                    backgroundColor: isNetworkError ? 'rgba(236, 72, 153, 0.1)' : '#db2777',
-                                    borderColor: '#db2777'
+                                    backgroundColor: isNetworkError ? 'var(--sl-brand-alpha-10)' : 'var(--sl-brand-hover)',
+                                    borderColor: 'var(--sl-brand-hover)'
                                 }
                             }}
                         >
@@ -164,14 +164,14 @@ class ErrorBoundary extends Component<Props, State> {
                                 variant="outlined"
                                 onClick={this.handleFullReset}
                                 sx={{
-                                    borderColor: '#6b7280',
-                                    color: '#9ca3af',
+                                    borderColor: 'var(--sl-text-disabled)',
+                                    color: 'var(--sl-text-muted)',
                                     padding: '0.75rem 2rem',
                                     fontSize: '1rem',
                                     textTransform: 'none',
                                     '&:hover': {
                                         backgroundColor: 'rgba(107, 114, 128, 0.1)',
-                                        borderColor: '#9ca3af'
+                                        borderColor: 'var(--sl-text-muted)'
                                     }
                                 }}
                             >

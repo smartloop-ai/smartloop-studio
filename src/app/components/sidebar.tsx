@@ -545,8 +545,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       <Box sx={{
         px: 3,
         py: 2.5,
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-        bgcolor: 'rgba(255, 255, 255, 0.02)',
+        borderBottom: '1px solid var(--sl-white-alpha-5)',
+        bgcolor: 'var(--sl-white-alpha-2)',
       }}>
         <Box className="flex items-center justify-between">
           <Box
@@ -572,8 +572,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               onClick={onMobileClose}
               sx={{
                 display: { xs: 'flex', md: 'none' },
-                color: 'rgba(255, 255, 255, 0.5)',
-                '&:hover': { color: 'white', bgcolor: 'rgba(255, 255, 255, 0.08)' },
+                color: 'var(--sl-white-alpha-50)',
+                '&:hover': { color: 'white', bgcolor: 'var(--sl-white-alpha-8)' },
                 padding: '6px',
                 borderRadius: '6px',
               }}
@@ -591,19 +591,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            bgcolor: 'rgba(255, 255, 255, 0.05)',
+            bgcolor: 'var(--sl-white-alpha-5)',
             borderRadius: '7px',
             padding: '7px 11px',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: '1px solid var(--sl-white-alpha-8)',
             transition: 'all 0.15s ease',
             '&:focus-within': {
-              borderColor: 'rgba(236, 72, 153, 0.5)',
-              bgcolor: 'rgba(255, 255, 255, 0.07)',
-              boxShadow: '0 0 0 3px rgba(236, 72, 153, 0.1)',
+              borderColor: 'var(--sl-brand-alpha-50)',
+              bgcolor: 'var(--sl-white-alpha-7)',
+              boxShadow: '0 0 0 3px var(--sl-brand-alpha-10)',
             }
           }}
         >
-          <SearchIcon sx={{ fontSize: 17, color: 'rgba(255, 255, 255, 0.4)' }} />
+          <SearchIcon sx={{ fontSize: 17, color: 'var(--sl-white-alpha-40)' }} />
           <input
             ref={searchInputRef}
             type="text"
@@ -619,8 +619,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               onClick={clearSearch}
               sx={{
                 padding: '3px',
-                color: 'rgba(255, 255, 255, 0.4)',
-                '&:hover': { color: '#fff', bgcolor: 'rgba(255, 255, 255, 0.1)' },
+                color: 'var(--sl-white-alpha-40)',
+                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-white-alpha-10)' },
                 borderRadius: '4px',
               }}
             >
@@ -630,8 +630,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           {!searchQuery && (
             <Box sx={{
               fontSize: '11px',
-              color: 'rgba(255, 255, 255, 0.3)',
-              bgcolor: 'rgba(255, 255, 255, 0.05)',
+              color: 'var(--sl-white-alpha-30)',
+              bgcolor: 'var(--sl-white-alpha-5)',
               px: 0.7,
               py: 0.3,
               borderRadius: '3px',
@@ -668,15 +668,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       padding: '9px 11px',
                       borderRadius: '7px',
                       cursor: 'pointer',
-                      bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                      color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                      bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                      color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-60)',
                       fontWeight: isActive ? 600 : 500,
                       fontSize: '13.5px',
                       transition: 'all 0.12s ease',
-                      border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                      border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                       '&:hover': {
-                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                        color: isActive ? '#ec4899' : 'white',
+                        bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
+                        color: isActive ? 'var(--sl-brand-primary)' : 'white',
                       },
                       mb: 0.5,
                     }}
@@ -702,15 +702,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         gap: 1.5,
                         padding: '9px 11px',
                         borderRadius: '7px',
-                        bgcolor: isActive ? 'rgba(236, 72, 153, 0.12)' : 'transparent',
-                        color: isActive ? '#ec4899' : 'rgba(255, 255, 255, 0.65)',
+                        bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                        color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-60)',
                         fontWeight: isActive ? 600 : 500,
                         fontSize: '13.5px',
                         transition: 'all 0.12s ease',
-                        border: isActive ? '1px solid rgba(236, 72, 153, 0.2)' : '1px solid transparent',
+                        border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
-                          bgcolor: isActive ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                          color: isActive ? '#ec4899' : 'white',
+                          bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
+                          color: isActive ? 'var(--sl-brand-primary)' : 'white',
                         },
                         '&:hover .delete-icon': {
                           opacity: 1,
@@ -755,11 +755,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           sx={{
                             fontSize: 14,
                             opacity: 0,
-                            color: 'rgba(255, 255, 255, 0.4)',
+                            color: 'var(--sl-white-alpha-40)',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                             '&:hover': {
-                              color: '#ef4444',
+                              color: 'var(--sl-status-error)',
                             },
                           }}
                         />
@@ -783,13 +783,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             borderRadius: '7px',
             cursor: 'pointer',
             bgcolor: 'transparent',
-            color: 'rgba(255, 255, 255, 0.45)',
+            color: 'var(--sl-white-alpha-40)',
             fontWeight: 500,
             fontSize: '13.5px',
             transition: 'all 0.12s ease',
             border: '1px solid transparent',
             '&:hover': {
-              bgcolor: 'rgba(255, 255, 255, 0.06)',
+              bgcolor: 'var(--sl-white-alpha-5)',
               color: 'white',
             },
             mb: 0.5,
@@ -806,13 +806,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         flexDirection: 'column',
         px: 2.5,
         py: 2,
-        borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-        bgcolor: 'rgba(255, 255, 255, 0.02)',
+        borderTop: '1px solid var(--sl-white-alpha-5)',
+        bgcolor: 'var(--sl-white-alpha-2)',
       }}>
         <Box sx={{
           fontSize: '11px',
           fontWeight: 600,
-          color: 'rgba(255, 255, 255, 0.4)',
+          color: 'var(--sl-white-alpha-40)',
           mb: 1.5,
           px: 1.5,
           letterSpacing: '0.5px',
@@ -842,13 +842,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 gap: 0.5,
                 padding: '8px 11px',
                 cursor: 'pointer',
-                color: 'rgba(255, 255, 255, 0.6)',
+                color: 'var(--sl-white-alpha-60)',
                 borderRadius: '6px',
                 transition: 'all 0.12s ease',
                 position: 'relative',
                 '&:hover': {
                   color: 'white',
-                  bgcolor: 'rgba(255, 255, 255, 0.06)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                 },
                 '&:hover .delete-icon': {
                   opacity: 1,
@@ -868,10 +868,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     opacity: 0,
                     transition: 'opacity 0.2s ease',
                     padding: '4px',
-                    color: 'rgba(255, 255, 255, 0.6)',
+                    color: 'var(--sl-white-alpha-60)',
                     '&:hover': {
-                      color: '#ec4899',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
+                      color: 'var(--sl-brand-primary)',
+                      bgcolor: 'var(--sl-brand-alpha-10)',
                     },
                   }}
                 >
@@ -899,8 +899,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         <>
           <Box sx={{
             p: 2,
-            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-            bgcolor: 'rgba(255, 255, 255, 0.02)',
+            borderTop: '1px solid var(--sl-white-alpha-5)',
+            bgcolor: 'var(--sl-white-alpha-2)',
           }}>
             <Box
               onClick={handleMenuClick}
@@ -913,7 +913,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 padding: '8px',
                 transition: 'all 0.12s ease',
                 '&:hover': {
-                  bgcolor: 'rgba(255, 255, 255, 0.06)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                 },
               }}
             >
@@ -922,8 +922,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   width: 36,
                   height: 36,
                   borderRadius: '8px',
-                  bgcolor: 'rgba(236, 72, 153, 0.15)',
-                  border: '1.5px solid rgba(236, 72, 153, 0.3)',
+                  bgcolor: 'var(--sl-brand-alpha-15)',
+                  border: '1.5px solid var(--sl-brand-alpha-30)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -937,14 +937,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 <Box sx={{ color: 'white', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {authUser.name || 'User'}
                 </Box>
-                <Box sx={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px' }}>
+                <Box sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '11px' }}>
                   {authUser.is_paid || authUser.is_premium ? 'Pro' : 'Free'} Plan
                 </Box>
               </Box>
               <ExpandMoreIcon
                 sx={{
                   fontSize: 16,
-                  color: 'rgba(255, 255, 255, 0.4)',
+                  color: 'var(--sl-white-alpha-40)',
                   transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.15s ease'
                 }}
@@ -963,28 +963,28 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 bgcolor: 'rgba(0, 0, 0, 0.98)',
                 backdropFilter: 'blur(10px)',
                 WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: '1px solid var(--sl-white-alpha-10)',
                 borderRadius: '8px',
                 minWidth: '200px',
                 mt: -1,
                 ml: 1,
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                boxShadow: '0 8px 32px var(--sl-black-alpha-50)',
               }
             }}
           >
             <MenuItem
               onClick={() => { handleSettings(); handleMenuClose(); }}
-              sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.08)' } }}
+              sx={{ color: 'var(--sl-white-alpha-85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-white-alpha-8)' } }}
             >
-              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'rgba(255, 255, 255, 0.5)' }} />
+              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-white-alpha-50)' }} />
               Settings
             </MenuItem>
-            <Box sx={{ height: '1px', bgcolor: 'rgba(255, 255, 255, 0.06)', my: 0.5, mx: 1 }} />
+            <Box sx={{ height: '1px', bgcolor: 'var(--sl-white-alpha-5)', my: 0.5, mx: 1 }} />
             <MenuItem
               onClick={handleLogout}
-              sx={{ color: '#ef4444', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
+              sx={{ color: 'var(--sl-status-error)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-danger-alpha-10)' } }}
             >
-              <LogoutIcon sx={{ fontSize: 17, mr: 1.5, color: '#ef4444' }} />
+              <LogoutIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-status-error)' }} />
               Logout
             </MenuItem>
           </Menu>
@@ -993,8 +993,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         <Box sx={{
           px: 2.5,
           py: 2,
-          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-          bgcolor: 'rgba(255, 255, 255, 0.02)',
+          borderTop: '1px solid var(--sl-white-alpha-5)',
+          bgcolor: 'var(--sl-white-alpha-2)',
         }}>
           <Box
             onClick={handleLogin}
@@ -1005,24 +1005,24 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               gap: 1.5,
               px: 2,
               py: 1.5,
-              bgcolor: 'rgba(236, 72, 153, 0.12)',
-              border: '1px solid rgba(236, 72, 153, 0.25)',
+              bgcolor: 'var(--sl-brand-alpha-10)',
+              border: '1px solid var(--sl-brand-alpha-20)',
               borderRadius: '8px',
               cursor: isLoggingIn ? 'not-allowed' : 'pointer',
               fontSize: '13px',
               fontWeight: 600,
-              color: '#ec4899',
+              color: 'var(--sl-brand-primary)',
               transition: 'all 0.15s ease',
               opacity: isLoggingIn ? 0.6 : 1,
               '&:hover': {
-                bgcolor: 'rgba(236, 72, 153, 0.2)',
-                border: '1px solid rgba(236, 72, 153, 0.4)',
+                bgcolor: 'var(--sl-brand-alpha-20)',
+                border: '1px solid var(--sl-brand-alpha-40)',
               },
             }}
           >
             {isLoggingIn ? (
               <>
-                <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
                 <span>Signing in...</span>
               </>
             ) : (
@@ -1046,11 +1046,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '12px',
-              color: 'rgba(255, 255, 255, 0.4)',
+              color: 'var(--sl-white-alpha-40)',
               transition: 'all 0.12s ease',
               '&:hover': {
-                color: 'rgba(255, 255, 255, 0.7)',
-                bgcolor: 'rgba(255, 255, 255, 0.05)',
+                color: 'var(--sl-white-alpha-70)',
+                bgcolor: 'var(--sl-white-alpha-5)',
               },
             }}
           >
@@ -1084,10 +1084,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               position: 'absolute',
               right: 12,
               top: 12,
-              color: '#6b7280',
+              color: 'var(--sl-text-disabled)',
               '&:hover': {
-                color: '#fff',
-                bgcolor: '#1a1a1a',
+                color: 'var(--sl-text-primary)',
+                bgcolor: 'var(--sl-bg-surface-1)',
               },
             }}
           >
@@ -1110,19 +1110,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     color: 'white',
-                    bgcolor: '#000',
+                    bgcolor: 'var(--sl-bg-base)',
                     '& fieldset': {
-                      borderColor: '#2a2a2a',
+                      borderColor: 'var(--sl-border-default)',
                     },
                     '&:hover fieldset': {
-                      borderColor: '#3a3a3a',
+                      borderColor: 'var(--sl-border-hover)',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#ec4899',
+                      borderColor: 'var(--sl-brand-primary)',
                     },
                   },
                   '& .MuiFormHelperText-root': {
-                    color: '#ef4444',
+                    color: 'var(--sl-status-error)',
                   },
                 }}
               />
@@ -1143,12 +1143,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         borderRadius: '6px',
                         bgcolor: color.value,
                         cursor: 'pointer',
-                        border: selectedColor === color.value ? '2px solid #ec4899' : '2px solid transparent',
-                        boxShadow: selectedColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.2)' : 'none',
+                        border: selectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
+                        boxShadow: selectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
                         transition: 'all 0.2s ease',
                         '&:hover': {
                           transform: 'scale(1.1)',
-                          boxShadow: '0 0 0 2px rgba(236, 72, 153, 0.3)',
+                          boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
                         },
                       }}
                       title={color.name}
@@ -1187,17 +1187,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         sx={{
           width: '280px',
           height: '100vh',
-          bgcolor: 'rgba(18, 18, 18, 0.95)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+          bgcolor: 'var(--sl-bg-base)',
+          borderRight: '1px solid var(--sl-white-alpha-5)',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           position: 'fixed',
           left: 0,
           top: 0,
           zIndex: 1000,
-          boxShadow: '2px 0 12px rgba(0, 0, 0, 0.3)',
         }}
       >
         {sidebarContent}
@@ -1215,7 +1212,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               left: 0,
               right: 0,
               bottom: 0,
-              bgcolor: 'rgba(0, 0, 0, 0.7)',
+              bgcolor: 'var(--sl-black-alpha-50)',
               zIndex: 1200,
               display: { xs: 'block', md: 'none' },
             }}
@@ -1229,15 +1226,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               left: 0,
               bottom: 0,
               width: '280px',
-              bgcolor: 'rgba(18, 18, 18, 0.98)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+              bgcolor: 'var(--sl-bg-base)',
+              borderRight: '1px solid var(--sl-white-alpha-5)',
               display: { xs: 'flex', md: 'none' },
               flexDirection: 'column',
               zIndex: 1300,
               overflowY: 'auto',
-              boxShadow: '4px 0 24px rgba(0, 0, 0, 0.5)',
+              boxShadow: '4px 0 24px var(--sl-black-alpha-30)',
             }}
           >
             {sidebarContent}
@@ -1266,10 +1261,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               position: 'absolute',
               right: 12,
               top: 12,
-              color: '#6b7280',
+              color: 'var(--sl-text-disabled)',
               '&:hover': {
-                color: '#fff',
-                bgcolor: '#1a1a1a',
+                color: 'var(--sl-text-primary)',
+                bgcolor: 'var(--sl-bg-surface-1)',
               },
               '&:disabled': {
                 color: '#3f3f3f',
@@ -1289,11 +1284,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 height: '40px',
                 flexShrink: 0,
                 borderRadius: '10px',
-                bgcolor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
+                bgcolor: 'var(--sl-danger-alpha-10)',
+                border: '1px solid var(--sl-danger-alpha-20)',
               }}
             >
-              <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24 }} />
+              <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24 }} />
             </Box>
             <Box className="flex-1">
               <h3 className="text-white font-semibold text-lg mb-1">
@@ -1320,19 +1315,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               sx={{
                 '& .MuiOutlinedInput-root': {
                   color: 'white',
-                  bgcolor: 'rgba(0, 0, 0, 0.3)',
+                  bgcolor: 'var(--sl-black-alpha-30)',
                   '& fieldset': {
-                    borderColor: 'rgba(239, 68, 68, 0.3)',
+                    borderColor: 'var(--sl-danger-alpha-30)',
                   },
                   '&:hover fieldset': {
-                    borderColor: 'rgba(239, 68, 68, 0.5)',
+                    borderColor: 'var(--sl-danger-alpha-50)',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#ef4444',
+                    borderColor: 'var(--sl-status-error)',
                   },
                 },
                 '& .MuiFormHelperText-root': {
-                  color: '#ef4444',
+                  color: 'var(--sl-status-error)',
                 },
               }}
             />
@@ -1390,10 +1385,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               position: 'absolute',
               right: 12,
               top: 12,
-              color: '#6b7280',
+              color: 'var(--sl-text-disabled)',
               '&:hover': {
-                color: '#fff',
-                bgcolor: '#1a1a1a',
+                color: 'var(--sl-text-primary)',
+                bgcolor: 'var(--sl-bg-surface-1)',
               },
               '&:disabled': {
                 color: '#3f3f3f',
@@ -1414,11 +1409,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 height: '40px',
                 flexShrink: 0,
                 borderRadius: '10px',
-                bgcolor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
+                bgcolor: 'var(--sl-danger-alpha-10)',
+                border: '1px solid var(--sl-danger-alpha-20)',
               }}
             >
-              <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24 }} />
+              <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24 }} />
             </Box>
             <Box className="flex-1">
               <h3 className="text-white font-semibold text-lg mb-1">

@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import './app/globals.css';
 import App from './App';
 import ErrorBoundary from './app/components/error-boundary';
+import { colors } from '@/app/theme/colors';
 
 // Use HashRouter for Electron (file:// protocol) and BrowserRouter for web
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
@@ -35,18 +36,18 @@ const theme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#ec4899', // Pink
+      main: colors.brand.primary,
     },
     background: {
-      default: '#000000',
-      paper: '#000000',
+      default: colors.bg.base,
+      paper: colors.bg.base,
     },
   },
   components: {
     MuiDialog: {
       styleOverrides: {
         paper: {
-          backgroundColor: '#000000',
+          backgroundColor: colors.bg.base,
           backgroundImage: 'none',
         },
       },
@@ -54,7 +55,7 @@ const theme = createTheme({
     MuiPaper: {
       styleOverrides: {
         root: {
-          backgroundColor: '#000000',
+          backgroundColor: colors.bg.base,
           backgroundImage: 'none',
         },
       },

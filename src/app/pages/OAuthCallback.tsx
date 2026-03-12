@@ -17,7 +17,7 @@ export default function OAuthCallback() {
   return (
     <Box className="min-h-screen bg-black flex items-center justify-center p-6">
       <Box className="text-center">
-        <CircularProgress sx={{ color: '#ec4899', mb: 4 }} size={60} />
+        <CircularProgress sx={{ color: 'var(--sl-brand-primary)', mb: 4 }} size={60} />
         <h1 className="text-2xl font-bold text-white mb-2">
           Processing Authentication
         </h1>

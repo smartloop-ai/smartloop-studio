@@ -27,21 +27,21 @@ export default function AttachmentUpload({
     >
       {isUploading ? (
         <>
-          <CircularProgress size={isSmall ? 14 : 24} sx={{ color: '#ec4899' }} />
+          <CircularProgress size={isSmall ? 14 : 24} sx={{ color: 'var(--sl-brand-primary)' }} />
           <Box className={`text-gray-300 ${isSmall ? 'text-xs' : 'text-sm'}`}>
             {uploadError && uploadError.toLowerCase().includes('processing') ? uploadError : 'Uploading...'}
           </Box>
         </>
       ) : uploadError ? (
         <>
-          <CloseIcon sx={{ color: '#ef4444', fontSize: isSmall ? 14 : 24 }} />
+          <CloseIcon sx={{ color: 'var(--sl-status-error)', fontSize: isSmall ? 14 : 24 }} />
           <Box className={`text-red-400 ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[200px]' : 'max-w-[300px]'}`}>
             {uploadError}
           </Box>
         </>
       ) : (
         <>
-          <InsertDriveFileIcon sx={{ color: '#10b981', fontSize: isSmall ? 14 : 24 }} />
+          <InsertDriveFileIcon sx={{ color: 'var(--sl-status-success)', fontSize: isSmall ? 14 : 24 }} />
           <Box className={`text-white ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[140px]' : 'max-w-[200px]'}`}>
             {fileName}
           </Box>
@@ -52,8 +52,8 @@ export default function AttachmentUpload({
           onClick={onClear}
           size="small"
           sx={{
-            color: '#9ca3af',
-            '&:hover': { color: '#ef4444' },
+            color: 'var(--sl-text-muted)',
+            '&:hover': { color: 'var(--sl-status-error)' },
             padding: isSmall ? '2px' : '4px'
           }}
         >

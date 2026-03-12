@@ -1,5 +1,7 @@
 @charset "UTF-8";
 
+@import './theme/theme.css';
+
 @tailwind base;
 
 
@@ -126,7 +128,7 @@
   }
 
   body {
-    background-color: #000
+    background-color: var(--sl-bg-base)
   }
 
   body,
@@ -254,9 +256,7 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 246, 246, 246;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  --foreground-rgb: 255, 255, 255;
 }
 
 .popup__title {
@@ -339,7 +339,7 @@
 .popup__body {
   flex: 0 0 100%;
   padding-top: 2.5rem;
-  border-top: 1px solid #383838
+  border-top: 1px solid var(--sl-bg-surface-3)
 }
 
 @media (max-width:29.99875em) {
@@ -356,7 +356,7 @@
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px;
-  color: #d1d1d1
+  color: var(--sl-text-tertiary)
 }
 
 @media (max-width:29.99875em) {
@@ -377,7 +377,7 @@
 
 .popup__info {
   padding-top: 2.5rem;
-  border-top: 1px solid #383838
+  border-top: 1px solid var(--sl-bg-surface-3)
 }
 
 @media (max-width:29.99875em) {
@@ -397,7 +397,7 @@
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px;
-  color: #d1d1d1
+  color: var(--sl-text-tertiary)
 }
 
 .popup__drag {
@@ -440,7 +440,7 @@
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px;
-  color: #d1d1d1
+  color: var(--sl-text-tertiary)
 }
 
 .popup__doc {
@@ -457,7 +457,7 @@
   margin-top: 1.25rem;
   width: 9rem;
   height: 3.75rem;
-  background: linear-gradient(to right, #ec4899, #db2777);
+  background: linear-gradient(to right, var(--sl-brand-primary), var(--sl-brand-hover));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -470,7 +470,7 @@
   overflow: hidden;
   z-index: 1;
   border-radius: 0.5rem;
-  border: 1px solid rgba(236, 72, 153, 0.3);
+  border: 1px solid var(--sl-brand-alpha-30);
   transition: background 0.2s ease;
   cursor: pointer;
 }
@@ -481,7 +481,7 @@
 
 @media (any-hover:hover) {
   .popup__upload:hover {
-    background: linear-gradient(to right, #db2777, #be185d);
+    background: linear-gradient(to right, var(--sl-brand-hover), var(--sl-brand-active));
   }
 }
 
@@ -506,7 +506,7 @@
 
 .popup__area {
   padding-top: 2.5rem;
-  border-top: 1px solid #383838
+  border-top: 1px solid var(--sl-bg-surface-3)
 }
 
 @media (max-width:29.99875em) {
@@ -733,7 +733,7 @@
     top: 0;
     overflow: auto;
     padding: 6.875rem .9375rem .9375rem 1.25rem;
-    background-color: #1b1b1b;
+    background-color: var(--sl-bg-elevated);
     transition: left .3s
   }
 
@@ -742,7 +742,7 @@
     position: fixed;
     width: 100%;
     height: 6.25rem;
-    background-color: #1b1b1b;
+    background-color: var(--sl-bg-elevated);
     left: -100%;
     top: 0;
     transition: left .3s;
@@ -1221,12 +1221,12 @@
 .chat-content_agent {
   border-radius: 10px;
   border: solid 1px #333;
-  background-color: #1b1b1b;
+  background-color: var(--sl-bg-elevated);
   font-size: 1rem;
   font-weight: 300;
   line-height: 1.5;
   letter-spacing: .4px;
-  color: #fff;
+  color: var(--sl-text-primary);
 }
 
 .header {
@@ -1237,13 +1237,13 @@
   top: 0;
   left: 0;
   z-index: 100;
-  background-color: #1b1b1b
+  background-color: var(--sl-bg-elevated)
 }
 
 .header._header-scroll {
   position: fixed;
   top: -200%;
-  background-color: #1b1b1b;
+  background-color: var(--sl-bg-elevated);
   border-bottom: 1px solid #424242
 }
 
@@ -1457,7 +1457,7 @@
   font-size: .875rem;
   font-weight: 500;
   letter-spacing: .35px;
-  color: #fff;
+  color: var(--sl-text-primary);
   transition: color .3s
 }
 
@@ -2627,7 +2627,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
   justify-content: space-between;
   gap: 3.125rem;
   padding: 3.125rem 1.875rem 3.75rem 1.875rem;
-  background-color: #202020
+  background-color: var(--sl-bg-surface-1)
 }
 
 @media (min-width:120em) {
@@ -3519,7 +3519,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 
 .testipage__slide {
   height: 100%;
-  background-color: #202020
+  background-color: var(--sl-bg-surface-1)
 }
 
 .page__projects {
@@ -3552,7 +3552,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
   font-size: 1.875rem;
   font-weight: 500;
   letter-spacing: .3px;
-  color: #fff;
+  color: var(--sl-text-primary);
 }
 
 @media (min-width:80.625em) {
@@ -3595,7 +3595,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
   font-size: 1rem;
   font-weight: 500;
   white-space: nowrap;
-  color: #fff
+  color: var(--sl-text-primary)
 }
 
 .projects-tabs__title::before {
@@ -3669,7 +3669,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
   padding: 1.25rem 2.1875rem;
   font-size: 1rem;
   font-weight: 500;
-  color: #fff;
+  color: var(--sl-text-primary);
   background-image: linear-gradient(to right, #abd1ef, #f0f3ff);
   color: #171717;
   max-width: 100%;
@@ -3734,7 +3734,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 .projects-tabs__input {
   padding-right: 3.75rem;
   height: 3.75rem;
-  background-color: #303030;
+  background-color: var(--sl-bg-input);
   max-width: 15.625rem
 }
 
@@ -3775,11 +3775,11 @@ body._touch .header-account__list>li._active .header-account__arrow {
   display: flex;
   justify-content: space-between;
   padding-bottom: .625rem;
-  border-bottom: 1px solid #383838
+  border-bottom: 1px solid var(--sl-bg-surface-3)
 }
 
 .projects-tabs-content__project {
-  color: #d1d1d1;
+  color: var(--sl-text-tertiary);
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px
@@ -3815,7 +3815,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 }
 
 .projects-tabs-content__column {
-  background-color: #303030;
+  background-color: var(--sl-bg-input);
   display: flex;
   flex-direction: column
 }
@@ -3830,14 +3830,14 @@ body._touch .header-account__list>li._active .header-account__arrow {
   padding: 1.5625rem .9375rem .9375rem .9375rem;
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px solid #383838
+  border-bottom: 1px solid var(--sl-bg-surface-3)
 }
 
 .projects-tabs-content__name {
   font-size: 1.125rem;
   font-weight: 500;
   letter-spacing: .45px;
-  color: #fff
+  color: var(--sl-text-primary)
 }
 
 @media (min-width:120em) {
@@ -3876,12 +3876,12 @@ body._touch .header-account__list>li._active .header-account__arrow {
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px;
-  color: #d1d1d1
+  color: var(--sl-text-tertiary)
 }
 
 .projects-tabs-content__date span {
   padding-left: .3125rem;
-  color: #fff
+  color: var(--sl-text-primary)
 }
 
 .projects-tabs-content__share {
@@ -3918,7 +3918,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 }
 
 .projects-tabs-content-spollers__title {
-  color: #d1d1d1;
+  color: var(--sl-text-tertiary);
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px;
@@ -3953,9 +3953,9 @@ body._touch .header-account__list>li._active .header-account__arrow {
 
 .projects-tabs-content-spollers__body {
   cursor: pointer;
-  background-color: #303030;
+  background-color: var(--sl-bg-input);
   padding: .625rem .625rem .625rem .625rem;
-  color: #d1d1d1;
+  color: var(--sl-text-tertiary);
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px
@@ -3982,8 +3982,8 @@ body._touch .header-account__list>li._active .header-account__arrow {
   padding: 1.25rem 2.1875rem;
   font-size: 1rem;
   font-weight: 500;
-  color: #fff;
-  background-image: linear-gradient(to right, #1b1b1d, #303030);
+  color: var(--sl-text-primary);
+  background-image: linear-gradient(to right, var(--sl-bg-elevated), var(--sl-bg-input));
   max-width: 100%;
   display: inline-flex;
   justify-content: center;
@@ -4026,7 +4026,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
   width: 15%;
   height: 30px;
   border-radius: 50%;
-  background: #303030;
+  background: var(--sl-bg-input);
   -webkit-transform-origin: 100% 50%;
   transform-origin: 100% 50%;
   -webkit-transform: scale3d(1, 2, 1);
@@ -4046,7 +4046,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 }
 
 .files__action {
-  color: #d1d1d1;
+  color: var(--sl-text-tertiary);
   font-size: .875rem;
   font-weight: 300;
   letter-spacing: .35px
@@ -4066,7 +4066,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 
 .files-page__column {
   padding: 2.5rem 0;
-  border-bottom: 1px solid #383838;
+  border-bottom: 1px solid var(--sl-bg-surface-3);
   display: flex;
   justify-content: space-between;
   gap: .625rem
@@ -4214,7 +4214,7 @@ body._touch .header-account__list>li._active .header-account__arrow {
 
 .document-grid-header {
   color: #eee;
-  background-color: #202020;
+  background-color: var(--sl-bg-surface-1);
 }
 
 .MuiTablePagination-actions {

@@ -16,8 +16,8 @@ export default function TermsPage() {
               onClick={() => navigate(-1)}
               className="text-gray-400 hover:text-white"
               sx={{
-                color: '#9ca3af',
-                '&:hover': { color: '#ffffff' }
+                color: 'var(--sl-text-muted)',
+                '&:hover': { color: 'var(--sl-text-primary)' }
               }}
             >
               <ArrowBackIcon />
@@ -31,7 +31,7 @@ export default function TermsPage() {
 
           <Box className="prose prose-invert max-w-none space-y-8">
             {/* Introduction */}
-            <Box className="rounded-xl p-6" sx={{ bgcolor: 'rgba(236, 72, 153, 0.05)', border: '1px solid rgba(236, 72, 153, 0.2)' }}>
+            <Box className="rounded-xl p-6" sx={{ bgcolor: 'var(--sl-brand-alpha-5)', border: '1px solid var(--sl-brand-alpha-20)' }}>
               <p className="text-gray-300 leading-relaxed">
                 These Terms and Conditions (the "Agreement") constitute a legally binding agreement between you ("User", "you", or "your") and Smartloop Inc., a corporation organized and existing under the laws of California ("Company", "we", "us", or "our"), concerning your access to and use of the Smartloop platform and related services (collectively, the "Service").
               </p>

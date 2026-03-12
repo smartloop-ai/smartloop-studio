@@ -302,12 +302,12 @@ function DocumentsListContent() {
                 <Box className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
                   <IconButton
                     sx={{
-                      color: '#9ca3af',
-                      bgcolor: 'rgba(236, 72, 153, 0.1)',
-                      border: '1px solid rgba(236, 72, 153, 0.2)',
+                      color: 'var(--sl-text-muted)',
+                      bgcolor: 'var(--sl-brand-alpha-10)',
+                      border: '1px solid var(--sl-brand-alpha-20)',
                       '&:hover': {
-                        bgcolor: 'rgba(236, 72, 153, 0.2)',
-                        borderColor: 'rgba(236, 72, 153, 0.3)',
+                        bgcolor: 'var(--sl-brand-alpha-20)',
+                        borderColor: 'var(--sl-brand-alpha-30)',
                       },
                       padding: '10px',
                     }}
@@ -341,8 +341,8 @@ function DocumentsListContent() {
                 onClose={() => setSortMenuAnchor(null)}
                 PaperProps={{
                   sx: {
-                    bgcolor: '#1a1a1a',
-                    border: '1px solid #2a2a2a',
+                    bgcolor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     borderRadius: '8px',
                     minWidth: '180px',
                     mt: 1,
@@ -355,15 +355,15 @@ function DocumentsListContent() {
                     setSortMenuAnchor(null);
                   }}
                   sx={{
-                    color: '#e5e7eb',
+                    color: 'var(--sl-text-secondary)',
                     fontSize: '14px',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    '&:hover': { bgcolor: '#2a2a2a' }
+                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
                   }}
                 >
                   <span>By Name</span>
-                  {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: '#ec4899', ml: 2 }} />}
+                  {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -371,15 +371,15 @@ function DocumentsListContent() {
                     setSortMenuAnchor(null);
                   }}
                   sx={{
-                    color: '#e5e7eb',
+                    color: 'var(--sl-text-secondary)',
                     fontSize: '14px',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    '&:hover': { bgcolor: '#2a2a2a' }
+                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
                   }}
                 >
                   <span>Last Updated</span>
-                  {sortBy === 'lastUpdated' && <CheckIcon sx={{ fontSize: 18, color: '#ec4899', ml: 2 }} />}
+                  {sortBy === 'lastUpdated' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
                 </MenuItem>
               </Menu>
 
@@ -396,14 +396,14 @@ function DocumentsListContent() {
                     border: '1px solid rgba(75, 85, 99, 0.3)',
                     transition: 'all 0.2s',
                     '&:hover': {
-                      borderColor: 'rgba(236, 72, 153, 0.5)',
+                      borderColor: 'var(--sl-brand-alpha-50)',
                     },
                     '&:focus-within': {
-                      borderColor: '#ec4899',
+                      borderColor: 'var(--sl-brand-primary)',
                     },
                   }}
                 >
-                  <SearchIcon sx={{ color: '#6b7280' }} />
+                  <SearchIcon sx={{ color: 'var(--sl-text-disabled)' }} />
                   <input
                     type="text"
                     placeholder="Search documents..."
@@ -447,13 +447,13 @@ function DocumentsListContent() {
                               size="small"
                               onClick={() => handleOpenDocument(doc)}
                               sx={{
-                                color: '#9ca3af',
-                                bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                border: '1px solid rgba(236, 72, 153, 0.2)',
+                                color: 'var(--sl-text-muted)',
+                                bgcolor: 'var(--sl-brand-alpha-10)',
+                                border: '1px solid var(--sl-brand-alpha-20)',
                                 '&:hover': {
-                                  color: '#ec4899',
-                                  bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                  borderColor: 'rgba(236, 72, 153, 0.4)',
+                                  color: 'var(--sl-brand-primary)',
+                                  bgcolor: 'var(--sl-brand-alpha-20)',
+                                  borderColor: 'var(--sl-brand-alpha-40)',
                                   transform: 'scale(1.05)',
                                 },
                                 transition: 'all 0.2s',
@@ -468,11 +468,11 @@ function DocumentsListContent() {
                               size="small"
                               onClick={() => navigate(`/project/${doc.projectId}?tab=1`)}
                               sx={{
-                                color: '#9ca3af',
+                                color: 'var(--sl-text-muted)',
                                 bgcolor: 'rgba(59, 130, 246, 0.1)',
                                 border: '1px solid rgba(59, 130, 246, 0.2)',
                                 '&:hover': {
-                                  color: '#3b82f6',
+                                  color: 'var(--sl-status-info)',
                                   bgcolor: 'rgba(59, 130, 246, 0.2)',
                                   borderColor: 'rgba(59, 130, 246, 0.4)',
                                   transform: 'scale(1.05)',
@@ -489,13 +489,13 @@ function DocumentsListContent() {
                               size="small"
                               onClick={() => handleOpenDeleteDialog(doc)}
                               sx={{
-                                color: '#9ca3af',
-                                bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                border: '1px solid rgba(236, 72, 153, 0.2)',
+                                color: 'var(--sl-text-muted)',
+                                bgcolor: 'var(--sl-brand-alpha-10)',
+                                border: '1px solid var(--sl-brand-alpha-20)',
                                 '&:hover': {
-                                  color: '#ec4899',
-                                  bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                  borderColor: 'rgba(236, 72, 153, 0.4)',
+                                  color: 'var(--sl-brand-primary)',
+                                  bgcolor: 'var(--sl-brand-alpha-20)',
+                                  borderColor: 'var(--sl-brand-alpha-40)',
                                   transform: 'scale(1.05)',
                                 },
                                 transition: 'all 0.2s',
@@ -541,10 +541,10 @@ function DocumentsListContent() {
                   position: 'absolute',
                   right: 12,
                   top: 12,
-                  color: '#6b7280',
+                  color: 'var(--sl-text-disabled)',
                   '&:hover': {
-                    color: '#fff',
-                    bgcolor: '#1a1a1a',
+                    color: 'var(--sl-text-primary)',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                   },
                 }}
               >
@@ -558,7 +558,7 @@ function DocumentsListContent() {
               <form onSubmit={handleDeleteDocument}>
                 <Box className="space-y-4">
                   <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <DeleteIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
                       <Typography className="text-red-400 font-medium mb-1">
                         Warning: This action cannot be undone
@@ -584,20 +584,20 @@ function DocumentsListContent() {
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           color: 'white',
-                          bgcolor: '#000',
+                          bgcolor: 'var(--sl-bg-base)',
                           borderRadius: '8px',
                           '& fieldset': {
-                            borderColor: '#2a2a2a',
+                            borderColor: 'var(--sl-border-default)',
                           },
                           '&:hover fieldset': {
-                            borderColor: '#3a3a3a',
+                            borderColor: 'var(--sl-border-hover)',
                           },
                           '&.Mui-focused fieldset': {
-                            borderColor: '#ef4444',
+                            borderColor: 'var(--sl-status-error)',
                           },
                         },
                         '& .MuiInputBase-input::placeholder': {
-                          color: '#6b7280',
+                          color: 'var(--sl-text-disabled)',
                           opacity: 1,
                         },
                       }}
@@ -661,7 +661,7 @@ export default function DocumentsList() {
   return (
     <Suspense fallback={
       <Box className="min-h-screen bg-black text-white flex items-center justify-center">
-        <CircularProgress sx={{ color: '#ec4899' }} />
+        <CircularProgress sx={{ color: 'var(--sl-brand-primary)' }} />
       </Box>
     }>
       <DocumentsListContent />

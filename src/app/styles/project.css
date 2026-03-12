@@ -1,5 +1,5 @@
 .system-message ::selection {
-	background: #cabdff;
+	background: var(--sl-status-purple);
 }
 
 .header {

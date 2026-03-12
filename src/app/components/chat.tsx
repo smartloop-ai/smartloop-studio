@@ -966,32 +966,32 @@ export default function Chat(props: {
                         width: '40px',
                         height: '40px',
                         borderRadius: '10px',
-                        bgcolor: 'rgba(236, 72, 153, 0.1)',
-                        border: '1px solid rgba(236, 72, 153, 0.2)',
+                        bgcolor: 'var(--sl-brand-alpha-10)',
+                        border: '1px solid var(--sl-brand-alpha-20)',
                       }}
                     >
-                      <LightbulbIcon sx={{ color: '#ec4899', fontSize: 24 }} />
+                      <LightbulbIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
                     </Box>
                     <h2 className="text-lg md:text-xl font-semibold text-white">Tips to Get Started</h2>
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Ask specific questions:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Customize with project rules:</span> Visit the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium">Settings</span> tab to define project rules that refine how the AI responds to your specific needs
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: '#ec4899', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
                         <span className="font-semibold text-white">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple sources
                       </p>
@@ -1005,7 +1005,7 @@ export default function Chat(props: {
               <div className="flex flex-col gap-2 h-full w-full justify-center">
                 <div className="flex justify-center">
                   <div className="bg-gray-800 rounded-lg p-8 text-center">
-                    <SearchIcon sx={{ fontSize: 48, color: '#9ca3af' }} />
+                    <SearchIcon sx={{ fontSize: 48, color: 'var(--sl-text-muted)' }} />
                     <p className="mt-4 text-gray-400">No messages found matching "{searchQuery}"</p>
                   </div>
                 </div>
@@ -1117,10 +1117,10 @@ export default function Chat(props: {
                                           width: 24,
                                           height: 24,
                                           borderRadius: '50%',
-                                          bgcolor: 'rgba(236, 72, 153, 0.15)',
+                                          bgcolor: 'var(--sl-brand-alpha-15)',
                                         }}
                                       >
-                                        <InsertDriveFileIcon sx={{ fontSize: 12, color: '#ec4899' }} />
+                                        <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
                                       </Box>
                                       <span className="text-gray-300 truncate max-w-[150px]">{attachment.name || 'Document'}</span>
                                     </Box>
@@ -1129,7 +1129,7 @@ export default function Chat(props: {
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '3px solid #ec4899' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
+                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
                               <div className="user-message-content text-wrap break-words py-3" dangerouslySetInnerHTML={{
                                 __html: marked(msg.content)
                               }}>
@@ -1192,9 +1192,9 @@ export default function Chat(props: {
                 {statusInfo.model && (
                   <span className="flex items-center gap-1">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                      <path d="M8 1.5C5.5 1.5 3.5 3.5 3.5 6c0 1.5.7 2.8 1.8 3.6V12a.5.5 0 00.5.5h4.4a.5.5 0 00.5-.5V9.6c1.1-.8 1.8-2.1 1.8-3.6 0-2.5-2-4.5-4.5-4.5z" stroke="#4b5563" strokeWidth="0.75" fill="none" />
-                      <line x1="5.5" y1="13.5" x2="10.5" y2="13.5" stroke="#4b5563" strokeWidth="0.75" />
-                      <line x1="5.5" y1="14.5" x2="10.5" y2="14.5" stroke="#4b5563" strokeWidth="0.75" />
+                      <path d="M8 1.5C5.5 1.5 3.5 3.5 3.5 6c0 1.5.7 2.8 1.8 3.6V12a.5.5 0 00.5.5h4.4a.5.5 0 00.5-.5V9.6c1.1-.8 1.8-2.1 1.8-3.6 0-2.5-2-4.5-4.5-4.5z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
+                      <line x1="5.5" y1="13.5" x2="10.5" y2="13.5" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
+                      <line x1="5.5" y1="14.5" x2="10.5" y2="14.5" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
                     </svg>
                     <span>{statusInfo.model.replace(/-/g, ' ')}</span>
                   </span>
@@ -1202,15 +1202,15 @@ export default function Chat(props: {
                 {statusInfo.memory !== null && (
                   <span className="flex items-center gap-1 ml-auto">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                      <rect x="3" y="3" width="10" height="10" rx="1" stroke="#4b5563" strokeWidth="0.75" fill="none" />
-                      <rect x="5" y="5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
-                      <rect x="8.5" y="5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
-                      <rect x="5" y="8.5" width="2.5" height="2.5" rx="0.3" fill="#4b5563" />
-                      <rect x="8.5" y="8.5" width="2.5" height="2.5" rx="0.3" fill={statusInfo.memory > 80 ? '#ef4444' : statusInfo.memory > 60 ? '#f59e0b' : '#4b5563'} />
-                      <line x1="1" y1="6" x2="3" y2="6" stroke="#4b5563" strokeWidth="0.75" />
-                      <line x1="1" y1="10" x2="3" y2="10" stroke="#4b5563" strokeWidth="0.75" />
-                      <line x1="13" y1="6" x2="15" y2="6" stroke="#4b5563" strokeWidth="0.75" />
-                      <line x1="13" y1="10" x2="15" y2="10" stroke="#4b5563" strokeWidth="0.75" />
+                      <rect x="3" y="3" width="10" height="10" rx="1" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
+                      <rect x="5" y="5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
+                      <rect x="8.5" y="5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
+                      <rect x="5" y="8.5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
+                      <rect x="8.5" y="8.5" width="2.5" height="2.5" rx="0.3" fill={statusInfo.memory > 80 ? 'var(--sl-status-error)' : statusInfo.memory > 60 ? 'var(--sl-status-warning)' : 'var(--sl-text-faint)'} />
+                      <line x1="1" y1="6" x2="3" y2="6" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
+                      <line x1="1" y1="10" x2="3" y2="10" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
+                      <line x1="13" y1="6" x2="15" y2="6" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
+                      <line x1="13" y1="10" x2="15" y2="10" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
                     </svg>
                     <span>memory pressure {Math.round(statusInfo.memory)}%</span>
                   </span>
