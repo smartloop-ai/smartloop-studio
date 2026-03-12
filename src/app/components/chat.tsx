@@ -114,7 +114,6 @@ export default function Chat(props: {
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
-  const [isModelLoading, setIsModelLoading] = useState(false);
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
 
@@ -161,7 +160,6 @@ export default function Chat(props: {
     const handler = async (e: any) => {
       const loading = e.detail?.loading ?? false;
       modelLoadingRef.current = loading;
-      setIsModelLoading(loading);
       // When model finishes loading, refresh the status bar
       if (!loading) {
         const model = e.detail?.model || await storageService.getItem('selected_model') || 'gemma3-1b';
