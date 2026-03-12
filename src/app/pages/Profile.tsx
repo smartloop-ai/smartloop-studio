@@ -76,7 +76,7 @@ export default function Profile() {
                         <Box className="p-4">
                             {loading ? (
                                 <Box className="flex justify-center items-center" sx={{ minHeight: '400px' }}>
-                                    <CircularProgress sx={{ color: '#ec4899' }} size={48} />
+                                    <CircularProgress sx={{ color: 'var(--sl-brand-primary)' }} size={48} />
                                 </Box>
                             ) : (
                                 <Box className="max-w-5xl mx-auto mt-6 md:mt-12">
@@ -88,8 +88,8 @@ export default function Profile() {
                                                   width: 60,
                                                   height: 60,
                                                   borderRadius: '8px',
-                                                  bgcolor: 'rgba(236, 72, 153, 0.15)',
-                                                  border: '1.5px solid rgba(236, 72, 153, 0.3)',
+                                                  bgcolor: 'var(--sl-brand-alpha-15)',
+                                                  border: '1.5px solid var(--sl-brand-alpha-30)',
                                                   display: 'flex',
                                                   alignItems: 'center',
                                                   justifyContent: 'center',
@@ -112,8 +112,8 @@ export default function Profile() {
                                         <h2 className="text-lg md:text-xl font-semibold text-white mb-4">Account Information</h2>
                                         <Box
                                             sx={{
-                                                bgcolor: '#0a0a0a',
-                                                border: '1px solid #1a1a1a',
+                                                bgcolor: 'var(--sl-bg-base)',
+                                                border: '1px solid var(--sl-bg-surface-1)',
                                                 borderRadius: '16px',
                                                 padding: { xs: '16px', md: '24px' },
                                             }}
@@ -121,7 +121,7 @@ export default function Profile() {
                                             <Box className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 {/* Name */}
                                                 <Box className="flex items-start gap-3">
-                                                    <PersonIcon sx={{ fontSize: 24, color: '#9ca3af', mt: 0.5 }} />
+                                                    <PersonIcon sx={{ fontSize: 24, color: 'var(--sl-text-muted)', mt: 0.5 }} />
                                                     <Box>
                                                         <p className="text-xs text-gray-500 uppercase mb-1">Full Name</p>
                                                         <p className="text-white font-medium">{user.name || 'N/A'}</p>
@@ -130,7 +130,7 @@ export default function Profile() {
 
                                                 {/* Email */}
                                                 <Box className="flex items-start gap-3">
-                                                    <EmailIcon sx={{ fontSize: 24, color: '#9ca3af', mt: 0.5 }} />
+                                                    <EmailIcon sx={{ fontSize: 24, color: 'var(--sl-text-muted)', mt: 0.5 }} />
                                                     <Box>
                                                         <p className="text-xs text-gray-500 uppercase mb-1">Email</p>
                                                         <p className="text-white font-medium">{user.email || 'N/A'}</p>
@@ -141,7 +141,7 @@ export default function Profile() {
                                                 <Box className="flex items-start gap-3">
                                                     {user.verified ? (
                                                         <>
-                                                            <CheckCircleIcon sx={{ fontSize: 24, color: '#10b981', mt: 0.5 }} />
+                                                            <CheckCircleIcon sx={{ fontSize: 24, color: 'var(--sl-status-success)', mt: 0.5 }} />
                                                             <Box>
                                                                 <p className="text-xs text-gray-500 uppercase mb-1">Status</p>
                                                                 <p className="text-green-500 font-medium">Verified</p>
@@ -149,7 +149,7 @@ export default function Profile() {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <CancelIcon sx={{ fontSize: 24, color: '#ef4444', mt: 0.5 }} />
+                                                            <CancelIcon sx={{ fontSize: 24, color: 'var(--sl-status-error)', mt: 0.5 }} />
                                                             <Box>
                                                                 <p className="text-xs text-gray-500 uppercase mb-1">Status</p>
                                                                 <p className="text-red-500 font-medium">Not Verified</p>
@@ -161,11 +161,11 @@ export default function Profile() {
                                                 {/* Subscription */}
                                                 <Box className="flex items-start gap-3">
                                                     {user.is_premium ? (
-                                                        <AllInclusiveIcon sx={{ fontSize: 24, color: '#ec4899', mt: 0.5 }} />
+                                                        <AllInclusiveIcon sx={{ fontSize: 24, color: 'var(--sl-brand-primary)', mt: 0.5 }} />
                                                     ) : user.is_paid ? (
-                                                        <FlashOnIcon sx={{ fontSize: 24, color: '#ec4899', mt: 0.5 }} />
+                                                        <FlashOnIcon sx={{ fontSize: 24, color: 'var(--sl-brand-primary)', mt: 0.5 }} />
                                                     ) : (
-                                                        <NotificationsNoneIcon sx={{ fontSize: 24, color: '#9ca3af', mt: 0.5 }} />
+                                                        <NotificationsNoneIcon sx={{ fontSize: 24, color: 'var(--sl-text-muted)', mt: 0.5 }} />
                                                     )}
                                                     <Box>
                                                         <p className="text-xs text-gray-500 uppercase mb-1">Plan</p>
@@ -192,12 +192,12 @@ export default function Profile() {
                                             {/* Credits Card */}
                                             <Box
                                                 sx={{
-                                                    bgcolor: 'rgba(236, 72, 153, 0.05)',
-                                                    border: '2px solid #ec4899',
+                                                    bgcolor: 'var(--sl-brand-alpha-10)',
+                                                    border: '2px solid var(--sl-brand-primary)',
                                                     borderRadius: '16px',
                                                     padding: { xs: '16px', md: '24px' },
                                                     mb: 3,
-                                                    boxShadow: '0 0 30px rgba(236, 72, 153, 0.15)',
+                                                    boxShadow: '0 0 30px var(--sl-brand-alpha-15)',
                                                 }}
                                             >
                                                 <Box className="flex items-center justify-between mb-4">
@@ -205,14 +205,14 @@ export default function Profile() {
                                                         <h3 className="text-base md:text-lg font-semibold text-white mb-1">Credits Remaining</h3>
                                                         <p className="text-xs md:text-sm text-gray-400">Your available credits for AI processing</p>
                                                     </Box>
-                                                    <TokenIcon sx={{ fontSize: { xs: 36, md: 48 }, color: '#ec4899' }} />
+                                                    <TokenIcon sx={{ fontSize: { xs: 36, md: 48 }, color: 'var(--sl-brand-primary)' }} />
                                                 </Box>
 
                                                 <Box className="mb-4">
                                                     <Box className="flex items-baseline gap-2 mb-2 flex-wrap">
                                                         {metrics.isPremium ? (
                                                             <Box className="flex items-center gap-2">
-                                                                <AllInclusiveIcon sx={{ fontSize: { xs: 36, md: 48 }, color: '#ec4899' }} />
+                                                                <AllInclusiveIcon sx={{ fontSize: { xs: 36, md: 48 }, color: 'var(--sl-brand-primary)' }} />
                                                                 <span className="text-3xl md:text-4xl font-bold text-pink-400">Unlimited</span>
                                                             </Box>
                                                         ) : (
@@ -233,9 +233,9 @@ export default function Profile() {
                                                             sx={{
                                                                 height: 8,
                                                                 borderRadius: 4,
-                                                                bgcolor: '#1a1a1a',
+                                                                bgcolor: 'var(--sl-bg-surface-1)',
                                                                 '& .MuiLinearProgress-bar': {
-                                                                    bgcolor: '#ec4899',
+                                                                    bgcolor: 'var(--sl-brand-primary)',
                                                                     borderRadius: 4,
                                                                 },
                                                             }}
@@ -278,8 +278,8 @@ export default function Profile() {
                                             {/* Token Details */}
                                             <Box
                                                 sx={{
-                                                    bgcolor: '#0a0a0a',
-                                                    border: '1px solid #1a1a1a',
+                                                    bgcolor: 'var(--sl-bg-base)',
+                                                    border: '1px solid var(--sl-bg-surface-1)',
                                                     borderRadius: '16px',
                                                     padding: { xs: '16px', md: '24px' },
                                                     mb: 3,
@@ -289,7 +289,7 @@ export default function Profile() {
                                                 <Box className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                                     <Box>
                                                         <Box className="flex items-center gap-2 mb-2">
-                                                            <TrendingUpIcon sx={{ fontSize: 20, color: '#ec4899' }} />
+                                                            <TrendingUpIcon sx={{ fontSize: 20, color: 'var(--sl-brand-primary)' }} />
                                                             <p className="text-xs text-gray-500 uppercase">Processed</p>
                                                         </Box>
                                                         <p className="text-xl md:text-2xl font-bold text-white">{metrics.processedTokens.toLocaleString()}</p>
@@ -298,13 +298,13 @@ export default function Profile() {
 
                                                     <Box>
                                                         <Box className="flex items-center gap-2 mb-2">
-                                                            <TokenIcon sx={{ fontSize: 20, color: '#10b981' }} />
+                                                            <TokenIcon sx={{ fontSize: 20, color: 'var(--sl-status-success)' }} />
                                                             <p className="text-xs text-gray-500 uppercase">Remaining</p>
                                                         </Box>
                                                         {metrics.isPremium ? (
                                                             <>
                                                                 <Box className="flex items-center gap-1">
-                                                                    <AllInclusiveIcon sx={{ fontSize: { xs: 24, md: 32 }, color: '#10b981' }} />
+                                                                    <AllInclusiveIcon sx={{ fontSize: { xs: 24, md: 32 }, color: 'var(--sl-status-success)' }} />
                                                                 </Box>
                                                                 <p className="text-xs text-gray-600 mt-1">unlimited</p>
                                                             </>
@@ -318,13 +318,13 @@ export default function Profile() {
 
                                                     <Box>
                                                         <Box className="flex items-center gap-2 mb-2">
-                                                            <TokenIcon sx={{ fontSize: 20, color: '#9ca3af' }} />
+                                                            <TokenIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
                                                             <p className="text-xs text-gray-500 uppercase">Total</p>
                                                         </Box>
                                                         {metrics.isPremium ? (
                                                             <>
                                                                 <Box className="flex items-center gap-1">
-                                                                    <AllInclusiveIcon sx={{ fontSize: { xs: 24, md: 32 }, color: '#ffffff' }} />
+                                                                    <AllInclusiveIcon sx={{ fontSize: { xs: 24, md: 32 }, color: 'var(--sl-text-primary)' }} />
                                                                 </Box>
                                                                 <p className="text-xs text-gray-600 mt-1">unlimited</p>
                                                             </>
@@ -348,9 +348,9 @@ export default function Profile() {
                                                         sx={{
                                                             height: 6,
                                                             borderRadius: 3,
-                                                            bgcolor: '#1a1a1a',
+                                                            bgcolor: 'var(--sl-bg-surface-1)',
                                                             '& .MuiLinearProgress-bar': {
-                                                                bgcolor: metrics.usagePercentage > 80 ? '#ef4444' : metrics.usagePercentage > 50 ? '#f59e0b' : '#10b981',
+                                                                bgcolor: metrics.usagePercentage > 80 ? 'var(--sl-status-error)' : metrics.usagePercentage > 50 ? 'var(--sl-status-warning)' : 'var(--sl-status-success)',
                                                                 borderRadius: 3,
                                                             },
                                                         }}
@@ -361,8 +361,8 @@ export default function Profile() {
                                             {/* Activity Statistics */}
                                             <Box
                                                 sx={{
-                                                    bgcolor: '#0a0a0a',
-                                                    border: '1px solid #1a1a1a',
+                                                    bgcolor: 'var(--sl-bg-base)',
+                                                    border: '1px solid var(--sl-bg-surface-1)',
                                                     borderRadius: '16px',
                                                     padding: { xs: '16px', md: '24px' },
                                                 }}
@@ -375,13 +375,13 @@ export default function Profile() {
                                                                 width: 48,
                                                                 height: 48,
                                                                 borderRadius: '12px',
-                                                                bgcolor: 'rgba(236, 72, 153, 0.1)',
+                                                                bgcolor: 'var(--sl-brand-alpha-10)',
                                                                 display: 'flex',
                                                                 alignItems: 'center',
                                                                 justifyContent: 'center',
                                                             }}
                                                         >
-                                                            <ChatIcon sx={{ fontSize: 24, color: '#ec4899' }} />
+                                                            <ChatIcon sx={{ fontSize: 24, color: 'var(--sl-brand-primary)' }} />
                                                         </Box>
                                                         <Box>
                                                             <p className="text-xl md:text-2xl font-bold text-white">{metrics.totalProjects}</p>
@@ -401,7 +401,7 @@ export default function Profile() {
                                                                 justifyContent: 'center',
                                                             }}
                                                         >
-                                                            <DescriptionIcon sx={{ fontSize: 24, color: '#3b82f6' }} />
+                                                            <DescriptionIcon sx={{ fontSize: 24, color: 'var(--sl-status-info)' }} />
                                                         </Box>
                                                         <Box>
                                                             <p className="text-xl md:text-2xl font-bold text-white">{metrics.totalDocuments}</p>
@@ -415,8 +415,8 @@ export default function Profile() {
                                             {!user.is_premium && !user.is_paid && metrics.usagePercentage > 70 && (
                                                 <Box
                                                     sx={{
-                                                        bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                                        border: '1px solid rgba(236, 72, 153, 0.3)',
+                                                        bgcolor: 'var(--sl-brand-alpha-10)',
+                                                        border: '1px solid var(--sl-brand-alpha-30)',
                                                         borderRadius: '16px',
                                                         padding: { xs: '16px', md: '24px' },
                                                         mt: 3,

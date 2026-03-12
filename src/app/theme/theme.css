@@ -1,0 +1,89 @@
+/*
+ * SmartLoop Dark Theme — CSS Custom Properties
+ * Token naming: --sl-{category}-{variant}
+ *
+ * Keep in sync with ./colors.ts (JS source of truth for MUI theme).
+ */
+
+:root {
+  /* ── Backgrounds ───────────────────────────────────────── */
+  --sl-bg-base: #000000;
+  --sl-bg-surface-1: #1a1a1a;
+  --sl-bg-surface-2: #2a2a2a;
+  --sl-bg-surface-3: #3a3a3a;
+  --sl-bg-input: #303030;
+  --sl-bg-elevated: #1b1b1b;
+
+  /* ── Brand ─────────────────────────────────────────────── */
+  --sl-brand-primary: #ec4899;
+  --sl-brand-hover: #db2777;
+  --sl-brand-active: #be185d;
+  --sl-brand-light: #f472b6;
+
+  /* ── Text ──────────────────────────────────────────────── */
+  --sl-text-primary: #ffffff;
+  --sl-text-secondary: #e5e7eb;
+  --sl-text-tertiary: #d1d5db;
+  --sl-text-muted: #9ca3af;
+  --sl-text-disabled: #6b7280;
+  --sl-text-faint: #4b5563;
+
+  /* ── Status ────────────────────────────────────────────── */
+  --sl-status-error: #ef4444;
+  --sl-status-success: #10b981;
+  --sl-status-online: #22c55e;
+  --sl-status-warning: #f59e0b;
+  --sl-status-info: #3b82f6;
+  --sl-status-purple: #a855f7;
+
+  /* ── Borders ───────────────────────────────────────────── */
+  --sl-border-subtle: #1a1a1a;
+  --sl-border-default: #2a2a2a;
+  --sl-border-hover: #3a3a3a;
+  --sl-border-code: #374151;
+
+  /* ── Brand alpha ───────────────────────────────────────── */
+  --sl-brand-alpha-10: rgba(236, 72, 153, 0.1);
+  --sl-brand-alpha-15: rgba(236, 72, 153, 0.15);
+  --sl-brand-alpha-18: rgba(236, 72, 153, 0.18);
+  --sl-brand-alpha-20: rgba(236, 72, 153, 0.2);
+  --sl-brand-alpha-30: rgba(236, 72, 153, 0.3);
+  --sl-brand-alpha-35: rgba(236, 72, 153, 0.35);
+  --sl-brand-alpha-40: rgba(236, 72, 153, 0.4);
+  --sl-brand-alpha-50: rgba(236, 72, 153, 0.5);
+
+  /* ── Danger alpha ──────────────────────────────────────── */
+  --sl-danger-alpha-10: rgba(239, 68, 68, 0.1);
+  --sl-danger-alpha-15: rgba(239, 68, 68, 0.15);
+  --sl-danger-alpha-20: rgba(239, 68, 68, 0.2);
+  --sl-danger-alpha-30: rgba(239, 68, 68, 0.3);
+  --sl-danger-alpha-50: rgba(239, 68, 68, 0.5);
+
+  /* ── White alpha ───────────────────────────────────────── */
+  --sl-white-alpha-2: rgba(255, 255, 255, 0.02);
+  --sl-white-alpha-5: rgba(255, 255, 255, 0.05);
+  --sl-white-alpha-7: rgba(255, 255, 255, 0.07);
+  --sl-white-alpha-8: rgba(255, 255, 255, 0.08);
+  --sl-white-alpha-10: rgba(255, 255, 255, 0.1);
+  --sl-white-alpha-15: rgba(255, 255, 255, 0.15);
+  --sl-white-alpha-20: rgba(255, 255, 255, 0.2);
+  --sl-white-alpha-30: rgba(255, 255, 255, 0.3);
+  --sl-white-alpha-40: rgba(255, 255, 255, 0.4);
+  --sl-white-alpha-50: rgba(255, 255, 255, 0.5);
+  --sl-white-alpha-60: rgba(255, 255, 255, 0.6);
+  --sl-white-alpha-70: rgba(255, 255, 255, 0.7);
+  --sl-white-alpha-80: rgba(255, 255, 255, 0.8);
+  --sl-white-alpha-85: rgba(255, 255, 255, 0.85);
+
+  /* ── Black alpha ───────────────────────────────────────── */
+  --sl-black-alpha-20: rgba(0, 0, 0, 0.2);
+  --sl-black-alpha-30: rgba(0, 0, 0, 0.3);
+  --sl-black-alpha-40: rgba(0, 0, 0, 0.4);
+  --sl-black-alpha-50: rgba(0, 0, 0, 0.5);
+
+  /* ── Table-specific darks ──────────────────────────────── */
+  --sl-bg-table-head: #111827;
+  --sl-bg-table-hover: #1f2937;
+  --sl-bg-table-stripe: #0f1419;
+  --sl-bg-inline-code: #1f2937;
+}

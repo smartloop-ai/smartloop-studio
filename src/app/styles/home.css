@@ -9,7 +9,7 @@
 
 /* Projects Page Styles */
 .projects-page {
-	background-color: #000;
+	background-color: var(--sl-bg-base);
 	min-height: 100vh;
 }
 
@@ -21,5 +21,5 @@
 /* Book illustration styles */
 .book-spine {
 	border-radius: 4px 4px 0 0;
-	box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
+	box-shadow: 2px 2px 8px var(--sl-black-alpha-20);
 }

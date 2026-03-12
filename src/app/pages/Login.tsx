@@ -128,7 +128,7 @@ export default function Login() {
       {/* Home icon */}
       <IconButton
         onClick={() => navigate('/', { replace: true })}
-        sx={{ position: 'absolute', top: 16, right: 16, color: '#9ca3af', '&:hover': { color: '#fff' } }}
+        sx={{ position: 'absolute', top: 16, right: 16, color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-text-primary)' } }}
       >
         <HomeOutlinedIcon />
       </IconButton>
@@ -147,8 +147,8 @@ export default function Login() {
         sx={{
           maxWidth: '400px',
           width: '100%',
-          bgcolor: '#0a0a0a',
-          border: '1px solid #1a1a1a',
+          bgcolor: 'var(--sl-bg-base)',
+          border: '1px solid var(--sl-bg-surface-1)',
           borderRadius: '16px',
           padding: '48px',
           textAlign: 'center',
@@ -175,7 +175,7 @@ export default function Login() {
           className="w-full py-4 rounded-lg font-medium transition-all text-lg"
           style={{
             background: isLoading
-              ? '#6b7280'
+              ? 'var(--sl-text-disabled)'
               : 'linear-gradient(to right, #e9d5ff, #ddd6fe)',
             color: '#1f2937',
             cursor: isLoading ? 'not-allowed' : 'pointer',

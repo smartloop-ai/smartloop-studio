@@ -441,7 +441,7 @@ export default function Project() {
               display: { xs: 'flex', md: 'none' },
               color: 'white',
               '&:hover': {
-                color: '#ec4899',
+                color: 'var(--sl-brand-primary)',
               },
             }}
           >
@@ -544,17 +544,17 @@ export default function Project() {
 
                                         <Box className="flex items-center gap-2 flex-wrap">
                                           <Chip
-                                            icon={<MonetizationOnIcon sx={{ fontSize: '14px !important', color: '#ec4899 !important' }} />}
+                                            icon={<MonetizationOnIcon sx={{ fontSize: '14px !important', color: 'var(--sl-brand-primary) !important' }} />}
                                             label="Credits"
                                             size="small"
                                             variant="outlined"
                                             sx={{
                                               bgcolor: 'transparent',
-                                              color: '#ec4899',
+                                              color: 'var(--sl-brand-primary)',
                                               fontSize: '11px',
                                               height: '22px',
                                               fontWeight: 500,
-                                              border: '1px solid rgba(236, 72, 153, 0.3)',
+                                              border: '1px solid var(--sl-brand-alpha-30)',
                                               borderRadius: '4px',
                                             }}
                                           />
@@ -565,11 +565,11 @@ export default function Project() {
                                               variant="outlined"
                                               sx={{
                                                 bgcolor: 'transparent',
-                                                color: '#ec4899',
+                                                color: 'var(--sl-brand-primary)',
                                                 fontSize: '11px',
                                                 height: '22px',
                                                 fontWeight: 600,
-                                                border: '1px solid rgba(236, 72, 153, 0.3)',
+                                                border: '1px solid var(--sl-brand-alpha-30)',
                                                 borderRadius: '4px',
                                               }}
                                             />
@@ -579,7 +579,7 @@ export default function Project() {
                                               size="small"
                                               icon={<CircularProgress size={10} sx={{ color: 'white !important' }} />}
                                               sx={{
-                                                bgcolor: '#6b7280',
+                                                bgcolor: 'var(--sl-text-disabled)',
                                                 color: 'white',
                                                 fontSize: '11px',
                                                 height: '22px',
@@ -590,16 +590,16 @@ export default function Project() {
                                           ) : null}
                                           {doc.is_token_limit_reached && (
                                             <Chip
-                                              icon={<WarningIcon sx={{ fontSize: '12px !important', color: '#f59e0b !important' }} />}
+                                              icon={<WarningIcon sx={{ fontSize: '12px !important', color: 'var(--sl-status-warning) !important' }} />}
                                               label="Token Limit"
                                               size="small"
                                               sx={{
-                                                bgcolor: 'rgba(245, 158, 11, 0.1)',
-                                                color: '#f59e0b',
+                                                bgcolor: 'color-mix(in srgb, var(--sl-status-warning) 10%, transparent)',
+                                                color: 'var(--sl-status-warning)',
                                                 fontSize: '11px',
                                                 height: '22px',
                                                 fontWeight: 500,
-                                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                                border: '1px solid color-mix(in srgb, var(--sl-status-warning) 30%, transparent)',
                                                 borderRadius: '4px',
                                               }}
                                             />
@@ -613,13 +613,13 @@ export default function Project() {
                                           size="small"
                                           onClick={() => navigate(`/documents?project=${current.id}`)}
                                           sx={{
-                                            color: '#9ca3af',
-                                            bgcolor: 'rgba(236, 72, 153, 0.1)',
-                                            border: '1px solid rgba(236, 72, 153, 0.2)',
+                                            color: 'var(--sl-text-muted)',
+                                            bgcolor: 'var(--sl-brand-alpha-10)',
+                                            border: '1px solid var(--sl-brand-alpha-20)',
                                             '&:hover': {
-                                              color: '#ec4899',
-                                              bgcolor: 'rgba(236, 72, 153, 0.2)',
-                                              borderColor: 'rgba(236, 72, 153, 0.4)',
+                                              color: 'var(--sl-brand-primary)',
+                                              bgcolor: 'var(--sl-brand-alpha-20)',
+                                              borderColor: 'var(--sl-brand-alpha-40)',
                                               transform: 'scale(1.05)',
                                             },
                                             transition: 'all 0.2s',
@@ -632,11 +632,11 @@ export default function Project() {
                                           size="small"
                                           onClick={() => selectTab(1)}
                                           sx={{
-                                            color: '#9ca3af',
+                                            color: 'var(--sl-text-muted)',
                                             bgcolor: 'rgba(59, 130, 246, 0.1)',
                                             border: '1px solid rgba(59, 130, 246, 0.2)',
                                             '&:hover': {
-                                              color: '#3b82f6',
+                                              color: 'var(--sl-status-info)',
                                               bgcolor: 'rgba(59, 130, 246, 0.2)',
                                               borderColor: 'rgba(59, 130, 246, 0.4)',
                                               transform: 'scale(1.05)',
@@ -656,13 +656,13 @@ export default function Project() {
                                             }
                                           }}
                                           sx={{
-                                            color: '#9ca3af',
-                                            bgcolor: 'rgba(239, 68, 68, 0.1)',
-                                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                                            color: 'var(--sl-text-muted)',
+                                            bgcolor: 'var(--sl-danger-alpha-10)',
+                                            border: '1px solid var(--sl-danger-alpha-20)',
                                             '&:hover': {
-                                              color: '#ef4444',
-                                              bgcolor: 'rgba(239, 68, 68, 0.2)',
-                                              borderColor: 'rgba(239, 68, 68, 0.4)',
+                                              color: 'var(--sl-status-error)',
+                                              bgcolor: 'var(--sl-danger-alpha-20)',
+                                              borderColor: 'var(--sl-danger-alpha-50)',
                                               transform: 'scale(1.05)',
                                             },
                                             transition: 'all 0.2s',
@@ -679,12 +679,12 @@ export default function Project() {
                           ) : (
                             (isLoading && !isDirty) ?
                               <div className="my-10 flex items-center gap-2 text-gray-400">
-                                <CircularProgress size={16} sx={{ color: '#10b981' }} /> please wait...
+                                <CircularProgress size={16} sx={{ color: 'var(--sl-status-success)' }} /> please wait...
                               </div> :
                               <Box className="flex flex-col items-center justify-center py-16 px-6">
                                 <Box className="text-center max-w-md">
                                   <Box className="mb-4">
-                                    <InsertDriveFileIcon sx={{ fontSize: 64, color: '#4b5563' }} />
+                                    <InsertDriveFileIcon sx={{ fontSize: 64, color: 'var(--sl-text-faint)' }} />
                                   </Box>
                                   <h3 className="text-xl font-medium text-white mb-2">No documents yet</h3>
                                   <p className="text-gray-400 mb-6">
@@ -716,17 +716,17 @@ export default function Project() {
                             sx: dialogStyles.backdrop
                           }}
                         >
-                          <DialogTitle sx={{ m: 0, p: 3, bgcolor: '#0a0a0a', borderBottom: '1px solid #1a1a1a' }}>
+                          <DialogTitle sx={{ m: 0, p: 3, bgcolor: 'var(--sl-bg-base)', borderBottom: '1px solid var(--sl-bg-surface-1)' }}>
                             <Box className="flex items-center justify-between">
                               <span className="text-white text-xl font-semibold">Delete Project</span>
                               <IconButton
                                 aria-label="close"
                                 onClick={handleCloseProjectDeleteDialog}
                                 sx={{
-                                  color: '#6b7280',
+                                  color: 'var(--sl-text-disabled)',
                                   '&:hover': {
                                     color: 'white',
-                                    bgcolor: '#1a1a1a'
+                                    bgcolor: 'var(--sl-bg-surface-1)'
                                   },
                                 }}
                               >
@@ -734,11 +734,11 @@ export default function Project() {
                               </IconButton>
                             </Box>
                           </DialogTitle>
-                          <DialogContent sx={{ bgcolor: '#0a0a0a', p: 3 }}>
+                          <DialogContent sx={{ bgcolor: 'var(--sl-bg-base)', p: 3 }}>
                             <form onSubmit={deleteProject}>
                               <Box className="space-y-4">
                                 <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                                  <DeleteIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                                  <DeleteIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                                   <Box>
                                     <Typography className="text-red-400 font-medium mb-1">
                                       Warning: This action cannot be undone
@@ -766,20 +766,20 @@ export default function Project() {
                                     sx={{
                                       '& .MuiOutlinedInput-root': {
                                         color: 'white',
-                                        bgcolor: '#000',
+                                        bgcolor: 'var(--sl-bg-base)',
                                         borderRadius: '8px',
                                         '& fieldset': {
-                                          borderColor: '#2a2a2a',
+                                          borderColor: 'var(--sl-border-default)',
                                         },
                                         '&:hover fieldset': {
-                                          borderColor: '#3a3a3a',
+                                          borderColor: 'var(--sl-border-hover)',
                                         },
                                         '&.Mui-focused fieldset': {
-                                          borderColor: '#ef4444',
+                                          borderColor: 'var(--sl-status-error)',
                                         },
                                       },
                                       '& .MuiInputBase-input::placeholder': {
-                                        color: '#6b7280',
+                                        color: 'var(--sl-text-disabled)',
                                         opacity: 1,
                                       },
                                     }}
@@ -850,7 +850,7 @@ export default function Project() {
                                               top: '12px',
                                               right: '12px',
                                               zIndex: 10,
-                                              bgcolor: 'rgba(0, 0, 0, 0.7)',
+                                              bgcolor: 'var(--sl-black-alpha-50)',
                                               borderRadius: '50%',
                                               padding: '4px',
                                               display: 'flex',
@@ -858,7 +858,7 @@ export default function Project() {
                                               justifyContent: 'center',
                                             }}
                                           >
-                                            <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                                            <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
                                           </Box>
                                         )}
                                         <Box className="markdown-editor-container">
@@ -888,10 +888,10 @@ export default function Project() {
                                         <Switch
                                           sx={{
                                             '& .MuiSwitch-switchBase.Mui-checked': {
-                                              color: '#10b981'
+                                              color: 'var(--sl-status-success)'
                                             },
                                             '& .MuiSwitch-switchBase.Mui-checked+.MuiSwitch-track': {
-                                              backgroundColor: '#10b981'
+                                              backgroundColor: 'var(--sl-status-success)'
                                             }
                                           }}
                                           aria-label='Conversation Memory'

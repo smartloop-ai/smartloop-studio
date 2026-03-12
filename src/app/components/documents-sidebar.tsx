@@ -30,11 +30,11 @@ export default function DocumentsSidebar({
               onClick={onAddDocument}
               size="small"
               sx={{
-                color: '#9ca3af',
+                color: 'var(--sl-text-muted)',
                 padding: '4px',
                 '&:hover': {
-                  color: '#ec4899',
-                  bgcolor: 'rgba(236, 72, 153, 0.1)',
+                  color: 'var(--sl-brand-primary)',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
                 },
               }}
               title="Add document"
@@ -52,12 +52,12 @@ export default function DocumentsSidebar({
                   sx={{
                     padding: '10px',
                     borderRadius: '6px',
-                    bgcolor: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    bgcolor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-5)',
                     transition: 'all 0.15s ease',
                     '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.04)',
-                      borderColor: 'rgba(255, 255, 255, 0.08)',
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                      borderColor: 'var(--sl-white-alpha-8)',
                     },
                   }}
                 >
@@ -66,14 +66,14 @@ export default function DocumentsSidebar({
                       {doc.filename || doc.name || 'Untitled'}
                     </span>
                     {doc.is_processing || (!doc.num_of_tokens && doc.num_of_tokens !== 0) ? (
-                      <CircularProgress size={10} sx={{ color: '#9ca3af' }} />
+                      <CircularProgress size={10} sx={{ color: 'var(--sl-text-muted)' }} />
                     ) : null}
                   </div>
                   <div className="text-xs text-gray-500">
                     {doc.updated_at ? new Date(doc.updated_at).toLocaleDateString() : ''}
                     {doc.num_of_tokens && doc.num_of_tokens > 0 ? (
                       <span className="ml-2">
-                        • <span style={{ color: '#ec4899' }}>{Math.ceil(doc.num_of_tokens / 100)} credits</span>
+                        • <span style={{ color: 'var(--sl-brand-primary)' }}>{Math.ceil(doc.num_of_tokens / 100)} credits</span>
                       </span>
                     ) : null}
                   </div>

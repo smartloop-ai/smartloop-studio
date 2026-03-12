@@ -525,7 +525,7 @@ export default function RightSidebar({
               >
                 {isSavingRules ? (
                   <>
-                    <CircularProgress size={10} sx={{ color: '#f9a8d4' }} />
+                    <CircularProgress size={10} sx={{ color: 'var(--sl-brand-light)' }} />
                     <span>Saving...</span>
                   </>
                 ) : hasUnsavedChanges ? (
@@ -636,30 +636,30 @@ export default function RightSidebar({
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
-                        <SearchIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
+                        <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
                       </InputAdornment>
                     ),
                   }}
                   sx={{
                     width: '100%',
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      backgroundColor: 'var(--sl-white-alpha-2)',
                       fontSize: '0.75rem',
                       '& fieldset': {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderColor: 'var(--sl-white-alpha-10)',
                       },
                       '&:hover fieldset': {
-                        borderColor: 'rgba(236, 72, 153, 0.3)',
+                        borderColor: 'var(--sl-brand-alpha-30)',
                       },
                       '&.Mui-focused fieldset': {
-                        borderColor: '#ec4899',
+                        borderColor: 'var(--sl-brand-primary)',
                       },
                     },
                     '& .MuiInputBase-input': {
-                      color: '#fff',
+                      color: 'var(--sl-text-primary)',
                       padding: '8px 12px',
                       '&::placeholder': {
-                        color: '#9ca3af',
+                        color: 'var(--sl-text-muted)',
                         opacity: 1,
                       },
                     },
@@ -683,12 +683,12 @@ export default function RightSidebar({
                     sx={{
                       padding: '10px',
                       borderRadius: '6px',
-                      bgcolor: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      bgcolor: 'var(--sl-white-alpha-2)',
+                      border: '1px solid var(--sl-white-alpha-5)',
                       transition: 'all 0.15s ease',
                       '&:hover': {
-                        bgcolor: 'rgba(255, 255, 255, 0.04)',
-                        borderColor: 'rgba(255, 255, 255, 0.08)',
+                        bgcolor: 'var(--sl-white-alpha-5)',
+                        borderColor: 'var(--sl-white-alpha-8)',
                       },
                       position: 'relative',
                     }}
@@ -700,7 +700,7 @@ export default function RightSidebar({
                           width: 32,
                           height: 32,
                           borderRadius: '50%',
-                          bgcolor: 'rgba(236, 72, 153, 0.12)',
+                          bgcolor: 'var(--sl-brand-alpha-10)',
                           flexShrink: 0,
                           display: 'flex',
                           alignItems: 'center',
@@ -708,7 +708,7 @@ export default function RightSidebar({
                           marginTop: '2px',
                         }}
                       >
-                        <InsertDriveFileIcon sx={{ fontSize: 16, color: '#ec4899' }} />
+                        <InsertDriveFileIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
                       </Box>
 
                       {/* Document Content */}
@@ -728,12 +728,12 @@ export default function RightSidebar({
                               sx={{
                                 opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
                                 transition: 'opacity 0.15s ease',
-                                color: '#9ca3af',
-                                bgcolor: 'rgba(239, 68, 68, 0.08)',
+                                color: 'var(--sl-text-muted)',
+                                bgcolor: 'var(--sl-danger-alpha-10)',
                                 padding: '4px',
                                 '&:hover': {
-                                  color: '#ef4444',
-                                  bgcolor: 'rgba(239, 68, 68, 0.15)',
+                                  color: 'var(--sl-status-error)',
+                                  bgcolor: 'var(--sl-danger-alpha-15)',
                                 },
                               }}
                             >
@@ -791,7 +791,7 @@ export default function RightSidebar({
                 >
                   {isUploading ? (
                     <Box className="flex flex-col items-center gap-3 py-2">
-                      <CloudUploadIcon sx={{ fontSize: 40, color: '#ec4899' }} />
+                      <CloudUploadIcon sx={{ fontSize: 40, color: 'var(--sl-brand-primary)' }} />
                       <Box className="text-gray-300 text-sm">
                         {uploadProgress ? `${uploadProgress.status}` : 'Uploading...'}
                       </Box>
@@ -800,24 +800,24 @@ export default function RightSidebar({
                           <Box sx={{
                             width: '100%',
                             height: 6,
-                            bgcolor: '#2a2a2a',
+                            bgcolor: 'var(--sl-bg-surface-2)',
                             borderRadius: '3px',
                             overflow: 'hidden',
                           }}>
                             <Box sx={{
                               height: '100%',
                               width: `${uploadProgress.percent}%`,
-                              bgcolor: '#ec4899',
+                              bgcolor: 'var(--sl-brand-primary)',
                               borderRadius: '3px',
                               transition: 'width 0.3s ease',
                             }} />
                           </Box>
-                          <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '6px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--sl-text-muted)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
                             {uploadProgress.percent > 0 ? `${uploadProgress.percent}%` : ''}
                           </span>
                         </Box>
                       )}
-                      {!uploadProgress && <CircularProgress size={24} sx={{ color: '#ec4899' }} />}
+                      {!uploadProgress && <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />}
                     </Box>
                   ) : (
                     <>
@@ -858,8 +858,8 @@ export default function RightSidebar({
                 sx={{
                   padding: '12px',
                   borderRadius: '6px',
-                  bgcolor: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
+                  border: '1px solid var(--sl-white-alpha-8)',
                 }}
               >
                 <TextField
@@ -871,16 +871,16 @@ export default function RightSidebar({
                   sx={{
                     mb: 1.5,
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      backgroundColor: 'var(--sl-white-alpha-2)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
-                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
-                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
                     '& .MuiInputBase-input': {
-                      color: '#fff',
+                      color: 'var(--sl-text-primary)',
                       padding: '8px 12px',
-                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
                     },
                   }}
                 />
@@ -893,16 +893,16 @@ export default function RightSidebar({
                   sx={{
                     mb: 1.5,
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      backgroundColor: 'var(--sl-white-alpha-2)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.1)' },
-                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
-                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
                     '& .MuiInputBase-input': {
-                      color: '#fff',
+                      color: 'var(--sl-text-primary)',
                       padding: '8px 12px',
-                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
                     },
                   }}
                 />
@@ -929,7 +929,7 @@ export default function RightSidebar({
                   >
                     {isAddingMcp ? (
                       <>
-                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <CircularProgress size={10} sx={{ color: 'var(--sl-text-primary)' }} />
                         <span>Adding...</span>
                       </>
                     ) : (
@@ -946,8 +946,8 @@ export default function RightSidebar({
                 sx={{
                   padding: '12px',
                   borderRadius: '6px',
-                  bgcolor: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(236, 72, 153, 0.3)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
+                  border: '1px solid var(--sl-brand-alpha-30)',
                 }}
               >
                 <Box className="text-xs text-gray-300 mb-3">
@@ -968,16 +968,16 @@ export default function RightSidebar({
                   sx={{
                     mb: 1.5,
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      backgroundColor: 'var(--sl-white-alpha-2)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'rgba(236, 72, 153, 0.3)' },
-                      '&:hover fieldset': { borderColor: 'rgba(236, 72, 153, 0.5)' },
-                      '&.Mui-focused fieldset': { borderColor: '#ec4899' },
+                      '& fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-50)' },
+                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
                     '& .MuiInputBase-input': {
-                      color: '#fff',
+                      color: 'var(--sl-text-primary)',
                       padding: '8px 12px',
-                      '&::placeholder': { color: '#9ca3af', opacity: 1 },
+                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
                     },
                   }}
                   onKeyDown={(e) => {
@@ -1004,7 +1004,7 @@ export default function RightSidebar({
                   >
                     {isAddingMcp ? (
                       <>
-                        <CircularProgress size={10} sx={{ color: '#fff' }} />
+                        <CircularProgress size={10} sx={{ color: 'var(--sl-text-primary)' }} />
                         <span>Authenticating...</span>
                       </>
                     ) : (
@@ -1025,7 +1025,7 @@ export default function RightSidebar({
             {/* Loading State */}
             {isLoadingMcp ? (
               <Box className="flex items-center justify-center py-8">
-                <CircularProgress size={24} sx={{ color: '#ec4899' }} />
+                <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />
               </Box>
             ) : mcpServers.length > 0 ? (
               /* Server List */
@@ -1054,7 +1054,7 @@ export default function RightSidebar({
             ) : (
               /* Empty State */
               <Box className="flex flex-col items-center justify-center py-8 text-center">
-                <CableIcon sx={{ fontSize: 48, color: '#4b5563', mb: 2 }} />
+                <CableIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
                 <Box className="text-gray-400 text-sm mb-1">
                   No MCP servers configured
                 </Box>
@@ -1084,7 +1084,7 @@ export default function RightSidebar({
           alignItems: 'center',
           py: 2,
           gap: 1,
-          bgcolor: 'rgba(0, 0, 0, 0.2)',
+          bgcolor: 'var(--sl-black-alpha-20)',
         }}
       >
         <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
@@ -1093,18 +1093,18 @@ export default function RightSidebar({
               onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'documents' ? null : 'documents')}
               disabled={selectedProject?.system}
               sx={{
-                color: activeSection === 'documents' ? '#ec4899' : '#9ca3af',
-                bgcolor: activeSection === 'documents' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                color: activeSection === 'documents' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: activeSection === 'documents' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
-                  color: '#6b7280',
-                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  color: 'var(--sl-text-disabled)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
@@ -1122,18 +1122,18 @@ export default function RightSidebar({
               onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'rules' ? null : 'rules')}
               disabled={selectedProject?.system}
               sx={{
-                color: activeSection === 'rules' ? '#ec4899' : '#9ca3af',
-                bgcolor: activeSection === 'rules' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                color: activeSection === 'rules' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: activeSection === 'rules' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? '#9ca3af' : '#ec4899',
-                  bgcolor: selectedProject?.system ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
-                  color: '#6b7280',
-                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  color: 'var(--sl-text-disabled)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
@@ -1151,18 +1151,18 @@ export default function RightSidebar({
               onClick={() => {}}
               disabled={true}
               sx={{
-                color: activeSection === 'mcp' ? '#ec4899' : '#9ca3af',
-                bgcolor: activeSection === 'mcp' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: activeSection === 'mcp' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: user?.guest ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: user?.guest ? '#9ca3af' : '#ec4899',
-                  bgcolor: user?.guest ? 'rgba(255, 255, 255, 0.05)' : 'rgba(236, 72, 153, 0.1)',
+                  color: user?.guest ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  bgcolor: user?.guest ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
-                  color: '#6b7280',
-                  bgcolor: 'rgba(255, 255, 255, 0.03)',
+                  color: 'var(--sl-text-disabled)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
