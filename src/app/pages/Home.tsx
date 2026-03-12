@@ -1105,10 +1105,10 @@ export default function Home() {
                 <IconButton
                   onClick={() => !isDeletingProject && setShowDeleteProjectDialog(false)}
                   sx={{
-                    color: '#6b7280',
+                    color: 'var(--sl-text-disabled)',
                     '&:hover': {
                       color: 'white',
-                      bgcolor: '#1a1a1a'
+                      bgcolor: 'var(--sl-bg-surface-1)'
                     },
                   }}
                 >
@@ -1119,7 +1119,7 @@ export default function Home() {
               <form onSubmit={handleDeleteProject}>
                 <Box className="space-y-4">
                   <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
                       <Typography className="text-red-400 font-medium mb-1">
                         Warning: This action cannot be undone
@@ -1149,13 +1149,13 @@ export default function Home() {
                           color: 'white',
                           bgcolor: 'rgba(17, 24, 39, 0.6)',
                           '& fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            borderColor: 'var(--sl-white-alpha-10)',
                           },
                           '&:hover fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                            borderColor: 'var(--sl-white-alpha-20)',
                           },
                           '&.Mui-focused fieldset': {
-                            borderColor: '#ec4899',
+                            borderColor: 'var(--sl-brand-primary)',
                           },
                         },
                       }}
@@ -1215,10 +1215,10 @@ export default function Home() {
                 <IconButton
                   onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
                   sx={{
-                    color: '#6b7280',
+                    color: 'var(--sl-text-disabled)',
                     '&:hover': {
                       color: 'white',
-                      bgcolor: '#1a1a1a'
+                      bgcolor: 'var(--sl-bg-surface-1)'
                     },
                   }}
                 >
@@ -1229,7 +1229,7 @@ export default function Home() {
               <form onSubmit={handleDeleteDocument}>
                 <Box className="space-y-4">
                   <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                    <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
                       <Typography className="text-red-400 font-medium mb-1">
                         Warning: This action cannot be undone
@@ -1259,13 +1259,13 @@ export default function Home() {
                           color: 'white',
                           bgcolor: 'rgba(17, 24, 39, 0.6)',
                           '& fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            borderColor: 'var(--sl-white-alpha-10)',
                           },
                           '&:hover fieldset': {
-                            borderColor: 'rgba(255, 255, 255, 0.2)',
+                            borderColor: 'var(--sl-white-alpha-20)',
                           },
                           '&.Mui-focused fieldset': {
-                            borderColor: '#ec4899',
+                            borderColor: 'var(--sl-brand-primary)',
                           },
                         },
                       }}

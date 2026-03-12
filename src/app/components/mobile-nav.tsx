@@ -21,7 +21,7 @@ export default function MobileNav({ onMenuClick }: MobileNavProps) {
           color: 'white',
           padding: '8px',
           '&:hover': {
-            color: '#ec4899',
+            color: 'var(--sl-brand-primary)',
           },
         }}
       >

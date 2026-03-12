@@ -138,12 +138,12 @@ export default function DocumentsTab({
                     justifyContent: 'space-between',
                     padding: '16px',
                     borderRadius: '10px',
-                    bgcolor: 'rgba(255, 255, 255, 0.02)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    bgcolor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-5)',
                     transition: 'all 0.15s ease',
                     '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.04)',
-                      borderColor: 'rgba(255, 255, 255, 0.08)',
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                      borderColor: 'var(--sl-white-alpha-8)',
                     },
                   }}
                 >
@@ -156,12 +156,12 @@ export default function DocumentsTab({
                         width: 36,
                         height: 36,
                         borderRadius: '50%',
-                        bgcolor: 'rgba(236, 72, 153, 0.12)',
+                        bgcolor: 'var(--sl-brand-alpha-10)',
                         flexShrink: 0,
                         marginTop: '2px',
                       }}
                     >
-                      <InsertDriveFileIcon sx={{ fontSize: 18, color: '#ec4899' }} />
+                      <InsertDriveFileIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />
                     </Box>
                     <Box className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center gap-2 mb-1">
@@ -185,7 +185,7 @@ export default function DocumentsTab({
                   </Box>
                   <Box className="flex items-center gap-2 mt-1">
                     {doc.is_token_limit_reached && (
-                      <WarningIcon sx={{ fontSize: 16, color: '#f59e0b' }} />
+                      <WarningIcon sx={{ fontSize: 16, color: 'var(--sl-status-warning)' }} />
                     )}
                     {/* Delete Document Button */}
                     <Tooltip title="Delete Document" arrow>
@@ -193,13 +193,13 @@ export default function DocumentsTab({
                         size="small"
                         onClick={() => handleOpenDeleteDocDialog(doc)}
                         sx={{
-                          color: '#9ca3af',
-                          bgcolor: 'rgba(239, 68, 68, 0.08)',
-                          border: '1px solid rgba(239, 68, 68, 0.15)',
+                          color: 'var(--sl-text-muted)',
+                          bgcolor: 'var(--sl-danger-alpha-10)',
+                          border: '1px solid var(--sl-danger-alpha-15)',
                           '&:hover': {
-                            color: '#ef4444',
-                            bgcolor: 'rgba(239, 68, 68, 0.15)',
-                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            color: 'var(--sl-status-error)',
+                            bgcolor: 'var(--sl-danger-alpha-15)',
+                            borderColor: 'var(--sl-danger-alpha-30)',
                           },
                           transition: 'all 0.2s',
                         }}
@@ -249,10 +249,10 @@ export default function DocumentsTab({
             <IconButton
               onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
               sx={{
-                color: '#6b7280',
+                color: 'var(--sl-text-disabled)',
                 '&:hover': {
                   color: 'white',
-                  bgcolor: '#1a1a1a'
+                  bgcolor: 'var(--sl-bg-surface-1)'
                 },
               }}
             >
@@ -263,7 +263,7 @@ export default function DocumentsTab({
           <form onSubmit={handleDeleteDocument}>
             <Box className="space-y-4">
               <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                <DeleteOutlineIcon sx={{ color: '#ef4444', fontSize: 24, mt: 0.5 }} />
+                <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                 <Box>
                   <Typography className="text-red-400 font-medium mb-1">
                     Warning: This action cannot be undone
@@ -293,13 +293,13 @@ export default function DocumentsTab({
                       color: 'white',
                       bgcolor: 'rgba(17, 24, 39, 0.6)',
                       '& fieldset': {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        borderColor: 'var(--sl-white-alpha-10)',
                       },
                       '&:hover fieldset': {
-                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderColor: 'var(--sl-white-alpha-20)',
                       },
                       '&.Mui-focused fieldset': {
-                        borderColor: '#ec4899',
+                        borderColor: 'var(--sl-brand-primary)',
                       },
                     },
                   }}

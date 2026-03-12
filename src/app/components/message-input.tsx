@@ -83,9 +83,9 @@ export default function MessageInput({
         className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
         sx={{
           bgcolor: 'rgba(17, 24, 39, 0.5)',
-          border: '1px solid #1f2937',
+          border: '1px solid var(--sl-bg-inline-code)',
           '&:focus-within': {
-            border: '1px solid rgba(255, 255, 255, 0.3)',
+            border: '1px solid var(--sl-white-alpha-30)',
           },
         }}
       >
@@ -107,7 +107,7 @@ export default function MessageInput({
           startAdornment={
             isLoading ? (
               <InputAdornment position="start">
-                <AutoAwesomeIcon sx={{ color: '#ec4899', fontSize: 18, mr: 0.5 }} />
+                <AutoAwesomeIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 18, mr: 0.5 }} />
               </InputAdornment>
             ) : null
           }
@@ -117,20 +117,20 @@ export default function MessageInput({
             fontSize: '15px',
             lineHeight: '1.5',
             '& .MuiInputBase-input': {
-              caretColor: '#ec4899',
+              caretColor: 'var(--sl-brand-primary)',
             },
             '& .MuiInputBase-input.Mui-disabled': {
-              color: '#9ca3af !important',
-              WebkitTextFillColor: '#9ca3af !important',
+              color: 'var(--sl-text-muted) !important',
+              WebkitTextFillColor: 'var(--sl-text-muted) !important',
             },
             '& .MuiInputBase-input::placeholder': {
-              color: '#4b5563',
+              color: 'var(--sl-text-faint)',
               opacity: 1
             },
             '& .MuiInputBase-input.Mui-disabled::placeholder': {
-              color: '#9ca3af !important',
+              color: 'var(--sl-text-muted) !important',
               opacity: '1 !important',
-              WebkitTextFillColor: '#9ca3af !important',
+              WebkitTextFillColor: 'var(--sl-text-muted) !important',
             },
           }}
         />
@@ -166,7 +166,7 @@ export default function MessageInput({
                 className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/80 text-xs text-gray-300 border border-gray-700/50 max-w-[200px] md:max-w-[300px]"
                 sx={{ flexShrink: 0 }}
               >
-                <FormatQuoteIcon sx={{ fontSize: 14, color: '#ec4899', flexShrink: 0 }} />
+                <FormatQuoteIcon sx={{ fontSize: 14, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
                 <span className="truncate" title={selectedQuote}>
                   {selectedQuote.length > 40 ? selectedQuote.substring(0, 40) + '...' : selectedQuote}
                 </span>
@@ -181,7 +181,7 @@ export default function MessageInput({
                   className="p-0.5 hover:bg-gray-700 rounded transition-colors flex-shrink-0"
                   title="Remove quote"
                 >
-                  <CloseIcon sx={{ fontSize: 12, color: '#9ca3af' }} />
+                  <CloseIcon sx={{ fontSize: 12, color: 'var(--sl-text-muted)' }} />
                 </button>
               </Box>
             )}
@@ -192,8 +192,8 @@ export default function MessageInput({
             <button
               className="p-2 md:p-3 rounded-lg transition-colors shadow-lg"
               style={{
-                backgroundColor: 'rgba(236, 72, 153, 0.15)',
-                border: '1.5px solid rgba(236, 72, 153, 0.3)',
+                backgroundColor: 'var(--sl-brand-alpha-15)',
+                border: '1.5px solid var(--sl-brand-alpha-30)',
               }}
               onClick={onStop}
               title="Stop generating (Esc)"
@@ -220,7 +220,7 @@ export default function MessageInput({
                     width: { xs: 12, md: 14 },
                     height: { xs: 12, md: 14 },
                     borderRadius: '3px',
-                    bgcolor: '#ec4899',
+                    bgcolor: 'var(--sl-brand-primary)',
                   }}
                 />
               </Box>
@@ -228,10 +228,26 @@ export default function MessageInput({
           ) : (
             <button
               disabled={disabled || !message.trim()}
-              className="p-2 md:p-3 rounded-lg bg-pink-500 hover:bg-pink-600 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors shadow-lg"
+              className="p-2 md:p-3 rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
+              style={{
+                backgroundColor: disabled || !message.trim() ? 'var(--sl-bg-surface-2)' : 'var(--sl-brand-alpha-10)',
+                border: `1.5px solid ${disabled || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
+              }}
+              onMouseEnter={(e) => {
+                if (!disabled && message.trim()) {
+                  e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-20)';
+                  e.currentTarget.style.borderColor = 'var(--sl-brand-alpha-40)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!disabled && message.trim()) {
+                  e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-10)';
+                  e.currentTarget.style.borderColor = 'var(--sl-brand-alpha-20)';
+                }
+              }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: '#fff', fontSize: { xs: 18, md: 20 } }} />
+              <ArrowUpwardIcon sx={{ color: disabled || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: { xs: 18, md: 20 } }} />
             </button>
           )}
         </Box>

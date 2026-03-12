@@ -9,7 +9,7 @@ export default function Verify() {
     <Box className="min-h-screen bg-black flex items-center justify-center p-6">
       <Box className="text-center max-w-md">
         <Box className="mb-6">
-          <VerifiedUserIcon sx={{ fontSize: 80, color: '#ec4899', mb: 2 }} />
+          <VerifiedUserIcon sx={{ fontSize: 80, color: 'var(--sl-brand-primary)', mb: 2 }} />
         </Box>
 
         <h1 className="text-4xl font-bold text-white mb-4">
