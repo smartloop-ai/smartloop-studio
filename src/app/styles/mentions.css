@@ -15,7 +15,7 @@
   border: none !important;
   outline: none !important;
   background: transparent !important;
-  color: white !important;
+  color: var(--sl-text-primary) !important;
   padding: 0 !important;
   font-size: 1rem !important;
   line-height: 1.5 !important;
@@ -50,10 +50,10 @@
 
 /* Mention suggestions dropdown */
 .mentions__suggestions {
-  background-color: #000000 !important;
-  border: 1px solid #1a1a1a !important;
+  background-color: var(--sl-bg-base) !important;
+  border: 1px solid var(--sl-border-subtle) !important;
   border-radius: 6px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 2px 8px var(--sl-black-alpha-40) !important;
   max-height: 200px !important;
   overflow-y: auto !important;
   margin-top: 4px !important;
@@ -71,7 +71,7 @@
   padding: 5px 8px !important;
   cursor: pointer !important;
   transition: background-color 0.1s ease !important;
-  color: #9ca3af !important;
+  color: var(--sl-text-muted) !important;
   font-size: 12px !important;
   border-radius: 4px !important;
   margin-bottom: 1px !important;
@@ -83,22 +83,22 @@
 }
 
 .mentions__suggestions__item--focused {
-  background-color: rgba(236, 72, 153, 0.15) !important;
-  color: #ec4899 !important;
+  background-color: var(--sl-brand-alpha-15) !important;
+  color: var(--sl-brand-primary) !important;
 }
 
 .mentions__suggestions__item:hover {
-  background-color: rgba(236, 72, 153, 0.1) !important;
-  color: #ec4899 !important;
+  background-color: var(--sl-brand-alpha-10) !important;
+  color: var(--sl-brand-primary) !important;
 }
 
 /* Highlighted mention in text */
 .mentions__mention {
   position: relative;
   z-index: 1;
-  color: #ec4899 !important;
-  background-color: rgba(236, 72, 153, 0.18) !important;
-  border: 1px solid rgba(236, 72, 153, 0.35) !important;
+  color: var(--sl-brand-primary) !important;
+  background-color: var(--sl-brand-alpha-18) !important;
+  border: 1px solid var(--sl-brand-alpha-35) !important;
   border-radius: 3px !important;
   padding: 1px 5px !important;
   margin: 0 1px !important;
@@ -114,17 +114,17 @@
 }
 
 .mentions__suggestions::-webkit-scrollbar-track {
-  background: #000000;
+  background: var(--sl-bg-base);
   border-radius: 3px;
 }
 
 .mentions__suggestions::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
+  background: var(--sl-bg-surface-2);
   border-radius: 3px;
 }
 
 .mentions__suggestions::-webkit-scrollbar-thumb:hover {
-  background: #3a3a3a;
+  background: var(--sl-bg-surface-3);
 }
 
 /* Project mention item layout */
@@ -137,7 +137,7 @@
 
 .mention-project-icon {
   flex-shrink: 0;
-  color: #6b7280;
+  color: var(--sl-text-disabled);
   font-size: 14px !important;
 }
 
@@ -160,7 +160,7 @@
 }
 
 .mention-project-docs {
-  color: #4b5563 !important;
+  color: var(--sl-text-faint) !important;
   font-size: 10px !important;
   line-height: 1.2;
 }
@@ -168,11 +168,10 @@
 /* Override any conflicting styles */
 .mentions__suggestions__item--focused .mention-project-icon,
 .mentions__suggestions__item:hover .mention-project-icon {
-  color: #ec4899 !important;
+  color: var(--sl-brand-primary) !important;
 }
 
 .mentions__suggestions__item--focused .mention-project-name,
 .mentions__suggestions__item:hover .mention-project-name {
-  color: #ec4899 !important;
+  color: var(--sl-brand-primary) !important;
 }
-

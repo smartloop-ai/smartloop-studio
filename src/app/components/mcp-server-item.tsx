@@ -104,12 +104,12 @@ export default function McpServerItem({
       sx={{
         padding: '8px 12px',
         borderRadius: '6px',
-        bgcolor: 'rgba(255, 255, 255, 0.02)',
-        border: '1px solid rgba(255, 255, 255, 0.05)',
+        bgcolor: 'var(--sl-white-alpha-2)',
+        border: '1px solid var(--sl-white-alpha-5)',
         transition: 'all 0.15s ease',
         '&:hover': {
-          bgcolor: 'rgba(255, 255, 255, 0.04)',
-          borderColor: 'rgba(255, 255, 255, 0.08)',
+          bgcolor: 'var(--sl-white-alpha-5)',
+          borderColor: 'var(--sl-white-alpha-8)',
         },
       }}
     >
@@ -124,7 +124,7 @@ export default function McpServerItem({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: 'rgba(255, 255, 255, 0.05)',
+            bgcolor: 'var(--sl-white-alpha-5)',
             overflow: 'hidden',
           }}
         >
@@ -143,7 +143,7 @@ export default function McpServerItem({
               }}
             />
           ) : (
-            <CableIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
+            <CableIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
           )}
         </Box>
 
@@ -166,14 +166,14 @@ export default function McpServerItem({
                 }}
               >
                 {isConnecting ? (
-                  <CircularProgress size={8} sx={{ color: '#ec4899' }} />
+                  <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
                 ) : (
                   <Box
                     sx={{
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      bgcolor: isConnected ? '#22c55e' : '#6b7280',
+                      bgcolor: isConnected ? 'var(--sl-status-online)' : 'var(--sl-text-disabled)',
                       boxShadow: isConnected ? '0 0 6px rgba(34, 197, 94, 0.5)' : 'none',
                     }}
                   />
@@ -191,11 +191,11 @@ export default function McpServerItem({
                   sx={{
                     opacity: isHovered ? 1 : 0,
                     transition: 'opacity 0.15s ease',
-                    color: '#22c55e',
+                    color: 'var(--sl-status-online)',
                     padding: '4px',
                     '&:hover': {
-                      color: '#ef4444',
-                      bgcolor: 'rgba(239, 68, 68, 0.1)',
+                      color: 'var(--sl-status-error)',
+                      bgcolor: 'var(--sl-danger-alpha-10)',
                     },
                   }}
                 >
@@ -209,10 +209,10 @@ export default function McpServerItem({
                   sx={{
                     opacity: isHovered ? 1 : 0,
                     transition: 'opacity 0.15s ease',
-                    color: '#9ca3af',
+                    color: 'var(--sl-text-muted)',
                     padding: '4px',
                     '&:hover': {
-                      color: '#22c55e',
+                      color: 'var(--sl-status-online)',
                       bgcolor: 'rgba(34, 197, 94, 0.1)',
                     },
                     '&:disabled': {
@@ -234,11 +234,11 @@ export default function McpServerItem({
                 sx={{
                   opacity: isHovered ? 1 : 0,
                   transition: 'opacity 0.15s ease',
-                  color: '#9ca3af',
+                  color: 'var(--sl-text-muted)',
                   padding: '4px',
                   '&:hover': {
-                    color: '#ef4444',
-                    bgcolor: 'rgba(239, 68, 68, 0.1)',
+                    color: 'var(--sl-status-error)',
+                    bgcolor: 'var(--sl-danger-alpha-10)',
                   },
                 }}
               >

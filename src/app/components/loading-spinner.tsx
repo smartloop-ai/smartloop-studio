@@ -14,7 +14,7 @@ export default function LoadingSpinner({ message, showLogo = false, size = 24 }:
         <div className="flex flex-col items-center gap-6">
           <Logo />
           <div className="flex flex-col items-center gap-10 text-white">
-            <CircularProgress sx={{ color: '#ec4899' }} size={size} />
+            <CircularProgress sx={{ color: 'var(--sl-brand-primary)' }} size={size} />
             {message && <p className="text-sm text-gray-400">{message}</p>}
           </div>
         </div>

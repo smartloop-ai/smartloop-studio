@@ -52,7 +52,7 @@ function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; tim
     const areaD = pathD + ` L ${points[points.length - 1].x} ${padding.top + graphHeight} L ${points[0].x} ${padding.top + graphHeight} Z`;
 
     const yTicks = [0, 25, 50, 75, 100];
-    const lineColor = '#ec4899';
+    const lineColor = 'var(--sl-brand-primary)';
 
     // Time labels
     const showTimeLabels = timestamps && timestamps.length > 1;
@@ -497,7 +497,7 @@ export default function SettingsPage() {
     }, []);
 
     const currentMemPercent = slpHealth?.memory_percent;
-    const memColor = '#ec4899';
+    const memColor = 'var(--sl-brand-primary)';
 
     return (
         <Box className="min-h-screen bg-black text-white">
@@ -522,20 +522,20 @@ export default function SettingsPage() {
                             px: 3,
                             py: 1.5,
                             bgcolor: 'rgba(26, 26, 26, 0.95)',
-                            border: '1px solid #2a2a2a',
+                            border: '1px solid var(--sl-border-default)',
                             borderRadius: '8px',
                             backdropFilter: 'blur(8px)',
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                            boxShadow: '0 4px 12px var(--sl-black-alpha-30)',
                         }}
                     >
                         {isSaving ? (
                             <>
-                                <CircularProgress size={16} sx={{ color: '#ec4899' }} />
+                                <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
                                 <span className="text-sm text-gray-300">Saving...</span>
                             </>
                         ) : saveMessage ? (
                             <>
-                                <CheckCircleIcon sx={{ fontSize: 18, color: '#10b981' }} />
+                                <CheckCircleIcon sx={{ fontSize: 18, color: 'var(--sl-status-success)' }} />
                                 <span className="text-sm text-green-400">{saveMessage}</span>
                             </>
                         ) : null}
@@ -590,7 +590,7 @@ export default function SettingsPage() {
                                 sx={{
                                     borderRadius: '16px',
                                     overflow: 'hidden',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid var(--sl-white-alpha-8)',
                                     background: 'linear-gradient(145deg, rgba(20, 20, 25, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)',
                                 }}
                             >
@@ -599,7 +599,7 @@ export default function SettingsPage() {
                                     <h2 style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '-0.3px', color: 'white', marginBottom: '12px' }}>
                                         {selectedModel || activeModel.model_name}
                                         {isInitializingModel && (
-                                            <CircularProgress size={14} sx={{ color: '#ec4899', ml: 1.5, verticalAlign: 'middle' }} />
+                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', ml: 1.5, verticalAlign: 'middle' }} />
                                         )}
                                     </h2>
 
@@ -616,16 +616,16 @@ export default function SettingsPage() {
                                                 sx={{
                                                     px: 1.5,
                                                     py: 0.75,
-                                                    bgcolor: 'rgba(255, 255, 255, 0.04)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                                    bgcolor: 'var(--sl-white-alpha-5)',
+                                                    border: '1px solid var(--sl-white-alpha-5)',
                                                     borderRadius: '8px',
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     gap: 0.75,
                                                 }}
                                             >
-                                                <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', fontWeight: 500 }}>{label}</span>
-                                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.8)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
+                                                <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontWeight: 500 }}>{label}</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-80)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
                                             </Box>
                                         ))}
                                     </Box>
@@ -637,14 +637,14 @@ export default function SettingsPage() {
                                         mx: { xs: 2.5, md: 3 },
                                         mb: { xs: 2.5, md: 3 },
                                         p: 2,
-                                        bgcolor: 'rgba(0, 0, 0, 0.4)',
+                                        bgcolor: 'var(--sl-black-alpha-40)',
                                         borderRadius: '12px',
-                                        border: '1px solid rgba(255, 255, 255, 0.04)',
+                                        border: '1px solid var(--sl-white-alpha-5)',
                                     }}>
                                         <Box className="flex items-center justify-between mb-2">
                                             <Box className="flex items-center gap-1.5">
                                                 <SpeedIcon sx={{ fontSize: 16, color: memColor }} />
-                                                <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontWeight: 600, letterSpacing: '0.3px' }}>MEMORY PRESSURE</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>MEMORY PRESSURE</span>
                                             </Box>
                                             {currentMemPercent !== undefined && (
                                                 <Box className="flex items-center gap-1.5">
@@ -673,7 +673,7 @@ export default function SettingsPage() {
                                                 <Box sx={{
                                                     width: '100%',
                                                     height: '6px',
-                                                    bgcolor: 'rgba(255, 255, 255, 0.06)',
+                                                    bgcolor: 'var(--sl-white-alpha-5)',
                                                     borderRadius: '3px',
                                                     overflow: 'hidden',
                                                 }}>
@@ -683,10 +683,10 @@ export default function SettingsPage() {
                                                         bgcolor: memColor,
                                                         borderRadius: '3px',
                                                         transition: 'width 0.5s ease',
-                                                        boxShadow: `0 0 8px ${memColor}40`,
+                                                        boxShadow: '0 0 8px var(--sl-brand-alpha-20)',
                                                     }} />
                                                 </Box>
-                                                <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', display: 'block', marginTop: '4px' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block', marginTop: '4px' }}>
                                                     Recording data points every 30s...
                                                 </span>
                                             </Box>
@@ -720,7 +720,7 @@ export default function SettingsPage() {
                             return (
                                 <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                                     <Box className="flex items-center gap-2 mb-3">
-                                        <DownloadIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                                        <DownloadIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                                         <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
                                     </Box>
                                     <p className="text-sm text-gray-400">
@@ -734,14 +734,14 @@ export default function SettingsPage() {
                             <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                                 <Box className="flex items-center justify-between mb-4">
                                     <Box className="flex items-center gap-2">
-                                        <DownloadIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                                        <DownloadIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                                         <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
                                     </Box>
                                     <IconButton
                                         onClick={() => fetchRemoteModels(true)}
                                         disabled={isRefreshingModels}
                                         size="small"
-                                        sx={{ color: '#9ca3af', '&:hover': { color: '#ec4899' } }}
+                                        sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
                                     >
                                         <RefreshIcon sx={{ fontSize: 20, animation: isRefreshingModels ? 'spin 1s linear infinite' : 'none', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
                                     </IconButton>
@@ -763,15 +763,15 @@ export default function SettingsPage() {
                                     sx={{
                                         mb: 2,
                                         '& .MuiOutlinedInput-root': {
-                                            bgcolor: 'rgba(0,0,0,0.3)',
+                                            bgcolor: 'var(--sl-black-alpha-30)',
                                             borderRadius: '8px',
                                             fontSize: '13px',
                                             color: 'white',
-                                            '& fieldset': { borderColor: 'rgba(255,255,255,0.08)' },
-                                            '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.15)' },
-                                            '&.Mui-focused fieldset': { borderColor: 'rgba(236,72,153,0.4)' },
+                                            '& fieldset': { borderColor: 'var(--sl-white-alpha-8)' },
+                                            '&:hover fieldset': { borderColor: 'var(--sl-white-alpha-15)' },
+                                            '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-alpha-40)' },
                                         },
-                                        '& .MuiInputBase-input::placeholder': { color: 'rgba(255,255,255,0.3)', opacity: 1 },
+                                        '& .MuiInputBase-input::placeholder': { color: 'var(--sl-white-alpha-30)', opacity: 1 },
                                     }}
                                 />
 
@@ -788,23 +788,23 @@ export default function SettingsPage() {
                                                     sx={{
                                                         p: 1.5,
                                                         borderRadius: '8px',
-                                                        border: isActive ? '1px solid rgba(236,72,153,0.3)' : '1px solid rgba(255,255,255,0.04)',
-                                                        bgcolor: isActive ? 'rgba(236,72,153,0.06)' : 'rgba(255,255,255,0.02)',
+                                                        border: isActive ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-white-alpha-5)',
+                                                        bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-2)',
                                                         transition: 'all 0.15s ease',
-                                                        '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
+                                                        '&:hover': { bgcolor: 'var(--sl-white-alpha-5)' },
                                                     }}
                                                 >
                                                     {/* Top row: name + badges + button aligned horizontally */}
                                                     <Box className="flex items-center justify-between gap-3">
                                                         <Box className="flex items-center gap-2" sx={{ minWidth: 0 }}>
-                                                            <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isActive ? 'white' : 'rgba(255,255,255,0.8)' }}>
+                                                            <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isActive ? 'white' : 'var(--sl-white-alpha-80)' }}>
                                                                 {model.name}
                                                             </span>
                                                             {isActive && (
-                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#ec4899', padding: '1px 6px', borderRadius: '4px', background: 'rgba(236,72,153,0.15)' }}>ACTIVE</span>
+                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--sl-brand-primary)', padding: '1px 6px', borderRadius: '4px', background: 'var(--sl-brand-alpha-15)' }}>ACTIVE</span>
                                                             )}
                                                             {!isActive && model.isLocal && (
-                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: '#9ca3af', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }}>DOWNLOADED</span>
+                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--sl-text-muted)', padding: '1px 6px', borderRadius: '4px', background: 'var(--sl-white-alpha-5)' }}>DOWNLOADED</span>
                                                             )}
                                                         </Box>
                                                         {!isActive && (
@@ -814,9 +814,9 @@ export default function SettingsPage() {
                                                                     disabled={isInitializingModel || !!downloadingModel}
                                                                     className="px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
                                                                     style={{
-                                                                        color: '#ec4899',
-                                                                        border: '1px solid rgba(236,72,153,0.3)',
-                                                                        background: 'rgba(236,72,153,0.08)',
+                                                                        color: 'var(--sl-brand-primary)',
+                                                                        border: '1px solid var(--sl-brand-alpha-30)',
+                                                                        background: 'var(--sl-brand-alpha-10)',
                                                                     }}
                                                                 >
                                                                     Use
@@ -827,13 +827,13 @@ export default function SettingsPage() {
                                                                     disabled={isInitializingModel || !!downloadingModel}
                                                                     className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
                                                                     style={{
-                                                                        color: isDownloading ? 'rgba(255,255,255,0.4)' : 'white',
-                                                                        border: '1px solid rgba(255,255,255,0.1)',
-                                                                        background: 'rgba(255,255,255,0.05)',
+                                                                        color: isDownloading ? 'var(--sl-white-alpha-40)' : 'white',
+                                                                        border: '1px solid var(--sl-white-alpha-10)',
+                                                                        background: 'var(--sl-white-alpha-5)',
                                                                     }}
                                                                 >
                                                                     {isDownloading ? (
-                                                                        <CircularProgress size={10} sx={{ color: '#ec4899' }} />
+                                                                        <CircularProgress size={10} sx={{ color: 'var(--sl-brand-primary)' }} />
                                                                     ) : (
                                                                         <DownloadIcon sx={{ fontSize: 12 }} />
                                                                     )}
@@ -844,7 +844,7 @@ export default function SettingsPage() {
                                                     </Box>
                                                     {/* Description */}
                                                     {model.description && (
-                                                        <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', display: 'block', marginTop: '4px' }}>
+                                                        <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', display: 'block', marginTop: '4px' }}>
                                                             {model.description.length > 100 ? model.description.substring(0, 100) + '...' : model.description}
                                                         </span>
                                                     )}
@@ -854,19 +854,19 @@ export default function SettingsPage() {
                                                             <Box sx={{
                                                                 width: '100%',
                                                                 height: 6,
-                                                                bgcolor: '#2a2a2a',
+                                                                bgcolor: 'var(--sl-bg-surface-2)',
                                                                 borderRadius: '3px',
                                                                 overflow: 'hidden',
                                                             }}>
                                                                 <Box sx={{
                                                                     height: '100%',
                                                                     width: `${initProgress.percent}%`,
-                                                                    bgcolor: '#ec4899',
+                                                                    bgcolor: 'var(--sl-brand-primary)',
                                                                     borderRadius: '3px',
                                                                     transition: 'width 0.3s ease',
                                                                 }} />
                                                             </Box>
-                                                            <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '6px' }}>
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-text-muted)', display: 'block', marginTop: '6px' }}>
                                                                 {initProgress.status}{initProgress.percent > 0 ? ` (${Math.round(initProgress.percent)}%)` : ''}
                                                             </span>
                                                         </Box>
@@ -882,7 +882,7 @@ export default function SettingsPage() {
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
-                            <TuneIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                            <TuneIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                             <h2 className="text-lg md:text-xl font-semibold text-white">AI Model Settings</h2>
                         </Box>
 
@@ -901,10 +901,10 @@ export default function SettingsPage() {
                                 max={2}
                                 step={0.1}
                                 sx={{
-                                    color: '#ec4899',
-                                    '& .MuiSlider-thumb': { bgcolor: '#ec4899' },
-                                    '& .MuiSlider-track': { bgcolor: '#ec4899' },
-                                    '& .MuiSlider-rail': { bgcolor: '#374151' },
+                                    color: 'var(--sl-brand-primary)',
+                                    '& .MuiSlider-thumb': { bgcolor: 'var(--sl-brand-primary)' },
+                                    '& .MuiSlider-track': { bgcolor: 'var(--sl-brand-primary)' },
+                                    '& .MuiSlider-rail': { bgcolor: 'var(--sl-border-code)' },
                                 }}
                             />
                             <p className="text-xs text-gray-500 mt-1">
@@ -916,7 +916,7 @@ export default function SettingsPage() {
                     {/* Memory Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
-                            <MemoryIcon sx={{ color: '#ec4899', fontSize: { xs: 20, md: 24 } }} />
+                            <MemoryIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                             <h2 className="text-lg md:text-xl font-semibold text-white">Memory Settings</h2>
                         </Box>
 
@@ -931,8 +931,8 @@ export default function SettingsPage() {
                                 checked={settings.default_memory}
                                 onChange={(e) => handleChange('default_memory', e.target.checked)}
                                 sx={{
-                                    '& .MuiSwitch-switchBase.Mui-checked': { color: '#ec4899' },
-                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#ec4899' },
+                                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
                                 }}
                             />
                         </Box>

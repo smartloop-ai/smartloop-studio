@@ -14,7 +14,7 @@ export default function Layout({ children, showMobileNav = true }: LayoutProps) 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden', bgcolor: '#000' }}>
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden', bgcolor: 'var(--sl-bg-base)' }}>
       {/* Sidebar - Persistent across all pages */}
       <Sidebar
         user={user}
@@ -30,7 +30,7 @@ export default function Layout({ children, showMobileNav = true }: LayoutProps) 
           height: '100vh',
           overflow: 'auto',
           marginLeft: { xs: 0, md: '280px' },
-          bgcolor: '#000',
+          bgcolor: 'var(--sl-bg-base)',
           display: 'flex',
           flexDirection: 'column',
         }}

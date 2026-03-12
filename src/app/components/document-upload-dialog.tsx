@@ -179,10 +179,10 @@ export default function DocumentUploadDialog({
             position: 'absolute',
             right: 12,
             top: 12,
-            color: '#6b7280',
+            color: 'var(--sl-text-disabled)',
             '&:hover': {
-              color: '#fff',
-              bgcolor: '#1a1a1a',
+              color: 'var(--sl-text-primary)',
+              bgcolor: 'var(--sl-bg-surface-1)',
             },
           }}
         >
@@ -221,7 +221,7 @@ export default function DocumentUploadDialog({
                 getOptionLabel={(option) => option.title || option.name}
                 renderOption={(props, option) => (
                   <Box component="li" {...props} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                    <FolderIcon sx={{ color: '#ec4899', fontSize: 20 }} />
+                    <FolderIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 20 }} />
                     <span>{option.title || option.name}</span>
                   </Box>
                 )}
@@ -233,62 +233,62 @@ export default function DocumentUploadDialog({
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         color: 'white',
-                        bgcolor: '#000',
+                        bgcolor: 'var(--sl-bg-base)',
                         borderRadius: '8px',
                         '& fieldset': {
-                          borderColor: '#2a2a2a',
+                          borderColor: 'var(--sl-border-default)',
                         },
                         '&:hover fieldset': {
-                          borderColor: '#3a3a3a',
+                          borderColor: 'var(--sl-border-hover)',
                         },
                         '&.Mui-focused fieldset': {
-                          borderColor: '#ec4899',
+                          borderColor: 'var(--sl-brand-primary)',
                         },
                       },
                       '& .MuiInputBase-input::placeholder': {
-                        color: '#6b7280',
+                        color: 'var(--sl-text-disabled)',
                         opacity: 1,
                       },
                       '& .MuiAutocomplete-popupIndicator': {
-                        color: '#6b7280',
+                        color: 'var(--sl-text-disabled)',
                       },
                     }}
                   />
                 )}
                 sx={{
                   '& .MuiAutocomplete-paper': {
-                    bgcolor: '#1a1a1a',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                     color: 'white',
                   },
                   '& .MuiAutocomplete-listbox': {
-                    bgcolor: '#1a1a1a',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                     '& .MuiAutocomplete-option': {
                       color: 'white',
                       '&:hover': {
-                        bgcolor: '#2a2a2a',
+                        bgcolor: 'var(--sl-bg-surface-2)',
                       },
                       '&[aria-selected="true"]': {
-                        bgcolor: '#2a2a2a',
+                        bgcolor: 'var(--sl-bg-surface-2)',
                       },
                     },
                   },
                 }}
                 ListboxProps={{
                   sx: {
-                    bgcolor: '#1a1a1a',
+                    bgcolor: 'var(--sl-bg-surface-1)',
                     '& .MuiAutocomplete-option': {
                       color: 'white',
                       '&:hover': {
-                        bgcolor: '#2a2a2a',
+                        bgcolor: 'var(--sl-bg-surface-2)',
                       },
                       '&[aria-selected="true"]': {
-                        bgcolor: '#2a2a2a',
+                        bgcolor: 'var(--sl-bg-surface-2)',
                       },
                     },
                   },
                 }}
                 PaperComponent={({ children }) => (
-                  <Box sx={{ bgcolor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '8px' }}>
+                  <Box sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)', borderRadius: '8px' }}>
                     {children}
                   </Box>
                 )}
@@ -314,7 +314,7 @@ export default function DocumentUploadDialog({
                 }`}
                 onClick={() => document.getElementById('file-upload-input')?.click()}
               >
-                <CloudUploadIcon sx={{ fontSize: 48, color: '#6b7280', mb: 2 }} />
+                <CloudUploadIcon sx={{ fontSize: 48, color: 'var(--sl-text-disabled)', mb: 2 }} />
                 <Typography className="text-gray-300 text-sm mb-1">
                   Drag and drop your file here
                 </Typography>
@@ -335,7 +335,7 @@ export default function DocumentUploadDialog({
             ) : (
               <Box className="flex items-center justify-between p-4 bg-gray-900 border border-green-500/50 rounded-lg">
                 <Box className="flex items-center gap-3">
-                  <InsertDriveFileIcon sx={{ color: '#10b981', fontSize: 24 }} />
+                  <InsertDriveFileIcon sx={{ color: 'var(--sl-status-success)', fontSize: 24 }} />
                   <Box>
                     <Typography className="text-white text-sm">{uploadFiles[0].name}</Typography>
                     <Typography className="text-gray-400 text-xs">
@@ -346,7 +346,7 @@ export default function DocumentUploadDialog({
                 <IconButton
                   onClick={() => setUploadFiles([])}
                   size="small"
-                  sx={{ color: '#ef4444' }}
+                  sx={{ color: 'var(--sl-status-error)' }}
                 >
                   <CloseIcon fontSize="small" />
                 </IconButton>

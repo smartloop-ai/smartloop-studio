@@ -3,9 +3,9 @@
 
 /* Custom dark theme overrides */
 .markdown-editor-container .EasyMDEContainer .CodeMirror {
-    background-color: #000;
-    color: #fff;
-    border: 1px solid #2a2a2a;
+    background-color: var(--sl-bg-base);
+    color: var(--sl-text-primary);
+    border: 1px solid var(--sl-border-default);
     border-radius: 4px;
     font-size: 13px;
     font-family: monospace;
@@ -13,51 +13,51 @@
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror:hover {
-    border-color: #3a3a3a;
+    border-color: var(--sl-border-hover);
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror.CodeMirror-focused {
-    border-color: #ec4899;
+    border-color: var(--sl-brand-primary);
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror-cursor {
-    border-color: #ec4899;
+    border-color: var(--sl-brand-primary);
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar {
-    background-color: #1a1a1a;
-    border: 1px solid #2a2a2a;
+    background-color: var(--sl-bg-surface-1);
+    border: 1px solid var(--sl-border-default);
     border-bottom: none;
     border-radius: 4px 4px 0 0;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button {
-    color: #9ca3af !important;
+    color: var(--sl-text-muted) !important;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button:hover {
-    background-color: #2a2a2a;
-    border-color: #3a3a3a;
+    background-color: var(--sl-bg-surface-2);
+    border-color: var(--sl-border-hover);
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button.active {
-    background-color: rgba(236, 72, 153, 0.1);
-    color: #ec4899 !important;
+    background-color: var(--sl-brand-alpha-10);
+    color: var(--sl-brand-primary) !important;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar i.separator {
-    border-left: 1px solid #3a3a3a;
-    border-right: 1px solid #3a3a3a;
+    border-left: 1px solid var(--sl-border-hover);
+    border-right: 1px solid var(--sl-border-hover);
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror-placeholder {
-    color: #6b7280 !important;
+    color: var(--sl-text-disabled) !important;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-preview,
 .markdown-editor-container .EasyMDEContainer .editor-preview-side {
-    background-color: #000;
-    color: #fff;
+    background-color: var(--sl-bg-base);
+    color: var(--sl-text-primary);
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror-scroll {

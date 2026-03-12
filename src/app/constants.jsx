@@ -49,7 +49,7 @@ export const getLocalApiEndpoint = async () => {
 
 export const APP_DESCRIPTION = (
   <>
-    <strong style={{ color: '#ec4899' }}> <a href="https://smartloop.ai" target="_blank" rel="noopener noreferrer" className="no-underline" style={{ color: '#ec4899', textDecoration: 'none' }}>Smartloop</a></strong> is an SLM platform designed to fine-tune and inference models on edge. Get started for free to extract information from your documents using AI tailored for developers and businesses with privacy and security at its core.
+    <strong style={{ color: 'var(--sl-brand-primary)' }}> <a href="https://smartloop.ai" target="_blank" rel="noopener noreferrer" className="no-underline" style={{ color: 'var(--sl-brand-primary)', textDecoration: 'none' }}>Smartloop</a></strong> is an SLM platform designed to fine-tune and inference models on edge. Get started for free to extract information from your documents using AI tailored for developers and businesses with privacy and security at its core.
   </>
 );
 
