@@ -980,34 +980,22 @@ if (!gotTheLock) {
       }
 
       if (needsBootstrap) {
-        // No projects — show splash and run bootstrap (downloads model, creates default project)
-        console.log('[SLP] Service healthy but no projects — running bootstrap with splash');
-        currentSplashStep = 2;
-        createSplashScreen();
+        // No projects — show app, run bootstrap in background
+        console.log('[SLP] Service healthy but no projects — running bootstrap in background');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+        }
 
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
-
-            updateSplashProgress({ status: 'starting', message: 'Starting up...' });
             refreshTray();
 
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             }
-
-            await new Promise((r) => setTimeout(r, 500));
-
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.show();
-            }
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
           } catch (error) {
             console.error('[SLP] Bootstrap failed:', error.message);
-            updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });
           }
         })();
       } else {
@@ -1019,20 +1007,17 @@ if (!gotTheLock) {
         }
       }
     } else if (installComplete) {
-      // Framework already installed but service not running — show minimal splash
-      console.log('[SLP] Framework installed but service not running — starting service...');
-      createStartingSplash();
+      // Framework already installed but service not running — show app, start in background
+      console.log('[SLP] Framework installed but service not running — starting service in background...');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+      }
 
       (async () => {
         try {
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
             console.error('[SLP] Service failed to start');
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
             return;
           }
 
@@ -1066,26 +1051,16 @@ if (!gotTheLock) {
             await bootstrapSlpService(baseUrl);
           }
 
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            mainWindow.show();
           }
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
         }
       })();
     } else {
-      // First launch — show splash and run full install
+      // First launch — show splash for installation
+      console.log('[SLP] First launch — showing install splash...');
       currentSplashStep = 0;
       createSplashScreen();
 
@@ -1096,17 +1071,16 @@ if (!gotTheLock) {
             updateSplashProgress(progress);
           });
 
-          // If already installed, fast-forward steps 0-1
           if (setupResult === false) {
             currentSplashStep = 2;
           }
 
-          // Step 2: Start the service as a detached background process
-          updateSplashProgress({ status: 'preparing', message: 'Preparing service...' });
+          // Step 2: Start the service
+          updateSplashProgress({ status: 'preparing', message: 'Starting service...' });
 
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
-            console.error('[SLP] Service failed to start — staying on splash');
+            console.error('[SLP] Service failed to start');
             updateSplashProgress({ status: 'error', message: 'Failed to start service. Please restart the app.' });
             return;
           }
@@ -1117,14 +1091,13 @@ if (!gotTheLock) {
           // Step 3: Bootstrap (workspace, model download, project setup)
           await bootstrapSlpService(baseUrl);
 
-          // Step 4: All steps complete — transition to main window
+          // Done — transition to main window
           updateSplashProgress({ status: 'starting', message: 'Starting up...' });
 
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
 
-          // Brief delay so user sees the final step complete
           await new Promise((r) => setTimeout(r, 500));
 
           if (mainWindow && !mainWindow.isDestroyed()) {

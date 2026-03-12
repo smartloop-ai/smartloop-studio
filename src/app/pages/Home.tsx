@@ -992,12 +992,22 @@ export default function Home() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingSpinner showLogo message="Getting things ready..." size={48} />;
-  }
 
   return (
     <>
+      {isLoading && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9999,
+            cursor: 'default',
+          }}
+        />
+      )}
       <DocumentPolling
         user={user}
         setUser={setUser}
@@ -1301,26 +1311,7 @@ export default function Home() {
           <Box className="min-h-screen bg-black text-white">
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-black">
-              {/* No projects — show empty state */}
-              {!selectedProject && (!user?.projects || user.projects.length === 0) ? (
-                <Box className="flex-1 flex items-center justify-center">
-                  <Box className="text-center max-w-md">
-                    <Typography variant="h5" sx={{ color: 'white', fontWeight: 600, mb: 1 }}>
-                      Welcome to Smartloop
-                    </Typography>
-                    <Typography sx={{ color: '#9ca3af', mb: 3, fontSize: '0.95rem' }}>
-                      Create a project to get started with your first conversation.
-                    </Typography>
-                    <button
-                      onClick={() => navigate('/projects')}
-                      className="px-6 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg transition-colors text-sm font-medium"
-                    >
-                      Create Project
-                    </button>
-                  </Box>
-                </Box>
-              ) : (
-                <>
+              <>
                   {/* Chat Header - matches project page style */}
                   <Box className="flex-none p-4">
                     <Box className="flex items-center justify-between gap-4">
@@ -1411,7 +1402,6 @@ export default function Home() {
                     )}
                   </Box>
                 </>
-              )}
             </Box>
           </Box>
         </>
