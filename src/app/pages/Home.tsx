@@ -532,6 +532,32 @@ export default function Home() {
     };
   }, []);
 
+  // Ctrl+Tab / Ctrl+Shift+Tab to switch conversation tabs
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'Tab' && projectConversations.length > 1) {
+        e.preventDefault();
+        const currentIndex = projectConversations.findIndex(
+          (c: any) => c.id === conversation?.id
+        );
+        const len = projectConversations.length;
+        const nextIndex = e.shiftKey
+          ? (currentIndex - 1 + len) % len
+          : (currentIndex + 1) % len;
+        const nextConv = projectConversations[nextIndex];
+        if (nextConv) {
+          const newUrl = selectedProject
+            ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
+            : `/?conversation=${nextConv.id}`;
+          navigate(newUrl);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [projectConversations, conversation, selectedProject, navigate]);
+
   // Clear project selection when component unmounts (navigating away)
   useEffect(() => {
     return () => {
