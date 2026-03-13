@@ -1199,22 +1199,10 @@ export default function Chat(props: {
                     <span>{statusInfo.model.replace(/-/g, ' ')}</span>
                   </span>
                 )}
-                {statusInfo.memory !== null && (
-                  <span className="flex items-center gap-1 ml-auto">
-                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                      <rect x="3" y="3" width="10" height="10" rx="1" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
-                      <rect x="5" y="5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
-                      <rect x="8.5" y="5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
-                      <rect x="5" y="8.5" width="2.5" height="2.5" rx="0.3" fill="var(--sl-text-faint)" />
-                      <rect x="8.5" y="8.5" width="2.5" height="2.5" rx="0.3" fill={statusInfo.memory > 80 ? 'var(--sl-status-error)' : statusInfo.memory > 60 ? 'var(--sl-status-warning)' : 'var(--sl-text-faint)'} />
-                      <line x1="1" y1="6" x2="3" y2="6" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
-                      <line x1="1" y1="10" x2="3" y2="10" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
-                      <line x1="13" y1="6" x2="15" y2="6" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
-                      <line x1="13" y1="10" x2="15" y2="10" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
-                    </svg>
-                    <span>memory pressure {Math.round(statusInfo.memory)}%</span>
-                  </span>
-                )}
+                <span className="flex items-center gap-2.5 ml-auto">
+                  <span><span className="text-gray-500">&lt;esc&gt;</span> <span className="text-gray-700">interrupt</span></span>
+                  <span><span className="text-gray-500">&lt;ctrl+tab&gt;</span> <span className="text-gray-700">switch conversation</span></span>
+                </span>
               </>
             ) : (
               <span className="flex items-center gap-1">
