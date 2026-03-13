@@ -60,6 +60,7 @@ export default function Home() {
       let modelName = '';
       if (selectedProject?.model_name) {
         modelName = selectedProject.model_name;
+        await storageService.setItem('selected_model', modelName);
       } else {
         modelName = await storageService.getItem('selected_model') || '';
       }

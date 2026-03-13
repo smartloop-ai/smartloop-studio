@@ -135,7 +135,7 @@ export default function Chat(props: {
     let cancelled = false;
     const fetchStatus = async () => {
       try {
-        const model = await storageService.getItem('selected_model') || 'gemma3-1b';
+        const model = props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
         const baseUrl = await getLocalApiEndpoint();
         let memPct: number | null = null;
         if (baseUrl) {
@@ -153,7 +153,7 @@ export default function Chat(props: {
     fetchStatus();
     const interval = setInterval(fetchStatus, 30000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [isServiceReady]);
+  }, [isServiceReady, props.project]);
 
   // Track model init status from Settings and sync status bar
   useEffect(() => {
@@ -162,7 +162,7 @@ export default function Chat(props: {
       modelLoadingRef.current = loading;
       // When model finishes loading, refresh the status bar
       if (!loading) {
-        const model = e.detail?.model || await storageService.getItem('selected_model') || 'gemma3-1b';
+        const model = e.detail?.model || props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
         setStatusInfo(prev => ({ ...prev, model }));
       }
     };
