@@ -1,9 +1,5 @@
 {
-  "version": "1.0.5",
-  "baseUrl": "https://storage.googleapis.com/smartloop-gcp-us-east-releases",
-  "binaries": {
-    "linux": { "sha256": "ea76d6ff0a8e5705cdc4f3f78f6ae318120beb5b2f98b468ce65187bbb7ef4c8" },
-    "darwin": { "sha256": "<hash>" },
-    "win": { "sha256": "<hash>" }
-  }
+  "version": "1.0.2",
+  "package": "smartloop",
+  "installMethod": "bundled"
 }

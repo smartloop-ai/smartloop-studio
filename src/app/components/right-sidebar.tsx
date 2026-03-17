@@ -67,6 +67,11 @@ export default function RightSidebar({
   const [pendingServerUrl, setPendingServerUrl] = useState('');
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
+  // Local MCP server state
+  const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
+  const [newMcpCommand, setNewMcpCommand] = useState('');
+  const [newMcpArgs, setNewMcpArgs] = useState('');
+  const [newMcpCwd, setNewMcpCwd] = useState('');
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -311,6 +316,41 @@ export default function RightSidebar({
       }
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
+      setMcpError(error.message || 'An error occurred');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
+  const handleAddLocalMcpServer = async () => {
+    if (!selectedProject?.id || !newMcpCommand.trim()) return;
+
+    setIsAddingMcp(true);
+    setMcpError('');
+
+    try {
+      const args = newMcpArgs.trim() ? newMcpArgs.trim().split(/\s+/) : [];
+      const result = await mcpServerService.createLocalMcpServer(
+        selectedProject.id,
+        newMcpName.trim() || newMcpCommand.trim(),
+        newMcpCommand.trim(),
+        args,
+        newMcpCwd.trim() || undefined
+      );
+
+      if (result.success) {
+        setNewMcpName('');
+        setNewMcpCommand('');
+        setNewMcpArgs('');
+        setNewMcpCwd('');
+        setShowAddMcpForm(false);
+        setMcpServerType('remote');
+        loadMcpServers();
+      } else {
+        setMcpError(result.error || 'Failed to add local MCP server');
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error adding local server:', error);
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
@@ -862,6 +902,30 @@ export default function RightSidebar({
                   border: '1px solid var(--sl-white-alpha-8)',
                 }}
               >
+                {/* Remote / Local toggle */}
+                <Box className="flex mb-3 rounded overflow-hidden border border-gray-700">
+                  <button
+                    onClick={() => setMcpServerType('remote')}
+                    className={`flex-1 px-3 py-1.5 text-[10px] font-medium transition-colors ${
+                      mcpServerType === 'remote'
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-transparent text-gray-400 hover:text-gray-300'
+                    }`}
+                  >
+                    Remote
+                  </button>
+                  <button
+                    onClick={() => setMcpServerType('local')}
+                    className={`flex-1 px-3 py-1.5 text-[10px] font-medium transition-colors ${
+                      mcpServerType === 'local'
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-transparent text-gray-400 hover:text-gray-300'
+                    }`}
+                  >
+                    Local
+                  </button>
+                </Box>
+
                 <TextField
                   size="small"
                   placeholder="Server name (optional)"
@@ -884,34 +948,111 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <TextField
-                  size="small"
-                  placeholder="Server URL (e.g., https://mcp.example.com)"
-                  value={newMcpUrl}
-                  onChange={(e) => setNewMcpUrl(e.target.value)}
-                  fullWidth
-                  sx={{
-                    mb: 1.5,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                />
+
+                {mcpServerType === 'remote' ? (
+                  <TextField
+                    size="small"
+                    placeholder="Server URL (e.g., https://mcp.example.com)"
+                    value={newMcpUrl}
+                    onChange={(e) => setNewMcpUrl(e.target.value)}
+                    fullWidth
+                    sx={{
+                      mb: 1.5,
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
+                    }}
+                  />
+                ) : (
+                  <>
+                    <TextField
+                      size="small"
+                      placeholder="Command (e.g., npx, python3)"
+                      value={newMcpCommand}
+                      onChange={(e) => setNewMcpCommand(e.target.value)}
+                      fullWidth
+                      sx={{
+                        mb: 1.5,
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--sl-white-alpha-2)',
+                          fontSize: '0.75rem',
+                          '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                          '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                          '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                        },
+                        '& .MuiInputBase-input': {
+                          color: 'var(--sl-text-primary)',
+                          padding: '8px 12px',
+                          '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                        },
+                      }}
+                    />
+                    <TextField
+                      size="small"
+                      placeholder="Arguments (space-separated)"
+                      value={newMcpArgs}
+                      onChange={(e) => setNewMcpArgs(e.target.value)}
+                      fullWidth
+                      sx={{
+                        mb: 1.5,
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--sl-white-alpha-2)',
+                          fontSize: '0.75rem',
+                          '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                          '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                          '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                        },
+                        '& .MuiInputBase-input': {
+                          color: 'var(--sl-text-primary)',
+                          padding: '8px 12px',
+                          '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                        },
+                      }}
+                    />
+                    <TextField
+                      size="small"
+                      placeholder="Working directory (optional)"
+                      value={newMcpCwd}
+                      onChange={(e) => setNewMcpCwd(e.target.value)}
+                      fullWidth
+                      sx={{
+                        mb: 1.5,
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--sl-white-alpha-2)',
+                          fontSize: '0.75rem',
+                          '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                          '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                          '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                        },
+                        '& .MuiInputBase-input': {
+                          color: 'var(--sl-text-primary)',
+                          padding: '8px 12px',
+                          '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                        },
+                      }}
+                    />
+                  </>
+                )}
+
                 <Box className="flex justify-end gap-2">
                   <button
                     onClick={() => {
                       setShowAddMcpForm(false);
                       setNewMcpName('');
                       setNewMcpUrl('');
+                      setNewMcpCommand('');
+                      setNewMcpArgs('');
+                      setNewMcpCwd('');
+                      setMcpServerType('remote');
                       setMcpError('');
                     }}
                     className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
@@ -919,10 +1060,10 @@ export default function RightSidebar({
                     Cancel
                   </button>
                   <button
-                    onClick={handleAddMcpServer}
-                    disabled={isAddingMcp || !newMcpUrl.trim()}
+                    onClick={mcpServerType === 'remote' ? handleAddMcpServer : handleAddLocalMcpServer}
+                    disabled={isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : !newMcpCommand.trim())}
                     className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || !newMcpUrl.trim()
+                      isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : !newMcpCommand.trim())
                         ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
                         : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
                     }`}

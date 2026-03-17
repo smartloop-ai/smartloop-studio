@@ -63,18 +63,51 @@ help-electron:
 	@echo "  make build-electron-mac      - Build Electron app for macOS (DMG, zip)"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
+	@echo "  make download-slp            - Download SLP binary from GCS"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
+
+# SLP binary version and GCS base URL
+SLP_VERSION=1.0.2
+SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/$(SLP_VERSION)
+SLP_BUILD_DIR=build/slp/slp
+
+# Detect platform and arch for SLP binary download
+SLP_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+SLP_ARCH := $(shell uname -m)
+ifeq ($(SLP_ARCH),x86_64)
+  SLP_ARCH := amd64
+endif
+ifeq ($(SLP_ARCH),aarch64)
+  SLP_ARCH := arm64
+endif
 
 # Clean electron build artifacts
 clean-electron:
 	@echo "🧹 Cleaning Electron build artifacts..."
 	rm -rf dist dist-web
 
+# Download the SLP binary from GCS and extract to build/slp/
+# Skips download if the binary already exists at the correct version
+download-slp:
+	@if [ -f "$(SLP_BUILD_DIR)/slp" ] && [ -f "$(SLP_BUILD_DIR)/.version" ] && [ "$$(cat $(SLP_BUILD_DIR)/.version)" = "$(SLP_VERSION)" ]; then \
+		echo "✅ SLP binary $(SLP_VERSION) already downloaded"; \
+	else \
+		echo "⬇️  Downloading SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)/$(SLP_ARCH)..."; \
+		mkdir -p $(SLP_BUILD_DIR); \
+		curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_ARCH)/slp.tar.gz" -o /tmp/slp-$(SLP_VERSION).tar.gz; \
+		echo "📦 Extracting SLP binary..."; \
+		tar -xzf /tmp/slp-$(SLP_VERSION).tar.gz -C build/slp/; \
+		rm -f /tmp/slp-$(SLP_VERSION).tar.gz; \
+		echo "$(SLP_VERSION)" > $(SLP_BUILD_DIR)/.version; \
+		chmod +x $(SLP_BUILD_DIR)/slp; \
+		echo "✅ SLP binary installed to $(SLP_BUILD_DIR)"; \
+	fi
+
 # Build Electron app for current platform
-build-electron: clean-electron
+build-electron: clean-electron download-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -83,7 +116,7 @@ build-electron: clean-electron
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron
+build-electron-linux: clean-electron download-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -93,7 +126,7 @@ build-electron-linux: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron
+build-electron-windows: clean-electron download-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -103,7 +136,7 @@ build-electron-windows: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron
+build-electron-mac: clean-electron download-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -121,7 +154,7 @@ run-electron-dev:
 electron-dev: run-electron-dev
 
 # Quick rebuild without cleaning (faster for iterating)
-rebuild-electron:
+rebuild-electron: download-slp
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "📱 Packaging Electron app..."

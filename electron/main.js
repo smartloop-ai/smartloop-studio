@@ -364,10 +364,9 @@ async function bootstrapSlpService(baseUrl) {
  */
 function resolveStepIndex(data) {
   const status = data.status;
-  if (status === 'downloading' && !(data.total > 0)) return 0;
   if (status === 'installing') return 0;
   if (status === 'preparing') return 1;
-  if (status === 'downloading' && data.total > 0) return 2;
+  if (status === 'downloading') return 2;
   if (status === 'starting') return 3;
   // Any event after we've reached step 2 should map to step 3
   if (currentSplashStep >= 2) return 3;
@@ -394,7 +393,7 @@ function updateSplashProgress(data) {
     totalMB = (data.total / (1024 * 1024)).toFixed(1);
   }
 
-  const stepLabels = ['Downloading framework...', 'Starting service...', 'Downloading model...', 'Starting up...'];
+  const stepLabels = ['Installing framework...', 'Starting service...', 'Downloading model...', 'Starting up...'];
   const isError = data.status === 'error';
   const statusMsg = isError
     ? (data.message || 'An error occurred.')
@@ -587,7 +586,7 @@ function createSplashScreen() {
           <ul class="steps">
             <li class="step active" id="step-0" data-state="active">
               <span class="step-icon" id="icon-0"><span class="icon-active"></span></span>
-              <span>Downloading framework</span>
+              <span>Installing framework</span>
             </li>
             <li class="step" id="step-1" data-state="pending">
               <span class="step-icon" id="icon-1"><span class="icon-pending"></span></span>
@@ -1066,7 +1065,7 @@ if (!gotTheLock) {
 
       (async () => {
         try {
-          // Step 1: Download & install SLP binary
+          // Step 1: Install bundled SLP binary
           const setupResult = await setupSlpService((progress) => {
             updateSplashProgress(progress);
           });
