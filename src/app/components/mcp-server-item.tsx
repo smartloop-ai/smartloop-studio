@@ -3,6 +3,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import CableIcon from '@mui/icons-material/Cable';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import { useState, useEffect } from 'react';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 
@@ -32,10 +33,13 @@ export default function McpServerItem({
 
   // Server is connected if it has server_info
   const isConnected = !!localServerInfo;
+  const isLocal = server.server_type === 'local';
 
   // Get display values - use server_info.title as primary
   const serverInfo = localServerInfo;
-  const displayUrl = serverInfo?.website_url || serverInfo?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
+  const displayUrl = isLocal
+    ? [server.command, ...(server.args || [])].join(' ')
+    : serverInfo?.website_url || serverInfo?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
 
   // Extract hostname from URL as fallback name
   const getHostnameFromUrl = (url: string): string => {
@@ -142,6 +146,8 @@ export default function McpServerItem({
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
             />
+          ) : isLocal ? (
+            <TerminalIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
           ) : (
             <CableIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
           )}

@@ -426,17 +426,10 @@ export default function Home() {
             });
           }
 
-          // Fetch rules
-          const res = await fetch(`${localBase}/v1/rules`);
-          if (res.ok) {
-            const data = await res.json();
-            const rules = data.rule || data.rules || '';
-            setProjectRules(rules);
-            lastSavedRulesRef.current = rules;
-          } else {
-            setProjectRules('');
-            lastSavedRulesRef.current = '';
-          }
+          // Extract rules from project data
+          const rules = (selectedProject.rules || []).map((r: any) => r.content).join('\n\n');
+          setProjectRules(rules);
+          lastSavedRulesRef.current = rules;
         } catch {
           setProjectRules('');
           lastSavedRulesRef.current = '';
@@ -576,13 +569,12 @@ export default function Home() {
 
     try {
       const localBase = await getLocalApiEndpoint();
-      const url = `${localBase}/v1/rules`;
-      const payload = { rule: rules };
+      const url = `${localBase}/v1/projects/${selectedProject.id}`;
 
       const response = await fetch(url, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ rules: [{ content: rules }] }),
       });
 
       if (response.ok) {

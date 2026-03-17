@@ -80,6 +80,10 @@ export interface McpServerRegistrationResponse {
 export interface McpServer {
   id: string;
   name: string;
+  server_type?: 'local' | 'remote';
+  command?: string;
+  args?: string[];
+  cwd?: string;
   config?: {
     url?: string;
     [key: string]: any;
@@ -790,9 +794,78 @@ const autoConnectStoredServers = async (projectId: string): Promise<{ server: Mc
   return results;
 };
 
+/**
+ * Create a local MCP server (stdio-based)
+ * @param projectId - ID of the project
+ * @param name - Name of the MCP server
+ * @param command - Command to run
+ * @param args - Command arguments
+ * @param cwd - Working directory
+ * @returns Promise with created server data
+ */
+const createLocalMcpServer = async (
+  projectId: string,
+  name: string,
+  command: string,
+  args: string[] = [],
+  cwd?: string
+): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId) {
+      return { success: false, error: 'Project ID is required' };
+    }
+    if (!name || !name.trim()) {
+      return { success: false, error: 'Server name is required' };
+    }
+    if (!command || !command.trim()) {
+      return { success: false, error: 'Command is required' };
+    }
+
+    const localBase = await getLocalApiEndpoint();
+    const apiUrl = `${localBase}/v1/mcp`;
+    const body: Record<string, any> = {
+      name: name.trim(),
+      command: command.trim(),
+      args,
+      server_type: 'local',
+    };
+    if (cwd && cwd.trim()) {
+      body.cwd = cwd.trim();
+    }
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response) {
+      return { success: false, error: 'No response from server' };
+    }
+
+    if (response.status === 200 || response.status === 201) {
+      const server = await response.json();
+      return { success: true, data: server };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Failed to create local MCP server'),
+    };
+  } catch (error: any) {
+    console.error('Error creating local MCP server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while creating the local MCP server',
+    };
+  }
+};
+
 export const mcpServerService = {
   getMcpServers,
   createMcpServer,
+  createLocalMcpServer,
   getMcpServer,
   deleteMcpServer,
   connectMcpServer,
