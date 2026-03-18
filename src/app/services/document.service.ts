@@ -18,10 +18,10 @@ interface DocumentServiceResponse {
  * Get all documents for the current project from the local SLP service
  * @returns Promise with document list or error
  */
-const getLocalDocuments = async (): Promise<DocumentServiceResponse> => {
+const getLocalDocuments = async (projectId: string): Promise<DocumentServiceResponse> => {
   try {
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents`;
+    const url = `${localBase}/v1/${projectId}/documents`;
     const response = await fetch(url);
 
     if (response.ok) {
@@ -49,6 +49,7 @@ const getLocalDocuments = async (): Promise<DocumentServiceResponse> => {
  * @returns Promise with document data or error
  */
 const addLocalDocument = async (
+  projectId: string,
   filePath: string,
   onProgress?: (progress: { percent: number; status: string }) => void
 ): Promise<DocumentServiceResponse> => {
@@ -76,7 +77,7 @@ const addLocalDocument = async (
 
     // Fallback: direct fetch (non-Electron)
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents`;
+    const url = `${localBase}/v1/${projectId}/documents`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -202,10 +203,10 @@ const uploadDocument = async (file: File): Promise<DocumentServiceResponse> => {
  * @param documentId - ID of the document to delete
  * @returns Promise with result or error
  */
-const deleteLocalDocument = async (documentId: string): Promise<DocumentServiceResponse> => {
+const deleteLocalDocument = async (projectId: string, documentId: string): Promise<DocumentServiceResponse> => {
   try {
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents/${documentId}`;
+    const url = `${localBase}/v1/${projectId}/documents/${documentId}`;
     const response = await fetch(url, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {

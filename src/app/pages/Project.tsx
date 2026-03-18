@@ -286,7 +286,7 @@ export default function Project() {
   const deleteDocument = async (documentId: string) => {
     try {
       setIsLoading(true);
-      const deleteResult = await documentService.deleteLocalDocument(documentId);
+      const deleteResult = await documentService.deleteLocalDocument(current.id, documentId);
 
       if (deleteResult.success) {
         // Remove document from local state without remote fetch
