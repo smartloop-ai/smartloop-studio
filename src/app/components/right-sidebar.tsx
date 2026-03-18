@@ -13,9 +13,9 @@ import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer, McpServerRegistrationResponse } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -55,16 +55,13 @@ export default function RightSidebar({
 
   // MCP Servers state
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [isLoadingMcp, setIsLoadingMcp] = useState(false);
   const [mcpError, setMcpError] = useState('');
+  const [mcpPolling, setMcpPolling] = useState(false);
+  const mcpServerCountRef = useRef(0);
   const [showAddMcpForm, setShowAddMcpForm] = useState(false);
   const [newMcpName, setNewMcpName] = useState('');
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
-  // Token authentication state
-  const [showTokenInput, setShowTokenInput] = useState(false);
-  const [mcpToken, setMcpToken] = useState('');
-  const [pendingServerUrl, setPendingServerUrl] = useState('');
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
   // Local MCP server state
@@ -87,7 +84,6 @@ export default function RightSidebar({
       'ordered-list',
       '|',
       'quote',
-      'code',
     ] as const,
     minHeight: '300px',
     placeholder: 'Add rules or guidelines for this project...',
@@ -154,46 +150,16 @@ export default function RightSidebar({
     }
   }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
 
-  // Load MCP servers when section is opened
+  // Load MCP servers from project data
   useEffect(() => {
-    if (activeSection === 'mcp' && selectedProject?.id) {
-      loadMcpServers();
+    if (Array.isArray(currentProjectData?.mcp)) {
+      setMcpServers(currentProjectData.mcp as McpServer[]);
+    } else if (currentProjectData?.mcp?.servers) {
+      setMcpServers(currentProjectData.mcp.servers as McpServer[]);
+    } else {
+      setMcpServers([]);
     }
-  }, [activeSection, selectedProject?.id]);
-
-  // Auto-connect stored MCP servers on app start/project change
-  useEffect(() => {
-    const initializeMcpServers = async () => {
-      if (!selectedProject?.id) return;
-
-      console.log('[MCP Init] Checking for stored MCP servers...');
-      const storedServers = await mcpServerService.loadMcpServersFromStorage(selectedProject.id);
-
-      if (storedServers.length > 0) {
-        console.log(`[MCP Init] Found ${storedServers.length} stored servers, auto-connecting...`);
-        setIsLoadingMcp(true);
-
-        try {
-          const results = await mcpServerService.autoConnectStoredServers(selectedProject.id);
-
-          // Update state with connected servers
-          const apiResult = await mcpServerService.getMcpServers(selectedProject.id);
-          if (apiResult.success && apiResult.data) {
-            setMcpServers(apiResult.data as McpServer[]);
-          }
-
-          const connectedCount = results.filter(r => r.success).length;
-          console.log(`[MCP Init] Auto-connected ${connectedCount}/${storedServers.length} servers`);
-        } catch (error: any) {
-          console.error('[MCP Init] Error during auto-connect:', error);
-        } finally {
-          setIsLoadingMcp(false);
-        }
-      }
-    };
-
-    initializeMcpServers();
-  }, [selectedProject?.id]);
+  }, [currentProjectData?.mcp]);
 
   // Listen for MCP authorization callback from Electron
   useEffect(() => {
@@ -204,21 +170,8 @@ export default function RightSidebar({
         if (data.error) {
           setMcpError(data.error);
         } else if (data.serverId && selectedProject?.id) {
-          // Fetch the server list to show the new server
-          // McpServerItem will handle auto-connecting
-          console.log('[MCP Auth] Fetching server list...');
-          const listResult = await mcpServerService.getMcpServers(selectedProject.id);
-
-          if (listResult.success && listResult.data) {
-            const servers = listResult.data as McpServer[];
-            setMcpServers(servers);
-
-            // Save to storage so the server persists
-            await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
-            console.log('[MCP Auth] Server added, auto-connect will be handled by component');
-          } else {
-            setMcpError(listResult.error || 'Failed to load MCP servers after authorization');
-          }
+          console.log('[MCP Auth] Server authorized, refreshing list...');
+          loadMcpServers();
         }
       });
 
@@ -228,28 +181,38 @@ export default function RightSidebar({
     }
   }, [selectedProject?.id]);
 
-  const loadMcpServers = async () => {
+  const loadMcpServers = useCallback(async () => {
     if (!selectedProject?.id) return;
-
-    setIsLoadingMcp(true);
-    setMcpError('');
 
     try {
       const result = await mcpServerService.getMcpServers(selectedProject.id);
       if (result.success && result.data) {
         const servers = result.data as McpServer[];
         setMcpServers(servers);
-        // Save to local storage for persistence
-        await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
-      } else {
-        setMcpError(result.error || 'Failed to load MCP servers');
+        // Stop polling if a new server appeared
+        if (mcpPolling && servers.length > mcpServerCountRef.current) {
+          setMcpPolling(false);
+          setMcpError('');
+        }
       }
     } catch (error: any) {
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsLoadingMcp(false);
+      // silent during polling
+      if (!mcpPolling) {
+        setMcpError(error.message || 'An error occurred');
+      }
     }
-  };
+  }, [selectedProject?.id, mcpPolling]);
+
+  // Poll for new MCP servers while waiting (OAuth or error)
+  useEffect(() => {
+    if (!mcpPolling || !selectedProject?.id) return;
+
+    const interval = setInterval(() => {
+      loadMcpServers();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [mcpPolling, selectedProject?.id, loadMcpServers]);
 
   const handleAddMcpServer = async () => {
     if (!selectedProject?.id || !newMcpUrl.trim()) return;
@@ -258,57 +221,40 @@ export default function RightSidebar({
     setMcpError('');
 
     try {
-      // First, register the MCP server to determine auth type
-      console.log('[MCP] Registering server:', newMcpUrl.trim());
-      const registerResult = await mcpServerService.registerMcpServer(
+      const serverUrl = newMcpUrl.trim();
+      console.log('[MCP] Registering server:', serverUrl);
+
+      const result = await mcpServerService.registerMcpServer(
         selectedProject.id,
-        newMcpUrl.trim()
+        serverUrl,
+        newMcpName.trim() || undefined
       );
 
-      if (!registerResult.success || !registerResult.data) {
-        setMcpError(registerResult.error || 'Failed to register MCP server');
+      if (!result.success || !result.data) {
+        setMcpError(result.error || 'Failed to register MCP server');
         return;
       }
 
-      const registrationData = registerResult.data as McpServerRegistrationResponse;
-      console.log('[MCP] Registration response:', registrationData);
+      const data = result.data as Record<string, any>;
 
-      const authType = registrationData.auth_type;
-
-      if (authType === 'oauth') {
-        // OAuth flow - redirect to auth URL (check multiple possible field names)
-        const responseData = registrationData as Record<string, any>;
-        const authUrl = responseData.auth_url || responseData.authorization_url || responseData.url || responseData.redirect_url;
-
-        console.log('[MCP] OAuth response data:', responseData);
-        console.log('[MCP] Auth URL:', authUrl);
-
-        if (authUrl) {
-          setNewMcpName('');
-          setNewMcpUrl('');
-          setShowAddMcpForm(false);
-
-          console.log('[MCP] OAuth flow - opening auth URL:', authUrl);
-          const electronWindow = window as any;
-          if (electronWindow.electronAPI?.openExternal) {
-            electronWindow.electronAPI.openExternal(authUrl);
-          } else {
-            window.open(authUrl, '_blank');
-          }
-        } else {
-          console.error('[MCP] OAuth required but no auth URL found in response:', responseData);
-          setMcpError('OAuth required but no authorization URL provided. Check console for details.');
-        }
-      } else if (authType === 'token') {
-        // Token flow - show token input
-        console.log('[MCP] Token flow - switching to token input mode');
-        setPendingServerUrl(newMcpUrl.trim());
-        setShowTokenInput(true);
-        setNewMcpUrl('');
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        // OAuth required - open auth URL (session stored server-side)
         setNewMcpName('');
+        setNewMcpUrl('');
+        setShowAddMcpForm(false);
+        mcpServerCountRef.current = mcpServers.length;
+        setMcpPolling(true);
+
+        console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
       } else {
-        // No auth required - server registered successfully, reload list
-        console.log('[MCP] No auth required - server registered');
+        // Server registered directly
+        console.log('[MCP] Server registered successfully');
         setNewMcpName('');
         setNewMcpUrl('');
         setShowAddMcpForm(false);
@@ -317,13 +263,15 @@ export default function RightSidebar({
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
       setMcpError(error.message || 'An error occurred');
+      mcpServerCountRef.current = mcpServers.length;
+      setMcpPolling(true);
     } finally {
       setIsAddingMcp(false);
     }
   };
 
   const handleAddLocalMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpCommand.trim()) return;
+    if (!selectedProject?.id || !newMcpName.trim() || !newMcpCommand.trim()) return;
 
     setIsAddingMcp(true);
     setMcpError('');
@@ -355,47 +303,6 @@ export default function RightSidebar({
     } finally {
       setIsAddingMcp(false);
     }
-  };
-
-  const handleTokenSubmit = async () => {
-    if (!selectedProject?.id || !pendingServerUrl || !mcpToken.trim()) return;
-
-    setIsAddingMcp(true);
-    setMcpError('');
-
-    try {
-      console.log('[MCP] Submitting token for:', pendingServerUrl);
-      const result = await mcpServerService.authenticateWithToken(
-        selectedProject.id,
-        pendingServerUrl,
-        mcpToken.trim()
-      );
-
-      if (result.success) {
-        console.log('[MCP] Token authentication successful');
-        // Reset form state
-        setShowTokenInput(false);
-        setShowAddMcpForm(false);
-        setMcpToken('');
-        setPendingServerUrl('');
-        // Reload server list
-        loadMcpServers();
-      } else {
-        setMcpError(result.error || 'Failed to authenticate with token');
-      }
-    } catch (error: any) {
-      console.error('[MCP] Error submitting token:', error);
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsAddingMcp(false);
-    }
-  };
-
-  const handleCancelTokenInput = () => {
-    setShowTokenInput(false);
-    setMcpToken('');
-    setPendingServerUrl('');
-    setMcpError('');
   };
 
   const handleDeleteMcpServer = async (server: McpServer) => {
@@ -447,7 +354,7 @@ export default function RightSidebar({
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
       setUploadProgress({ percent: 0, status: 'Processing...' });
-      const localResult = await documentService.addLocalDocument(tempPath, (progress) => {
+      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, (progress) => {
         setUploadProgress(progress);
       });
       setUploadProgress(null);
@@ -581,7 +488,7 @@ export default function RightSidebar({
                 )}
               </button>
             )}
-            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && !showTokenInput && (
+            {selectedProject && activeSection === 'mcp' && (
               <button
                 onClick={() => setShowAddMcpForm(true)}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -893,7 +800,7 @@ export default function RightSidebar({
         {activeSection === 'mcp' && (
           <div className="space-y-3">
             {/* Add MCP Server Form */}
-            {showAddMcpForm && !showTokenInput && (
+            {showAddMcpForm && (
               <Box
                 sx={{
                   padding: '12px',
@@ -1061,9 +968,9 @@ export default function RightSidebar({
                   </button>
                   <button
                     onClick={mcpServerType === 'remote' ? handleAddMcpServer : handleAddLocalMcpServer}
-                    disabled={isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : !newMcpCommand.trim())}
+                    disabled={isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : (!newMcpName.trim() || !newMcpCommand.trim()))}
                     className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : !newMcpCommand.trim())
+                      isAddingMcp || (mcpServerType === 'remote' ? !newMcpUrl.trim() : (!newMcpName.trim() || !newMcpCommand.trim()))
                         ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
                         : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
                     }`}
@@ -1081,81 +988,6 @@ export default function RightSidebar({
               </Box>
             )}
 
-            {/* Token Input Form */}
-            {showTokenInput && (
-              <Box
-                sx={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  border: '1px solid var(--sl-brand-alpha-30)',
-                }}
-              >
-                <Box className="text-xs text-gray-300 mb-3">
-                  <span className="text-pink-400 font-medium">Token Required</span>
-                  <br />
-                  <span className="text-gray-500 text-[10px]">
-                    Server: {pendingServerUrl}
-                  </span>
-                </Box>
-                <TextField
-                  size="small"
-                  placeholder="Enter authentication token"
-                  value={mcpToken}
-                  onChange={(e) => setMcpToken(e.target.value)}
-                  type="password"
-                  fullWidth
-                  autoFocus
-                  sx={{
-                    mb: 1.5,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-50)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && mcpToken.trim()) {
-                      handleTokenSubmit();
-                    }
-                  }}
-                />
-                <Box className="flex justify-end gap-2">
-                  <button
-                    onClick={handleCancelTokenInput}
-                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleTokenSubmit}
-                    disabled={isAddingMcp || !mcpToken.trim()}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || !mcpToken.trim()
-                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
-                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
-                    }`}
-                  >
-                    {isAddingMcp ? (
-                      <>
-                        <CircularProgress size={10} sx={{ color: 'var(--sl-text-primary)' }} />
-                        <span>Authenticating...</span>
-                      </>
-                    ) : (
-                      <span>Submit Token</span>
-                    )}
-                  </button>
-                </Box>
-              </Box>
-            )}
-
             {/* Error Message */}
             {mcpError && (
               <Box className="text-red-400 text-xs text-center py-2">
@@ -1163,12 +995,7 @@ export default function RightSidebar({
               </Box>
             )}
 
-            {/* Loading State */}
-            {isLoadingMcp ? (
-              <Box className="flex items-center justify-center py-8">
-                <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />
-              </Box>
-            ) : mcpServers.length > 0 ? (
+            {mcpServers.length > 0 ? (
               /* Server List */
               <Box className="space-y-2">
                 {mcpServers.map((server, index) => (
@@ -1286,11 +1113,10 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="MCP Servers (Coming Soon)" placement="left">
-          <span className='cursor-not-allowed'>
+        <Tooltip title="MCP Servers" placement="left">
+          <span>
             <IconButton
-              onClick={() => {}}
-              disabled={true}
+              onClick={() => { setShowAddMcpForm(false); setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
               sx={{
                 color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: activeSection === 'mcp' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',

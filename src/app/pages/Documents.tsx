@@ -43,7 +43,7 @@ function DocumentsListContent() {
 
     const interval = setInterval(async () => {
       try {
-        const result = await documentService.getLocalDocuments();
+        const result = await documentService.getLocalDocuments(projectId!);
         if (result.success && result.data) {
           const newDocs: any[] = result.data.documents || result.data;
 
@@ -127,7 +127,7 @@ function DocumentsListContent() {
     const handleDocumentUploaded = async () => {
       // Refresh document list from local API immediately after upload
       try {
-        const result = await documentService.getLocalDocuments();
+        const result = await documentService.getLocalDocuments(projectId!);
         if (result.success && result.data && projectId && user) {
           const newDocs: any[] = result.data.documents || result.data;
           const updatedProjects = (user.projects || []).map((p: any) => {
@@ -238,7 +238,7 @@ function DocumentsListContent() {
       const project = user?.projects?.find((p: any) => p.id === documentToDelete.projectId);
       const isOnlyDocument = project && project.documents && project.documents.length === 1;
 
-      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
+      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.projectId, documentToDelete.id);
 
       if (deleteResult.success) {
         // If this was the only document, delete the project as well

@@ -71,7 +71,7 @@ export default function DocumentsTab({
     setDeleteDocError('');
 
     try {
-      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
+      const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
 
       if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
@@ -138,12 +138,12 @@ export default function DocumentsTab({
                     justifyContent: 'space-between',
                     padding: '16px',
                     borderRadius: '10px',
-                    bgcolor: 'var(--sl-white-alpha-2)',
-                    border: '1px solid var(--sl-white-alpha-5)',
+                    bgcolor: doc.isUploading ? 'var(--sl-brand-alpha-5)' : 'var(--sl-white-alpha-2)',
+                    border: doc.isUploading ? '1px solid var(--sl-brand-alpha-20)' : '1px solid var(--sl-white-alpha-5)',
                     transition: 'all 0.15s ease',
                     '&:hover': {
-                      bgcolor: 'var(--sl-white-alpha-5)',
-                      borderColor: 'var(--sl-white-alpha-8)',
+                      bgcolor: doc.isUploading ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
+                      borderColor: doc.isUploading ? 'var(--sl-brand-alpha-30)' : 'var(--sl-white-alpha-8)',
                     },
                   }}
                 >
@@ -156,20 +156,25 @@ export default function DocumentsTab({
                         width: 36,
                         height: 36,
                         borderRadius: '50%',
-                        bgcolor: 'var(--sl-brand-alpha-10)',
+                        bgcolor: doc.isUploading ? 'var(--sl-brand-alpha-15)' : 'var(--sl-brand-alpha-10)',
                         flexShrink: 0,
                         marginTop: '2px',
                       }}
                     >
-                      <InsertDriveFileIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />
+                      {doc.isUploading
+                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
+                        : <InsertDriveFileIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />}
                     </Box>
                     <Box className="flex-1 min-w-0 pr-4">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm text-white font-medium truncate">
                           {doc.path ? (doc.path.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
                         </span>
+                        {doc.isUploading && (
+                          <span className="text-xs text-pink-400 shrink-0">Uploading…</span>
+                        )}
                       </div>
-                      {(doc.summary || doc.markdown) && (
+                      {!doc.isUploading && (doc.summary || doc.markdown) && (
                         <div
                           className="text-xs text-gray-400 leading-relaxed mb-2"
                           style={{ wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
@@ -184,11 +189,11 @@ export default function DocumentsTab({
                     </Box>
                   </Box>
                   <Box className="flex items-center gap-2 mt-1">
-                    {doc.is_token_limit_reached && (
+                    {!doc.isUploading && doc.is_token_limit_reached && (
                       <WarningIcon sx={{ fontSize: 16, color: 'var(--sl-status-warning)' }} />
                     )}
-                    {/* Delete Document Button */}
-                    <Tooltip title="Delete Document" arrow>
+                    {/* Delete Document Button — hidden while uploading */}
+                    {!doc.isUploading && <Tooltip title="Delete Document" arrow>
                       <IconButton
                         size="small"
                         onClick={() => handleOpenDeleteDocDialog(doc)}
@@ -206,7 +211,7 @@ export default function DocumentsTab({
                       >
                         <DeleteIcon sx={{ fontSize: 16 }} />
                       </IconButton>
-                    </Tooltip>
+                    </Tooltip>}
                   </Box>
                 </Box>
               ))}

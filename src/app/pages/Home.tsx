@@ -393,38 +393,19 @@ export default function Home() {
   }, [chatMessage, conversation]);
 
 
-  // Load project data when selected, unload/load model on switch
+  // Load project data from local API when selected
   const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedProject && user) {
-      const project = user.projects?.find((p: any) => p.id === selectedProject.id);
-      if (project) {
-        setCurrentProjectData(project);
-        setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
-      }
-
-      prevProjectIdRef.current = selectedProject.id;
-
-      // Load documents + rules from local service
+    if (selectedProject) {
       (async () => {
         try {
-          const localBase = await getLocalApiEndpoint();
-
-          // Fetch documents for this project from local SLP
-          const docsRes = await fetch(`${localBase}/v1/documents`);
-          if (docsRes.ok) {
-            const docsData = await docsRes.json();
-            const docs: any[] = docsData.documents || docsData || [];
-            setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
-            // Keep user.projects in sync (use functional update to avoid stale closure)
-            setUser((prev: any) => {
-              if (!prev) return prev;
-              const updatedProjects = (prev.projects || []).map((p: any) =>
-                p.id === selectedProject.id ? { ...p, documents: docs } : p
-              );
-              return { ...prev, projects: updatedProjects };
-            });
+          const project = await loadProjectFromApi(selectedProject.id);
+          if (project) {
+            setCurrentProjectData(project);
+            setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
           }
+
+          prevProjectIdRef.current = selectedProject.id;
 
           // Extract rules from project data
           const rules = (selectedProject.rules || []).map((r: any) => r.content).join('\n\n');
@@ -974,7 +955,7 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
+      const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
 
       if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
