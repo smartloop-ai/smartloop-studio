@@ -23,7 +23,7 @@ export default function McpServerItem({
   const serverInfo = server.server_info;
 
   const displayUrl = isLocal
-    ? [server.command, ...(server.args || [])].join(' ')
+    ? server.name || 'Local Server'
     : serverInfo?.website_url || serverInfo?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
 
   const getHostnameFromUrl = (url: string): string => {
@@ -76,12 +76,7 @@ export default function McpServerItem({
             <img
               src={iconUrl}
               alt={displayName}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                borderRadius: '6px',
-              }}
+              className="w-full h-full object-cover rounded-md"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
@@ -124,7 +119,7 @@ export default function McpServerItem({
 
           {/* Description */}
           {server.description && (
-            <div className="text-[10px] text-gray-400 leading-snug truncate" title={server.description}>
+            <div className="text-[10px] text-gray-400 leading-snug" title={server.description}>
               {server.description}
             </div>
           )}

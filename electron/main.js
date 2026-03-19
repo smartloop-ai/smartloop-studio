@@ -128,12 +128,13 @@ ipcMain.handle('get-local-api-url', async () => {
 });
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
-ipcMain.handle('slp-add-document', async (event, filePath) => {
+ipcMain.handle('slp-add-document', async (event, filePath, projectId) => {
   const http = require('http');
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
 
-  const url = new URL(`${baseUrl}/v1/documents`);
+  const docPath = projectId ? `/v1/projects/${projectId}/documents` : '/v1/documents';
+  const url = new URL(`${baseUrl}${docPath}`);
   const body = JSON.stringify({ source: filePath });
 
   return new Promise((resolve) => {
@@ -161,11 +162,11 @@ ipcMain.handle('slp-add-document', async (event, filePath) => {
           const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
           try {
             const data = JSON.parse(payload);
-            // Send progress to renderer
-            if (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined) {
+            // Send progress to renderer for any event with progress or status info
+            if (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined || data.status) {
               const pct = data.progress !== undefined
                 ? Math.round(data.progress * 100)
-                : (data.percent ?? data.percentage);
+                : (data.percent ?? data.percentage ?? 0);
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('slp-document-progress', { percent: pct, status: data.status || 'Processing...' });
               }
@@ -298,6 +299,8 @@ ipcMain.handle('slp-service-status', async () => {
 
 // Bootstrap the SLP service via SSE endpoint
 // Handles workspace creation, model download, project creation, and model loading
+const { bootstrapProgress } = require('./bootstrap-progress.js');
+
 async function bootstrapSlpService(baseUrl) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -327,13 +330,23 @@ async function bootstrapSlpService(baseUrl) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.total > 0) {
-                const pct = Math.round((data.downloaded / data.total) * 100);
-                if (pct % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${pct}%`);
+              const progress = bootstrapProgress(data);
+
+              if (progress.percent > 0) {
+                if (progress.percent % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${progress.percent}%`);
               } else {
-                console.log('[SLP] Bootstrap:', data.status, '-', data.message || '');
+                console.log('[SLP] Bootstrap:', progress.status);
               }
-              updateSplashProgress(data);
+
+              // Send to splash screen only when main window isn't visible yet
+              if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
+                updateSplashProgress(data);
+              }
+
+              // Send normalised progress to renderer so the chat UI can show it
+              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+                mainWindow.webContents.send('bootstrap-progress', progress);
+              }
             } catch {
               // ignore unparseable SSE data
             }
@@ -343,6 +356,14 @@ async function bootstrapSlpService(baseUrl) {
 
       res.on('end', () => {
         console.log('[SLP] Bootstrap completed');
+
+        // Send a final completed event so the renderer clears the progress UI
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+          mainWindow.webContents.send('bootstrap-progress', {
+            percent: 100, status: 'Ready', model: '', downloading: false
+          });
+        }
+
         resolve(true);
       });
 
@@ -360,16 +381,13 @@ async function bootstrapSlpService(baseUrl) {
 }
 
 /**
- * Map a progress event to one of the 4 splash step indices.
+ * Map a progress event to one of the 2 splash step indices.
  */
 function resolveStepIndex(data) {
   const status = data.status;
   if (status === 'installing') return 0;
   if (status === 'preparing') return 1;
-  if (status === 'downloading') return 2;
-  if (status === 'starting') return 3;
-  // Any event after we've reached step 2 should map to step 3
-  if (currentSplashStep >= 2) return 3;
+  // Any other status maps to step 1 (the last splash step)
   return currentSplashStep;
 }
 
@@ -384,28 +402,17 @@ function updateSplashProgress(data) {
   const stepIndex = resolveStepIndex(data);
   currentSplashStep = Math.max(currentSplashStep, stepIndex);
 
-  // Show progress bar only during downloads with byte totals
-  const showProgress = data.status === 'downloading' && data.total > 0;
-  let pct = 0, downloadedMB = '0', totalMB = '0';
-  if (showProgress) {
-    pct = Math.round((data.downloaded / data.total) * 100);
-    downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(1);
-    totalMB = (data.total / (1024 * 1024)).toFixed(1);
-  }
-
-  const stepLabels = ['Installing framework...', 'Starting service...', 'Downloading model...', 'Starting up...'];
+  const stepLabels = ['Installing framework...', 'Starting service...'];
   const isError = data.status === 'error';
   const statusMsg = isError
     ? (data.message || 'An error occurred.')
-    : showProgress
-      ? `Downloading... ${downloadedMB} / ${totalMB} MB (${pct}%)`
-      : stepLabels[currentSplashStep] || '';
+    : stepLabels[currentSplashStep] || '';
 
   splashWindow.webContents.executeJavaScript(`
     (function() {
       var current = ${currentSplashStep};
       // Only update steps whose state actually changed (avoids restarting spinner animation)
-      for (var i = 0; i < 4; i++) {
+      for (var i = 0; i < 2; i++) {
         var stepEl = document.getElementById('step-' + i);
         var iconEl = document.getElementById('icon-' + i);
         var newState = i < current ? 'completed' : (i === current ? 'active' : 'pending');
@@ -420,24 +427,6 @@ function updateSplashProgress(data) {
             iconEl.innerHTML = '<span class="icon-pending"></span>';
           }
         }
-      }
-      var pw = document.getElementById('progress-wrapper');
-      var pb = document.getElementById('progress-bar');
-      if (${showProgress}) {
-        // New download phase — reset bar instantly while hidden, then fade in
-        if (pw.dataset.phase !== '' + current) {
-          pb.style.transition = 'none';
-          pb.style.width = '0%';
-          void pb.offsetHeight;
-          pb.style.transition = 'width 0.3s ease';
-          pw.dataset.phase = '' + current;
-        }
-        pw.style.opacity = '1';
-        pw.style.maxHeight = '22px';
-        pb.style.width = '${pct}%';
-      } else {
-        pw.style.opacity = '0';
-        pw.style.maxHeight = '0';
       }
       document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
     })();
@@ -464,7 +453,7 @@ const PROTOCOL = 'smartloop';
 function createSplashScreen() {
   splashWindow = new BrowserWindow({
     width: 560,
-    height: 420,
+    height: 320,
     transparent: true,
     frame: false,
     resizable: false,
@@ -549,27 +538,6 @@ function createSplashScreen() {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
-          .progress-wrapper {
-            margin-bottom: 16px;
-            opacity: 0;
-            max-height: 0;
-            overflow: hidden;
-            transition: opacity 0.3s ease, max-height 0.3s ease;
-          }
-          .progress-track {
-            width: 100%;
-            height: 6px;
-            background: #1f2937;
-            border-radius: 3px;
-            overflow: hidden;
-          }
-          .progress-fill {
-            height: 100%;
-            width: 0%;
-            background: #ec4899;
-            border-radius: 3px;
-            transition: width 0.3s ease;
-          }
           .status-text {
             color: #6b7280;
             font-size: 13px;
@@ -592,20 +560,7 @@ function createSplashScreen() {
               <span class="step-icon" id="icon-1"><span class="icon-pending"></span></span>
               <span>Starting service</span>
             </li>
-            <li class="step" id="step-2" data-state="pending">
-              <span class="step-icon" id="icon-2"><span class="icon-pending"></span></span>
-              <span>Downloading model</span>
-            </li>
-            <li class="step" id="step-3" data-state="pending">
-              <span class="step-icon" id="icon-3"><span class="icon-pending"></span></span>
-              <span>Starting up</span>
-            </li>
           </ul>
-          <div class="progress-wrapper" id="progress-wrapper" data-phase="-1">
-            <div class="progress-track">
-              <div class="progress-fill" id="progress-bar"></div>
-            </div>
-          </div>
           <div class="status-text" id="status-text">Getting things ready...</div>
         </div>
       </body>
@@ -939,25 +894,30 @@ if (!gotTheLock) {
     });
     refreshTray();
 
-    // Check if SLP daemon is already running AND all install steps completed
+    // ── Startup flow ──────────────────────────────────────────────
+    // 1. Health check → if healthy, skip straight to main window
+    // 2. Not healthy but installed → start service, then go to main
+    // 3. Not installed at all → show splash for installation
+    // ──────────────────────────────────────────────────────────────
+
     const serviceReady = await slpService.checkHealth();
-    let installComplete = database.isFullyInstalled();
 
-    // If the service is already healthy but install steps weren't tracked,
-    // mark all 4 steps as complete (e.g. service was started externally).
-    if (serviceReady && !installComplete) {
-      console.log('[SLP] Service is healthy — marking all install steps as complete');
-      for (let step = 0; step < 4; step++) {
-        database.setInstallStepComplete(step);
+    if (serviceReady) {
+      // Service is already running (local or external) — go straight to main
+      console.log('[SLP] Service healthy — skipping to main window');
+
+      // Ensure DB reflects that install is complete
+      if (!database.isFullyInstalled()) {
+        for (let step = 0; step < 4; step++) {
+          database.setInstallStepComplete(step);
+        }
       }
-      installComplete = true;
-    }
 
-    if (serviceReady && installComplete) {
-      // Daemon already running — check if bootstrap is needed (e.g. no projects yet)
       const baseUrl = slpService.getLocalBaseUrl();
-      let needsBootstrap = false;
+      refreshTray();
 
+      // Check if bootstrap is needed (e.g. no projects yet)
+      let needsBootstrap = false;
       try {
         const http = require('http');
         const url = new URL(`${baseUrl}/v1/projects`);
@@ -978,18 +938,16 @@ if (!gotTheLock) {
         needsBootstrap = true;
       }
 
-      if (needsBootstrap) {
-        // No projects — show app, run bootstrap in background
-        console.log('[SLP] Service healthy but no projects — running bootstrap in background');
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-        }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+      }
 
+      if (needsBootstrap) {
+        console.log('[SLP] No projects — running bootstrap in background');
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
             refreshTray();
-
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             }
@@ -998,16 +956,20 @@ if (!gotTheLock) {
           }
         })();
       } else {
-        // Projects exist — show window immediately, no splash
-        refreshTray();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-          mainWindow.show();
         }
       }
-    } else if (installComplete) {
-      // Framework already installed but service not running — show app, start in background
-      console.log('[SLP] Framework installed but service not running — starting service in background...');
+    } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
+      // Not healthy but binary is installed — show app, start service in background
+      console.log('[SLP] Service not running but binary found — starting in background...');
+
+      if (!database.isFullyInstalled()) {
+        for (let step = 0; step < 4; step++) {
+          database.setInstallStepComplete(step);
+        }
+      }
+
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
       }
@@ -1023,7 +985,6 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Check if bootstrap is needed (e.g. no projects yet)
           let needsBootstrap = false;
           try {
             const http = require('http');
@@ -1071,7 +1032,7 @@ if (!gotTheLock) {
           });
 
           if (setupResult === false) {
-            currentSplashStep = 2;
+            currentSplashStep = 1;
           }
 
           // Step 2: Start the service
@@ -1087,24 +1048,21 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Step 3: Bootstrap (workspace, model download, project setup)
-          await bootstrapSlpService(baseUrl);
-
-          // Done — transition to main window
-          updateSplashProgress({ status: 'starting', message: 'Starting up...' });
-
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-          }
-
-          await new Promise((r) => setTimeout(r, 500));
-
+          // Service is healthy — dismiss splash, show app immediately
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.show();
           }
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
+          }
+
+          // Bootstrap (workspace, model download, project setup) runs in the background
+          // The in-app progress UI will show download progress via IPC
+          await bootstrapSlpService(baseUrl);
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
         } catch (error) {
           console.error('[SLP] Setup failed:', error.message);
