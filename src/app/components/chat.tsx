@@ -8,6 +8,7 @@ import OpenAI from 'openai';
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MessageInput from './message-input';
 
 import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
@@ -108,7 +109,6 @@ export default function Chat(props: {
   const [isLoading, setIsLoading] = useState(false);
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
-  const [messageSent, setMessageSent] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
@@ -116,6 +116,7 @@ export default function Chat(props: {
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
+  const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string } | null>(null);
 
   // Check if the SLP service is already available, and listen for it to come online
   useEffect(() => {
@@ -124,7 +125,13 @@ export default function Chat(props: {
       const url = await getLocalApiEndpoint();
       if (!cancelled && url) setIsServiceReady(true);
     })();
-    const handler = () => { if (!cancelled) setIsServiceReady(true); };
+    const handler = () => {
+      if (!cancelled) {
+        setIsServiceReady(true);
+        setModelDownloadProgress(null);
+        modelLoadingRef.current = false;
+      }
+    };
     window.addEventListener('slpServiceReady', handler);
     return () => { cancelled = true; window.removeEventListener('slpServiceReady', handler); };
   }, []);
@@ -145,10 +152,10 @@ export default function Chat(props: {
               const health = await res.json();
               memPct = health?.memory_percent ?? health?.memory ?? null;
             }
-          } catch {}
+          } catch { }
         }
         if (!cancelled) setStatusInfo({ model, memory: memPct });
-      } catch {}
+      } catch { }
     };
     fetchStatus();
     const interval = setInterval(fetchStatus, 30000);
@@ -160,14 +167,27 @@ export default function Chat(props: {
     const handler = async (e: any) => {
       const loading = e.detail?.loading ?? false;
       modelLoadingRef.current = loading;
-      // When model finishes loading, refresh the status bar
-      if (!loading) {
+      if (loading) {
+        // Model is starting to load — show initial progress
+        setModelDownloadProgress({ downloading: true, model: e.detail?.model || '', percent: 0, status: 'Initializing model...' });
+      } else {
+        // Model finished loading — clear progress
+        setModelDownloadProgress(null);
         const model = e.detail?.model || props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
         setStatusInfo(prev => ({ ...prev, model }));
       }
     };
+    const progressHandler = (e: any) => {
+      if (e.detail) {
+        setModelDownloadProgress(e.detail);
+      }
+    };
     window.addEventListener('modelInitStatus', handler);
-    return () => window.removeEventListener('modelInitStatus', handler);
+    window.addEventListener('modelDownloadProgress', progressHandler);
+    return () => {
+      window.removeEventListener('modelInitStatus', handler);
+      window.removeEventListener('modelDownloadProgress', progressHandler);
+    };
   }, []);
 
   // Log project prop for debugging
@@ -898,26 +918,6 @@ export default function Chat(props: {
     };
   }, []);
 
-  // Auto-send initial message when provided
-  useEffect(() => {
-    // Only auto-send if we have initialMessage, haven't sent it yet, not currently loading,
-    // AND we have a conversation (to prevent creating duplicate conversations)
-    if (props.initialMessage && !messageSent && !isLoading && props.conversation?.id) {
-      // Small delay to ensure component is ready, conversation prop is set, and attachments are available
-      setTimeout(() => {
-        // Ensure attachments ref is updated from props before sending (for fallback)
-        if (props.attachments && props.attachments.length > 0) {
-          messageAttachmentsRef.current = [...props.attachments];
-          console.log('[Chat auto-send] Updated attachments ref from props:', messageAttachmentsRef.current);
-        }
-        console.log('[Chat auto-send] About to send - props.attachments:', props.attachments, 'ref:', messageAttachmentsRef.current);
-        sendMessage({} as any, props.initialMessage || undefined);
-        setMessageSent(true);
-      }, 800);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.initialMessage, props.conversation?.id, props.attachments, messageSent, isLoading]);
-
   // Messages are now managed via conversation service state
   // No need for backup saves - messages are synced to server after each exchange
 
@@ -944,7 +944,79 @@ export default function Chat(props: {
           <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 scrollbar-thin">
             <div ref={messagesEndRef} />
 
-            {(displayMessages || []).length === 0 && showTips && searchQuery.trim() === "" &&
+            {(displayMessages || []).length === 0 && searchQuery.trim() === "" && modelDownloadProgress &&
+              <div className="flex flex-col gap-2 h-full w-full justify-center items-center px-3 md:px-6">
+                <div className="flex-1"></div>
+                <Box
+                  sx={{
+                    bgcolor: 'rgba(17, 24, 39, 0.6)',
+                    border: '1px solid rgba(75, 85, 99, 0.3)',
+                    borderRadius: '16px',
+                    padding: { xs: '20px', md: '32px' },
+                    maxWidth: '700px',
+                    width: '100%',
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        bgcolor: 'var(--sl-brand-alpha-10)',
+                        border: '1px solid var(--sl-brand-alpha-20)',
+                      }}
+                    >
+                      <AutoAwesomeIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
+                    </Box>
+                    <div>
+                      <h2 className="text-lg md:text-xl font-semibold text-white">Bootstrapping Model</h2>
+                      <p className="text-xs text-gray-400 mt-0.5">{modelDownloadProgress.model?.replace(/-/g, ' ')}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs text-gray-400">
+                      <span>{modelDownloadProgress.status}</span>
+                      <span>{modelDownloadProgress.percent}%</span>
+                    </div>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: '6px',
+                        borderRadius: '3px',
+                        bgcolor: 'rgba(75, 85, 99, 0.4)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${modelDownloadProgress.percent}%`,
+                          height: '100%',
+                          borderRadius: '3px',
+                          bgcolor: 'var(--sl-brand-primary)',
+                          transition: 'width 0.3s ease',
+                          ...(modelDownloadProgress.percent < 100 && modelDownloadProgress.percent > 0 ? {} : modelDownloadProgress.percent === 0 ? {
+                            width: '30%',
+                            animation: 'indeterminate 1.5s ease-in-out infinite',
+                            '@keyframes indeterminate': {
+                              '0%': { transform: 'translateX(-100%)' },
+                              '100%': { transform: 'translateX(350%)' },
+                            },
+                          } : {}),
+                        }}
+                      />
+                    </Box>
+                    <p className="text-xs text-gray-500">Please wait as we download and prepare the model...</p>
+                  </div>
+                </Box>
+                <div className="flex-1"></div>
+              </div>
+            }
+            {(displayMessages || []).length === 0 && showTips && searchQuery.trim() === "" && !modelDownloadProgress && isServiceReady && props.project &&
               <div className="flex flex-col gap-2 h-full w-full justify-center items-center px-3 md:px-6">
                 <div className="flex-1"></div>
                 <Box
@@ -1161,8 +1233,8 @@ export default function Chat(props: {
                 abortControllerRef.current.abort();
               }
             }}
-            placeholder="Enter your prompt..."
-            disabled={!isServiceReady}
+            placeholder={modelDownloadProgress?.downloading ? "Waiting for model to be ready..." : "Enter your prompt..."}
+            disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
             isLoading={isLoading}
             allowAttachments={true}
             conversation={props.conversation}

@@ -82,9 +82,7 @@ export interface McpServer {
   name: string;
   description?: string;
   server_type?: 'local' | 'remote';
-  command?: string;
-  args?: string[];
-  cwd?: string;
+  env?: Record<string, string>;
   config?: {
     url?: string;
     [key: string]: any;
@@ -189,29 +187,42 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
 };
 
 /**
- * Register a remote MCP server via unified endpoint.
- * If no auth needed, the server is added directly and returned.
- * If OAuth is required, returns auth_url and session data for the user to complete.
+ * Register an MCP server via the unified endpoint.
+ * Supports both remote (SSE/HTTP) and local (stdio) server types.
+ * For remote: if no auth needed, the server is added directly. If OAuth is required, returns auth_url.
+ * For local: registers a stdio-based server with optional environment variables.
  * @param projectId - ID of the project
- * @param serverUrl - URL of the remote MCP server
- * @param name - Optional name for the server
- * @param token - Optional auth token
+ * @param options - Registration options
  * @returns Promise with register response (server or OAuth data)
  */
-const registerMcpServer = async (projectId: string, serverUrl: string, name?: string, token?: string): Promise<McpServerServiceResponse> => {
+const registerMcpServer = async (projectId: string, options: {
+  server_type: 'remote' | 'local';
+  server_url?: string;
+  name?: string;
+  token?: string;
+  env?: Record<string, string>;
+}): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
       return { success: false, error: 'Project ID is required' };
     }
-    if (!serverUrl || !serverUrl.trim()) {
-      return { success: false, error: 'Server URL is required' };
+
+    if (options.server_type === 'remote' && (!options.server_url || !options.server_url.trim())) {
+      return { success: false, error: 'Server URL is required for remote servers' };
+    }
+
+    if (options.server_type === 'local' && !options.name?.trim()) {
+      return { success: false, error: 'Server name is required for local servers' };
     }
 
     const localBase = await getLocalApiEndpoint();
     const apiUrl = `${localBase}/v1/projects/${projectId}/mcp/register`;
-    const body: Record<string, any> = { server_url: serverUrl.trim() };
-    if (name) body.name = name.trim();
-    if (token) body.token = token.trim();
+    const body: Record<string, any> = { server_type: options.server_type };
+
+    if (options.server_url) body.server_url = options.server_url.trim();
+    if (options.name) body.name = options.name.trim();
+    if (options.token) body.token = options.token.trim();
+    if (options.env && Object.keys(options.env).length > 0) body.env = options.env;
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -524,77 +535,8 @@ const removeMcpServerFromStorage = async (projectId: string, serverId: string): 
  * @returns Promise with array of connection results
  */
 
-/**
- * Create a local MCP server (stdio-based)
- * @param projectId - ID of the project
- * @param name - Name of the MCP server
- * @param command - Command to run
- * @param args - Command arguments
- * @param cwd - Working directory
- * @returns Promise with created server data
- */
-const createLocalMcpServer = async (
-  projectId: string,
-  name: string,
-  command: string,
-  args: string[] = [],
-  cwd?: string
-): Promise<McpServerServiceResponse> => {
-  try {
-    if (!projectId) {
-      return { success: false, error: 'Project ID is required' };
-    }
-    if (!name || !name.trim()) {
-      return { success: false, error: 'Server name is required' };
-    }
-    if (!command || !command.trim()) {
-      return { success: false, error: 'Command is required' };
-    }
-
-    const localBase = await getLocalApiEndpoint();
-    const apiUrl = `${localBase}/v1/projects/${projectId}/mcp`;
-    const body: Record<string, any> = {
-      name: name.trim(),
-      command: command.trim(),
-      args,
-      server_type: 'local',
-    };
-    if (cwd && cwd.trim()) {
-      body.cwd = cwd.trim();
-    }
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    if (!response) {
-      return { success: false, error: 'No response from server' };
-    }
-
-    if (response.status === 200 || response.status === 201) {
-      const server = await response.json();
-      return { success: true, data: server };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: extractErrorMessage(errorData, 'Failed to create local MCP server'),
-    };
-  } catch (error: any) {
-    console.error('Error creating local MCP server:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while creating the local MCP server',
-    };
-  }
-};
-
 export const mcpServerService = {
   getMcpServers,
-  createLocalMcpServer,
   getMcpServer,
   deleteMcpServer,
   registerMcpServer,
