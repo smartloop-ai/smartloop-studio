@@ -6,7 +6,6 @@ interface DocumentPollingProps {
   setUser: (user: any) => void;
   selectedProject: any;
   setCurrentProjectData: (project: any) => void;
-  setSelectedProject: (project: any) => void;
 }
 
 export default function DocumentPolling({
@@ -14,7 +13,6 @@ export default function DocumentPolling({
   setUser,
   selectedProject,
   setCurrentProjectData,
-  setSelectedProject,
 }: DocumentPollingProps) {
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -59,7 +57,6 @@ export default function DocumentPolling({
           const updatedUserState = { ...user, projects: updatedProjects };
           setUser(updatedUserState);
           setCurrentProjectData(updatedProject);
-          setSelectedProject(updatedProject);
         }
 
         if (!hasProcessing) {
@@ -74,7 +71,7 @@ export default function DocumentPolling({
 
     pollingIntervalRef.current = interval;
     setPollingInterval(interval);
-  }, [user, selectedProject, setUser, setCurrentProjectData, setSelectedProject]);
+  }, [user, selectedProject, setUser, setCurrentProjectData]);
 
   // Listen for document upload events to trigger polling
   useEffect(() => {
