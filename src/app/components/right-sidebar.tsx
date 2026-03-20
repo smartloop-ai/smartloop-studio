@@ -413,49 +413,22 @@ export default function RightSidebar({
         next.set(docId, 'Processing document...');
         return next;
       });
-      setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { ...uploadedDocument } : d));
+      setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { name: d.name, source: d.source, ...uploadedDocument } : d));
 
-      // Poll the list endpoint until the document is fully processed
-      const pollInterval = setInterval(async () => {
-        try {
-          const listResult = await documentService.getLocalDocuments(projectId);
-          if (listResult.success && listResult.data) {
-            const docs = Array.isArray(listResult.data) ? listResult.data : (listResult.data.documents || []);
-            const processed = docs.find((d: any) => d.id === docId);
-            if (processed && (processed.summary || processed.markdown || processed.status === 'completed' || processed.status === 'ready')) {
-              clearInterval(pollInterval);
-              // Remove from processing map and uploading docs
-              setProcessingDocs(prev => {
-                const next = new Map(prev);
-                next.delete(docId);
-                return next;
-              });
-              setUploadingDocs(prev => prev.filter(d => d.id !== docId));
-
-              // Notify parent to refresh document list
-              window.dispatchEvent(new CustomEvent('documentProcessingComplete', {
-                detail: { projectId }
-              }));
-            }
-          }
-        } catch {
-          // Silently continue polling
-        }
-      }, 3000);
-
-      // Stop polling after 5 minutes max
+      // Single delayed refresh to sync document list after upload
       setTimeout(() => {
-        clearInterval(pollInterval);
         setProcessingDocs(prev => {
           const next = new Map(prev);
           next.delete(docId);
           return next;
         });
-      }, 5 * 60 * 1000);
+        setUploadingDocs(prev => prev.filter(d => d.id !== docId));
 
-      window.dispatchEvent(new CustomEvent('documentUploaded', {
-        detail: { projectId: selectedProject.id }
-      }));
+        // Notify parent to refresh document list
+        window.dispatchEvent(new CustomEvent('documentProcessingComplete', {
+          detail: { projectId }
+        }));
+      }, 3000);
 
       setUploadError('');
     } catch (error: any) {
