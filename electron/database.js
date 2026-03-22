@@ -53,6 +53,12 @@ function openDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS tps_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tokens_per_second INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS install_status (
       step INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
@@ -64,6 +70,7 @@ function openDatabase() {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memory_usage_created ON memory_usage(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_tps_history_created ON tps_history(created_at DESC);
   `);
 
   // Seed install_status rows (4 steps) if not present
@@ -322,6 +329,28 @@ function getMemoryUsage(limit = 60) {
     .reverse(); // Return in chronological order
 }
 
+// --- TPS History ---
+
+function addTpsEntry(tokensPerSecond) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare('INSERT INTO tps_history (tokens_per_second, created_at) VALUES (?, ?)').run(tokensPerSecond, now);
+
+  // Keep only last 1000 entries
+  d.prepare(`
+    DELETE FROM tps_history WHERE id NOT IN (
+      SELECT id FROM tps_history ORDER BY created_at DESC LIMIT 1000
+    )
+  `).run();
+}
+
+function getTpsHistory(limit = 60) {
+  const d = openDatabase();
+  return d.prepare('SELECT tokens_per_second, created_at FROM tps_history ORDER BY created_at DESC LIMIT ?')
+    .all(limit)
+    .reverse();
+}
+
 // --- Install Status ---
 
 function setInstallStepComplete(step) {
@@ -373,6 +402,9 @@ module.exports = {
   // Memory usage
   addMemoryUsage,
   getMemoryUsage,
+  // TPS history
+  addTpsEntry,
+  getTpsHistory,
   // Install status
   setInstallStepComplete,
   getInstallStatus,

@@ -118,6 +118,8 @@ ipcMain.handle('db-delete-messages', (event, conversationId) => database.deleteM
 // Memory usage
 ipcMain.handle('db-add-memory-usage', (event, memoryPercent) => database.addMemoryUsage(memoryPercent));
 ipcMain.handle('db-get-memory-usage', (event, limit) => database.getMemoryUsage(limit));
+ipcMain.handle('db-add-tps-entry', (event, tps) => database.addTpsEntry(tps));
+ipcMain.handle('db-get-tps-history', (event, limit) => database.getTpsHistory(limit));
 
 // --- Local SLP service helpers ---
 
@@ -411,21 +413,12 @@ function updateSplashProgress(data) {
   splashWindow.webContents.executeJavaScript(`
     (function() {
       var current = ${currentSplashStep};
-      // Only update steps whose state actually changed (avoids restarting spinner animation)
       for (var i = 0; i < 2; i++) {
         var stepEl = document.getElementById('step-' + i);
-        var iconEl = document.getElementById('icon-' + i);
         var newState = i < current ? 'completed' : (i === current ? 'active' : 'pending');
         if (stepEl.dataset.state !== newState) {
           stepEl.dataset.state = newState;
-          stepEl.className = 'step' + (newState === 'pending' ? '' : ' ' + newState);
-          if (newState === 'completed') {
-            iconEl.innerHTML = '<span class="icon-check">\\u2713</span>';
-          } else if (newState === 'active') {
-            iconEl.innerHTML = '<span class="icon-active"></span>';
-          } else {
-            iconEl.innerHTML = '<span class="icon-pending"></span>';
-          }
+          stepEl.className = 'step-dot' + (newState === 'pending' ? '' : ' ' + newState);
         }
       }
       document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
@@ -452,8 +445,8 @@ const PROTOCOL = 'smartloop';
 
 function createSplashScreen() {
   splashWindow = new BrowserWindow({
-    width: 560,
-    height: 320,
+    width: 400,
+    height: 300,
     transparent: true,
     frame: false,
     resizable: false,
@@ -482,86 +475,95 @@ function createSplashScreen() {
           .splash-container {
             background: #000000;
             border-radius: 8px;
-            padding: 40px 48px;
             border: 1px solid #2a2a2a;
-            width: 460px;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+          }
+          .splash-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
           }
           .logo {
-            font-size: 36px;
+            font-size: 32px;
             font-weight: bold;
-            margin-bottom: 32px;
             text-align: center;
           }
           .logo-text { color: white; }
           .logo-dot { color: #ec4899; }
-          .steps { list-style: none; padding: 0; margin: 0 0 24px 0; }
-          .step {
+          .status-text {
+            color: #6b7280;
+            font-size: 13px;
+            text-align: center;
+            margin-top: 12px;
+            min-height: 18px;
+          }
+          .steps-bar {
             display: flex;
             align-items: center;
-            gap: 14px;
-            padding: 10px 0;
-            color: #6b7280;
-            font-size: 15px;
-            transition: color 0.3s;
+            justify-content: center;
+            gap: 0;
+            padding: 14px 0;
           }
-          .step.active { color: #e5e7eb; }
-          .step.completed { color: #9ca3af; }
-          .step-icon {
-            width: 22px;
-            height: 22px;
-            flex-shrink: 0;
+          .step-dot {
             display: flex;
             align-items: center;
             justify-content: center;
           }
-          .icon-pending {
-            width: 12px; height: 12px;
+          .dot {
+            width: 6px; height: 6px;
             border-radius: 50%;
             background: #374151;
+            flex-shrink: 0;
+            transition: background 0.3s;
           }
-          .icon-active {
-            width: 18px; height: 18px;
+          .step-dot.active .dot {
+            width: 8px; height: 8px;
+            background: none;
             box-sizing: border-box;
-            border: 2.5px solid #2a2a2a;
+            border: 2px solid #2a2a2a;
             border-top-color: #ec4899;
             border-right-color: #ec4899;
-            border-radius: 50%;
             animation: spin 0.8s linear infinite;
           }
-          .icon-check {
-            color: #ec4899;
-            font-size: 18px;
-            font-weight: bold;
-            line-height: 1;
+          .step-dot.completed .dot {
+            background: #ec4899;
+          }
+          .step-line {
+            width: 32px;
+            height: 1px;
+            background: #2a2a2a;
           }
           @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
-          .status-text {
-            color: #6b7280;
-            font-size: 13px;
-            text-align: center;
-            min-height: 18px;
-          }
         </style>
       </head>
       <body>
         <div class="splash-container">
-          <div class="logo">
-            <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
+          <div class="splash-body">
+            <div class="logo">
+              <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
+            </div>
+            <div class="status-text" id="status-text">Getting things ready...</div>
           </div>
-          <ul class="steps">
-            <li class="step active" id="step-0" data-state="active">
-              <span class="step-icon" id="icon-0"><span class="icon-active"></span></span>
-              <span>Installing framework</span>
-            </li>
-            <li class="step" id="step-1" data-state="pending">
-              <span class="step-icon" id="icon-1"><span class="icon-pending"></span></span>
-              <span>Starting service</span>
-            </li>
-          </ul>
-          <div class="status-text" id="status-text">Getting things ready...</div>
+          <div class="steps-bar">
+            <div class="step-dot active" id="step-0" data-state="active">
+              <span class="dot" id="icon-0"></span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-dot" id="step-1" data-state="pending">
+              <span class="dot" id="icon-1"></span>
+            </div>
+          </div>
         </div>
       </body>
     </html>

@@ -4,7 +4,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.2';
+const VERSION = '1.0.1';
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
 

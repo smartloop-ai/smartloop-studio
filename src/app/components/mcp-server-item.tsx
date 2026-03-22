@@ -1,4 +1,4 @@
-import { Box, IconButton } from '@mui/material';
+import { Box, IconButton, CircularProgress } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CableIcon from '@mui/icons-material/Cable';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -11,11 +11,13 @@ interface McpServerItemProps {
   onDelete: (server: McpServer) => void;
   onServerUpdate: (updatedServer: McpServer) => void;
   autoConnect?: boolean;
+  discovering?: boolean;
 }
 
 export default function McpServerItem({
   server,
   onDelete,
+  discovering = false,
 }: McpServerItemProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -135,11 +137,16 @@ export default function McpServerItem({
         </Box>
       </Box>
 
-      {tools.length > 0 && (
-        <div className="text-[10px] text-gray-500 mt-1 pl-[40px]">
-          {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
-        </div>
-      )}
+      <div className="text-[10px] text-gray-500 mt-1 pl-[40px] flex items-center gap-1.5">
+        {discovering ? (
+          <>
+            <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
+            <span className="text-gray-400">Discovering tools...</span>
+          </>
+        ) : tools.length > 0 ? (
+          <span>{tools.length} {tools.length === 1 ? 'tool' : 'tools'}</span>
+        ) : null}
+      </div>
     </Box>
   );
 }
