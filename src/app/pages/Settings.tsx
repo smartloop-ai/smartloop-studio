@@ -13,11 +13,10 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
-const MEMORY_POLL_INTERVAL = 30_000; // 30 seconds
-const MEMORY_GRAPH_POINTS = 60; // Show last 60 data points
+const TPS_GRAPH_POINTS = 60; // Show last 60 data points
 
-// SVG Line Graph component for memory usage
-function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; timestamps?: string[] }) {
+// SVG Line Graph component for tok/s performance
+function TpsLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; timestamps?: string[] }) {
     if (dataPoints.length === 0) return null;
 
     const width = 520;
@@ -26,7 +25,7 @@ function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; tim
     const graphWidth = width - padding.left - padding.right;
     const graphHeight = height - padding.top - padding.bottom;
 
-    const maxVal = 100;
+    const maxVal = Math.max(...dataPoints, 1);
     const points = dataPoints.map((val, i) => {
         const x = padding.left + (i / Math.max(1, dataPoints.length - 1)) * graphWidth;
         const y = padding.top + graphHeight - (val / maxVal) * graphHeight;
@@ -51,7 +50,9 @@ function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; tim
 
     const areaD = pathD + ` L ${points[points.length - 1].x} ${padding.top + graphHeight} L ${points[0].x} ${padding.top + graphHeight} Z`;
 
-    const yTicks = [0, 25, 50, 75, 100];
+    // Dynamic Y-axis ticks based on max value
+    const tickCount = 4;
+    const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => Math.round((maxVal / tickCount) * i));
     const lineColor = 'var(--sl-brand-primary)';
 
     // Time labels
@@ -67,16 +68,16 @@ function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; tim
                 return (
                     <g key={tick}>
                         <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
-                        <text x={padding.left - 6} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize="9" fontFamily="monospace">{tick}%</text>
+                        <text x={padding.left - 6} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize="9" fontFamily="monospace">{tick}</text>
                     </g>
                 );
             })}
 
             {/* Area fill */}
-            <path d={areaD} fill="url(#memGradient)" />
+            <path d={areaD} fill="url(#tpsGradient)" />
 
             {/* Glow effect */}
-            <path d={pathD} fill="none" stroke={lineColor} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} filter="url(#glow)" />
+            <path d={pathD} fill="none" stroke={lineColor} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} filter="url(#tpsGlow)" />
 
             {/* Line */}
             <path d={pathD} fill="none" stroke={lineColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -102,11 +103,11 @@ function MemoryLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; tim
 
             {/* Gradient & filter definitions */}
             <defs>
-                <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={lineColor} stopOpacity="0.2" />
                     <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
                 </linearGradient>
-                <filter id="glow">
+                <filter id="tpsGlow">
                     <feGaussianBlur stdDeviation="3" result="blur" />
                     <feMerge>
                         <feMergeNode in="blur" />
@@ -139,10 +140,9 @@ export default function SettingsPage() {
 
     // Model / hardware info
     const [slpConfig, setSlpConfig] = useState<any>(null);
-    const [slpHealth, setSlpHealth] = useState<any>(null);
     const [systemInfo, setSystemInfo] = useState<any>(null);
-    const [memoryHistory, setMemoryHistory] = useState<{ memory_percent: number; created_at: string }[]>([]);
-    const memoryPollRef = useRef<NodeJS.Timeout | null>(null);
+    const [lastTps, setLastTps] = useState<number | null>(null);
+    const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
     const [localModels, setLocalModels] = useState<any[]>([]);
     const [remoteModels, setRemoteModels] = useState<any[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
@@ -383,40 +383,18 @@ export default function SettingsPage() {
         }
     }, [callInitWithProgress, fetchLocalModels]);
 
-    // Load persisted memory history from DB on mount
+    // Load persisted tok/s history from DB on mount
     useEffect(() => {
         const loadHistory = async () => {
             if (!isElectron) return;
-            const history = await storageService.getMemoryUsage(MEMORY_GRAPH_POINTS);
+            const history = await storageService.getTpsHistory(TPS_GRAPH_POINTS);
             if (history.length > 0) {
-                setMemoryHistory(history);
+                setTpsHistory(history);
             }
+            const lastTpsVal = await storageService.getItem('last_tokens_per_second');
+            if (lastTpsVal) setLastTps(lastTpsVal);
         };
         loadHistory();
-    }, []);
-
-    const fetchHealth = useCallback(async (persist = false) => {
-        if (!isElectron) return;
-        const api = (window as any).electronAPI;
-        if (api?.getLocalApiUrl) {
-            const baseUrl = await api.getLocalApiUrl();
-            if (baseUrl) {
-                try {
-                    const res = await fetch(`${baseUrl}/health`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        setSlpHealth(data);
-                        if (data.memory_percent !== undefined && persist) {
-                            // Save to DB
-                            await storageService.addMemoryUsage(data.memory_percent);
-                            // Refresh from DB to stay in sync
-                            const history = await storageService.getMemoryUsage(MEMORY_GRAPH_POINTS);
-                            setMemoryHistory(history);
-                        }
-                    }
-                } catch {}
-            }
-        }
     }, []);
 
     useEffect(() => {
@@ -433,18 +411,9 @@ export default function SettingsPage() {
                     setSystemInfo(info);
                 } catch {}
             }
-            // Initial health fetch (persist immediately to start recording)
-            await fetchHealth(true);
         };
         load();
-
-        // Poll health every 30 seconds and persist to DB
-        memoryPollRef.current = setInterval(() => fetchHealth(true), MEMORY_POLL_INTERVAL);
-
-        return () => {
-            if (memoryPollRef.current) clearInterval(memoryPollRef.current);
-        };
-    }, [fetchHealth]);
+    }, []);
 
     // Load settings from user object
     useEffect(() => {
@@ -496,8 +465,8 @@ export default function SettingsPage() {
         };
     }, []);
 
-    const currentMemPercent = slpHealth?.memory_percent;
-    const memColor = 'var(--sl-brand-primary)';
+    const tpsColor = 'var(--sl-brand-primary)';
+    const latestTps = tpsHistory.length > 0 ? tpsHistory[tpsHistory.length - 1].tokens_per_second : lastTps;
 
     return (
         <Box className="min-h-screen bg-black text-white">
@@ -631,8 +600,8 @@ export default function SettingsPage() {
                                     </Box>
                                 </Box>
 
-                                {/* Memory Usage Section */}
-                                {(memoryHistory.length > 0 || currentMemPercent !== undefined) && (
+                                {/* Tok/s Performance Section */}
+                                {(tpsHistory.length > 0 || latestTps !== null) && (
                                     <Box sx={{
                                         mx: { xs: 2.5, md: 3 },
                                         mb: { xs: 2.5, md: 3 },
@@ -643,51 +612,34 @@ export default function SettingsPage() {
                                     }}>
                                         <Box className="flex items-center justify-between mb-2">
                                             <Box className="flex items-center gap-1.5">
-                                                <SpeedIcon sx={{ fontSize: 16, color: memColor }} />
-                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>MEMORY PRESSURE</span>
+                                                <SpeedIcon sx={{ fontSize: 16, color: tpsColor }} />
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>TOKEN PERFORMANCE</span>
                                             </Box>
-                                            {currentMemPercent !== undefined && (
+                                            {latestTps !== null && (
                                                 <Box className="flex items-center gap-1.5">
                                                     <span style={{
                                                         fontSize: '22px',
                                                         fontWeight: 700,
                                                         fontFamily: 'monospace',
-                                                        color: memColor,
+                                                        color: tpsColor,
                                                         lineHeight: 1,
                                                     }}>
-                                                        {currentMemPercent}
+                                                        {latestTps}
                                                     </span>
-                                                    <span style={{ fontSize: '12px', color: memColor, fontWeight: 500, opacity: 0.7 }}>%</span>
+                                                    <span style={{ fontSize: '12px', color: tpsColor, fontWeight: 500, opacity: 0.7 }}>tok/s</span>
                                                 </Box>
                                             )}
                                         </Box>
-                                        {memoryHistory.length > 1 && (
-                                            <MemoryLineGraph
-                                                dataPoints={memoryHistory.map(h => h.memory_percent)}
-                                                timestamps={memoryHistory.map(h => h.created_at)}
+                                        {tpsHistory.length > 1 && (
+                                            <TpsLineGraph
+                                                dataPoints={tpsHistory.map(h => h.tokens_per_second)}
+                                                timestamps={tpsHistory.map(h => h.created_at)}
                                             />
                                         )}
-                                        {memoryHistory.length <= 1 && currentMemPercent !== undefined && (
+                                        {tpsHistory.length <= 1 && latestTps !== null && (
                                             <Box sx={{ mt: 1 }}>
-                                                {/* Progress bar fallback when not enough data points */}
-                                                <Box sx={{
-                                                    width: '100%',
-                                                    height: '6px',
-                                                    bgcolor: 'var(--sl-white-alpha-5)',
-                                                    borderRadius: '3px',
-                                                    overflow: 'hidden',
-                                                }}>
-                                                    <Box sx={{
-                                                        width: `${currentMemPercent}%`,
-                                                        height: '100%',
-                                                        bgcolor: memColor,
-                                                        borderRadius: '3px',
-                                                        transition: 'width 0.5s ease',
-                                                        boxShadow: '0 0 8px var(--sl-brand-alpha-20)',
-                                                    }} />
-                                                </Box>
-                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block', marginTop: '4px' }}>
-                                                    Recording data points every 30s...
+                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block' }}>
+                                                    Graph will appear after more conversations...
                                                 </span>
                                             </Box>
                                         )}

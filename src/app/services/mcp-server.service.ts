@@ -201,6 +201,7 @@ const registerMcpServer = async (projectId: string, options: {
   name?: string;
   token?: string;
   env?: Record<string, string>;
+  return_url?: string;
 }): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
@@ -223,6 +224,7 @@ const registerMcpServer = async (projectId: string, options: {
     if (options.name) body.name = options.name.trim();
     if (options.token) body.token = options.token.trim();
     if (options.env && Object.keys(options.env).length > 0) body.env = options.env;
+    if (options.return_url) body.return_url = options.return_url;
 
     const response = await fetch(apiUrl, {
       method: 'POST',

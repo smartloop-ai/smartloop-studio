@@ -1,5 +1,4 @@
 
-import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
@@ -11,7 +10,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MessageInput from './message-input';
 
-import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 
 import { marked, Renderer, Tokens } from 'marked';
 
@@ -20,10 +19,6 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
-import ThumbUpOffAltIcon from '@mui/icons-material/ThumbUpOffAlt';
-import ThumbDownAltIcon from '@mui/icons-material/ThumbDownOffAlt';
-import ThumbUpIcon from '@mui/icons-material/ThumbUp';
-import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 import '@/app/styles/chat.css';
@@ -109,6 +104,8 @@ export default function Chat(props: {
   const [isLoading, setIsLoading] = useState(false);
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
+  const streamStartRef = useRef<number>(0);
+  const streamTokenCountRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
@@ -273,47 +270,7 @@ export default function Chat(props: {
     };
   }, []);
 
-  const sendFeedback = async (msg: any) => {
-    const url = `${API_ENDPOINT}/projects/${props.project.id}/messages/${msg.id}/feedback`;
 
-    const options = {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userService.token()}`
-      },
-      body: JSON.stringify({
-        feedback: msg.feedback
-      })
-    }
-
-    await fetch(url, options);
-  }
-
-  const sendPositiveFeedback = (msg: any) => {
-    setMessages((prevState: any) => ([
-      ...prevState.map((_msg: any) => {
-        if (_msg.id === msg.id) {
-          _msg.feedback = 1;
-        }
-        return _msg;
-      })
-    ]));
-
-    sendFeedback(msg);
-  }
-
-  const sendNegativeFeedback = (msg: any) => {
-    setMessages((prevState: any) => ([
-      ...prevState.map((_msg: any) => {
-        if (_msg.id === msg.id) {
-          _msg.feedback = 2;
-        }
-        return _msg;
-      })
-    ]));
-    sendFeedback(msg);
-  }
 
   const handleFileAttached = (documentId: string, fileName: string) => {
     const newAttachments = [{ file_id: `file-${documentId}`, name: fileName }];
@@ -622,6 +579,8 @@ export default function Chat(props: {
       }
 
       // Process the stream
+      streamStartRef.current = Date.now();
+      streamTokenCountRef.current = 0;
       for await (const chunk of stream) {
         // Check if aborted
         if (abortControllerRef.current?.signal.aborted) {
@@ -635,6 +594,7 @@ export default function Chat(props: {
 
         if (content) {
           fullText += content;
+          streamTokenCountRef.current++;
 
           // Check if the response contains a memory/context limit error
           if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
@@ -672,12 +632,25 @@ export default function Chat(props: {
         }
       }
 
+      // Calculate tok/s
+      const elapsedSec = (Date.now() - streamStartRef.current) / 1000;
+      const tps = elapsedSec > 0 && streamTokenCountRef.current > 0
+        ? Math.round(streamTokenCountRef.current / elapsedSec)
+        : undefined;
+
+      // Persist last tok/s for display in Settings
+      if (tps) {
+        storageService.setItem('last_tokens_per_second', tps);
+        storageService.addTpsEntry(tps);
+      }
+
       // Mark response as complete
       setMessages((prevMessages: any) => {
         const finalMessages = prevMessages.map((msg: any) =>
           msg.id === responseId ? {
             ...msg,
-            is_new: false
+            is_new: false,
+            ...(tps ? { tokens_per_second: tps } : {})
           } : msg
         );
 
@@ -1103,7 +1076,22 @@ export default function Chat(props: {
                         </Box>
 
                         <Box className="flex-1">
-                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
+                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed relative group">
+                            {/* Copy icon - top right, visible on hover */}
+                            {msg.content && !msg.is_new && (
+                              <CopyToClipboard
+                                text={msg.content} onCopy={() => {
+                                  setCopied(msg.id);
+                                  setTimeout(() => setCopied(""), 1000);
+                                }}>
+                                <button
+                                  className="absolute top-2 right-2 p-1.5 rounded-sm text-gray-600 hover:text-gray-300 transition-all opacity-0 group-hover:opacity-100"
+                                  title={copied === msg.id ? "Copied!" : "Copy"}
+                                >
+                                  <ContentCopyIcon sx={{ fontSize: 14 }} />
+                                </button>
+                              </CopyToClipboard>
+                            )}
                             <div className="prose prose-invert max-w-none chat-content">
                               {(!msg.content || msg.content.trim() === '') && msg.is_new ? (
                                 <span
@@ -1134,38 +1122,14 @@ export default function Chat(props: {
                               )}
                             </div>
                           </div>
-                          <Box className="flex gap-2 mt-2">
-                            <CopyToClipboard
-                              text={msg.content} onCopy={() => {
-                                setCopied(msg.id);
-                                setTimeout(() => setCopied(""), 1000);
-                              }}>
-                              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-xs text-gray-400 hover:text-gray-300 transition-colors">
-                                <ContentCopyIcon sx={{ fontSize: 14 }} />
-                                <span>{copied === msg.id ? "Copied!" : "Copy"}</span>
-                              </button>
-                            </CopyToClipboard>
-                            <button
-                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-gray-400 hover:text-white transition-colors"
-                              onClick={() => sendPositiveFeedback(msg)}
-                            >
-                              {
-                                msg.feedback === 1 ?
-                                  <ThumbUpIcon sx={{ fontSize: 16 }} />
-                                  : <ThumbUpOffAltIcon sx={{ fontSize: 16 }} />
-                              }
-                            </button>
-                            <button
-                              className="p-1.5 bg-gray-900 hover:bg-gray-800 rounded-sm text-gray-400 hover:text-white transition-colors"
-                              onClick={() => sendNegativeFeedback(msg)}
-                            >
-                              {
-                                msg.feedback === 2 ?
-                                  <ThumbDownIcon sx={{ fontSize: 16 }} />
-                                  : <ThumbDownAltIcon sx={{ fontSize: 16 }} />
-                              }
-                            </button>
-                          </Box>
+                          {/* tok/s indicator */}
+                          {msg.tokens_per_second && !msg.is_new && (
+                            <Box className="mt-1 px-1">
+                              <span className="text-[10px] text-gray-600">
+                                {msg.tokens_per_second} tok/s
+                              </span>
+                            </Box>
+                          )}
                         </Box>
                       </Box>
                       : <Box className="flex justify-end">

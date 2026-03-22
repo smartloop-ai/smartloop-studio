@@ -115,6 +115,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Memory usage
     addMemoryUsage: (memoryPercent) => ipcRenderer.invoke('db-add-memory-usage', memoryPercent),
     getMemoryUsage: (limit) => ipcRenderer.invoke('db-get-memory-usage', limit),
+    // TPS history
+    addTpsEntry: (tps) => ipcRenderer.invoke('db-add-tps-entry', tps),
+    getTpsHistory: (limit) => ipcRenderer.invoke('db-get-tps-history', limit),
   },
   // Check if running in Electron
   isElectron: true,
