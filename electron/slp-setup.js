@@ -4,15 +4,27 @@ const os = require('os');
 const { spawn } = require('child_process');
 const database = require('./database');
 
+const crypto = require('crypto');
+
 const VERSION = '1.0.1';
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
+
+function sha256File(filePath) {
+  const data = fs.readFileSync(filePath);
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
 
 function needsInstall() {
   try {
     if (!fs.existsSync(MARKER_FILE)) return true;
     const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
-    return installed !== VERSION;
+    if (installed !== VERSION) return true;
+    // Check if the installed binary matches the bundled one
+    const installedBinary = path.join(INSTALL_DIR, 'slp');
+    const bundledBinary = path.join(getBundledSlpDir(), 'slp');
+    if (!fs.existsSync(installedBinary) || !fs.existsSync(bundledBinary)) return true;
+    return sha256File(installedBinary) !== sha256File(bundledBinary);
   } catch {
     return true;
   }
@@ -64,75 +76,33 @@ function getBundledSlpDir() {
 }
 
 /**
- * Copy the bundled SLP binary and its _internal directory to INSTALL_DIR.
- * Uses cp/rsync in a child process so the main thread stays responsive.
- * Preserves existing data files (database, cache, port/pid files).
+ * Copy the bundled SLP pex binary to INSTALL_DIR.
+ * Single file copy — pex is a self-contained executable.
  */
 async function installBundledBinary(onProgress = null) {
   if (onProgress) onProgress({ status: 'installing', message: 'Installing framework...' });
 
   const bundledDir = getBundledSlpDir();
+  const bundledBinary = path.join(bundledDir, 'slp');
 
-  if (!fs.existsSync(bundledDir)) {
-    throw new Error(`Bundled SLP binary not found at: ${bundledDir}`);
+  if (!fs.existsSync(bundledBinary)) {
+    throw new Error(`Bundled SLP binary not found at: ${bundledBinary}`);
   }
 
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
 
-  // Files/dirs to preserve during install — move them to a temp dir, then restore
-  const preserve = ['cache', 'studio.db', 'studio.db-wal', 'studio.db-shm',
-    'server.port', 'server.pid', '.installed-version'];
-  const tmpBackup = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-backup-'));
-
-  // Back up preserved files
-  for (const name of preserve) {
-    const src = path.join(INSTALL_DIR, name);
-    if (fs.existsSync(src)) {
-      try {
-        fs.renameSync(src, path.join(tmpBackup, name));
-      } catch {
-        // cross-device rename — fall back to copy
-        fs.cpSync(src, path.join(tmpBackup, name), { recursive: true });
-      }
-    }
+  // Remove legacy PyInstaller _internal directory if present
+  const legacyInternal = path.join(INSTALL_DIR, '_internal');
+  if (fs.existsSync(legacyInternal)) {
+    console.log('[SLP Setup] Removing legacy _internal directory');
+    fs.rmSync(legacyInternal, { recursive: true, force: true });
   }
 
-  // Clear old install dir
-  const existing = fs.readdirSync(INSTALL_DIR);
-  for (const entry of existing) {
-    const fullPath = path.join(INSTALL_DIR, entry);
-    fs.rmSync(fullPath, { recursive: true, force: true });
-  }
-
-  // Copy bundled binary using rsync (fast, async, doesn't block main thread)
-  // rsync -a ensures permissions/symlinks are preserved
-  console.log('[SLP Setup] Copying bundled binary to', INSTALL_DIR);
-  try {
-    await runAsync('rsync', ['-a', bundledDir + '/', INSTALL_DIR + '/']);
-  } catch {
-    // Fallback to cp -a if rsync is not available
-    await runAsync('cp', ['-a', bundledDir + '/.', INSTALL_DIR + '/']);
-  }
-
-  // Restore preserved files
-  for (const name of preserve) {
-    const backed = path.join(tmpBackup, name);
-    if (fs.existsSync(backed)) {
-      const dest = path.join(INSTALL_DIR, name);
-      try {
-        fs.renameSync(backed, dest);
-      } catch {
-        fs.cpSync(backed, dest, { recursive: true });
-      }
-    }
-  }
-  fs.rmSync(tmpBackup, { recursive: true, force: true });
-
-  // Make binary executable
-  const binaryPath = path.join(INSTALL_DIR, 'slp');
-  if (fs.existsSync(binaryPath)) {
-    fs.chmodSync(binaryPath, 0o755);
-  }
+  // Copy the pex binary
+  const destBinary = path.join(INSTALL_DIR, 'slp');
+  console.log('[SLP Setup] Copying bundled binary to', destBinary);
+  fs.copyFileSync(bundledBinary, destBinary);
+  fs.chmodSync(destBinary, 0o755);
 
   console.log('[SLP Setup] Binary installed from app bundle to', INSTALL_DIR);
 }

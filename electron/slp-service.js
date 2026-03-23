@@ -100,7 +100,7 @@ async function startService() {
   console.log('[SLP] Starting service from:', slpBinary);
 
   // Start as a child process — capture stderr to detect early crashes
-  const proc = spawn(slpBinary, ['server', 'start'], {
+  const proc = spawn(slpBinary, ['start'], {
     env: { ...process.env },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -192,7 +192,7 @@ function stopService() {
     const slpBinary = getSlpBinaryPath();
     if (fs.existsSync(slpBinary)) {
       try {
-        execFileSync(slpBinary, ['server', 'stop'], {
+        execFileSync(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
         });
