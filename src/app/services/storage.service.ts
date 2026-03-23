@@ -286,6 +286,25 @@ class StorageService {
       return [];
     }
   }
+
+  async addTpsEntry(tokensPerSecond: number): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.addTpsEntry(tokensPerSecond);
+    } catch (error) {
+      console.error('Error adding TPS entry:', error);
+    }
+  }
+
+  async getTpsHistory(limit: number = 60): Promise<{ tokens_per_second: number; created_at: string }[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.getTpsHistory(limit);
+    } catch (error) {
+      console.error('Error getting TPS history:', error);
+      return [];
+    }
+  }
 }
 
 export const storageService = new StorageService();

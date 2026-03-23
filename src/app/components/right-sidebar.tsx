@@ -13,9 +13,9 @@ import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer, McpServerRegistrationResponse } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 
 interface RightSidebarProps {
   selectedProject: any;
@@ -26,7 +26,6 @@ interface RightSidebarProps {
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
   user: any;
-  setUser: (user: any) => void;
 }
 
 export default function RightSidebar({
@@ -37,16 +36,14 @@ export default function RightSidebar({
   onSaveRules,
   onAddDocument,
   onDeleteDocument,
-  user,
-  setUser,
 }: RightSidebarProps) {
   const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ percent: number; status: string } | null>(null);
+  const [, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [processingDocs, setProcessingDocs] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -55,18 +52,19 @@ export default function RightSidebar({
 
   // MCP Servers state
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [isLoadingMcp, setIsLoadingMcp] = useState(false);
   const [mcpError, setMcpError] = useState('');
+  const [mcpPolling, setMcpPolling] = useState(false);
+  const mcpServerCountRef = useRef(0);
   const [showAddMcpForm, setShowAddMcpForm] = useState(false);
   const [newMcpName, setNewMcpName] = useState('');
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
-  // Token authentication state
-  const [showTokenInput, setShowTokenInput] = useState(false);
-  const [mcpToken, setMcpToken] = useState('');
-  const [pendingServerUrl, setPendingServerUrl] = useState('');
+  const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
+  // Local MCP server state
+  const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
+  const [newMcpEnv, setNewMcpEnv] = useState('');
 
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
@@ -82,7 +80,6 @@ export default function RightSidebar({
       'ordered-list',
       '|',
       'quote',
-      'code',
     ] as const,
     minHeight: '300px',
     placeholder: 'Add rules or guidelines for this project...',
@@ -99,6 +96,23 @@ export default function RightSidebar({
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
+
+  // Local state for documents being uploaded/processed (not yet in currentProjectData)
+  const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
+
+  // Clear uploading docs when project changes
+  useEffect(() => {
+    setUploadingDocs([]);
+  }, [selectedProject?.id]);
+
+  // Merge server documents with local uploading placeholders
+  const effectiveDocuments = useMemo(() => {
+    const serverDocs = currentProjectData?.documents || [];
+    // Filter out uploading docs whose real ID now exists in server docs
+    const serverIds = new Set(serverDocs.map((d: any) => d.id));
+    const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
+    return [...serverDocs, ...pending];
+  }, [currentProjectData?.documents, uploadingDocs]);
 
   // Reset states when project changes
   useEffect(() => {
@@ -149,46 +163,16 @@ export default function RightSidebar({
     }
   }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
 
-  // Load MCP servers when section is opened
+  // Load MCP servers from project data
   useEffect(() => {
-    if (activeSection === 'mcp' && selectedProject?.id) {
-      loadMcpServers();
+    if (Array.isArray(currentProjectData?.mcp)) {
+      setMcpServers(currentProjectData.mcp as McpServer[]);
+    } else if (currentProjectData?.mcp?.servers) {
+      setMcpServers(currentProjectData.mcp.servers as McpServer[]);
+    } else {
+      setMcpServers([]);
     }
-  }, [activeSection, selectedProject?.id]);
-
-  // Auto-connect stored MCP servers on app start/project change
-  useEffect(() => {
-    const initializeMcpServers = async () => {
-      if (!selectedProject?.id) return;
-
-      console.log('[MCP Init] Checking for stored MCP servers...');
-      const storedServers = await mcpServerService.loadMcpServersFromStorage(selectedProject.id);
-
-      if (storedServers.length > 0) {
-        console.log(`[MCP Init] Found ${storedServers.length} stored servers, auto-connecting...`);
-        setIsLoadingMcp(true);
-
-        try {
-          const results = await mcpServerService.autoConnectStoredServers(selectedProject.id);
-
-          // Update state with connected servers
-          const apiResult = await mcpServerService.getMcpServers(selectedProject.id);
-          if (apiResult.success && apiResult.data) {
-            setMcpServers(apiResult.data as McpServer[]);
-          }
-
-          const connectedCount = results.filter(r => r.success).length;
-          console.log(`[MCP Init] Auto-connected ${connectedCount}/${storedServers.length} servers`);
-        } catch (error: any) {
-          console.error('[MCP Init] Error during auto-connect:', error);
-        } finally {
-          setIsLoadingMcp(false);
-        }
-      }
-    };
-
-    initializeMcpServers();
-  }, [selectedProject?.id]);
+  }, [currentProjectData?.mcp]);
 
   // Listen for MCP authorization callback from Electron
   useEffect(() => {
@@ -199,21 +183,8 @@ export default function RightSidebar({
         if (data.error) {
           setMcpError(data.error);
         } else if (data.serverId && selectedProject?.id) {
-          // Fetch the server list to show the new server
-          // McpServerItem will handle auto-connecting
-          console.log('[MCP Auth] Fetching server list...');
-          const listResult = await mcpServerService.getMcpServers(selectedProject.id);
-
-          if (listResult.success && listResult.data) {
-            const servers = listResult.data as McpServer[];
-            setMcpServers(servers);
-
-            // Save to storage so the server persists
-            await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
-            console.log('[MCP Auth] Server added, auto-connect will be handled by component');
-          } else {
-            setMcpError(listResult.error || 'Failed to load MCP servers after authorization');
-          }
+          console.log('[MCP Auth] Server authorized, refreshing list...');
+          loadMcpServers();
         }
       });
 
@@ -223,28 +194,71 @@ export default function RightSidebar({
     }
   }, [selectedProject?.id]);
 
-  const loadMcpServers = async () => {
+  const loadMcpServers = useCallback(async () => {
     if (!selectedProject?.id) return;
-
-    setIsLoadingMcp(true);
-    setMcpError('');
 
     try {
       const result = await mcpServerService.getMcpServers(selectedProject.id);
       if (result.success && result.data) {
         const servers = result.data as McpServer[];
         setMcpServers(servers);
-        // Save to local storage for persistence
-        await mcpServerService.saveMcpServersToStorage(selectedProject.id, servers);
-      } else {
-        setMcpError(result.error || 'Failed to load MCP servers');
+        // Stop polling if a new server appeared
+        if (mcpPolling && servers.length > mcpServerCountRef.current) {
+          setMcpPolling(false);
+          setMcpError('');
+        }
       }
     } catch (error: any) {
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsLoadingMcp(false);
+      // silent during polling
+      if (!mcpPolling) {
+        setMcpError(error.message || 'An error occurred');
+      }
     }
-  };
+  }, [selectedProject?.id, mcpPolling]);
+
+  // Poll for new MCP servers while waiting (OAuth or error)
+  useEffect(() => {
+    if (!mcpPolling || !selectedProject?.id) return;
+
+    const interval = setInterval(() => {
+      loadMcpServers();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [mcpPolling, selectedProject?.id, loadMcpServers]);
+
+  // Poll for tool discovery after adding a server
+  useEffect(() => {
+    if (!discoveringServerId || !selectedProject?.id) return;
+
+    let attempts = 0;
+    const maxAttempts = 20; // ~30s
+
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const result = await mcpServerService.getMcpServers(selectedProject.id);
+        if (result.success && result.data) {
+          const servers = result.data as McpServer[];
+          setMcpServers(servers);
+          const target = servers.find(s => s.id === discoveringServerId);
+          const tools = target?.tools ?? target?.metadata?.tools ?? [];
+          if (tools.length > 0 || attempts >= maxAttempts) {
+            setDiscoveringServerId(null);
+            clearInterval(interval);
+          }
+        }
+      } catch {
+        // keep polling
+      }
+      if (attempts >= maxAttempts) {
+        setDiscoveringServerId(null);
+        clearInterval(interval);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [discoveringServerId, selectedProject?.id]);
 
   const handleAddMcpServer = async () => {
     if (!selectedProject?.id || !newMcpUrl.trim()) return;
@@ -253,109 +267,112 @@ export default function RightSidebar({
     setMcpError('');
 
     try {
-      // First, register the MCP server to determine auth type
-      console.log('[MCP] Registering server:', newMcpUrl.trim());
-      const registerResult = await mcpServerService.registerMcpServer(
+      const serverUrl = newMcpUrl.trim();
+      console.log('[MCP] Registering server:', serverUrl);
+
+      const result = await mcpServerService.registerMcpServer(
         selectedProject.id,
-        newMcpUrl.trim()
+        {
+          server_type: 'remote',
+          server_url: serverUrl,
+          name: newMcpName.trim() || undefined,
+          return_url: 'smartloop://mcp-authorization',
+        }
       );
 
-      if (!registerResult.success || !registerResult.data) {
-        setMcpError(registerResult.error || 'Failed to register MCP server');
+      if (!result.success || !result.data) {
+        setMcpError(result.error || 'Failed to register MCP server');
         return;
       }
 
-      const registrationData = registerResult.data as McpServerRegistrationResponse;
-      console.log('[MCP] Registration response:', registrationData);
+      const data = result.data as Record<string, any>;
 
-      const authType = registrationData.auth_type;
-
-      if (authType === 'oauth') {
-        // OAuth flow - redirect to auth URL (check multiple possible field names)
-        const responseData = registrationData as Record<string, any>;
-        const authUrl = responseData.auth_url || responseData.authorization_url || responseData.url || responseData.redirect_url;
-
-        console.log('[MCP] OAuth response data:', responseData);
-        console.log('[MCP] Auth URL:', authUrl);
-
-        if (authUrl) {
-          setNewMcpName('');
-          setNewMcpUrl('');
-          setShowAddMcpForm(false);
-
-          console.log('[MCP] OAuth flow - opening auth URL:', authUrl);
-          const electronWindow = window as any;
-          if (electronWindow.electronAPI?.openExternal) {
-            electronWindow.electronAPI.openExternal(authUrl);
-          } else {
-            window.open(authUrl, '_blank');
-          }
-        } else {
-          console.error('[MCP] OAuth required but no auth URL found in response:', responseData);
-          setMcpError('OAuth required but no authorization URL provided. Check console for details.');
-        }
-      } else if (authType === 'token') {
-        // Token flow - show token input
-        console.log('[MCP] Token flow - switching to token input mode');
-        setPendingServerUrl(newMcpUrl.trim());
-        setShowTokenInput(true);
-        setNewMcpUrl('');
-        setNewMcpName('');
-      } else {
-        // No auth required - server registered successfully, reload list
-        console.log('[MCP] No auth required - server registered');
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        // OAuth required - open auth URL (session stored server-side)
         setNewMcpName('');
         setNewMcpUrl('');
         setShowAddMcpForm(false);
-        loadMcpServers();
+        mcpServerCountRef.current = mcpServers.length;
+        setMcpPolling(true);
+
+        console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
+      } else {
+        // Server registered directly
+        console.log('[MCP] Server registered successfully');
+        const serverId = data.id || data.server_id;
+        setNewMcpName('');
+        setNewMcpUrl('');
+        setShowAddMcpForm(false);
+        await loadMcpServers();
+        if (serverId) {
+          setDiscoveringServerId(serverId);
+        }
       }
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
       setMcpError(error.message || 'An error occurred');
+      mcpServerCountRef.current = mcpServers.length;
+      setMcpPolling(true);
     } finally {
       setIsAddingMcp(false);
     }
   };
 
-  const handleTokenSubmit = async () => {
-    if (!selectedProject?.id || !pendingServerUrl || !mcpToken.trim()) return;
+  const handleAddLocalMcpServer = async () => {
+    if (!selectedProject?.id || !newMcpName.trim()) return;
 
     setIsAddingMcp(true);
     setMcpError('');
 
     try {
-      console.log('[MCP] Submitting token for:', pendingServerUrl);
-      const result = await mcpServerService.authenticateWithToken(
+      // Parse env as KEY=VALUE lines
+      const env: Record<string, string> = {};
+      if (newMcpEnv.trim()) {
+        for (const line of newMcpEnv.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIndex = trimmed.indexOf('=');
+          if (eqIndex > 0) {
+            env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
+          }
+        }
+      }
+
+      const result = await mcpServerService.registerMcpServer(
         selectedProject.id,
-        pendingServerUrl,
-        mcpToken.trim()
+        {
+          server_type: 'local',
+          name: newMcpName.trim(),
+          env: Object.keys(env).length > 0 ? env : undefined,
+        }
       );
 
       if (result.success) {
-        console.log('[MCP] Token authentication successful');
-        // Reset form state
-        setShowTokenInput(false);
+        const resData = result.data as Record<string, any>;
+        const serverId = resData?.id || resData?.server_id;
+        setNewMcpName('');
+        setNewMcpEnv('');
         setShowAddMcpForm(false);
-        setMcpToken('');
-        setPendingServerUrl('');
-        // Reload server list
-        loadMcpServers();
+        setMcpServerType('remote');
+        await loadMcpServers();
+        if (serverId) {
+          setDiscoveringServerId(serverId);
+        }
       } else {
-        setMcpError(result.error || 'Failed to authenticate with token');
+        setMcpError(result.error || 'Failed to add local MCP server');
       }
     } catch (error: any) {
-      console.error('[MCP] Error submitting token:', error);
+      console.error('[MCP] Error adding local server:', error);
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
     }
-  };
-
-  const handleCancelTokenInput = () => {
-    setShowTokenInput(false);
-    setMcpToken('');
-    setPendingServerUrl('');
-    setMcpError('');
   };
 
   const handleDeleteMcpServer = async (server: McpServer) => {
@@ -406,34 +423,55 @@ export default function RightSidebar({
 
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
-      setUploadProgress({ percent: 0, status: 'Processing...' });
-      const localResult = await documentService.addLocalDocument(tempPath, (progress) => {
-        setUploadProgress(progress);
+
+      // Add a placeholder doc to the list immediately with the filename
+      const placeholderId = `uploading-${Date.now()}`;
+      const placeholderDoc = { id: placeholderId, name: file.name, source: file.name };
+      const projectId = selectedProject.id;
+
+      setProcessingDocs(prev => new Map(prev).set(placeholderId, 'Uploading...'));
+      setUploadingDocs(prev => [...prev, placeholderDoc]);
+
+      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, (progress) => {
+        setProcessingDocs(prev => {
+          const next = new Map(prev);
+          next.set(placeholderId, progress.status || `Processing... ${progress.percent}%`);
+          return next;
+        });
       });
-      setUploadProgress(null);
       if (!localResult.success) {
+        // Remove placeholder on failure
+        setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
+        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId));
         throw new Error(localResult.error || 'Upload failed');
       }
 
       const uploadedDocument = localResult.data;
+      const docId = uploadedDocument.id;
 
-      // Update user state
-      if (user) {
-        const updatedProjects = user.projects.map((p: any) => {
-          if (p.id === selectedProject.id) {
-            const updatedDocs = [...(p.documents || []), uploadedDocument];
-            return { ...p, documents: updatedDocs };
-          }
-          return p;
+      // Replace placeholder with real document, keep tracking as processing
+      setProcessingDocs(prev => {
+        const next = new Map(prev);
+        next.delete(placeholderId);
+        next.set(docId, 'Processing document...');
+        return next;
+      });
+      setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { name: d.name, source: d.source, ...uploadedDocument } : d));
+
+      // Single delayed refresh to sync document list after upload
+      setTimeout(() => {
+        setProcessingDocs(prev => {
+          const next = new Map(prev);
+          next.delete(docId);
+          return next;
         });
+        setUploadingDocs(prev => prev.filter(d => d.id !== docId));
 
-        const updatedUser = { ...user, projects: updatedProjects };
-        setUser(updatedUser);
-      }
-
-      window.dispatchEvent(new CustomEvent('documentUploaded', {
-        detail: { projectId: selectedProject.id }
-      }));
+        // Notify parent to refresh document list
+        window.dispatchEvent(new CustomEvent('documentProcessingComplete', {
+          detail: { projectId }
+        }));
+      }, 3000);
 
       setUploadError('');
     } catch (error: any) {
@@ -497,7 +535,7 @@ export default function RightSidebar({
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : ''}
             </span>
-            {selectedProject && activeSection === 'documents' && currentProjectData?.documents?.length > 0 && (
+            {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
                 onClick={onAddDocument}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -515,13 +553,12 @@ export default function RightSidebar({
                   }
                 }}
                 disabled={isSavingRules || !hasUnsavedChanges}
-                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${
-                  isSavingRules
-                    ? 'text-pink-400 border border-pink-400 cursor-wait'
-                    : hasUnsavedChanges
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${isSavingRules
+                  ? 'text-pink-400 border border-pink-400 cursor-wait'
+                  : hasUnsavedChanges
                     ? 'text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400'
                     : 'text-pink-500 border border-pink-400 cursor-default'
-                }`}
+                  }`}
               >
                 {isSavingRules ? (
                   <>
@@ -541,7 +578,7 @@ export default function RightSidebar({
                 )}
               </button>
             )}
-            {selectedProject && activeSection === 'mcp' && !showAddMcpForm && !showTokenInput && (
+            {selectedProject && activeSection === 'mcp' && (
               <button
                 onClick={() => setShowAddMcpForm(true)}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -552,55 +589,55 @@ export default function RightSidebar({
             )}
           </Box>
 
-        {/* Project Rules Section */}
-        {activeSection === 'rules' && selectedProject && currentProjectData && (
-          <div className=" w-full">
-            <Box className="markdown-editor-container w-full">
-              <SimpleMDE
-                value={currentRulesValue}
-                onChange={(value: string) => {
-                  setCurrentRulesValue(value);
-                  setHasUnsavedChanges(value !== projectRules);
-                }}
-                options={editorOptions}
-                getMdeInstance={(instance) => {
-                  editorRef.current = instance;
-                }}
-              />
-            </Box>
-            <p className="text-gray-400 text-[10px] leading-relaxed">
-              <ul>
-                <li>- Use markdown to format the rules.</li>
-                <li>- Clearly define guidelines for document processing.</li>
-                <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
-                <li>- Press Ctrl+S (Cmd+S on Mac) to save changes.</li>
-              </ul>
-            </p>
-          </div>
-        )}
-
-        {/* Documents Section */}
-        {activeSection === 'documents' && (
-          <div
-            className="space-y-3"
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-          {selectedProject ? (
-            currentProjectData?.documents && currentProjectData.documents.length > 0 ? (
-              <>
-                {/* Hidden file input */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt,.csv"
-                  onChange={handleFileSelect}
-                  className="hidden"
+          {/* Project Rules Section */}
+          {activeSection === 'rules' && selectedProject && currentProjectData && (
+            <div className=" w-full">
+              <Box className="markdown-editor-container w-full">
+                <SimpleMDE
+                  value={currentRulesValue}
+                  onChange={(value: string) => {
+                    setCurrentRulesValue(value);
+                    setHasUnsavedChanges(value !== projectRules);
+                  }}
+                  options={editorOptions}
+                  getMdeInstance={(instance) => {
+                    editorRef.current = instance;
+                  }}
                 />
+              </Box>
+              <p className="text-gray-400 text-[10px] leading-relaxed">
+                <ul>
+                  <li>- Use markdown to format the rules.</li>
+                  <li>- Clearly define guidelines for document processing.</li>
+                  <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
+                  <li>- Press Ctrl+S (Cmd+S on Mac) to save changes.</li>
+                </ul>
+              </p>
+            </div>
+          )}
 
-                {/* Compact Drop Zone */}
-                {/* <Box
+          {/* Documents Section */}
+          {activeSection === 'documents' && (
+            <div
+              className="space-y-3"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {selectedProject ? (
+                effectiveDocuments.length > 0 ? (
+                  <>
+                    {/* Hidden file input */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.docx,.txt,.csv"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+
+                    {/* Compact Drop Zone */}
+                    {/* <Box
                   onClick={() => fileInputRef.current?.click()}
                   className={`border-2 border-dashed rounded-sm p-4 text-center transition-all cursor-pointer ${
                     isDragging
@@ -621,206 +658,182 @@ export default function RightSidebar({
                   )}
                 </Box> */}
 
-                {uploadError && (
-                  <Box className="text-red-400 text-xs text-center -mt-1">
-                    {uploadError}
-                  </Box>
-                )}
-
-                {/* Search Input */}
-                <TextField
-                  size="small"
-                  placeholder="Search documents..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{
-                    width: '100%',
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': {
-                        borderColor: 'var(--sl-white-alpha-10)',
-                      },
-                      '&:hover fieldset': {
-                        borderColor: 'var(--sl-brand-alpha-30)',
-                      },
-                      '&.Mui-focused fieldset': {
-                        borderColor: 'var(--sl-brand-primary)',
-                      },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': {
-                        color: 'var(--sl-text-muted)',
-                        opacity: 1,
-                      },
-                    },
-                  }}
-                />
-              <Box className="space-y-2">
-                {currentProjectData.documents
-                  .filter((doc: any) => {
-                    if (!searchQuery) return true;
-                    const query = searchQuery.toLowerCase();
-                    const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
-                    const summary = (doc.summary || '').toLowerCase();
-                    const markdown = (doc.markdown || '').toLowerCase();
-                    return filename.includes(query) || summary.includes(query) || markdown.includes(query);
-                  })
-                  .map((doc: any, i: number) => (
-                  <Box
-                    key={doc.id || `doc-${i}`}
-                    onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
-                    onMouseLeave={() => setHoveredDocId(null)}
-                    sx={{
-                      padding: '10px',
-                      borderRadius: '6px',
-                      bgcolor: 'var(--sl-white-alpha-2)',
-                      border: '1px solid var(--sl-white-alpha-5)',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        bgcolor: 'var(--sl-white-alpha-5)',
-                        borderColor: 'var(--sl-white-alpha-8)',
-                      },
-                      position: 'relative',
-                    }}
-                  >
-                    <Box className="flex items-start gap-2">
-                      {/* Document Icon */}
-                      <Box
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: '50%',
-                          bgcolor: 'var(--sl-brand-alpha-10)',
-                          flexShrink: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginTop: '2px',
-                        }}
-                      >
-                        <InsertDriveFileIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                    {uploadError && (
+                      <Box className="text-red-400 text-xs text-center -mt-1">
+                        {uploadError}
                       </Box>
+                    )}
 
-                      {/* Document Content */}
-                      <Box className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-xs text-white font-medium truncate">
-                            {(doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
-                          </span>
-                          {/* Delete Icon - Appears on Hover */}
-                          <Tooltip title="Delete Document" arrow>
-                            <IconButton
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteDocument(doc);
-                              }}
-                              sx={{
-                                opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
-                                transition: 'opacity 0.15s ease',
-                                color: 'var(--sl-text-muted)',
-                                bgcolor: 'var(--sl-danger-alpha-10)',
-                                padding: '4px',
-                                '&:hover': {
-                                  color: 'var(--sl-status-error)',
-                                  bgcolor: 'var(--sl-danger-alpha-15)',
-                                },
-                              }}
-                            >
-                              <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
-                          </Tooltip>
-                        </div>
-
-                        {/* Document Summary/Markdown Preview */}
-                        {(doc.summary || doc.markdown) && (
-                          <div
-                            className="text-[10px] text-gray-400 leading-relaxed mb-1.5"
-                            style={{
-                              wordBreak: 'break-word',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
+                    {/* Search Input */}
+                    <TextField
+                      size="small"
+                      placeholder="Search documents..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{
+                        width: '100%',
+                        '& .MuiOutlinedInput-root': {
+                          backgroundColor: 'var(--sl-white-alpha-2)',
+                          fontSize: '0.75rem',
+                          '& fieldset': {
+                            borderColor: 'var(--sl-white-alpha-10)',
+                          },
+                          '&:hover fieldset': {
+                            borderColor: 'var(--sl-brand-alpha-30)',
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: 'var(--sl-brand-primary)',
+                          },
+                        },
+                        '& .MuiInputBase-input': {
+                          color: 'var(--sl-text-primary)',
+                          padding: '8px 12px',
+                          '&::placeholder': {
+                            color: 'var(--sl-text-muted)',
+                            opacity: 1,
+                          },
+                        },
+                      }}
+                    />
+                    <Box className="space-y-2">
+                      {effectiveDocuments
+                        .filter((doc: any) => {
+                          if (!searchQuery) return true;
+                          const query = searchQuery.toLowerCase();
+                          const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
+                          const summary = (doc.summary || '').toLowerCase();
+                          const markdown = (doc.markdown || '').toLowerCase();
+                          return filename.includes(query) || summary.includes(query) || markdown.includes(query);
+                        })
+                        .map((doc: any, i: number) => (
+                          <Box
+                            key={doc.id || `doc-${i}`}
+                            onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
+                            onMouseLeave={() => setHoveredDocId(null)}
+                            sx={{
+                              padding: '10px',
+                              borderRadius: '6px',
+                              bgcolor: 'var(--sl-white-alpha-2)',
+                              border: '1px solid var(--sl-white-alpha-5)',
+                              transition: 'all 0.15s ease',
+                              '&:hover': {
+                                bgcolor: 'var(--sl-white-alpha-5)',
+                                borderColor: 'var(--sl-white-alpha-8)',
+                              },
+                              position: 'relative',
                             }}
                           >
-                            {doc.summary
-                              ? doc.summary
-                              : doc.markdown.replace(/\n/g, ' ').trim()}
-                          </div>
-                        )}
+                            <Box className="flex items-start gap-2">
+                              {/* Document Icon */}
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: '50%',
+                                  bgcolor: 'var(--sl-brand-alpha-10)',
+                                  flexShrink: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  marginTop: '2px',
+                                }}
+                              >
+                                {processingDocs.has(doc.id)
+                                  ? <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                  : <InsertDriveFileIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                                }
+                              </Box>
 
-                        {/* Document Metadata */}
-                        <div className="text-[10px] text-gray-500 flex items-center gap-2 flex-wrap">
-                        </div>
-                      </Box>
-                    </Box>
-                  </Box>
-                ))}
-              </Box>
-              </>
-            ) : (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt,.csv"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                <Box
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-sm p-8 text-center transition-all cursor-pointer ${
-                    isDragging
-                      ? 'border-pink-500 bg-pink-500/10'
-                      : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
-                  }`}
-                >
-                  {isUploading ? (
-                    <Box className="flex flex-col items-center gap-3 py-2">
-                      <CloudUploadIcon sx={{ fontSize: 40, color: 'var(--sl-brand-primary)' }} />
-                      <Box className="text-gray-300 text-sm">
-                        {uploadProgress ? `${uploadProgress.status}` : 'Uploading...'}
-                      </Box>
-                      {uploadProgress && (
-                        <Box sx={{ width: '100%', px: 2 }}>
-                          <Box sx={{
-                            width: '100%',
-                            height: 6,
-                            bgcolor: 'var(--sl-bg-surface-2)',
-                            borderRadius: '3px',
-                            overflow: 'hidden',
-                          }}>
-                            <Box sx={{
-                              height: '100%',
-                              width: `${uploadProgress.percent}%`,
-                              bgcolor: 'var(--sl-brand-primary)',
-                              borderRadius: '3px',
-                              transition: 'width 0.3s ease',
-                            }} />
+                              {/* Document Content */}
+                              <Box className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <span className="text-xs text-white font-medium truncate">
+                                    {(doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
+                                  </span>
+                                  {/* Delete Icon - Appears on Hover (hidden for uploading docs) */}
+                                  {!processingDocs.has(doc.id) && (
+                                    <Tooltip title="Delete Document" arrow>
+                                      <IconButton
+                                        size="small"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onDeleteDocument(doc);
+                                        }}
+                                        sx={{
+                                          opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
+                                          transition: 'opacity 0.15s ease',
+                                          color: 'var(--sl-text-muted)',
+                                          bgcolor: 'var(--sl-danger-alpha-10)',
+                                          padding: '4px',
+                                          '&:hover': {
+                                            color: 'var(--sl-status-error)',
+                                            bgcolor: 'var(--sl-danger-alpha-15)',
+                                          },
+                                        }}
+                                      >
+                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                </div>
+
+                                {/* Uploading indicator or Document Summary */}
+                                {processingDocs.has(doc.id) ? (
+                                  <div className="text-[10px] text-gray-400 leading-relaxed mb-1.5">
+                                    {processingDocs.get(doc.id) || 'Processing document...'}
+                                  </div>
+                                ) : (doc.summary || doc.markdown) ? (
+                                  <div
+                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5"
+                                    style={{
+                                      wordBreak: 'break-word',
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      overflow: 'hidden',
+                                    }}
+                                  >
+                                    {doc.summary
+                                      ? doc.summary
+                                      : doc.markdown.replace(/\n/g, ' ').trim()}
+                                  </div>
+                                ) : null}
+
+                                {/* Document Metadata */}
+                                <div className="text-[10px] text-gray-500 flex items-center gap-2 flex-wrap">
+                                </div>
+                              </Box>
+                            </Box>
                           </Box>
-                          <span style={{ fontSize: '11px', color: 'var(--sl-text-muted)', display: 'block', marginTop: '6px', textAlign: 'center' }}>
-                            {uploadProgress.percent > 0 ? `${uploadProgress.percent}%` : ''}
-                          </span>
-                        </Box>
-                      )}
-                      {!uploadProgress && <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />}
+                        ))}
                     </Box>
-                  ) : (
-                    <>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.docx,.txt,.csv"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    <Box
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-sm p-8 text-center transition-all cursor-pointer ${isDragging
+                        ? 'border-pink-500 bg-pink-500/10'
+                        : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
+                        }`}
+                    >
                       <CloudUploadIcon className="text-5xl text-gray-500 mb-2" />
                       <Box className="text-gray-300 text-sm mb-1">
                         Drag and drop your file here
@@ -831,245 +844,160 @@ export default function RightSidebar({
                       <Box className="text-gray-600 text-xs">
                         Supported: PDF, DOCX, TXT, CSV (Max 50MB)
                       </Box>
-                    </>
-                  )}
+                    </Box>
+                    {uploadError && (
+                      <Box className="text-red-400 text-xs mt-2 text-center">
+                        {uploadError}
+                      </Box>
+                    )}
+                  </>
+                )
+              ) : (
+                <Box className="text-gray-500 text-xs py-4 text-center">
+                  Select a project to view documents
                 </Box>
-                {uploadError && (
-                  <Box className="text-red-400 text-xs mt-2 text-center">
-                    {uploadError}
-                  </Box>
-                )}
-              </>
-            )
-          ) : (
-            <Box className="text-gray-500 text-xs py-4 text-center">
-              Select a project to view documents
-            </Box>
+              )}
+            </div>
           )}
-        </div>
-        )}
 
-        {/* MCP Servers Section */}
-        {activeSection === 'mcp' && (
-          <div className="space-y-3">
-            {/* Add MCP Server Form */}
-            {showAddMcpForm && !showTokenInput && (
-              <Box
-                sx={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  border: '1px solid var(--sl-white-alpha-8)',
-                }}
-              >
-                <TextField
-                  size="small"
-                  placeholder="Server name (optional)"
-                  value={newMcpName}
-                  onChange={(e) => setNewMcpName(e.target.value)}
-                  fullWidth
+          {/* MCP Servers Section */}
+          {activeSection === 'mcp' && (
+            <div className="space-y-3">
+              {/* Add MCP Server Form */}
+              {showAddMcpForm && (
+                <Box
                   sx={{
-                    mb: 1.5,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
+                    padding: '10px',
+                    borderRadius: '6px',
+                    bgcolor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-8)',
                   }}
-                />
-                <TextField
-                  size="small"
-                  placeholder="Server URL (e.g., https://mcp.example.com)"
-                  value={newMcpUrl}
-                  onChange={(e) => setNewMcpUrl(e.target.value)}
-                  fullWidth
-                  sx={{
-                    mb: 1.5,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                />
-                <Box className="flex justify-end gap-2">
-                  <button
-                    onClick={() => {
-                      setShowAddMcpForm(false);
-                      setNewMcpName('');
-                      setNewMcpUrl('');
-                      setMcpError('');
-                    }}
-                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleAddMcpServer}
-                    disabled={isAddingMcp || !newMcpUrl.trim()}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || !newMcpUrl.trim()
-                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
-                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
-                    }`}
-                  >
-                    {isAddingMcp ? (
-                      <>
-                        <CircularProgress size={10} sx={{ color: 'var(--sl-text-primary)' }} />
-                        <span>Adding...</span>
-                      </>
-                    ) : (
-                      <span>Add Server</span>
-                    )}
-                  </button>
-                </Box>
-              </Box>
-            )}
+                >
+                  {/* Remote / Local toggle */}
+                  <Box className="flex mb-2 rounded overflow-hidden border border-gray-700">
+                    <button
+                      onClick={() => setMcpServerType('remote')}
+                      className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'remote'
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-transparent text-gray-400 hover:text-gray-300'
+                        }`}
+                    >
+                      Remote
+                    </button>
+                    <button
+                      onClick={() => setMcpServerType('local')}
+                      className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'local'
+                        ? 'bg-pink-600 text-white'
+                        : 'bg-transparent text-gray-400 hover:text-gray-300'
+                        }`}
+                    >
+                      Local
+                    </button>
+                  </Box>
 
-            {/* Token Input Form */}
-            {showTokenInput && (
-              <Box
-                sx={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  border: '1px solid var(--sl-brand-alpha-30)',
-                }}
-              >
-                <Box className="text-xs text-gray-300 mb-3">
-                  <span className="text-pink-400 font-medium">Token Required</span>
-                  <br />
-                  <span className="text-gray-500 text-[10px]">
-                    Server: {pendingServerUrl}
-                  </span>
-                </Box>
-                <TextField
-                  size="small"
-                  placeholder="Enter authentication token"
-                  value={mcpToken}
-                  onChange={(e) => setMcpToken(e.target.value)}
-                  type="password"
-                  fullWidth
-                  autoFocus
-                  sx={{
-                    mb: 1.5,
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-50)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && mcpToken.trim()) {
-                      handleTokenSubmit();
-                    }
-                  }}
-                />
-                <Box className="flex justify-end gap-2">
-                  <button
-                    onClick={handleCancelTokenInput}
-                    className="px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleTokenSubmit}
-                    disabled={isAddingMcp || !mcpToken.trim()}
-                    className={`flex items-center gap-1 px-3 py-1.5 text-[10px] rounded-sm transition-all ${
-                      isAddingMcp || !mcpToken.trim()
-                        ? 'text-gray-500 bg-gray-800 cursor-not-allowed'
-                        : 'text-white bg-pink-600 hover:bg-pink-500 cursor-pointer'
-                    }`}
-                  >
-                    {isAddingMcp ? (
-                      <>
-                        <CircularProgress size={10} sx={{ color: 'var(--sl-text-primary)' }} />
-                        <span>Authenticating...</span>
-                      </>
-                    ) : (
-                      <span>Submit Token</span>
-                    )}
-                  </button>
-                </Box>
-              </Box>
-            )}
-
-            {/* Error Message */}
-            {mcpError && (
-              <Box className="text-red-400 text-xs text-center py-2">
-                {mcpError}
-              </Box>
-            )}
-
-            {/* Loading State */}
-            {isLoadingMcp ? (
-              <Box className="flex items-center justify-center py-8">
-                <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />
-              </Box>
-            ) : mcpServers.length > 0 ? (
-              /* Server List */
-              <Box className="space-y-2">
-                {mcpServers.map((server, index) => (
-                  <McpServerItem
-                    key={server.id || `mcp-${index}`}
-                    server={server}
-                    projectId={selectedProject?.id || ''}
-                    onDelete={handleDeleteMcpServer}
-                    onServerUpdate={(updatedServer) => {
-                      setMcpServers(prev => {
-                        const newServers = prev.map(s =>
-                          s.id === updatedServer.id ? updatedServer : s
-                        );
-                        // Save to storage when server is updated
-                        if (selectedProject?.id) {
-                          mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                  <TextField
+                    size="small"
+                    autoFocus
+                    placeholder={mcpServerType === 'remote' ? 'Server URL (e.g., https://mcp.example.com)' : 'Server name'}
+                    value={mcpServerType === 'remote' ? newMcpUrl : newMcpName}
+                    onChange={(e) => mcpServerType === 'remote' ? setNewMcpUrl(e.target.value) : setNewMcpName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isAddingMcp) {
+                        if (mcpServerType === 'remote' && newMcpUrl.trim()) {
+                          handleAddMcpServer();
+                        } else if (mcpServerType === 'local' && newMcpName.trim()) {
+                          handleAddLocalMcpServer();
                         }
-                        return newServers;
-                      });
+                      } else if (e.key === 'Escape') {
+                        setShowAddMcpForm(false);
+                        setNewMcpName('');
+                        setNewMcpUrl('');
+                        setNewMcpEnv('');
+                        setMcpServerType('remote');
+                        setMcpError('');
+                      }
+                    }}
+                    disabled={isAddingMcp}
+                    fullWidth
+                    InputProps={{
+                      endAdornment: isAddingMcp ? (
+                        <InputAdornment position="end">
+                          <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                        </InputAdornment>
+                      ) : null,
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
                     }}
                   />
-                ))}
-              </Box>
-            ) : (
-              /* Empty State */
-              <Box className="flex flex-col items-center justify-center py-8 text-center">
-                <CableIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
-                <Box className="text-gray-400 text-sm mb-1">
-                  No MCP servers configured
+                  <Box className="text-gray-600 text-[10px] mt-1 px-1">
+                    Press Enter to add &middot; Esc to cancel
+                  </Box>
                 </Box>
-                <Box className="text-gray-500 text-xs">
-                  Add an MCP server to extend capabilities
-                </Box>
-              </Box>
-            )}
+              )}
 
-            {/* Help Text */}
-            <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
-              MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
-            </p>
-          </div>
-        )}
+              {/* Error Message */}
+              {mcpError && (
+                <Box className="text-red-400 text-xs text-center py-2">
+                  {mcpError}
+                </Box>
+              )}
+
+              {mcpServers.length > 0 ? (
+                /* Server List */
+                <Box className="space-y-2">
+                  {mcpServers.map((server, index) => (
+                    <McpServerItem
+                      key={server.id || `mcp-${index}`}
+                      server={server}
+                      projectId={selectedProject?.id || ''}
+                      onDelete={handleDeleteMcpServer}
+                      discovering={discoveringServerId === server.id}
+                      onServerUpdate={(updatedServer) => {
+                        setMcpServers(prev => {
+                          const newServers = prev.map(s =>
+                            s.id === updatedServer.id ? updatedServer : s
+                          );
+                          // Save to storage when server is updated
+                          if (selectedProject?.id) {
+                            mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                          }
+                          return newServers;
+                        });
+                      }}
+                    />
+                  ))}
+                </Box>
+              ) : (
+                /* Empty State */
+                <Box className="flex flex-col items-center justify-center py-8 text-center">
+                  <CableIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                  <Box className="text-gray-400 text-sm mb-1">
+                    No MCP servers configured
+                  </Box>
+                  <Box className="text-gray-500 text-xs">
+                    Add an MCP server to extend capabilities
+                  </Box>
+                </Box>
+              )}
+
+              {/* Help Text */}
+              <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
+                MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
+              </p>
+            </div>
+          )}
 
         </Box>
       )}
@@ -1145,20 +1073,19 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="MCP Servers (Coming Soon)" placement="left">
-          <span className='cursor-not-allowed'>
+        <Tooltip title="MCP Servers" placement="left">
+          <span>
             <IconButton
-              onClick={() => {}}
-              disabled={true}
+              onClick={() => { setShowAddMcpForm(false); setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
               sx={{
                 color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: activeSection === 'mcp' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: user?.guest ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 '&:hover': {
-                  color: user?.guest ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
-                  bgcolor: user?.guest ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
+                  color: 'var(--sl-brand-primary)',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',

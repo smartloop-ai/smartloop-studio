@@ -7,7 +7,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import DocumentPolling from '@/app/components/document-polling';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import DocumentsTab from '@/app/components/documents-tab';
 import RightSidebar from '@/app/components/right-sidebar';
@@ -19,6 +18,7 @@ import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
+import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
 import ConversationTabs from '@/app/components/conversation-tabs';
 import { useAuthContext } from '@/app/contexts/AuthContext';
@@ -92,9 +92,29 @@ export default function Home() {
 
               if (res.ok && res.body) {
                 const reader = res.body.getReader();
+                const decoder = new TextDecoder();
                 while (true) {
-                  const { done } = await reader.read();
+                  const { done, value } = await reader.read();
                   if (done) break;
+                  const text = decoder.decode(value, { stream: true });
+                  const lines = text.split('\n');
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+                    try {
+                      const event = JSON.parse(payload);
+                      const progress = bootstrapProgress(event);
+
+                      console.log(`[Home] Model download progress: ${progress.percent}% — ${progress.status}`);
+                      window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
+                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status }
+                      }));
+                    } catch {
+                      // Non-JSON line, log raw
+                      console.log('[Home] Model load:', trimmed);
+                    }
+                  }
                 }
               }
               return true;
@@ -123,6 +143,15 @@ export default function Home() {
     // Fall back to user.projects when local API is unavailable
     return user?.projects?.find((p: any) => p.id === projectId) || null;
   };
+
+  // Ensure a project is always selected — fall back to system project
+  useEffect(() => {
+    if (!selectedProject && user?.projects?.length > 0) {
+      const systemProject = user.projects.find((p: any) => p.system === true);
+      const fallback = systemProject || user.projects[0];
+      setSelectedProject(fallback);
+    }
+  }, [selectedProject, user?.projects]);
 
   // Wait for local SLP service to load projects before dismissing loader
   useEffect(() => {
@@ -393,50 +422,24 @@ export default function Home() {
   }, [chatMessage, conversation]);
 
 
-  // Load project data when selected, unload/load model on switch
+  // Load project data from local API when selected
   const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (selectedProject && user) {
-      const project = user.projects?.find((p: any) => p.id === selectedProject.id);
-      if (project) {
-        setCurrentProjectData(project);
-        setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
-      }
-
-      prevProjectIdRef.current = selectedProject.id;
-
-      // Load documents + rules from local service
+    if (selectedProject) {
       (async () => {
         try {
-          const localBase = await getLocalApiEndpoint();
-
-          // Fetch documents for this project from local SLP
-          const docsRes = await fetch(`${localBase}/v1/documents`);
-          if (docsRes.ok) {
-            const docsData = await docsRes.json();
-            const docs: any[] = docsData.documents || docsData || [];
-            setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
-            // Keep user.projects in sync (use functional update to avoid stale closure)
-            setUser((prev: any) => {
-              if (!prev) return prev;
-              const updatedProjects = (prev.projects || []).map((p: any) =>
-                p.id === selectedProject.id ? { ...p, documents: docs } : p
-              );
-              return { ...prev, projects: updatedProjects };
-            });
+          const project = await loadProjectFromApi(selectedProject.id);
+          if (project) {
+            setCurrentProjectData(project);
+            setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
           }
 
-          // Fetch rules
-          const res = await fetch(`${localBase}/v1/rules`);
-          if (res.ok) {
-            const data = await res.json();
-            const rules = data.rule || data.rules || '';
-            setProjectRules(rules);
-            lastSavedRulesRef.current = rules;
-          } else {
-            setProjectRules('');
-            lastSavedRulesRef.current = '';
-          }
+          prevProjectIdRef.current = selectedProject.id;
+
+          // Extract rules from project data
+          const rules = (selectedProject.rules || []).map((r: any) => r.content).join('\n\n');
+          setProjectRules(rules);
+          lastSavedRulesRef.current = rules;
         } catch {
           setProjectRules('');
           lastSavedRulesRef.current = '';
@@ -448,6 +451,32 @@ export default function Home() {
       setProjectMemory(true);
     }
   }, [selectedProject]);
+
+  // Refresh currentProjectData.documents when a document is uploaded or processing completes
+  useEffect(() => {
+    const refreshDocuments = async (event: any) => {
+      const projectId = event.detail?.projectId;
+      if (!projectId || projectId !== selectedProject?.id) return;
+
+      try {
+        const result = await documentService.getLocalDocuments(projectId);
+        if (result.success && result.data) {
+          const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
+          setCurrentProjectData((prev: any) => prev ? { ...prev, documents: docs } : prev);
+        }
+      } catch (error) {
+        console.error('[Home] Error refreshing documents:', error);
+      }
+    };
+
+    window.addEventListener('documentUploaded', refreshDocuments);
+    window.addEventListener('documentProcessingComplete', refreshDocuments);
+
+    return () => {
+      window.removeEventListener('documentUploaded', refreshDocuments);
+      window.removeEventListener('documentProcessingComplete', refreshDocuments);
+    };
+  }, [selectedProject?.id]);
 
   // Load conversations for the selected project
   const loadProjectConversations = async () => {
@@ -576,13 +605,12 @@ export default function Home() {
 
     try {
       const localBase = await getLocalApiEndpoint();
-      const url = `${localBase}/v1/rules`;
-      const payload = { rule: rules };
+      const url = `${localBase}/v1/projects/${selectedProject.id}`;
 
       const response = await fetch(url, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ rules: [{ content: rules }] }),
       });
 
       if (response.ok) {
@@ -982,7 +1010,7 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      const deleteResult = await documentService.deleteLocalDocument(documentToDelete.id);
+      const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
 
       if (deleteResult.success) {
         // Update user state incrementally - remove the deleted document from the specific project
@@ -1034,13 +1062,6 @@ export default function Home() {
           }}
         />
       )}
-      <DocumentPolling
-        user={user}
-        setUser={setUser}
-        selectedProject={selectedProject}
-        setCurrentProjectData={setCurrentProjectData}
-        setSelectedProject={setSelectedProject}
-      />
       {user && (
         <>
           {/* File Upload Dialog */}
@@ -1338,96 +1359,95 @@ export default function Home() {
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-black">
               <>
-                  {/* Chat Header - matches project page style */}
-                  <Box className="flex-none p-4">
-                    <Box className="flex items-center justify-between gap-4">
-                      <Box className="flex items-center gap-4 flex-1 min-w-0">
-                        <Box
-                          sx={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '2px',
-                            bgcolor: getProjectColor(selectedProject),
-                            flexShrink: 0,
-                          }}
-                        />
-                        <Box className="flex-1 min-w-0">
-                          <div className="text-xl md:text-2xl font-bold text-white truncate">
-                            {selectedProject?.name || 'General'}
-                          </div>
-                        </Box>
+                {/* Chat Header - matches project page style */}
+                <Box className="flex-none p-4">
+                  <Box className="flex items-center justify-between gap-4">
+                    <Box className="flex items-center gap-4 flex-1 min-w-0">
+                      <Box
+                        sx={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '2px',
+                          bgcolor: getProjectColor(selectedProject),
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Box className="flex-1 min-w-0">
+                        <div className="text-xl md:text-2xl font-bold text-white truncate">
+                          {selectedProject?.name || 'General'}
+                        </div>
                       </Box>
                     </Box>
                   </Box>
+                </Box>
 
-                  {/* Tabs - show each conversation as tab plus Configuration */}
-                  {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
-                    <ConversationTabs
-                      projectConversations={projectConversations}
-                      currentConversation={conversation}
-                      onConversationSelect={(conversationId) => {
-                        const newUrl = selectedProject
-                          ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                          : `/?conversation=${conversationId}`;
-                        navigate(newUrl);
-                      }}
-                      onConversationDelete={handleDeleteConversationFromList}
-                      onNewConversation={handleStartNewConversation}
-                    />
-                  )}
+                {/* Tabs - show each conversation as tab plus Configuration */}
+                {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
+                  <ConversationTabs
+                    projectConversations={projectConversations}
+                    currentConversation={conversation}
+                    onConversationSelect={(conversationId) => {
+                      const newUrl = selectedProject
+                        ? `/?conversation=${conversationId}&project=${selectedProject.id}`
+                        : `/?conversation=${conversationId}`;
+                      navigate(newUrl);
+                    }}
+                    onConversationDelete={handleDeleteConversationFromList}
+                    onNewConversation={handleStartNewConversation}
+                  />
+                )}
 
-                  {/* Main Content Area - 2 columns */}
-                  <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                    {/* Left Column - Chat or Documents Tab */}
-                    <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                      {activeTab === 1 && selectedProject ? (
-                        <DocumentsTab
-                          user={user}
-                          setUser={setUser}
-                          selectedProject={selectedProject}
-                          setSelectedProject={setSelectedProject}
-                          currentProjectData={currentProjectData}
-                          setCurrentProjectData={setCurrentProjectData}
-                          setActiveTab={setActiveTab}
-                        />
-                      ) : (
-                        // Show Chat component (it handles the case when conversation is null)
-                        <Chat
-                          project={selectedProject}
-                          initialMessage={chatMessage}
-                          attachments={messageAttachments}
-                          conversation={conversation}
-                          onFileAttached={handleFileAttached}
-                          onAttachmentsClear={() => {
-                            setMessageAttachments([]);
-                          }}
-                          onTokenUpdate={() => {
-                            window.dispatchEvent(new Event('refreshUserTokens'));
-                          }}
-                          onConversationCreated={handleConversationCreated}
-                          onConversationUpdate={handleConversationUpdate}
-                        />
-                      )}
-                    </Box>
-
-                    {/* Right Sidebar - Rules & Documents */}
-                    {activeTab !== 1 && (
-                      <RightSidebar
-                        selectedProject={selectedProject}
-                        currentProjectData={currentProjectData}
-                        projectRules={projectRules}
-                        isSavingRules={isSavingRules}
-                        onSaveRules={(rules: string) => {
-                          saveProjectRules(rules || '');
-                        }}
-                        onAddDocument={() => setShowFileUploadDialog(true)}
-                        onDeleteDocument={handleOpenDeleteDocDialog}
+                {/* Main Content Area - 2 columns */}
+                <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
+                  {/* Left Column - Chat or Documents Tab */}
+                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
+                    {activeTab === 1 && selectedProject ? (
+                      <DocumentsTab
                         user={user}
                         setUser={setUser}
+                        selectedProject={selectedProject}
+                        setSelectedProject={setSelectedProject}
+                        currentProjectData={currentProjectData}
+                        setCurrentProjectData={setCurrentProjectData}
+                        setActiveTab={setActiveTab}
+                      />
+                    ) : (
+                      // Show Chat component (it handles the case when conversation is null)
+                      <Chat
+                        project={selectedProject}
+                        initialMessage={chatMessage}
+                        attachments={messageAttachments}
+                        conversation={conversation}
+                        onFileAttached={handleFileAttached}
+                        onAttachmentsClear={() => {
+                          setMessageAttachments([]);
+                        }}
+                        onTokenUpdate={() => {
+                          window.dispatchEvent(new Event('refreshUserTokens'));
+                        }}
+                        onConversationCreated={handleConversationCreated}
+                        onConversationUpdate={handleConversationUpdate}
                       />
                     )}
                   </Box>
-                </>
+
+                  {/* Right Sidebar - Rules & Documents */}
+                  {activeTab !== 1 && (
+                    <RightSidebar
+                      selectedProject={selectedProject}
+                      currentProjectData={currentProjectData}
+                      projectRules={projectRules}
+                      isSavingRules={isSavingRules}
+                      onSaveRules={(rules: string) => {
+                        saveProjectRules(rules || '');
+                      }}
+                      onAddDocument={() => setShowFileUploadDialog(true)}
+                      onDeleteDocument={handleOpenDeleteDocDialog}
+                      user={user}
+                    />
+                  )}
+                </Box>
+              </>
             </Box>
           </Box>
         </>

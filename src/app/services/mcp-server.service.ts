@@ -80,6 +80,9 @@ export interface McpServerRegistrationResponse {
 export interface McpServer {
   id: string;
   name: string;
+  description?: string;
+  server_type?: 'local' | 'remote';
+  env?: Record<string, string>;
   config?: {
     url?: string;
     [key: string]: any;
@@ -89,6 +92,7 @@ export interface McpServer {
   auth_url?: string;
   metadata?: McpServerMetadata;
   server_info?: McpServerInfo;
+  tools?: McpTool[];
   lastConnected?: string;
   error?: string;
 }
@@ -96,12 +100,6 @@ export interface McpServer {
 interface McpServerServiceResponse {
   success: boolean;
   data?: McpServer | McpServer[];
-  error?: string;
-}
-
-interface McpServerRegistrationServiceResponse {
-  success: boolean;
-  data?: McpServerRegistrationResponse;
   error?: string;
 }
 
@@ -153,7 +151,7 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
     }
 
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/mcp`;
+    const url = `${localBase}/v1/projects/${projectId}/mcp`;
     const response = await fetch(url, {
       method: 'GET'
     });
@@ -166,7 +164,8 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
     }
 
     if (response.status === 200) {
-      const servers = await response.json();
+      const result = await response.json();
+      const servers = result.servers || result;
       return {
         success: true,
         data: servers
@@ -188,285 +187,127 @@ const getMcpServers = async (projectId: string): Promise<McpServerServiceRespons
 };
 
 /**
- * Register an MCP server - determines whether OAuth or token flow is needed
+ * Register an MCP server via the unified endpoint.
+ * Supports both remote (SSE/HTTP) and local (stdio) server types.
+ * For remote: if no auth needed, the server is added directly. If OAuth is required, returns auth_url.
+ * For local: registers a stdio-based server with optional environment variables.
  * @param projectId - ID of the project
- * @param serverUrl - URL of the remote MCP server
- * @returns Promise with registration response indicating auth_type and relevant data
+ * @param options - Registration options
+ * @returns Promise with register response (server or OAuth data)
  */
-const registerMcpServer = async (projectId: string, serverUrl: string): Promise<McpServerRegistrationServiceResponse> => {
+const registerMcpServer = async (projectId: string, options: {
+  server_type: 'remote' | 'local';
+  server_url?: string;
+  name?: string;
+  token?: string;
+  env?: Record<string, string>;
+  return_url?: string;
+}): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
+      return { success: false, error: 'Project ID is required' };
     }
 
-    if (!serverUrl || !serverUrl.trim()) {
-      return {
-        success: false,
-        error: 'Server URL is required'
-      };
+    if (options.server_type === 'remote' && (!options.server_url || !options.server_url.trim())) {
+      return { success: false, error: 'Server URL is required for remote servers' };
+    }
+
+    if (options.server_type === 'local' && !options.name?.trim()) {
+      return { success: false, error: 'Server name is required for local servers' };
     }
 
     const localBase = await getLocalApiEndpoint();
-    const apiUrl = `${localBase}/v1/mcp/register`;
+    const apiUrl = `${localBase}/v1/projects/${projectId}/mcp/register`;
+    const body: Record<string, any> = { server_type: options.server_type };
+
+    if (options.server_url) body.server_url = options.server_url.trim();
+    if (options.name) body.name = options.name.trim();
+    if (options.token) body.token = options.token.trim();
+    if (options.env && Object.keys(options.env).length > 0) body.env = options.env;
+    if (options.return_url) body.return_url = options.return_url;
+
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        server_url: serverUrl.trim()
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
 
     if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
+      return { success: false, error: 'No response from server' };
     }
 
     if (response.status === 200 || response.status === 201) {
       const data = await response.json();
-      return {
-        success: true,
-        data
-      };
+      return { success: true, data };
     }
 
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: extractErrorMessage(errorData, 'Failed to register MCP server')
+      error: extractErrorMessage(errorData, 'Failed to register MCP server'),
     };
   } catch (error: any) {
     console.error('Error registering MCP server:', error);
     return {
       success: false,
-      error: error.message || 'An error occurred while registering the MCP server'
+      error: error.message || 'An error occurred while registering the MCP server',
     };
   }
 };
 
 /**
- * Authenticate MCP server with a token
+ * Complete OAuth flow - exchange code for tokens and register the server
  * @param projectId - ID of the project
- * @param serverUrl - URL of the remote MCP server
- * @param token - Authentication token
- * @returns Promise with server data
+ * @param oauthData - OAuth session data from initiate + authorization code
+ * @returns Promise with registered server data
  */
-const authenticateWithToken = async (projectId: string, serverUrl: string, token: string): Promise<McpServerServiceResponse> => {
+const completeOAuth = async (projectId: string, oauthData: {
+  server_url: string;
+  code: string;
+  state: string;
+  code_verifier: string;
+  client_id: string;
+  client_secret?: string;
+  token_endpoint: string;
+  authorization_endpoint: string;
+  callback_url?: string;
+}): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
-    }
-
-    if (!serverUrl || !serverUrl.trim()) {
-      return {
-        success: false,
-        error: 'Server URL is required'
-      };
-    }
-
-    if (!token || !token.trim()) {
-      return {
-        success: false,
-        error: 'Token is required'
-      };
+      return { success: false, error: 'Project ID is required' };
     }
 
     const localBase = await getLocalApiEndpoint();
-    const apiUrl = `${localBase}/v1/mcp/token-auth`;
+    const apiUrl = `${localBase}/v1/projects/${projectId}/mcp/oauth/callback`;
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        server_url: serverUrl.trim(),
-        token: token.trim()
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(oauthData),
     });
 
     if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
+      return { success: false, error: 'No response from server' };
     }
 
     if (response.status === 200 || response.status === 201) {
       const data = await response.json();
-      return {
-        success: true,
-        data
-      };
+      return { success: true, data };
     }
 
     const errorData = await response.json().catch(() => ({}));
     return {
       success: false,
-      error: extractErrorMessage(errorData, 'Failed to authenticate with token')
+      error: extractErrorMessage(errorData, 'Failed to complete OAuth'),
     };
   } catch (error: any) {
-    console.error('Error authenticating with token:', error);
+    console.error('Error completing OAuth:', error);
     return {
       success: false,
-      error: error.message || 'An error occurred while authenticating with token'
+      error: error.message || 'An error occurred while completing OAuth',
     };
   }
 };
 
-/**
- * Initiate OAuth for a remote MCP server
- * @param projectId - ID of the project
- * @param name - Name for the MCP server
- * @param serverUrl - URL of the remote MCP server
- * @returns Promise with auth_url to redirect user for OAuth
- */
-const initiateOAuth = async (projectId: string, name: string, serverUrl: string): Promise<McpServerServiceResponse> => {
-  try {
-    if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
-    }
-
-    if (!name || !name.trim()) {
-      return {
-        success: false,
-        error: 'Server name is required'
-      };
-    }
-
-    if (!serverUrl || !serverUrl.trim()) {
-      return {
-        success: false,
-        error: 'Server URL is required'
-      };
-    }
-
-    const localBase = await getLocalApiEndpoint();
-    const apiUrl = `${localBase}/v1/mcp/oauth/initiate`;
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        server_url: serverUrl.trim()
-      })
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
-    if (response.status === 200 || response.status === 201) {
-      const data = await response.json();
-      return {
-        success: true,
-        data
-      };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: extractErrorMessage(errorData, 'Failed to initiate OAuth')
-    };
-  } catch (error: any) {
-    console.error('Error initiating OAuth:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while initiating OAuth'
-    };
-  }
-};
-
-/**
- * Create a new MCP server for a project (for non-OAuth servers)
- * @param projectId - ID of the project
- * @param name - Name of the MCP server
- * @param url - URL of the remote MCP server
- * @returns Promise with created server data
- */
-const createMcpServer = async (projectId: string, name: string, url: string): Promise<McpServerServiceResponse> => {
-  try {
-    if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
-    }
-
-    if (!name || !name.trim()) {
-      return {
-        success: false,
-        error: 'Server name is required'
-      };
-    }
-
-    if (!url || !url.trim()) {
-      return {
-        success: false,
-        error: 'Server URL is required'
-      };
-    }
-
-    const localBase = await getLocalApiEndpoint();
-    const apiUrl = `${localBase}/v1/mcp/remote`;
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: name.trim(),
-        config: {
-          url: url.trim()
-        }
-      })
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
-    if (response.status === 200 || response.status === 201) {
-      const server = await response.json();
-      return {
-        success: true,
-        data: server
-      };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: extractErrorMessage(errorData, 'Failed to create MCP server')
-    };
-  } catch (error: any) {
-    console.error('Error creating MCP server:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while creating the MCP server'
-    };
-  }
-};
 
 /**
  * Get a specific MCP server
@@ -491,7 +332,7 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
     }
 
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/mcp/${serverId}`;
+    const url = `${localBase}/v1/projects/${projectId}/mcp/${serverId}`;
     const response = await fetch(url, {
       method: 'GET'
     });
@@ -548,7 +389,7 @@ const deleteMcpServer = async (projectId: string, serverId: string): Promise<Mcp
     }
 
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/mcp/${serverId}`;
+    const url = `${localBase}/v1/projects/${projectId}/mcp/${serverId}`;
     const response = await fetch(url, {
       method: 'DELETE'
     });
@@ -581,62 +422,6 @@ const deleteMcpServer = async (projectId: string, serverId: string): Promise<Mcp
   }
 };
 
-/**
- * Connect to an MCP server
- * @param projectId - ID of the project
- * @param serverId - ID of the MCP server to connect
- * @returns Promise with connection status
- */
-const connectMcpServer = async (projectId: string, serverId: string): Promise<McpServerServiceResponse> => {
-  try {
-    if (!projectId) {
-      return {
-        success: false,
-        error: 'Project ID is required'
-      };
-    }
-
-    if (!serverId) {
-      return {
-        success: false,
-        error: 'Server ID is required'
-      };
-    }
-
-    const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/mcp/${serverId}/connect`;
-    const response = await fetch(url, {
-      method: 'POST'
-    });
-
-    if (!response) {
-      return {
-        success: false,
-        error: 'No response from server'
-      };
-    }
-
-    if (response.status === 200) {
-      const server = await response.json();
-      return {
-        success: true,
-        data: server
-      };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: extractErrorMessage(errorData, 'Failed to connect to MCP server')
-    };
-  } catch (error: any) {
-    console.error('Error connecting to MCP server:', error);
-    return {
-      success: false,
-      error: error.message || 'An error occurred while connecting to the MCP server'
-    };
-  }
-};
 
 /**
  * Storage key for MCP servers
@@ -751,57 +536,14 @@ const removeMcpServerFromStorage = async (projectId: string, serverId: string): 
  * @param projectId - ID of the project
  * @returns Promise with array of connection results
  */
-const autoConnectStoredServers = async (projectId: string): Promise<{ server: McpServer; success: boolean }[]> => {
-  const results: { server: McpServer; success: boolean }[] = [];
-
-  try {
-    // First, get current servers from API to validate they still exist
-    const apiResult = await getMcpServers(projectId);
-    if (!apiResult.success || !apiResult.data) {
-      console.log('[MCP AutoConnect] Failed to get servers from API');
-      return results;
-    }
-
-    const apiServers = apiResult.data as McpServer[];
-    const storedServers = await loadMcpServersFromStorage(projectId);
-
-    // Find servers that exist in both API and storage (valid stored configs)
-    for (const storedServer of storedServers) {
-      const apiServer = apiServers.find(s => s.id === storedServer.id);
-      if (apiServer && apiServer.status !== 'connected') {
-        console.log(`[MCP AutoConnect] Attempting to connect to ${apiServer.name}...`);
-        const connectResult = await connectMcpServer(projectId, apiServer.id);
-        results.push({
-          server: connectResult.success && connectResult.data ? connectResult.data as McpServer : apiServer,
-          success: connectResult.success
-        });
-      } else if (apiServer && apiServer.status === 'connected') {
-        results.push({ server: apiServer, success: true });
-      }
-    }
-
-    // Update storage with current API servers (syncs any changes)
-    await saveMcpServersToStorage(projectId, apiServers);
-
-  } catch (error) {
-    console.error('[MCP AutoConnect] Error:', error);
-  }
-
-  return results;
-};
 
 export const mcpServerService = {
   getMcpServers,
-  createMcpServer,
   getMcpServer,
   deleteMcpServer,
-  connectMcpServer,
   registerMcpServer,
-  authenticateWithToken,
-  initiateOAuth,
-  // Storage methods
+  completeOAuth,
   saveMcpServersToStorage,
   loadMcpServersFromStorage,
   removeMcpServerFromStorage,
-  autoConnectStoredServers
 };

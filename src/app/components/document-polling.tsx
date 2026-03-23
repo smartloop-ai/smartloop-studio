@@ -6,7 +6,6 @@ interface DocumentPollingProps {
   setUser: (user: any) => void;
   selectedProject: any;
   setCurrentProjectData: (project: any) => void;
-  setSelectedProject: (project: any) => void;
 }
 
 export default function DocumentPolling({
@@ -14,7 +13,6 @@ export default function DocumentPolling({
   setUser,
   selectedProject,
   setCurrentProjectData,
-  setSelectedProject,
 }: DocumentPollingProps) {
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -28,7 +26,7 @@ export default function DocumentPolling({
       try {
         if (!selectedProject) return;
 
-        const result = await documentService.getLocalDocuments();
+        const result = await documentService.getLocalDocuments(selectedProject.id);
         if (!result.success || !result.data) return;
 
         const newDocs: any[] = result.data.documents || result.data;
@@ -46,10 +44,10 @@ export default function DocumentPolling({
           });
         }
 
-        // Check if any docs are still processing — always false, status not tracked
-        newDocs.forEach((_doc: any) => {
-          // no-op: both pending and processed are treated as completed
-        });
+        // Always sync when uploading placeholders are present (cleans them up on success or failure)
+        if (!hasChanges && oldDocs.some((d: any) => d.isUploading)) {
+          hasChanges = true;
+        }
 
         if (hasChanges && user) {
           const updatedProject = { ...selectedProject, documents: newDocs };
@@ -59,7 +57,6 @@ export default function DocumentPolling({
           const updatedUserState = { ...user, projects: updatedProjects };
           setUser(updatedUserState);
           setCurrentProjectData(updatedProject);
-          setSelectedProject(updatedProject);
         }
 
         if (!hasProcessing) {
@@ -74,7 +71,7 @@ export default function DocumentPolling({
 
     pollingIntervalRef.current = interval;
     setPollingInterval(interval);
-  }, [user, selectedProject, setUser, setCurrentProjectData, setSelectedProject]);
+  }, [user, selectedProject, setUser, setCurrentProjectData]);
 
   // Listen for document upload events to trigger polling
   useEffect(() => {

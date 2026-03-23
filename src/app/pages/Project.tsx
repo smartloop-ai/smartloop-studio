@@ -223,12 +223,12 @@ export default function Project() {
     try {
       const localBase = await getLocalApiEndpoint();
 
-      if (config.rules !== undefined) {
-        const url = `${localBase}/v1/rules`;
+      if (config.rules !== undefined && current?.id) {
+        const url = `${localBase}/v1/projects/${current.id}`;
         const response = await fetch(url, {
-          method: 'PUT',
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rule: config.rules }),
+          body: JSON.stringify({ rules: [{ content: config.rules }] }),
         });
 
         if (!response.ok) {
@@ -262,12 +262,12 @@ export default function Project() {
 
     try {
       const localBase = await getLocalApiEndpoint();
-      const url = `${localBase}/v1/rules`;
+      const url = `${localBase}/v1/projects/${current?.id}`;
 
       const response = await fetch(url, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rule: rules }),
+        body: JSON.stringify({ rules: [{ content: rules }] }),
       });
 
       if (!response.ok) {
@@ -286,7 +286,7 @@ export default function Project() {
   const deleteDocument = async (documentId: string) => {
     try {
       setIsLoading(true);
-      const deleteResult = await documentService.deleteLocalDocument(documentId);
+      const deleteResult = await documentService.deleteLocalDocument(current.id, documentId);
 
       if (deleteResult.success) {
         // Remove document from local state without remote fetch
@@ -337,22 +337,10 @@ export default function Project() {
 
       setCurrent(project);
 
-      // Load rules from local service
-      (async () => {
-        try {
-          const localBase = await getLocalApiEndpoint();
-          const res = await fetch(`${localBase}/v1/rules`);
-          if (res.ok) {
-            const data = await res.json();
-            const rules = data.rule || data.rules || '';
-            setProjectRules(rules);
-            lastSavedRulesRef.current = rules;
-          }
-        } catch {
-          setProjectRules('');
-          lastSavedRulesRef.current = '';
-        }
-      })();
+      // Extract rules from project data
+      const rules = (project.rules || []).map((r: any) => r.content).join('\n\n');
+      setProjectRules(rules);
+      lastSavedRulesRef.current = rules;
       setIsLoading(false);
 
       // Start polling if there are processing documents

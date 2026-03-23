@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Local SLP service
   getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
-  slpAddDocument: (filePath) => ipcRenderer.invoke('slp-add-document', filePath),
+  slpAddDocument: (filePath, projectId) => ipcRenderer.invoke('slp-add-document', filePath, projectId),
   onSlpDocumentProgress: (callback) => {
     ipcRenderer.on('slp-document-progress', (event, data) => callback(data));
   },
@@ -79,6 +79,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeSlpServiceReadyListener: () => {
     ipcRenderer.removeAllListeners('slp-service-ready');
+  },
+  // Bootstrap progress
+  onBootstrapProgress: (callback) => {
+    ipcRenderer.on('bootstrap-progress', (event, data) => callback(data));
+  },
+  removeBootstrapProgressListener: () => {
+    ipcRenderer.removeAllListeners('bootstrap-progress');
   },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
@@ -108,6 +115,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Memory usage
     addMemoryUsage: (memoryPercent) => ipcRenderer.invoke('db-add-memory-usage', memoryPercent),
     getMemoryUsage: (limit) => ipcRenderer.invoke('db-get-memory-usage', limit),
+    // TPS history
+    addTpsEntry: (tps) => ipcRenderer.invoke('db-add-tps-entry', tps),
+    getTpsHistory: (limit) => ipcRenderer.invoke('db-get-tps-history', limit),
   },
   // Check if running in Electron
   isElectron: true,
