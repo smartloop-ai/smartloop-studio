@@ -22,8 +22,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Clean SLP cache
-        run: rm -rf ~/.cache/slp
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghcrunner
+          df -h
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
