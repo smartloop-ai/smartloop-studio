@@ -74,7 +74,7 @@ help-electron:
 
 # SLP binary version, pinned hash, and GCS base URL
 SLP_VERSION=1.0.1
-SLP_SHA256=0d9140d83158759552be51256f5a31f770a1a728ed0e353dd9e19678049c0542
+SLP_SHA256=106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017
 SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/pex
 SLP_BUILD_DIR=build/slp/slp
 SLP_CACHE_DIR=$(HOME)/.cache/slp/$(SLP_VERSION)/$(SLP_PLATFORM)

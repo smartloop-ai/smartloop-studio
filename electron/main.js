@@ -542,7 +542,7 @@ function createSplashScreen() {
 
 function createStartingSplash() {
   splashWindow = new BrowserWindow({
-    width: 300,
+    width: 400,
     height: 300,
     transparent: true,
     frame: false,
