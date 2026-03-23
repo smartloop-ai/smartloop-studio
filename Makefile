@@ -72,15 +72,23 @@ help-electron:
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
 
-# SLP binary version, pinned hash, and GCS base URL
+# SLP binary version, pinned hashes per platform, and GCS base URL
 SLP_VERSION=1.0.1
-SLP_SHA256=106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017
+SLP_SHA256_LINUX=106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017
+SLP_SHA256_DARWIN=0d9140d83158759552be51256f5a31f770a1a728ed0e353dd9e19678049c0542
 SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/pex
 SLP_BUILD_DIR=build/slp/slp
 SLP_CACHE_DIR=$(HOME)/.cache/slp/$(SLP_VERSION)/$(SLP_PLATFORM)
 
 # Detect platform for SLP binary download
 SLP_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+
+# Select the correct hash for the current platform
+ifeq ($(SLP_PLATFORM),darwin)
+SLP_SHA256=$(SLP_SHA256_DARWIN)
+else
+SLP_SHA256=$(SLP_SHA256_LINUX)
+endif
 
 # End-to-end test: clean install, start, and run the full first-launch flow
 test: stop
@@ -143,9 +151,13 @@ update: stop
 	@curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_VERSION)/slp-server" -o $(SLP_CACHE_DIR)/slp
 	@chmod +x $(SLP_CACHE_DIR)/slp
 	@NEW_HASH=$$(shasum -a 256 $(SLP_CACHE_DIR)/slp | cut -d' ' -f1); \
-		sed -i "s/^SLP_SHA256=.*/SLP_SHA256=$$NEW_HASH/" Makefile; \
+		if [ "$(SLP_PLATFORM)" = "darwin" ]; then \
+			sed -i "s/^SLP_SHA256_DARWIN=.*/SLP_SHA256_DARWIN=$$NEW_HASH/" Makefile; \
+		else \
+			sed -i "s/^SLP_SHA256_LINUX=.*/SLP_SHA256_LINUX=$$NEW_HASH/" Makefile; \
+		fi; \
 		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
-		echo "✅ Updated SLP_SHA256 to $$NEW_HASH"
+		echo "✅ Updated SLP_SHA256 for $(SLP_PLATFORM) to $$NEW_HASH"
 
 # Build Electron app for current platform
 build-electron: clean-electron download-slp
