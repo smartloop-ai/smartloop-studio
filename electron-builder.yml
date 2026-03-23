@@ -25,6 +25,7 @@ files:
   - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
   - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
   - "!.env.local"
+afterPack: electron/afterPack.js
 mac:
   category: public.app-category.productivity
   icon: icon.icns
@@ -33,6 +34,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  signIgnore:
+    - "slp/slp/slp"
   notarize: true
   target:
     - target: dmg

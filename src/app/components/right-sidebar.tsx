@@ -36,7 +36,6 @@ export default function RightSidebar({
   onSaveRules,
   onAddDocument,
   onDeleteDocument,
-  user,
 }: RightSidebarProps) {
   const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);

@@ -50,6 +50,12 @@
   margin-bottom: 0;
 }
 
+.user-message-content a,
+.user-message-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
 .chat-content table,
 .chat-content .csv-table {
   width: 100%;
