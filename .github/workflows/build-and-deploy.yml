@@ -22,6 +22,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Clean SLP cache
+        run: rm -rf ~/.cache/slp
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
