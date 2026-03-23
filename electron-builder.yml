@@ -34,6 +34,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  signIgnore:
+    - "slp/slp/slp"
   notarize: true
   target:
     - target: dmg

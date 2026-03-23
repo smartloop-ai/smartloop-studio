@@ -5,9 +5,10 @@ const fs = require('fs');
 /**
  * afterPack hook for electron-builder.
  *
- * The PEX/SCIE binary has appended data that breaks macOS strict codesign.
- * electron-builder skips it via signIgnore, so we sign it here with the
- * same entitlements as the Electron app (ad-hoc, no strict validation).
+ * The PEX/SCIE binary has appended data that breaks macOS strict codesign
+ * validation, so electron-builder skips it via signIgnore. We sign it here
+ * with the real Developer ID identity, hardened runtime, and a secure
+ * timestamp so that Apple notarization accepts it.
  */
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
@@ -24,14 +25,19 @@ exports.default = async function afterPack(context) {
     return;
   }
 
-  console.log('[afterPack] Signing SLP PEX binary with app entitlements...');
+  // Use the same signing identity that electron-builder uses.
+  // CSC_NAME or the identity from the keychain imported in CI.
+  const identity = process.env.CSC_NAME || 'Developer ID Application';
+
+  console.log('[afterPack] Signing SLP PEX binary with identity:', identity);
   try {
     execSync(
-      `codesign --sign - --force --entitlements "${entitlements}" "${slpBinary}"`,
+      `codesign --sign "${identity}" --force --timestamp --options runtime --entitlements "${entitlements}" "${slpBinary}"`,
       { stdio: 'inherit' }
     );
     console.log('[afterPack] SLP binary signed successfully');
   } catch (error) {
     console.error('[afterPack] Codesign failed:', error.message);
+    throw error;
   }
 };
