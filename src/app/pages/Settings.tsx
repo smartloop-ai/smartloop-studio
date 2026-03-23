@@ -630,13 +630,13 @@ export default function SettingsPage() {
                                                 </Box>
                                             )}
                                         </Box>
-                                        {tpsHistory.length > 1 && (
+                                        {tpsHistory.length > 0 && (
                                             <TpsLineGraph
                                                 dataPoints={tpsHistory.map(h => h.tokens_per_second)}
                                                 timestamps={tpsHistory.map(h => h.created_at)}
                                             />
                                         )}
-                                        {tpsHistory.length <= 1 && latestTps !== null && (
+                                        {tpsHistory.length === 0 && latestTps !== null && (
                                             <Box sx={{ mt: 1 }}>
                                                 <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block' }}>
                                                     Graph will appear after more conversations...

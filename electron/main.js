@@ -411,18 +411,7 @@ function updateSplashProgress(data) {
     : stepLabels[currentSplashStep] || '';
 
   splashWindow.webContents.executeJavaScript(`
-    (function() {
-      var current = ${currentSplashStep};
-      for (var i = 0; i < 2; i++) {
-        var stepEl = document.getElementById('step-' + i);
-        var newState = i < current ? 'completed' : (i === current ? 'active' : 'pending');
-        if (stepEl.dataset.state !== newState) {
-          stepEl.dataset.state = newState;
-          stepEl.className = 'step-dot' + (newState === 'pending' ? '' : ' ' + newState);
-        }
-      }
-      document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
-    })();
+    document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
   `).catch(() => { });
 }
 
@@ -450,7 +439,7 @@ function createSplashScreen() {
     transparent: true,
     frame: false,
     resizable: false,
-    alwaysOnTop: true,
+    minimizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -483,6 +472,7 @@ function createSplashScreen() {
             justify-content: center;
             align-items: center;
             box-sizing: border-box;
+            overflow: hidden;
           }
           .splash-body {
             flex: 1;
@@ -505,45 +495,28 @@ function createSplashScreen() {
             margin-top: 12px;
             min-height: 18px;
           }
-          .steps-bar {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0;
-            padding: 14px 0;
-          }
-          .step-dot {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .dot {
-            width: 6px; height: 6px;
-            border-radius: 50%;
-            background: #374151;
+          .progress-bar {
+            width: 100%;
+            height: 3px;
+            background: #1a1a1a;
+            position: relative;
+            overflow: hidden;
             flex-shrink: 0;
-            transition: background 0.3s;
+            border-radius: 0 0 8px 8px;
           }
-          .step-dot.active .dot {
-            width: 8px; height: 8px;
-            background: none;
-            box-sizing: border-box;
-            border: 2px solid #2a2a2a;
-            border-top-color: #ec4899;
-            border-right-color: #ec4899;
-            animation: spin 0.8s linear infinite;
+          .progress-bar .slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 40%;
+            background: linear-gradient(90deg, transparent, #ec4899, transparent);
+            border-radius: 2px;
+            animation: slide 1.5s ease-in-out infinite;
           }
-          .step-dot.completed .dot {
-            background: #ec4899;
-          }
-          .step-line {
-            width: 32px;
-            height: 1px;
-            background: #2a2a2a;
-          }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+          @keyframes slide {
+            0% { left: -40%; }
+            100% { left: 100%; }
           }
         </style>
       </head>
@@ -555,14 +528,8 @@ function createSplashScreen() {
             </div>
             <div class="status-text" id="status-text">Getting things ready...</div>
           </div>
-          <div class="steps-bar">
-            <div class="step-dot active" id="step-0" data-state="active">
-              <span class="dot" id="icon-0"></span>
-            </div>
-            <div class="step-line"></div>
-            <div class="step-dot" id="step-1" data-state="pending">
-              <span class="dot" id="icon-1"></span>
-            </div>
+          <div class="progress-bar">
+            <div class="slider"></div>
           </div>
         </div>
       </body>
@@ -580,7 +547,7 @@ function createStartingSplash() {
     transparent: true,
     frame: false,
     resizable: false,
-    alwaysOnTop: true,
+    minimizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -963,8 +930,8 @@ if (!gotTheLock) {
         }
       }
     } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
-      // Not healthy but binary is installed — show app, start service in background
-      console.log('[SLP] Service not running but binary found — starting in background...');
+      // Not healthy but binary is installed — show splash, start service, then show app
+      console.log('[SLP] Service not running but binary found — starting service...');
 
       if (!database.isFullyInstalled()) {
         for (let step = 0; step < 4; step++) {
@@ -972,21 +939,24 @@ if (!gotTheLock) {
         }
       }
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-      }
+      createStartingSplash();
 
       (async () => {
         try {
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
             console.error('[SLP] Service failed to start');
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
             return;
           }
 
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
+          // Service is healthy — dismiss splash, show main window
           let needsBootstrap = false;
           try {
             const http = require('http');
@@ -1008,6 +978,20 @@ if (!gotTheLock) {
             needsBootstrap = true;
           }
 
+          // Show main window (with bootstrap progress if needed)
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            if (needsBootstrap) {
+              mainWindow.webContents.send('bootstrap-progress', {
+                percent: 0, status: 'Initializing...', model: '', downloading: true
+              });
+            }
+            mainWindow.show();
+          }
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
+
           if (needsBootstrap) {
             console.log('[SLP] No projects — running bootstrap');
             await bootstrapSlpService(baseUrl);
@@ -1018,6 +1002,10 @@ if (!gotTheLock) {
           }
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
         }
       })();
     } else {
@@ -1052,6 +1040,10 @@ if (!gotTheLock) {
 
           // Service is healthy — dismiss splash, show app immediately
           if (mainWindow && !mainWindow.isDestroyed()) {
+            // Send initial bootstrap progress so the UI shows the loader right away
+            mainWindow.webContents.send('bootstrap-progress', {
+              percent: 0, status: 'Initializing...', model: '', downloading: true
+            });
             mainWindow.show();
           }
           if (splashWindow && !splashWindow.isDestroyed()) {

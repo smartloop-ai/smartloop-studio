@@ -6,6 +6,7 @@ import { Box } from "@mui/material";
 import OpenAI from 'openai';
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MessageInput from './message-input';
@@ -111,9 +112,17 @@ export default function Chat(props: {
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
+  const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string } | null>(null);
+
+  // Load last tok/s value from storage
+  useEffect(() => {
+    storageService.getItem('last_tokens_per_second').then((val: any) => {
+      if (val) lastTpsRef.current = val;
+    });
+  }, []);
 
   // Check if the SLP service is already available, and listen for it to come online
   useEffect(() => {
@@ -638,8 +647,9 @@ export default function Chat(props: {
         ? Math.round(streamTokenCountRef.current / elapsedSec)
         : undefined;
 
-      // Persist last tok/s for display in Settings
+      // Persist last tok/s for display
       if (tps) {
+        lastTpsRef.current = tps;
         storageService.setItem('last_tokens_per_second', tps);
         storageService.addTpsEntry(tps);
       }
@@ -1077,7 +1087,7 @@ export default function Chat(props: {
 
                         <Box className="flex-1">
                           <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed relative group">
-                            {/* Copy icon - top right, visible on hover */}
+                            {/* Copy button - top right */}
                             {msg.content && !msg.is_new && (
                               <CopyToClipboard
                                 text={msg.content} onCopy={() => {
@@ -1085,10 +1095,11 @@ export default function Chat(props: {
                                   setTimeout(() => setCopied(""), 1000);
                                 }}>
                                 <button
-                                  className="absolute top-2 right-2 p-1.5 rounded-sm text-gray-600 hover:text-gray-300 transition-all opacity-0 group-hover:opacity-100"
-                                  title={copied === msg.id ? "Copied!" : "Copy"}
+                                  className="absolute top-2 right-2 p-1.5 rounded transition-colors"
+                                  style={{ color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-white-alpha-20)' }}
+                                  title={copied === msg.id ? "Copied!" : "Copy response"}
                                 >
-                                  <ContentCopyIcon sx={{ fontSize: 14 }} />
+                                  {copied === msg.id ? <CheckIcon sx={{ fontSize: 14 }} /> : <ContentCopyIcon sx={{ fontSize: 14 }} />}
                                 </button>
                               </CopyToClipboard>
                             )}
@@ -1122,14 +1133,6 @@ export default function Chat(props: {
                               )}
                             </div>
                           </div>
-                          {/* tok/s indicator */}
-                          {msg.tokens_per_second && !msg.is_new && (
-                            <Box className="mt-1 px-1">
-                              <span className="text-[10px] text-gray-600">
-                                {msg.tokens_per_second} tok/s
-                              </span>
-                            </Box>
-                          )}
                         </Box>
                       </Box>
                       : <Box className="flex justify-end">
