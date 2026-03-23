@@ -65,6 +65,7 @@ help-electron:
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
 	@echo "  make download-slp            - Download SLP binary from GCS (hash-pinned)"
+	@echo "  make update                  - Download latest SLP binary and update pinned hash"
 	@echo "  make update-slp              - Force re-download SLP binary (stops service first)"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
@@ -73,19 +74,13 @@ help-electron:
 
 # SLP binary version, pinned hash, and GCS base URL
 SLP_VERSION=1.0.1
-SLP_SHA256=854f54ca48379ed2d029b0db17ef269e0fef50fb91db27cbe765c7869c969fb3
-SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/$(SLP_VERSION)
+SLP_SHA256=106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017
+SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/pex
 SLP_BUILD_DIR=build/slp/slp
+SLP_CACHE_DIR=$(HOME)/.cache/slp/$(SLP_VERSION)/$(SLP_PLATFORM)
 
-# Detect platform and arch for SLP binary download
+# Detect platform for SLP binary download
 SLP_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
-SLP_ARCH := $(shell uname -m)
-ifeq ($(SLP_ARCH),x86_64)
-  SLP_ARCH := amd64
-endif
-ifeq ($(SLP_ARCH),aarch64)
-  SLP_ARCH := arm64
-endif
 
 # Clean electron build artifacts
 clean-electron:
@@ -96,38 +91,54 @@ clean-electron:
 stop:
 	@echo "🛑 Stopping SLP service..."
 	@if [ -f "$(HOME)/.smartloop/slp" ]; then \
-		$(HOME)/.smartloop/slp server stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
+		$(HOME)/.smartloop/slp stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
 	else \
 		echo "⚠️  SLP binary not found at ~/.smartloop/slp"; \
 	fi
 
-# Download the SLP binary from GCS and extract to build/slp/
-# Skips download if the binary already exists and matches the pinned SHA256 hash
+# Download SLP pex binary to ~/.cache if not already cached, then copy to build/
+# Cache: ~/.cache/slp/<version>/<platform>/slp
+# Build: build/slp/slp/slp
 download-slp:
 	@if [ -f "$(SLP_BUILD_DIR)/slp" ] && [ "$$(shasum -a 256 $(SLP_BUILD_DIR)/slp 2>/dev/null | cut -d' ' -f1)" = "$(SLP_SHA256)" ]; then \
-		echo "✅ SLP binary $(SLP_VERSION) already downloaded (hash verified)"; \
-	else \
-		echo "⬇️  Downloading SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)/$(SLP_ARCH)..."; \
+		echo "✅ SLP binary $(SLP_VERSION) already in build dir (hash verified)"; \
+	elif [ -f "$(SLP_CACHE_DIR)/slp" ] && [ "$$(shasum -a 256 $(SLP_CACHE_DIR)/slp 2>/dev/null | cut -d' ' -f1)" = "$(SLP_SHA256)" ]; then \
+		echo "✅ SLP binary $(SLP_VERSION) found in cache (hash verified)"; \
 		mkdir -p $(SLP_BUILD_DIR); \
-		curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_ARCH)/slp.tar.gz" -o /tmp/slp-$(SLP_VERSION).tar.gz; \
-		echo "📦 Extracting SLP binary..."; \
-		tar -xzf /tmp/slp-$(SLP_VERSION).tar.gz -C build/slp/; \
-		rm -f /tmp/slp-$(SLP_VERSION).tar.gz; \
-		chmod +x $(SLP_BUILD_DIR)/slp; \
-		ACTUAL_HASH=$$(shasum -a 256 $(SLP_BUILD_DIR)/slp | cut -d' ' -f1); \
-		if [ "$$ACTUAL_HASH" != "$(SLP_SHA256)" ]; then \
+		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
+		echo "✅ Copied SLP from cache to $(SLP_BUILD_DIR)"; \
+	else \
+		echo "⬇️  Downloading SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)..."; \
+		mkdir -p $(SLP_CACHE_DIR) $(SLP_BUILD_DIR); \
+		curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_VERSION)/slp-server" -o $(SLP_CACHE_DIR)/slp; \
+		chmod +x $(SLP_CACHE_DIR)/slp; \
+		ACTUAL_HASH=$$(shasum -a 256 $(SLP_CACHE_DIR)/slp | cut -d' ' -f1); \
+		if [ "$(SLP_SHA256)" != "" ] && [ "$$ACTUAL_HASH" != "$(SLP_SHA256)" ]; then \
 			echo "❌ Hash mismatch! Expected $(SLP_SHA256), got $$ACTUAL_HASH"; \
-			rm -f $(SLP_BUILD_DIR)/slp; \
+			rm -f $(SLP_CACHE_DIR)/slp; \
 			exit 1; \
 		fi; \
-		echo "✅ SLP binary installed to $(SLP_BUILD_DIR) (hash verified)"; \
+		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
+		echo "✅ SLP binary cached and copied to $(SLP_BUILD_DIR) (hash: $$ACTUAL_HASH)"; \
 	fi
 
 # Force re-download SLP binary (useful when updating version/hash)
 update-slp: stop
 	@echo "🔄 Force updating SLP binary..."
-	@rm -rf $(SLP_BUILD_DIR)
+	@rm -f $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp
 	@$(MAKE) download-slp
+
+# Download latest SLP binary and update the pinned hash in this Makefile
+update: stop
+	@echo "⬇️  Downloading latest SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)..."
+	@rm -f $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp
+	@mkdir -p $(SLP_CACHE_DIR) $(SLP_BUILD_DIR)
+	@curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_VERSION)/slp-server" -o $(SLP_CACHE_DIR)/slp
+	@chmod +x $(SLP_CACHE_DIR)/slp
+	@NEW_HASH=$$(shasum -a 256 $(SLP_CACHE_DIR)/slp | cut -d' ' -f1); \
+		sed -i "s/^SLP_SHA256=.*/SLP_SHA256=$$NEW_HASH/" Makefile; \
+		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
+		echo "✅ Updated SLP_SHA256 to $$NEW_HASH"
 
 # Build Electron app for current platform
 build-electron: clean-electron download-slp
@@ -169,7 +180,7 @@ build-electron-mac: clean-electron download-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Run Electron app in development mode
-run-electron-dev:
+run-electron-dev: download-slp
 	@echo "🚀 Starting Electron app in development mode..."
 	npm run electron-dev
 
