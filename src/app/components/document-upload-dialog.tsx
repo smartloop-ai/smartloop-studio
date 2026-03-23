@@ -123,37 +123,43 @@ export default function DocumentUploadDialog({
 
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
-      const localResult = await documentService.addLocalDocument(tempPath);
-      if (!localResult.success) {
-        throw new Error(localResult.error || 'Upload failed');
-      }
-      const result = localResult.data;
 
-      // Update user state incrementally - only update the specific project
-      if (user && result) {
-        const documents: any[] = Array.isArray(result?.documents) ? result.documents : [result];
-        const uploadedDoc = documents[documents.length - 1];
+      // Optimistically add a placeholder so the list view reflects the in-progress upload immediately
+      const placeholderId = `uploading-${Date.now()}`;
+      if (user) {
         const updatedProjects = user.projects.map((p: any) => {
           if (p.id === targetProject.id) {
-            const updatedDocs = [...(p.documents || []), uploadedDoc];
-            return { ...p, documents: updatedDocs };
+            return {
+              ...p,
+              documents: [
+                ...(p.documents || []),
+                { id: placeholderId, filename: file.name, name: file.name, path: file.name, isUploading: true },
+              ],
+            };
           }
           return p;
         });
-        const updatedUser = { ...user, projects: updatedProjects };
-        setUser(updatedUser);
+        setUser({ ...user, projects: updatedProjects });
       }
 
-      // Dispatch custom event to notify other components that a document was uploaded
-      window.dispatchEvent(new CustomEvent('documentUploaded', {
-        detail: { projectId: targetProject.id }
-      }));
-
+      // Close the dialog and switch to list view right away — upload continues in background
       handleClose();
       onSuccess();
+
+      // Background upload — when done, polling will refresh documents and replace the placeholder
+      ;(async () => {
+        try {
+          await documentService.addLocalDocument(targetProject.id, tempPath);
+        } catch (_err) {
+          // best-effort; polling will sync state below
+        } finally {
+          window.dispatchEvent(new CustomEvent('documentUploaded', {
+            detail: { projectId: targetProject.id, placeholderId },
+          }));
+        }
+      })();
     } catch (error: any) {
       setUploadError(error.message || 'Failed to upload document');
-    } finally {
       setIsUploading(false);
     }
   };

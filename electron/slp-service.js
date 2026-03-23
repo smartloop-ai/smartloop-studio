@@ -99,28 +99,55 @@ async function startService() {
 
   console.log('[SLP] Starting service from:', slpBinary);
 
-  // Start as a child process — it will be stopped cleanly on app quit
-  const proc = spawn(slpBinary, ['server', 'start'], {
+  // Start as a child process — capture stderr to detect early crashes
+  const proc = spawn(slpBinary, ['start'], {
     env: { ...process.env },
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
 
   serviceProcess = proc;
+  let stderrOutput = '';
+  let procExited = false;
+
+  proc.stderr.on('data', (data) => {
+    stderrOutput += data.toString();
+  });
 
   proc.on('error', (err) => {
     console.error('[SLP] Process error:', err.message);
+    procExited = true;
   });
 
-  proc.on('exit', () => {
+  proc.on('exit', (code) => {
+    procExited = true;
     if (serviceProcess === proc) serviceProcess = null;
+    if (code !== 0) {
+      console.error(`[SLP] Process exited with code ${code}`);
+      if (stderrOutput) {
+        console.error('[SLP] stderr:', stderrOutput.slice(-500));
+      }
+    }
   });
 
   // Poll for server.port file + health check (up to 120s)
+  // Abort early if the process crashes
   return new Promise((resolve) => {
     let attempts = 0;
     const maxAttempts = 120;
     const pollInterval = setInterval(async () => {
       attempts++;
+
+      // If the process already exited, stop waiting
+      if (procExited) {
+        clearInterval(pollInterval);
+        console.error('[SLP] Service process exited before becoming healthy');
+        if (stderrOutput) {
+          console.error('[SLP] Last stderr:', stderrOutput.slice(-500));
+        }
+        resolve(false);
+        return;
+      }
+
       const port = readLocalServicePort();
       if (port) {
         try {
@@ -165,7 +192,7 @@ function stopService() {
     const slpBinary = getSlpBinaryPath();
     if (fs.existsSync(slpBinary)) {
       try {
-        execFileSync(slpBinary, ['server', 'stop'], {
+        execFileSync(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
         });

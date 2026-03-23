@@ -18,10 +18,10 @@ interface DocumentServiceResponse {
  * Get all documents for the current project from the local SLP service
  * @returns Promise with document list or error
  */
-const getLocalDocuments = async (): Promise<DocumentServiceResponse> => {
+const getLocalDocuments = async (projectId: string): Promise<DocumentServiceResponse> => {
   try {
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents`;
+    const url = `${localBase}/v1/projects/${projectId}/documents`;
     const response = await fetch(url);
 
     if (response.ok) {
@@ -49,6 +49,7 @@ const getLocalDocuments = async (): Promise<DocumentServiceResponse> => {
  * @returns Promise with document data or error
  */
 const addLocalDocument = async (
+  projectId: string,
   filePath: string,
   onProgress?: (progress: { percent: number; status: string }) => void
 ): Promise<DocumentServiceResponse> => {
@@ -65,7 +66,7 @@ const addLocalDocument = async (
         });
       }
 
-      const result = await api.slpAddDocument(filePath);
+      const result = await api.slpAddDocument(filePath, projectId);
 
       // Clean up listener
       api.removeSlpDocumentProgressListener?.();
@@ -74,9 +75,9 @@ const addLocalDocument = async (
       return result;
     }
 
-    // Fallback: direct fetch (non-Electron)
+    // Fallback: direct fetch with SSE streaming support (non-Electron)
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents`;
+    const url = `${localBase}/v1/projects/${projectId}/documents`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -84,6 +85,58 @@ const addLocalDocument = async (
     });
 
     if (response.status === 200 || response.status === 201) {
+      const contentType = response.headers.get('content-type') || '';
+
+      // Handle SSE streaming response
+      if (contentType.includes('text/event-stream') && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let lastDocument: any = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('event:')) continue;
+            const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+            try {
+              const data = JSON.parse(payload);
+              // Report progress
+              if (onProgress && (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined || data.status)) {
+                const pct = data.progress !== undefined
+                  ? Math.round(data.progress * 100)
+                  : (data.percent ?? data.percentage ?? 0);
+                onProgress({ percent: pct, status: data.status || 'Processing...' });
+              }
+              // Track last document-like object
+              if (data.id || data.source || data.document_id) {
+                lastDocument = data;
+              }
+            } catch { /* skip non-JSON */ }
+          }
+        }
+
+        // Process remaining buffer
+        if (buffer.trim()) {
+          try {
+            const payload = buffer.trim().startsWith('data: ') ? buffer.trim().slice(6) : buffer.trim();
+            const data = JSON.parse(payload);
+            if (data.id || data.source || data.document_id) lastDocument = data;
+          } catch { /* skip */ }
+        }
+
+        if (onProgress) onProgress({ percent: 100, status: 'Complete' });
+        return { success: true, data: lastDocument || {} };
+      }
+
+      // Regular JSON response
       const document = await response.json();
       return { success: true, data: document };
     }
@@ -202,10 +255,10 @@ const uploadDocument = async (file: File): Promise<DocumentServiceResponse> => {
  * @param documentId - ID of the document to delete
  * @returns Promise with result or error
  */
-const deleteLocalDocument = async (documentId: string): Promise<DocumentServiceResponse> => {
+const deleteLocalDocument = async (projectId: string, documentId: string): Promise<DocumentServiceResponse> => {
   try {
     const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/documents/${documentId}`;
+    const url = `${localBase}/v1/projects/${projectId}/documents/${documentId}`;
     const response = await fetch(url, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
