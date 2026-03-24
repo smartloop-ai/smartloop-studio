@@ -974,6 +974,11 @@ if (!gotTheLock) {
 
       (async () => {
         try {
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.webContents.executeJavaScript(`
+              document.querySelector('.status-text').textContent = 'Starting service, this will take a while as we prepare it for first use...';
+            `);
+          }
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
             console.error('[SLP] Service failed to start');
@@ -1092,6 +1097,9 @@ if (!gotTheLock) {
     }
 
     app.on('activate', () => {
+      // Don't show main window while splash screen is still active
+      if (splashWindow && !splashWindow.isDestroyed()) return;
+
       if (mainWindow) {
         mainWindow.show();
         if (mainWindow.isMinimized()) mainWindow.restore();
