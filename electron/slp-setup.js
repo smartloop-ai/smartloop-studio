@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const https = require('https');
 const { spawn } = require('child_process');
 const database = require('./database');
 
@@ -10,9 +11,26 @@ const VERSION = '1.0.1';
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
 
+// ── GCS bucket for pre-built artifacts ──────────────────────────────────────
+const GCS_BUCKET = 'https://storage.googleapis.com/smartloop-gcp-us-east-releases';
+
+// ── Linux: single pex binary ────────────────────────────────────────────────
+const LINUX_PEX_SHA256 = '106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017';
+
+// ── macOS: python-build-standalone + wheels installed into a local venv ──────
+const PYTHON_VERSION = '3.11.15';
+const PYTHON_RELEASE = '20260320';
+
 function sha256File(filePath) {
   const data = fs.readFileSync(filePath);
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function getInstalledBinaryPath() {
+  if (process.platform === 'darwin') {
+    return path.join(INSTALL_DIR, 'venv', 'bin', 'slp-server');
+  }
+  return path.join(INSTALL_DIR, 'slp');
 }
 
 function needsInstall() {
@@ -20,11 +38,9 @@ function needsInstall() {
     if (!fs.existsSync(MARKER_FILE)) return true;
     const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
     if (installed !== VERSION) return true;
-    // Check if the installed binary matches the bundled one
-    const installedBinary = path.join(INSTALL_DIR, 'slp');
-    const bundledBinary = path.join(getBundledSlpDir(), 'slp');
-    if (!fs.existsSync(installedBinary) || !fs.existsSync(bundledBinary)) return true;
-    return sha256File(installedBinary) !== sha256File(bundledBinary);
+    const installedBinary = getInstalledBinaryPath();
+    if (!fs.existsSync(installedBinary)) return true;
+    return false;
   } catch {
     return true;
   }
@@ -62,32 +78,187 @@ function runAsync(command, args, options = {}, onProgress = null) {
 }
 
 /**
- * Get the path to the bundled SLP binary inside the app resources.
- * In development, this is at build/slp/slp/.
- * In production (packaged), it's in the app's extraResources.
+ * Download a file from `url` to `destPath`, reporting progress via onProgress.
+ * Follows up to 5 redirects (needed for GitHub releases).
  */
-function getBundledSlpDir() {
-  const { app } = require('electron');
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'slp', 'slp');
-  }
-  // Development: use build/slp/slp/ relative to project root
-  return path.join(__dirname, '..', 'build', 'slp', 'slp');
+function downloadFile(url, destPath, onProgress, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+
+    function doRequest(currentUrl, redirectsLeft) {
+      const mod = currentUrl.startsWith('https') ? https : require('http');
+      mod.get(currentUrl, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          if (redirectsLeft <= 0) {
+            file.close();
+            try { fs.unlinkSync(destPath); } catch {}
+            reject(new Error('Too many redirects'));
+            return;
+          }
+          doRequest(response.headers.location, redirectsLeft - 1);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          file.close();
+          try { fs.unlinkSync(destPath); } catch {}
+          reject(new Error(`Download failed with HTTP ${response.statusCode}`));
+          return;
+        }
+
+        const total = parseInt(response.headers['content-length'], 10) || 0;
+        let downloaded = 0;
+
+        response.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (onProgress) onProgress({ status: 'downloading', downloaded, total });
+        });
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close(() => resolve());
+        });
+
+        file.on('error', (err) => {
+          try { fs.unlinkSync(destPath); } catch {}
+          reject(err);
+        });
+      }).on('error', (err) => {
+        file.close();
+        try { fs.unlinkSync(destPath); } catch {}
+        reject(err);
+      });
+    }
+
+    doRequest(url, maxRedirects);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// macOS install: download Python + wheels, create venv, pip install
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the python-build-standalone download URL for the current arch.
+ */
+function getPythonUrl() {
+  const arch = os.arch() === 'arm64' ? 'aarch64' : 'x86_64';
+  const filename = `cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE}-${arch}-apple-darwin-install_only.tar.gz`;
+  return `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${filename}`;
 }
 
 /**
- * Copy the bundled SLP pex binary to INSTALL_DIR.
- * Single file copy — pex is a self-contained executable.
+ * GCS URL for the pre-built wheels tarball.
+ * Expected layout inside the tar: wheels/*.whl
  */
-async function installBundledBinary(onProgress = null) {
-  if (onProgress) onProgress({ status: 'installing', message: 'Installing framework...' });
+function getWheelsUrl() {
+  return `${GCS_BUCKET}/dist/darwin/${VERSION}/wheels.tar.gz`;
+}
 
-  const bundledDir = getBundledSlpDir();
-  const bundledBinary = path.join(bundledDir, 'slp');
+async function installDarwin(onProgress) {
+  const pythonDir = path.join(INSTALL_DIR, 'python');
+  const wheelsDir = path.join(INSTALL_DIR, 'wheels');
+  const venvDir = path.join(INSTALL_DIR, 'venv');
+  const binDir = path.join(INSTALL_DIR, 'bin');
 
-  if (!fs.existsSync(bundledBinary)) {
-    throw new Error(`Bundled SLP binary not found at: ${bundledBinary}`);
+  fs.mkdirSync(INSTALL_DIR, { recursive: true });
+
+  // Clean previous install artifacts
+  for (const dir of [pythonDir, wheelsDir, venvDir, binDir]) {
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
+
+  // ── Step 1: Download Python ───────────────────────────────────────────────
+  const pythonUrl = getPythonUrl();
+  const pythonTar = path.join(os.tmpdir(), `slp-python-${PYTHON_VERSION}.tar.gz`);
+
+  console.log('[SLP Setup] Downloading Python from', pythonUrl);
+  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading Python runtime...' });
+  await downloadFile(pythonUrl, pythonTar, (p) => {
+    if (onProgress) onProgress({ ...p, message: 'Downloading Python runtime...' });
+  });
+
+  // Extract — python-build-standalone extracts to a "python" directory
+  console.log('[SLP Setup] Extracting Python...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Extracting Python runtime...' });
+  await runAsync('tar', ['-xzf', pythonTar, '-C', INSTALL_DIR]);
+  try { fs.unlinkSync(pythonTar); } catch {}
+
+  const bundledPython = path.join(pythonDir, 'bin', 'python3');
+  if (!fs.existsSync(bundledPython)) {
+    throw new Error(`Bundled Python not found at ${bundledPython}`);
+  }
+
+  // ── Step 2: Download wheels ───────────────────────────────────────────────
+  const wheelsUrl = getWheelsUrl();
+  const wheelsTar = path.join(os.tmpdir(), `slp-wheels-${VERSION}.tar.gz`);
+
+  console.log('[SLP Setup] Downloading wheels from', wheelsUrl);
+  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading framework...' });
+  await downloadFile(wheelsUrl, wheelsTar, (p) => {
+    if (onProgress) onProgress({ ...p, message: 'Downloading framework...' });
+  });
+
+  // Extract wheels
+  console.log('[SLP Setup] Extracting wheels...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Extracting framework...' });
+  fs.mkdirSync(wheelsDir, { recursive: true });
+  await runAsync('tar', ['-xzf', wheelsTar, '-C', INSTALL_DIR]);
+  try { fs.unlinkSync(wheelsTar); } catch {}
+
+  // ── Step 3: Create venv ───────────────────────────────────────────────────
+  console.log('[SLP Setup] Creating virtual environment...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Creating virtual environment...' });
+  await runAsync(bundledPython, ['-m', 'venv', venvDir]);
+
+  // ── Step 4: pip install from bundled wheels ───────────────────────────────
+  const pip = path.join(venvDir, 'bin', 'pip');
+  console.log('[SLP Setup] Installing packages from wheels...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Installing packages...' });
+
+  // Upgrade pip first
+  try {
+    await runAsync(pip, ['install', '--quiet', '--upgrade', 'pip',
+      '--index-url', 'https://pypi.org/simple/',
+      '--find-links', wheelsDir]);
+  } catch {
+    console.log('[SLP Setup] pip upgrade skipped');
+  }
+
+  // Install all wheels (use pypi + extra metal index as fallback for missing/corrupt local wheels)
+  const wheelFiles = fs.readdirSync(wheelsDir).filter(f => f.endsWith('.whl')).map(f => path.join(wheelsDir, f));
+  await runAsync(pip, [
+    'install',
+    '--index-url', 'https://pypi.org/simple/',
+    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/metal',
+    '--find-links', wheelsDir,
+    ...wheelFiles,
+  ]);
+
+  // ── Step 5: Symlink binary ────────────────────────────────────────────────
+  fs.mkdirSync(binDir, { recursive: true });
+  const venvBinary = path.join(venvDir, 'bin', 'slp-server');
+  const binLink = path.join(binDir, 'slp-server');
+  try { fs.unlinkSync(binLink); } catch {}
+  fs.symlinkSync(venvBinary, binLink);
+
+  // Remove quarantine xattr
+  try {
+    require('child_process').execSync(`xattr -dr com.apple.quarantine "${INSTALL_DIR}"`, { stdio: 'pipe' });
+  } catch {}
+
+  console.log('[SLP Setup] macOS install complete — binary at', venvBinary);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Linux install: download pex binary
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function installLinux(onProgress) {
+  const destBinary = path.join(INSTALL_DIR, 'slp');
 
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
 
@@ -98,24 +269,33 @@ async function installBundledBinary(onProgress = null) {
     fs.rmSync(legacyInternal, { recursive: true, force: true });
   }
 
-  // Copy the pex binary
-  const destBinary = path.join(INSTALL_DIR, 'slp');
-  console.log('[SLP Setup] Copying bundled binary to', destBinary);
-  fs.copyFileSync(bundledBinary, destBinary);
-  fs.chmodSync(destBinary, 0o755);
+  const url = `${GCS_BUCKET}/pex/linux/${VERSION}/slp-server`;
+  console.log('[SLP Setup] Downloading SLP binary from', url);
+  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0 });
+  await downloadFile(url, destBinary, onProgress);
 
-  console.log('[SLP Setup] Binary installed from app bundle to', INSTALL_DIR);
+  // Verify SHA-256 hash
+  console.log('[SLP Setup] Verifying hash...');
+  const actualHash = sha256File(destBinary);
+  if (actualHash !== LINUX_PEX_SHA256) {
+    fs.unlinkSync(destBinary);
+    throw new Error(`Hash mismatch! Expected ${LINUX_PEX_SHA256}, got ${actualHash}`);
+  }
+
+  fs.chmodSync(destBinary, 0o755);
+  console.log('[SLP Setup] Binary downloaded and verified at', destBinary);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Run the full setup: copy bundled binary to ~/.smartloop/.
- * Each sub-step is tracked in SQLite so a partial install is automatically
- * resumed on the next launch rather than restarted.
+ * Run the full setup: download and install SLP to ~/.smartloop/.
  * @param {function} onProgress - Optional callback for splash screen progress updates.
  * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
 async function setupSlpService(onProgress = null) {
-  // If version changed, reset all step tracking so we reinstall cleanly
   if (needsInstall()) {
     console.log('[SLP Setup] Version changed or not installed — resetting install status');
     database.resetInstallStatus();
@@ -131,11 +311,14 @@ async function setupSlpService(onProgress = null) {
 
   console.log('[SLP Setup] Installing SLP service version', VERSION);
 
-  // Step 0: Copy bundled binary
   if (!done[0]) {
-    await installBundledBinary(onProgress);
+    if (process.platform === 'darwin') {
+      await installDarwin(onProgress);
+    } else {
+      await installLinux(onProgress);
+    }
     database.setInstallStepComplete(0);
-    console.log('[SLP Setup] Step 0 (install_binary) complete');
+    console.log('[SLP Setup] Step 0 (install) complete');
   }
 
   // Write version marker
@@ -183,6 +366,7 @@ function uninstallSlpService() {
 module.exports = {
   setupSlpService,
   uninstallSlpService,
+  getInstalledBinaryPath,
   INSTALL_DIR,
   VERSION,
 };

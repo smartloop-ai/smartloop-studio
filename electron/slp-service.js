@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, execFileSync } = require('child_process');
-const { INSTALL_DIR } = require('./slp-setup');
+const { INSTALL_DIR, getInstalledBinaryPath } = require('./slp-setup');
 
 let localServicePort = null;
 let serviceProcess = null;
@@ -12,8 +12,7 @@ function getSlpDir() {
 }
 
 function getSlpBinaryPath() {
-  const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
-  return path.join(INSTALL_DIR, binaryName);
+  return getInstalledBinaryPath();
 }
 
 function ensureSlpDir() {

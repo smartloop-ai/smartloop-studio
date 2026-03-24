@@ -22,7 +22,6 @@ if (process.env.NODE_ENV === 'development') {
 
 let mainWindow;
 let splashWindow;
-let currentSplashStep = 0;
 let tokenRefreshInterval = null;
 
 // Token refresh configuration
@@ -383,36 +382,65 @@ async function bootstrapSlpService(baseUrl) {
 }
 
 /**
- * Map a progress event to one of the 2 splash step indices.
- */
-function resolveStepIndex(data) {
-  const status = data.status;
-  if (status === 'installing') return 0;
-  if (status === 'preparing') return 1;
-  // Any other status maps to step 1 (the last splash step)
-  return currentSplashStep;
-}
-
-/**
- * Update the splash screen with bootstrap/download progress.
- * Only touches DOM elements whose state actually changed to avoid
- * restarting CSS animations (e.g. the spinner) on every tick.
+ * Update the splash screen with download/install progress.
+ * Single progress bar with status text.
+ *
+ * @param {object} data - Progress data:
+ *   { status: 'downloading', downloaded: number, total: number }
+ *   { status: 'installing' }
+ *   { status: 'preparing', message: string }
+ *   { status: 'error', message: string }
  */
 function updateSplashProgress(data) {
   if (!splashWindow || splashWindow.isDestroyed()) return;
 
-  const stepIndex = resolveStepIndex(data);
-  currentSplashStep = Math.max(currentSplashStep, stepIndex);
+  if (data.status === 'error') {
+    const msg = data.message || 'An error occurred.';
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-fill').classList.remove('indeterminate');
+    `).catch(() => {});
+    return;
+  }
 
-  const stepLabels = ['Installing framework...', 'Starting service...'];
-  const isError = data.status === 'error';
-  const statusMsg = isError
-    ? (data.message || 'An error occurred.')
-    : stepLabels[currentSplashStep] || '';
+  if (data.status === 'downloading') {
+    const downloaded = data.downloaded || 0;
+    const total = data.total || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+    const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
+    const totalMB = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
+    const label = data.message || 'Downloading...';
+    const statusText = total > 0
+      ? `${label} ${dlMB} / ${totalMB} MB`
+      : `${label} ${dlMB} MB`;
 
-  splashWindow.webContents.executeJavaScript(`
-    document.getElementById('status-text').textContent = ${JSON.stringify(statusMsg)};
-  `).catch(() => { });
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status-text').textContent = ${JSON.stringify(statusText)};
+      document.getElementById('progress-fill').style.width = '${pct}%';
+      document.getElementById('progress-fill').classList.remove('indeterminate');
+    `).catch(() => {});
+    return;
+  }
+
+  if (data.status === 'installing') {
+    const msg = data.message || 'Installing...';
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-fill').classList.add('indeterminate');
+    `).catch(() => {});
+    return;
+  }
+
+  if (data.status === 'preparing') {
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status-text').textContent = 'Starting service...';
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-fill').classList.add('indeterminate');
+    `).catch(() => {});
+    return;
+  }
 }
 
 // IPC: load model (called from renderer)
@@ -473,6 +501,7 @@ function createSplashScreen() {
             align-items: center;
             box-sizing: border-box;
             overflow: hidden;
+            padding: 0 24px;
           }
           .splash-body {
             flex: 1;
@@ -480,43 +509,45 @@ function createSplashScreen() {
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            width: 100%;
           }
           .logo {
             font-size: 32px;
             font-weight: bold;
             text-align: center;
+            margin-bottom: 24px;
           }
           .logo-text { color: white; }
           .logo-dot { color: #ec4899; }
+          .progress-track {
+            width: 100%;
+            height: 6px;
+            background: #1a1a1a;
+            border-radius: 0;
+            overflow: hidden;
+            position: relative;
+          }
+          .progress-fill {
+            height: 100%;
+            background: #ec4899;
+            border-radius: 0;
+            width: 0%;
+            transition: width 0.3s ease;
+          }
+          .progress-fill.indeterminate {
+            width: 40% !important;
+            animation: slide 1.5s ease-in-out infinite;
+          }
+          @keyframes slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(350%); }
+          }
           .status-text {
             color: #6b7280;
             font-size: 13px;
             text-align: center;
             margin-top: 12px;
             min-height: 18px;
-          }
-          .progress-bar {
-            width: 100%;
-            height: 3px;
-            background: #1a1a1a;
-            position: relative;
-            overflow: hidden;
-            flex-shrink: 0;
-            border-radius: 0 0 8px 8px;
-          }
-          .progress-bar .slider {
-            position: absolute;
-            top: 0;
-            left: 0;
-            height: 100%;
-            width: 40%;
-            background: linear-gradient(90deg, transparent, #ec4899, transparent);
-            border-radius: 2px;
-            animation: slide 1.5s ease-in-out infinite;
-          }
-          @keyframes slide {
-            0% { left: -40%; }
-            100% { left: 100%; }
           }
         </style>
       </head>
@@ -526,10 +557,10 @@ function createSplashScreen() {
             <div class="logo">
               <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
             </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
             <div class="status-text" id="status-text">Getting things ready...</div>
-          </div>
-          <div class="progress-bar">
-            <div class="slider"></div>
           </div>
         </div>
       </body>
@@ -1011,19 +1042,14 @@ if (!gotTheLock) {
     } else {
       // First launch — show splash for installation
       console.log('[SLP] First launch — showing install splash...');
-      currentSplashStep = 0;
       createSplashScreen();
 
       (async () => {
         try {
-          // Step 1: Install bundled SLP binary
+          // Step 1: Download SLP binary
           const setupResult = await setupSlpService((progress) => {
             updateSplashProgress(progress);
           });
-
-          if (setupResult === false) {
-            currentSplashStep = 1;
-          }
 
           // Step 2: Start the service
           updateSplashProgress({ status: 'preparing', message: 'Starting service...' });

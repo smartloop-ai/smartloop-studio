@@ -71,6 +71,10 @@ help-electron:
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
+	@echo "  make build-wheels            - Build macOS wheels tarball from slp_framework"
+	@echo "  make upload-wheels           - Build and upload wheels tarball to GCS"
+	@echo "  make clean-wheels            - Clean wheels build artifacts"
+	@echo ""
 
 # SLP binary version, pinned hashes per platform, and GCS base URL
 SLP_VERSION=1.0.1
@@ -89,6 +93,56 @@ SLP_SHA256=$(SLP_SHA256_DARWIN)
 else
 SLP_SHA256=$(SLP_SHA256_LINUX)
 endif
+
+# Path to sibling slp_framework repo (for building wheels)
+SLP_FRAMEWORK_DIR ?= $(shell cd .. && pwd)/slp_framework
+SLP_GCS_BUCKET=gs://smartloop-gcp-us-east-releases
+
+# Build macOS wheels tarball from the slp_framework repo and upload to GCS.
+# Produces dist/darwin/<version>/wheels.tar.gz containing all .whl files
+# needed for an offline install (minus llama-cpp-python which is fetched from
+# its Metal index at install time due to upstream CRC issues).
+build-wheels:
+	@if [ ! -d "$(SLP_FRAMEWORK_DIR)" ]; then \
+		echo "❌ slp_framework not found at $(SLP_FRAMEWORK_DIR)"; \
+		echo "   Set SLP_FRAMEWORK_DIR to the correct path"; \
+		exit 1; \
+	fi
+	@echo "📦 Building wheels from $(SLP_FRAMEWORK_DIR)..."
+	@mkdir -p dist/wheels-stage
+	@# Build the project wheel
+	cd "$(SLP_FRAMEWORK_DIR)" && pip install --quiet build && \
+		python -m build --wheel --outdir "$(CURDIR)/dist/wheels-stage/" --no-isolation
+	@# Generate pinned requirements and download all dependencies
+	@echo "📥 Downloading pinned dependencies..."
+	cd "$(SLP_FRAMEWORK_DIR)" && pip freeze --exclude-editable \
+		| grep -v -i 'pex\|build\|setuptools\|wheel\|pip\|cx.Freeze\|cx-Freeze\|llama.cpp.python' \
+		> "$(CURDIR)/dist/requirements-pinned.txt"
+	pip download \
+		--index-url https://pypi.org/simple/ \
+		--extra-index-url https://download.pytorch.org/whl \
+		--dest "$(CURDIR)/dist/wheels-stage/" \
+		-r "$(CURDIR)/dist/requirements-pinned.txt"
+	@echo "📦 Creating wheels tarball..."
+	@mkdir -p dist/wheels-output
+	cd "$(CURDIR)/dist" && mv wheels-stage wheels && \
+		tar -czf wheels-output/wheels.tar.gz wheels/ && \
+		mv wheels wheels-stage
+	@TARBALL_SIZE=$$(du -h "$(CURDIR)/dist/wheels-output/wheels.tar.gz" | cut -f1); \
+		WHEEL_COUNT=$$(ls "$(CURDIR)/dist/wheels-stage/" | wc -l | tr -d ' '); \
+		echo "✅ Built wheels.tar.gz ($$TARBALL_SIZE, $$WHEEL_COUNT wheels)"
+
+# Upload the wheels tarball to GCS
+upload-wheels: build-wheels
+	@echo "⬆️  Uploading wheels.tar.gz to GCS..."
+	gsutil cp "$(CURDIR)/dist/wheels-output/wheels.tar.gz" \
+		"$(SLP_GCS_BUCKET)/dist/darwin/$(SLP_VERSION)/wheels.tar.gz"
+	@echo "✅ Uploaded to $(SLP_GCS_BUCKET)/dist/darwin/$(SLP_VERSION)/wheels.tar.gz"
+
+# Clean wheels build artifacts
+clean-wheels:
+	@echo "🧹 Cleaning wheels build artifacts..."
+	rm -rf dist/wheels-stage dist/wheels-output dist/requirements-pinned.txt
 
 # End-to-end test: clean install, start, and run the full first-launch flow
 test: stop
