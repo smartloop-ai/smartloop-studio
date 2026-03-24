@@ -85,9 +85,14 @@ export default function RightSidebar({
     placeholder: 'Add rules or guidelines for this project...',
   }), [selectedProject?.id]);
 
-  // Collapse sidebar when project changes or when system project is selected
+  // Collapse sidebar only when switching to a different project
+  const prevProjectIdRef = useRef<string | null>(selectedProject?.id ?? null);
   useEffect(() => {
-    setActiveSection(null);
+    const newId = selectedProject?.id ?? null;
+    if (prevProjectIdRef.current !== null && newId !== prevProjectIdRef.current) {
+      setActiveSection(null);
+    }
+    prevProjectIdRef.current = newId;
   }, [selectedProject?.id]);
 
   // Ensure sidebar is collapsed for system projects

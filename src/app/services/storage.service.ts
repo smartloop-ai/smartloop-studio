@@ -75,6 +75,37 @@ class StorageService {
     }
   }
 
+  // --- Settings (SQLite key-value) ---
+
+  async getSetting(key: string): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.getSetting(key);
+    } catch (error) {
+      console.error(`Error getting setting ${key}:`, error);
+      return null;
+    }
+  }
+
+  async setSetting(key: string, value: any): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.setSetting(key, value);
+    } catch (error) {
+      console.error(`Error setting ${key}:`, error);
+    }
+  }
+
+  async getAllSettings(): Promise<Record<string, any>> {
+    if (!this.db) return {};
+    try {
+      return await this.db.getAllSettings();
+    } catch (error) {
+      console.error('Error getting all settings:', error);
+      return {};
+    }
+  }
+
   // --- Conversations (SQLite) ---
 
   private get db() {
