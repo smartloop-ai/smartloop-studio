@@ -64,85 +64,11 @@ help-electron:
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
-	@echo "  make download-slp            - Download SLP binary from GCS (hash-pinned)"
-	@echo "  make update                  - Download latest SLP binary and update pinned hash"
-	@echo "  make update-slp              - Force re-download SLP binary (stops service first)"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
-	@echo "  make build-wheels            - Build macOS wheels tarball from slp_framework"
-	@echo "  make upload-wheels           - Build and upload wheels tarball to GCS"
-	@echo "  make clean-wheels            - Clean wheels build artifacts"
 	@echo ""
-
-# SLP binary version, pinned hashes per platform, and GCS base URL
-SLP_VERSION=1.0.1
-SLP_SHA256_LINUX=106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017
-SLP_SHA256_DARWIN=0d9140d83158759552be51256f5a31f770a1a728ed0e353dd9e19678049c0542
-SLP_GCS_BASE=https://storage.googleapis.com/smartloop-gcp-us-east-releases/pex
-SLP_BUILD_DIR=build/slp/slp
-SLP_CACHE_DIR=$(HOME)/.cache/slp/$(SLP_VERSION)/$(SLP_PLATFORM)
-
-# Detect platform for SLP binary download
-SLP_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
-
-# Select the correct hash for the current platform
-ifeq ($(SLP_PLATFORM),darwin)
-SLP_SHA256=$(SLP_SHA256_DARWIN)
-else
-SLP_SHA256=$(SLP_SHA256_LINUX)
-endif
-
-# Path to sibling slp_framework repo (for building wheels)
-SLP_FRAMEWORK_DIR ?= $(shell cd .. && pwd)/slp_framework
-SLP_GCS_BUCKET=gs://smartloop-gcp-us-east-releases
-
-# Build macOS wheels tarball from the slp_framework repo and upload to GCS.
-# Produces dist/darwin/<version>/wheels.tar.gz containing all .whl files
-# needed for an offline install (minus llama-cpp-python which is fetched from
-# its Metal index at install time due to upstream CRC issues).
-build-wheels:
-	@if [ ! -d "$(SLP_FRAMEWORK_DIR)" ]; then \
-		echo "❌ slp_framework not found at $(SLP_FRAMEWORK_DIR)"; \
-		echo "   Set SLP_FRAMEWORK_DIR to the correct path"; \
-		exit 1; \
-	fi
-	@echo "📦 Building wheels from $(SLP_FRAMEWORK_DIR)..."
-	@mkdir -p dist/wheels-stage
-	@# Build the project wheel
-	cd "$(SLP_FRAMEWORK_DIR)" && pip install --quiet build && \
-		python -m build --wheel --outdir "$(CURDIR)/dist/wheels-stage/" --no-isolation
-	@# Generate pinned requirements and download all dependencies
-	@echo "📥 Downloading pinned dependencies..."
-	cd "$(SLP_FRAMEWORK_DIR)" && pip freeze --exclude-editable \
-		| grep -v -i 'pex\|build\|setuptools\|wheel\|pip\|cx.Freeze\|cx-Freeze\|llama.cpp.python' \
-		> "$(CURDIR)/dist/requirements-pinned.txt"
-	pip download \
-		--index-url https://pypi.org/simple/ \
-		--extra-index-url https://download.pytorch.org/whl \
-		--dest "$(CURDIR)/dist/wheels-stage/" \
-		-r "$(CURDIR)/dist/requirements-pinned.txt"
-	@echo "📦 Creating wheels tarball..."
-	@mkdir -p dist/wheels-output
-	cd "$(CURDIR)/dist" && mv wheels-stage wheels && \
-		tar -czf wheels-output/wheels.tar.gz wheels/ && \
-		mv wheels wheels-stage
-	@TARBALL_SIZE=$$(du -h "$(CURDIR)/dist/wheels-output/wheels.tar.gz" | cut -f1); \
-		WHEEL_COUNT=$$(ls "$(CURDIR)/dist/wheels-stage/" | wc -l | tr -d ' '); \
-		echo "✅ Built wheels.tar.gz ($$TARBALL_SIZE, $$WHEEL_COUNT wheels)"
-
-# Upload the wheels tarball to GCS
-upload-wheels: build-wheels
-	@echo "⬆️  Uploading wheels.tar.gz to GCS..."
-	gsutil cp "$(CURDIR)/dist/wheels-output/wheels.tar.gz" \
-		"$(SLP_GCS_BUCKET)/dist/darwin/$(SLP_VERSION)/wheels.tar.gz"
-	@echo "✅ Uploaded to $(SLP_GCS_BUCKET)/dist/darwin/$(SLP_VERSION)/wheels.tar.gz"
-
-# Clean wheels build artifacts
-clean-wheels:
-	@echo "🧹 Cleaning wheels build artifacts..."
-	rm -rf dist/wheels-stage dist/wheels-output dist/requirements-pinned.txt
 
 # End-to-end test: clean install, start, and run the full first-launch flow
 test: stop
@@ -159,62 +85,14 @@ clean-electron:
 # Stop the running SLP service
 stop:
 	@echo "🛑 Stopping SLP service..."
-	@if [ -f "$(HOME)/.smartloop/slp" ]; then \
-		$(HOME)/.smartloop/slp stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
+	@if [ -f "$(HOME)/.smartloop/venv/bin/slp-server" ]; then \
+		$(HOME)/.smartloop/venv/bin/slp-server stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
 	else \
-		echo "⚠️  SLP binary not found at ~/.smartloop/slp"; \
+		echo "⚠️  SLP binary not found at ~/.smartloop/venv/bin/slp-server"; \
 	fi
-
-# Download SLP pex binary to ~/.cache if not already cached, then copy to build/
-# Cache: ~/.cache/slp/<version>/<platform>/slp
-# Build: build/slp/slp/slp
-download-slp:
-	@if [ -f "$(SLP_BUILD_DIR)/slp" ] && [ "$$(shasum -a 256 $(SLP_BUILD_DIR)/slp 2>/dev/null | cut -d' ' -f1)" = "$(SLP_SHA256)" ]; then \
-		echo "✅ SLP binary $(SLP_VERSION) already in build dir (hash verified)"; \
-	elif [ -f "$(SLP_CACHE_DIR)/slp" ] && [ "$$(shasum -a 256 $(SLP_CACHE_DIR)/slp 2>/dev/null | cut -d' ' -f1)" = "$(SLP_SHA256)" ]; then \
-		echo "✅ SLP binary $(SLP_VERSION) found in cache (hash verified)"; \
-		mkdir -p $(SLP_BUILD_DIR); \
-		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
-		echo "✅ Copied SLP from cache to $(SLP_BUILD_DIR)"; \
-	else \
-		echo "⬇️  Downloading SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)..."; \
-		mkdir -p $(SLP_CACHE_DIR) $(SLP_BUILD_DIR); \
-		curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_VERSION)/slp-server" -o $(SLP_CACHE_DIR)/slp; \
-		chmod +x $(SLP_CACHE_DIR)/slp; \
-		ACTUAL_HASH=$$(shasum -a 256 $(SLP_CACHE_DIR)/slp | cut -d' ' -f1); \
-		if [ "$(SLP_SHA256)" != "" ] && [ "$$ACTUAL_HASH" != "$(SLP_SHA256)" ]; then \
-			echo "❌ Hash mismatch! Expected $(SLP_SHA256), got $$ACTUAL_HASH"; \
-			rm -f $(SLP_CACHE_DIR)/slp; \
-			exit 1; \
-		fi; \
-		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
-		echo "✅ SLP binary cached and copied to $(SLP_BUILD_DIR) (hash: $$ACTUAL_HASH)"; \
-	fi
-
-# Force re-download SLP binary (useful when updating version/hash)
-update-slp: stop
-	@echo "🔄 Force updating SLP binary..."
-	@rm -f $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp
-	@$(MAKE) download-slp
-
-# Download latest SLP binary and update the pinned hash in this Makefile
-update: stop
-	@echo "⬇️  Downloading latest SLP binary $(SLP_VERSION) for $(SLP_PLATFORM)..."
-	@rm -f $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp
-	@mkdir -p $(SLP_CACHE_DIR) $(SLP_BUILD_DIR)
-	@curl -fSL "$(SLP_GCS_BASE)/$(SLP_PLATFORM)/$(SLP_VERSION)/slp-server" -o $(SLP_CACHE_DIR)/slp
-	@chmod +x $(SLP_CACHE_DIR)/slp
-	@NEW_HASH=$$(shasum -a 256 $(SLP_CACHE_DIR)/slp | cut -d' ' -f1); \
-		if [ "$(SLP_PLATFORM)" = "darwin" ]; then \
-			sed -i "s/^SLP_SHA256_DARWIN=.*/SLP_SHA256_DARWIN=$$NEW_HASH/" Makefile; \
-		else \
-			sed -i "s/^SLP_SHA256_LINUX=.*/SLP_SHA256_LINUX=$$NEW_HASH/" Makefile; \
-		fi; \
-		cp $(SLP_CACHE_DIR)/slp $(SLP_BUILD_DIR)/slp; \
-		echo "✅ Updated SLP_SHA256 for $(SLP_PLATFORM) to $$NEW_HASH"
 
 # Build Electron app for current platform
-build-electron: clean-electron download-slp
+build-electron: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -223,7 +101,7 @@ build-electron: clean-electron download-slp
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron download-slp
+build-electron-linux: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -233,7 +111,7 @@ build-electron-linux: clean-electron download-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron download-slp
+build-electron-windows: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -243,7 +121,7 @@ build-electron-windows: clean-electron download-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron download-slp
+build-electron-mac: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -253,7 +131,7 @@ build-electron-mac: clean-electron download-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Run Electron app in development mode
-run-electron-dev: download-slp
+run-electron-dev:
 	@echo "🚀 Starting Electron app in development mode..."
 	npm run electron-dev
 
@@ -261,7 +139,7 @@ run-electron-dev: download-slp
 electron-dev: run-electron-dev
 
 # Quick rebuild without cleaning (faster for iterating)
-rebuild-electron: download-slp
+rebuild-electron:
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "📱 Packaging Electron app..."
