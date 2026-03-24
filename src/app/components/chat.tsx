@@ -528,6 +528,15 @@ export default function Chat(props: {
       // Get the selected model from storage (set in Settings), fallback to default
       const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
 
+      // Get temperature from SQLite settings, fallback to default
+      let temperature = 0.3;
+      try {
+        const savedTemp = await storageService.getSetting('default_temperature');
+        if (savedTemp !== null && savedTemp !== undefined) {
+          temperature = savedTemp;
+        }
+      } catch {}
+
       // Create streaming chat completion
       // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
       // Use body override to include custom fields (session_id, project_id)
@@ -537,6 +546,7 @@ export default function Chat(props: {
         messages: [messageObject],
         stream: true,
         session_id: conversationId,
+        temperature,
       };
       if (projectId) {
         requestBody.project_id = projectId;
@@ -547,6 +557,7 @@ export default function Chat(props: {
           model: selectedModel,
           messages: [messageObject],
           stream: true,
+          temperature,
         }, {
           body: requestBody,
         }) as any;

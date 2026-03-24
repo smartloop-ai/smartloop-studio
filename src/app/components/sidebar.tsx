@@ -102,52 +102,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             if (userData) setAuthUser(userData);
           }
 
-          // Ensure a developer token exists — check remote first, create if needed
-          try {
-            const { API_ENDPOINT } = await import('@/app/constants');
-            const tokenName = `Smartloop Studio:${crypto.randomUUID().slice(0, 8)}`;
-
-            // Check if user already has a Smartloop Studio token
-            const listRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`,
-              },
-            });
-
-            if (listRes.ok) {
-              const tokens = await listRes.json();
-              const existing = Array.isArray(tokens)
-                ? tokens.find((t: any) => t.name?.startsWith('Smartloop Studio'))
-                : null;
-
-              if (existing?.token) {
-                await storageService.setItem('dev_token', existing.token);
-                console.log('[Sidebar] Existing developer token restored');
-              } else {
-                // Create a new one with a unique name
-                const createRes = await fetch(`${API_ENDPOINT}/users/me/tokens`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                  },
-                  body: JSON.stringify({ name: tokenName }),
-                });
-                if (createRes.ok) {
-                  const result = await createRes.json();
-                  if (result?.token) {
-                    await storageService.setItem('dev_token', result.token);
-                    console.log('[Sidebar] Developer token created and stored');
-                  }
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('[Sidebar] Failed to setup developer token:', err);
-          }
-
           window.dispatchEvent(new CustomEvent('userUpdated', { detail: validation.user }));
         }
         setIsLoggingIn(false);
@@ -883,7 +837,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   ? (chat.lastMessage.length > 50
                     ? chat.lastMessage.substring(0, 50) + '...'
                     : chat.lastMessage)
-                  : 'start a conversation'}
+                  : (localProjects.find((p: any) => p.id === chat.project_id)?.name || 'start a conversation')}
               </span>
             </Box>
           ))
