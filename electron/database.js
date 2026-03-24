@@ -71,6 +71,12 @@ function openDatabase() {
     CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memory_usage_created ON memory_usage(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tps_history_created ON tps_history(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Seed install_status rows (4 steps) if not present
@@ -375,6 +381,45 @@ function resetInstallStatus() {
   d.prepare('UPDATE install_status SET completed = 0, completed_at = NULL').run();
 }
 
+// --- Settings (key-value) ---
+
+function getSetting(key) {
+  const d = openDatabase();
+  const row = d.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return row.value;
+  }
+}
+
+function setSetting(key, value) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+  `).run(key, JSON.stringify(value), now);
+}
+
+function getAllSettings() {
+  const d = openDatabase();
+  const rows = d.prepare('SELECT key, value FROM settings').all();
+  const result = {};
+  for (const row of rows) {
+    try {
+      result[row.key] = JSON.parse(row.value);
+    } catch {
+      result[row.key] = row.value;
+    }
+  }
+  return result;
+}
+
 module.exports = {
   openDatabase,
   closeDatabase,
@@ -410,4 +455,8 @@ module.exports = {
   getInstallStatus,
   isFullyInstalled,
   resetInstallStatus,
+  // Settings
+  getSetting,
+  setSetting,
+  getAllSettings,
 };

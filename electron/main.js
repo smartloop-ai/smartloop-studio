@@ -120,6 +120,11 @@ ipcMain.handle('db-get-memory-usage', (event, limit) => database.getMemoryUsage(
 ipcMain.handle('db-add-tps-entry', (event, tps) => database.addTpsEntry(tps));
 ipcMain.handle('db-get-tps-history', (event, limit) => database.getTpsHistory(limit));
 
+// Settings
+ipcMain.handle('db-get-setting', (event, key) => database.getSetting(key));
+ipcMain.handle('db-set-setting', (event, key, value) => database.setSetting(key, value));
+ipcMain.handle('db-get-all-settings', () => database.getAllSettings());
+
 // --- Local SLP service helpers ---
 
 
@@ -279,6 +284,14 @@ ipcMain.handle('slp-service-stop', async () => {
   return { success: true };
 });
 
+ipcMain.handle('slp-service-restart', async () => {
+  slpService.stopService();
+  await new Promise(r => setTimeout(r, 1000));
+  const result = await slpService.startService();
+  refreshTray();
+  return { success: result, port: slpService.getPort() };
+});
+
 ipcMain.handle('slp-service-uninstall', async () => {
   slpService.stopService();
   uninstallSlpService();
@@ -434,6 +447,7 @@ function updateSplashProgress(data) {
   }
 
   if (data.status === 'preparing') {
+    const msg = data.message || 'Starting service. This might take a while...';
     splashWindow.webContents.executeJavaScript(`
       document.getElementById('status-text').textContent = 'Starting service...';
       document.getElementById('progress-fill').style.width = '0%';
@@ -976,7 +990,7 @@ if (!gotTheLock) {
         try {
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.webContents.executeJavaScript(`
-              document.querySelector('.status-text').textContent = 'Starting service, this will take a while as we prepare it for first use...';
+              document.querySelector('.status-text').textContent = 'Heating things up...';
             `);
           }
           const serviceStarted = await slpService.startService();
@@ -1057,7 +1071,7 @@ if (!gotTheLock) {
           });
 
           // Step 2: Start the service
-          updateSplashProgress({ status: 'preparing', message: 'Starting service...' });
+          updateSplashProgress({ status: 'preparing', message: 'Starting service. This might take a while...' });
 
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
