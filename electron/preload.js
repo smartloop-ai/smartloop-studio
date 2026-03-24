@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SLP service lifecycle
   slpServiceStart: () => ipcRenderer.invoke('slp-service-start'),
   slpServiceStop: () => ipcRenderer.invoke('slp-service-stop'),
+  slpServiceRestart: () => ipcRenderer.invoke('slp-service-restart'),
   slpServiceStatus: () => ipcRenderer.invoke('slp-service-status'),
   slpServiceUninstall: () => ipcRenderer.invoke('slp-service-uninstall'),
   onSlpServiceReady: (callback) => {
@@ -118,6 +119,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // TPS history
     addTpsEntry: (tps) => ipcRenderer.invoke('db-add-tps-entry', tps),
     getTpsHistory: (limit) => ipcRenderer.invoke('db-get-tps-history', limit),
+    // Settings
+    getSetting: (key) => ipcRenderer.invoke('db-get-setting', key),
+    setSetting: (key, value) => ipcRenderer.invoke('db-set-setting', key, value),
+    getAllSettings: () => ipcRenderer.invoke('db-get-all-settings'),
   },
   // Check if running in Electron
   isElectron: true,

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, TextField, IconButton } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
+import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
@@ -10,6 +9,7 @@ import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DnsIcon from '@mui/icons-material/Dns';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
@@ -146,10 +146,37 @@ export default function SettingsPage() {
     const [localModels, setLocalModels] = useState<any[]>([]);
     const [remoteModels, setRemoteModels] = useState<any[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
-    const [isInitializingModel, setIsInitializingModel] = useState(false);
-    const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
-    const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
-    const [modelSearch, setModelSearch] = useState('');
+    const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
+    const [isRestarting, setIsRestarting] = useState(false);
+
+    // Fetch server health info
+    const fetchServerHealth = useCallback(async () => {
+        try {
+            const api = (window as any).electronAPI;
+            if (api?.getLocalApiUrl) {
+                const baseUrl = await api.getLocalApiUrl();
+                if (baseUrl) {
+                    try {
+                        const res = await fetch(`${baseUrl}/health`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            const health = { url: baseUrl, status: 'running', details: data };
+                            setServerHealth(health);
+                            await storageService.setSetting('service_health', health);
+                        } else {
+                            setServerHealth({ url: baseUrl, status: 'error', error: `HTTP ${res.status}` });
+                        }
+                    } catch (err: any) {
+                        setServerHealth({ url: baseUrl, status: 'unreachable', error: err.message });
+                    }
+                } else {
+                    setServerHealth(null);
+                }
+            }
+        } catch {
+            setServerHealth(null);
+        }
+    }, []);
 
     // Fetch local models from framework /v1/models
     const fetchLocalModels = useCallback(async () => {
@@ -172,10 +199,7 @@ export default function SettingsPage() {
     }, []);
 
     // Fetch remote models from API if logged in
-    const [isRefreshingModels, setIsRefreshingModels] = useState(false);
-
-    const fetchRemoteModels = useCallback(async (showSpinner = false) => {
-        if (showSpinner) setIsRefreshingModels(true);
+    const fetchRemoteModels = useCallback(async () => {
         try {
             const token = await storageService.getItem('token');
             if (token) {
@@ -216,15 +240,52 @@ export default function SettingsPage() {
                     }
                 }
             } catch {}
-        } finally {
-            if (showSpinner) setIsRefreshingModels(false);
-        }
+        } finally {}
     }, []);
+
+    // Restart the SLP service and refresh all panels
+    const handleRestartService = useCallback(async () => {
+        const api = (window as any).electronAPI;
+        if (!api?.slpServiceStop && !api?.slpServiceRestart) return;
+
+        setIsRestarting(true);
+        setServerHealth(null);
+        try {
+            // Use dedicated restart if available, otherwise stop + start
+            if (api.slpServiceRestart) {
+                await api.slpServiceRestart();
+            } else {
+                await api.slpServiceStop();
+                await new Promise(r => setTimeout(r, 1500));
+                await api.slpServiceStart();
+            }
+            // Re-fetch everything after restart
+            await fetchServerHealth();
+            await fetchLocalModels();
+            // Reload SLP config
+            if (api?.getSlpConfig) {
+                const cfg = await api.getSlpConfig();
+                setSlpConfig(cfg);
+            }
+            if (api?.getSystemInfo) {
+                try {
+                    const info = await api.getSystemInfo();
+                    setSystemInfo(info);
+                } catch {}
+            }
+        } catch (err: any) {
+            console.error('Failed to restart service:', err);
+            setServerHealth({ url: '', status: 'error', error: err?.message || 'Failed to restart service' });
+        } finally {
+            setIsRestarting(false);
+        }
+    }, [fetchServerHealth, fetchLocalModels]);
 
     useEffect(() => {
         fetchLocalModels();
         fetchRemoteModels();
-    }, [user, fetchLocalModels, fetchRemoteModels]);
+        fetchServerHealth();
+    }, [user, fetchLocalModels, fetchRemoteModels, fetchServerHealth]);
 
     // Set selected model: load from storage first, fallback to local config
     // Validates stored model still exists in SLP config to avoid showing stale/deleted models
@@ -246,142 +307,12 @@ export default function SettingsPage() {
                 if (activeModel?.model_name) {
                     setSelectedModel(activeModel.model_name);
                     await storageService.setItem('selected_model', activeModel.model_name);
+                    await storageService.setSetting('selected_model', activeModel.model_name);
                 }
             }
         };
         loadSelectedModel();
     }, [slpConfig]);
-
-    // Call /v1/init with SSE progress tracking
-    const callInitWithProgress = useCallback(async (modelName: string): Promise<boolean> => {
-        const api = (window as any).electronAPI;
-        if (!api?.getLocalApiUrl) return false;
-        const baseUrl = await api.getLocalApiUrl();
-        if (!baseUrl) return false;
-
-        const token = await storageService.getItem('token');
-        const devToken = await storageService.getItem('dev_token');
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        setInitProgress({ percent: 0, status: 'Initializing...' });
-        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: true, model: modelName } }));
-
-        const body: Record<string, string> = { model_name: modelName };
-        if (devToken) body.developer_token = devToken;
-
-        return new Promise<boolean>((resolve) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${baseUrl}/v1/init`);
-            // Allow progressive reading of response text
-            xhr.responseType = 'text';
-            for (const [key, val] of Object.entries(headers)) {
-                xhr.setRequestHeader(key, val);
-            }
-
-            let lastProcessed = 0;
-
-            const processChunk = () => {
-                if (!xhr.responseText) return;
-                const text = xhr.responseText.substring(lastProcessed);
-                if (!text) return;
-                lastProcessed = xhr.responseText.length;
-                const lines = text.split('\n');
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-                    console.log('[Init SSE]', trimmed);
-                    const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
-                    try {
-                        const event = JSON.parse(payload);
-                        const status = event.status || event.message || event.state;
-
-                        // Calculate percent from downloaded/total bytes
-                        if (event.downloaded !== undefined && event.total > 0) {
-                            const pct = Math.round((event.downloaded / event.total) * 100);
-                            const downloadedMB = (event.downloaded / (1024 * 1024)).toFixed(1);
-                            const totalMB = (event.total / (1024 * 1024)).toFixed(1);
-                            setInitProgress({ percent: pct, status: `Downloading... ${downloadedMB} / ${totalMB} MB` });
-                        } else {
-                            const pct = event.progress ?? event.percent ?? event.percentage;
-                            if (pct !== undefined) {
-                                setInitProgress({ percent: Number(pct), status: status || 'Downloading...' });
-                            } else if (status) {
-                                setInitProgress(prev => ({ percent: prev?.percent || 0, status }));
-                            }
-                        }
-
-                        if (status === 'complete' || status === 'ready' || status === 'done') {
-                            setInitProgress({ percent: 100, status: 'Ready' });
-                        }
-                    } catch {
-                        // Skip non-JSON lines like "event: progress"
-                    }
-                }
-            };
-
-            xhr.onprogress = processChunk;
-
-            xhr.onreadystatechange = () => {
-                // LOADING state (3) = receiving data progressively
-                if (xhr.readyState === 3) {
-                    processChunk();
-                }
-            };
-
-            xhr.onload = () => {
-                // Process any remaining data
-                processChunk();
-                setInitProgress(null);
-                window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: false, model: modelName } }));
-                resolve(xhr.status >= 200 && xhr.status < 300);
-            };
-
-            xhr.onerror = () => {
-                console.error('Error in init request');
-                setInitProgress(null);
-                window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: false, model: modelName } }));
-                resolve(false);
-            };
-
-            xhr.send(JSON.stringify(body));
-        })
-    }, []);
-
-    // Select an already-downloaded model
-    const handleModelSelect = useCallback(async (modelName: string) => {
-        if (modelName === selectedModel) return;
-        setSelectedModel(modelName);
-        // Persist selected model so chat uses it
-        await storageService.setItem('selected_model', modelName);
-        setIsInitializingModel(true);
-        try {
-            await callInitWithProgress(modelName);
-        } catch (err) {
-            console.error('Error initializing model:', err);
-        } finally {
-            setIsInitializingModel(false);
-        }
-    }, [selectedModel, callInitWithProgress]);
-
-    // Download a model that isn't available locally
-    const handleDownloadModel = useCallback(async (modelName: string) => {
-        setDownloadingModel(modelName);
-        try {
-            const success = await callInitWithProgress(modelName);
-            if (success) {
-                // Wait briefly for server to register the new model
-                await new Promise(r => setTimeout(r, 1000));
-                await fetchLocalModels();
-                setSelectedModel(modelName);
-                await storageService.setItem('selected_model', modelName);
-            }
-        } catch (err) {
-            console.error('Error downloading model:', err);
-        } finally {
-            setDownloadingModel(null);
-        }
-    }, [callInitWithProgress, fetchLocalModels]);
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -415,26 +346,41 @@ export default function SettingsPage() {
         load();
     }, []);
 
-    // Load settings from user object
+    // Load settings from SQLite first, then fall back to user object
     useEffect(() => {
-        if (user) {
-            setSettings({
-                default_memory: user.default_memory !== undefined ? user.default_memory : DEFAULT_SETTINGS.default_memory,
-                default_temperature: user.default_temperature !== undefined ? user.default_temperature : DEFAULT_SETTINGS.default_temperature,
-            });
-        }
+        const loadSettings = async () => {
+            const saved = await storageService.getAllSettings();
+            const temp = saved.default_temperature ?? user?.default_temperature ?? DEFAULT_SETTINGS.default_temperature;
+            const memory = saved.default_memory ?? user?.default_memory ?? DEFAULT_SETTINGS.default_memory;
+            setSettings({ default_temperature: temp, default_memory: memory });
+
+            // Restore selected model from SQLite settings
+            if (saved.selected_model && !selectedModel) {
+                setSelectedModel(saved.selected_model);
+            }
+            // Restore cached service health
+            if (saved.service_health && !serverHealth) {
+                setServerHealth(saved.service_health);
+            }
+        };
+        loadSettings();
     }, [user]);
 
-    // Auto-save function
+    // Auto-save function — persists to SQLite and remote API
     const autoSave = async (newSettings: GlobalSettings) => {
         setIsSaving(true);
         try {
+            // Persist to SQLite
+            await storageService.setSetting('default_temperature', newSettings.default_temperature);
+            await storageService.setSetting('default_memory', newSettings.default_memory);
+
+            // Also sync to remote API
             const updatedUser = await userService.updateSettings(newSettings);
             if (updatedUser) {
                 setUser(updatedUser);
-                setSaveMessage('Settings saved');
-                setTimeout(() => setSaveMessage(''), 2000);
             }
+            setSaveMessage('Settings saved');
+            setTimeout(() => setSaveMessage(''), 2000);
         } catch (error) {
             console.error('Failed to save settings:', error);
             setSaveMessage('Failed to save');
@@ -525,8 +471,10 @@ export default function SettingsPage() {
 
                         // Show specs for the selected model, not just the is_active one
                         const displayModel = slpConfig?.workspace?.models?.find((m: any) => m.model_name === selectedModel) || activeModel;
-                        const quantize = displayModel.config?.quantize?.toUpperCase() || '—';
-                        const ctxSize = displayModel.config?.ctx_size;
+                        // Use health endpoint quantization (reflects what's actually running)
+                        const healthQuantize = serverHealth?.details?.quantization;
+                        const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel.config?.quantize?.toUpperCase()) || '—';
+                        const ctxSize = serverHealth?.details?.ctx_size ?? displayModel.config?.ctx_size;
                         const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
                         const ramTotal = systemInfo?.totalMemGb;
 
@@ -565,12 +513,34 @@ export default function SettingsPage() {
                             >
                                 {/* Active model + specs */}
                                 <Box sx={{ p: { xs: 2.5, md: 3 }, pb: 0 }}>
-                                    <h2 style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '-0.3px', color: 'white', marginBottom: '12px' }}>
-                                        {selectedModel || activeModel.model_name}
-                                        {isInitializingModel && (
-                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', ml: 1.5, verticalAlign: 'middle' }} />
-                                        )}
-                                    </h2>
+                                    <Box sx={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 1,
+                                        px: 2,
+                                        py: 1,
+                                        mb: 1.5,
+                                        borderRadius: '10px',
+                                        bgcolor: 'var(--sl-brand-alpha-10)',
+                                        border: '1px solid var(--sl-brand-alpha-25)',
+                                    }}>
+                                        <Box sx={{
+                                            width: 8,
+                                            height: 8,
+                                            borderRadius: '50%',
+                                            bgcolor: 'var(--sl-brand-primary)',
+                                            boxShadow: '0 0 8px var(--sl-brand-alpha-40)',
+                                        }} />
+                                        <span style={{
+                                            fontSize: '15px',
+                                            fontWeight: 700,
+                                            fontFamily: 'monospace',
+                                            letterSpacing: '-0.3px',
+                                            color: 'var(--sl-brand-primary)',
+                                        }}>
+                                            {selectedModel || activeModel.model_name}
+                                        </span>
+                                    </Box>
 
                                     {/* Specs Row */}
                                     <Box className="flex flex-wrap gap-2 mb-3">
@@ -649,187 +619,169 @@ export default function SettingsPage() {
                         );
                     })()}
 
-                    {/* Available Models */}
-                    {isElectron && (() => {
-                        const localModelNames = new Set(localModels.map((m: any) => m.name || m.id || m.model).filter(Boolean));
-                        // Also include all models from SLP config (downloaded but not necessarily loaded)
-                        (slpConfig?.workspace?.models || []).forEach((m: any) => {
-                            if (m.model_name) localModelNames.add(m.model_name);
-                        });
-                        const isPaidUser = user?.is_paid || user?.is_premium;
-
-                        // Collect all unique models from remote that aren't already the active one
-                        const availableModels = remoteModels
-                            .map((m: any) => ({
-                                name: m.name || m.id || m.model,
-                                description: m.description || '',
-                                accessLevel: m.access_level || 'free',
-                                isLocal: localModelNames.has(m.name || m.id || m.model),
-                            }))
-                            .filter(m => m.name && (m.accessLevel === 'free' || isPaidUser));
-
-                        if (availableModels.length === 0) {
-                            return (
-                                <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                                    <Box className="flex items-center gap-2 mb-3">
-                                        <DownloadIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                        <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                    {/* Service Status */}
+                    {isElectron && (
+                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                            <Box className="flex items-center justify-between mb-4">
+                                <Box className="flex items-center gap-2">
+                                    <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Service Status</h2>
+                                    {/* Status badge next to title */}
+                                    <Box sx={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 0.75,
+                                        px: 1.5,
+                                        py: 0.5,
+                                        borderRadius: '20px',
+                                        bgcolor: isRestarting ? 'rgba(245, 158, 11, 0.1)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
+                                        border: `1px solid ${isRestarting ? 'rgba(245, 158, 11, 0.2)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)'}`,
+                                    }}>
+                                        {isRestarting ? (
+                                            <CircularProgress size={8} sx={{ color: '#f59e0b' }} />
+                                        ) : (
+                                            <Box sx={{
+                                                width: 6,
+                                                height: 6,
+                                                borderRadius: '50%',
+                                                bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
+                                                ...(serverHealth?.status === 'running' && {
+                                                    boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
+                                                }),
+                                            }} />
+                                        )}
+                                        <span style={{
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            color: isRestarting ? '#f59e0b' : serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
+                                        }}>
+                                            {isRestarting ? 'Restarting...' : serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
+                                        </span>
                                     </Box>
-                                    <p className="text-sm text-gray-400">
-                                        Log in to browse and download available models.
-                                    </p>
                                 </Box>
-                            );
-                        }
-
-                        return (
-                            <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                                <Box className="flex items-center justify-between mb-4">
-                                    <Box className="flex items-center gap-2">
-                                        <DownloadIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                        <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
-                                    </Box>
-                                    <IconButton
-                                        onClick={() => fetchRemoteModels(true)}
-                                        disabled={isRefreshingModels}
-                                        size="small"
-                                        sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
-                                    >
-                                        <RefreshIcon sx={{ fontSize: 20, animation: isRefreshingModels ? 'spin 1s linear infinite' : 'none', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
-                                    </IconButton>
-                                </Box>
-
-                                {/* Search */}
-                                <TextField
-                                    placeholder="Search models..."
-                                    variant="outlined"
+                                <IconButton
+                                    onClick={handleRestartService}
+                                    disabled={isRestarting}
                                     size="small"
-                                    fullWidth
-                                    onChange={(e) => {
-                                        const el = e.target.closest('.model-list-container');
-                                        if (el) el.setAttribute('data-filter', e.target.value.toLowerCase());
-                                        // Force re-render via state isn't needed — use CSS/DOM filter
-                                        // Simple approach: just use state
-                                        setModelSearch(e.target.value);
-                                    }}
-                                    sx={{
-                                        mb: 2,
-                                        '& .MuiOutlinedInput-root': {
-                                            bgcolor: 'var(--sl-black-alpha-30)',
-                                            borderRadius: '8px',
-                                            fontSize: '13px',
-                                            color: 'white',
-                                            '& fieldset': { borderColor: 'var(--sl-white-alpha-8)' },
-                                            '&:hover fieldset': { borderColor: 'var(--sl-white-alpha-15)' },
-                                            '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-alpha-40)' },
-                                        },
-                                        '& .MuiInputBase-input::placeholder': { color: 'var(--sl-white-alpha-30)', opacity: 1 },
-                                    }}
-                                />
-
-                                {/* Model list */}
-                                <Box className="flex flex-col gap-1.5">
-                                    {availableModels
-                                        .filter(m => !modelSearch || m.name.toLowerCase().includes(modelSearch.toLowerCase()) || m.description.toLowerCase().includes(modelSearch.toLowerCase()))
-                                        .map((model) => {
-                                            const isActive = selectedModel === model.name;
-                                            const isDownloading = downloadingModel === model.name;
-                                            return (
-                                                <Box
-                                                    key={model.name}
-                                                    sx={{
-                                                        p: 1.5,
-                                                        borderRadius: '8px',
-                                                        border: isActive ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-white-alpha-5)',
-                                                        bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-2)',
-                                                        transition: 'all 0.15s ease',
-                                                        '&:hover': { bgcolor: 'var(--sl-white-alpha-5)' },
-                                                    }}
-                                                >
-                                                    {/* Top row: name + badges + button aligned horizontally */}
-                                                    <Box className="flex items-center justify-between gap-3">
-                                                        <Box className="flex items-center gap-2" sx={{ minWidth: 0 }}>
-                                                            <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace', color: isActive ? 'white' : 'var(--sl-white-alpha-80)' }}>
-                                                                {model.name}
-                                                            </span>
-                                                            {isActive && (
-                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--sl-brand-primary)', padding: '1px 6px', borderRadius: '4px', background: 'var(--sl-brand-alpha-15)' }}>ACTIVE</span>
-                                                            )}
-                                                            {!isActive && model.isLocal && (
-                                                                <span style={{ fontSize: '9px', fontWeight: 600, color: 'var(--sl-text-muted)', padding: '1px 6px', borderRadius: '4px', background: 'var(--sl-white-alpha-5)' }}>DOWNLOADED</span>
-                                                            )}
-                                                        </Box>
-                                                        {!isActive && (
-                                                            model.isLocal ? (
-                                                                <button
-                                                                    onClick={() => handleModelSelect(model.name)}
-                                                                    disabled={isInitializingModel || !!downloadingModel}
-                                                                    className="px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
-                                                                    style={{
-                                                                        color: 'var(--sl-brand-primary)',
-                                                                        border: '1px solid var(--sl-brand-alpha-30)',
-                                                                        background: 'var(--sl-brand-alpha-10)',
-                                                                    }}
-                                                                >
-                                                                    Use
-                                                                </button>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={() => handleDownloadModel(model.name)}
-                                                                    disabled={isInitializingModel || !!downloadingModel}
-                                                                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
-                                                                    style={{
-                                                                        color: isDownloading ? 'var(--sl-white-alpha-40)' : 'white',
-                                                                        border: '1px solid var(--sl-white-alpha-10)',
-                                                                        background: 'var(--sl-white-alpha-5)',
-                                                                    }}
-                                                                >
-                                                                    {isDownloading ? (
-                                                                        <CircularProgress size={10} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                                                    ) : (
-                                                                        <DownloadIcon sx={{ fontSize: 12 }} />
-                                                                    )}
-                                                                    {isDownloading ? 'Downloading' : 'Download'}
-                                                                </button>
-                                                            )
-                                                        )}
-                                                    </Box>
-                                                    {/* Description */}
-                                                    {model.description && (
-                                                        <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', display: 'block', marginTop: '4px' }}>
-                                                            {model.description.length > 100 ? model.description.substring(0, 100) + '...' : model.description}
-                                                        </span>
-                                                    )}
-                                                    {/* Download progress */}
-                                                    {isDownloading && initProgress && (
-                                                        <Box sx={{ mt: 1.5 }}>
-                                                            <Box sx={{
-                                                                width: '100%',
-                                                                height: 6,
-                                                                bgcolor: 'var(--sl-bg-surface-2)',
-                                                                borderRadius: '3px',
-                                                                overflow: 'hidden',
-                                                            }}>
-                                                                <Box sx={{
-                                                                    height: '100%',
-                                                                    width: `${initProgress.percent}%`,
-                                                                    bgcolor: 'var(--sl-brand-primary)',
-                                                                    borderRadius: '3px',
-                                                                    transition: 'width 0.3s ease',
-                                                                }} />
-                                                            </Box>
-                                                            <span style={{ fontSize: '11px', color: 'var(--sl-text-muted)', display: 'block', marginTop: '6px' }}>
-                                                                {initProgress.status}{initProgress.percent > 0 ? ` (${Math.round(initProgress.percent)}%)` : ''}
-                                                            </span>
-                                                        </Box>
-                                                    )}
-                                                </Box>
-                                            );
-                                        })}
-                                </Box>
+                                    title="Restart service"
+                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                >
+                                    {isRestarting
+                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        : <RefreshIcon sx={{ fontSize: 20 }} />
+                                    }
+                                </IconButton>
                             </Box>
-                        );
-                    })()}
+
+                            {/* Table */}
+                            <Box
+                                component="table"
+                                sx={{
+                                    width: '100%',
+                                    borderCollapse: 'separate',
+                                    borderSpacing: 0,
+                                    borderRadius: '10px',
+                                    overflow: 'hidden',
+                                    border: '1px solid var(--sl-white-alpha-8)',
+                                    '& th, & td': {
+                                        px: 2,
+                                        py: 1.5,
+                                        textAlign: 'left',
+                                        borderBottom: '1px solid var(--sl-white-alpha-5)',
+                                    },
+                                    '& tr:last-child td': {
+                                        borderBottom: 'none',
+                                    },
+                                    '& tr:hover td': {
+                                        bgcolor: 'var(--sl-white-alpha-3)',
+                                    },
+                                }}
+                            >
+                                <tbody>
+                                    <tr>
+                                        <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                            Server URL
+                                        </Box>
+                                        <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                            {serverHealth?.url || 'Not available'}
+                                        </Box>
+                                    </tr>
+                                    {/* Dynamic rows from health endpoint */}
+                                    {serverHealth?.details && Object.entries(serverHealth.details)
+                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name'].includes(key))
+                                        .map(([key, value]) => {
+                                            // Format value for display
+                                            let displayValue: React.ReactNode;
+                                            const isMemoryPercent = key.toLowerCase().includes('memory') && typeof value === 'number' && value >= 0 && value <= 100;
+                                            const isSizeBytes = key.toLowerCase().includes('size') && typeof value === 'number' && value > 1024 * 1024;
+
+                                            if (typeof value === 'boolean') {
+                                                displayValue = value ? 'Yes' : 'No';
+                                            } else if (isMemoryPercent) {
+                                                displayValue = (
+                                                    <Box className="flex items-center gap-2" sx={{ width: '100%' }}>
+                                                        <Box sx={{
+                                                            flex: 1,
+                                                            height: 8,
+                                                            bgcolor: 'var(--sl-white-alpha-5)',
+                                                            borderRadius: '2px',
+                                                            overflow: 'hidden',
+                                                            minWidth: 80,
+                                                        }}>
+                                                            <Box sx={{
+                                                                height: '100%',
+                                                                width: `${value}%`,
+                                                                bgcolor: value > 90 ? 'var(--sl-status-error)' : value > 70 ? '#f59e0b' : 'var(--sl-brand-primary)',
+                                                                borderRadius: '2px',
+                                                                transition: 'width 0.3s ease',
+                                                            }} />
+                                                        </Box>
+                                                        <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, minWidth: 36 }}>{value}%</span>
+                                                    </Box>
+                                                );
+                                            } else if (isSizeBytes) {
+                                                displayValue = `${(value as number / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                                            } else if (typeof value === 'object') {
+                                                displayValue = JSON.stringify(value);
+                                            } else if (String(value) === 'true') {
+                                                displayValue = 'Yes';
+                                            } else if (String(value) === 'false') {
+                                                displayValue = 'No';
+                                            } else {
+                                                displayValue = String(value);
+                                            }
+
+                                            return (
+                                                <tr key={key}>
+                                                    <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, textTransform: 'capitalize' }}>
+                                                        {key.replace(/_/g, ' ')}
+                                                    </Box>
+                                                    <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                        {displayValue}
+                                                    </Box>
+                                                </tr>
+                                            );
+                                        })
+                                    }
+                                </tbody>
+                            </Box>
+
+                            {/* Error message if any */}
+                            {serverHealth?.error && (
+                                <Box sx={{
+                                    mt: 2,
+                                    p: 2,
+                                    bgcolor: 'var(--sl-danger-alpha-10)',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--sl-danger-alpha-20)',
+                                }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--sl-status-error)' }}>
+                                        {serverHealth.error}
+                                    </span>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
