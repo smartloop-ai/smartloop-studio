@@ -5,8 +5,6 @@ const https = require('https');
 const { spawn } = require('child_process');
 const database = require('./database');
 
-const crypto = require('crypto');
-
 const VERSION = '1.0.1';
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
@@ -14,23 +12,12 @@ const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
 // ── GCS bucket for pre-built artifacts ──────────────────────────────────────
 const GCS_BUCKET = 'https://storage.googleapis.com/smartloop-gcp-us-east-releases';
 
-// ── Linux: single pex binary ────────────────────────────────────────────────
-const LINUX_PEX_SHA256 = '106a2d569d816a9fb516276748c158b3298d44fb3f613f2e56d580ca69453017';
-
-// ── macOS: python-build-standalone + wheels installed into a local venv ──────
+// ── python-build-standalone + wheels installed into a local venv ─────────────
 const PYTHON_VERSION = '3.11.15';
 const PYTHON_RELEASE = '20260320';
 
-function sha256File(filePath) {
-  const data = fs.readFileSync(filePath);
-  return crypto.createHash('sha256').update(data).digest('hex');
-}
-
 function getInstalledBinaryPath() {
-  if (process.platform === 'darwin') {
-    return path.join(INSTALL_DIR, 'venv', 'bin', 'slp-server');
-  }
-  return path.join(INSTALL_DIR, 'slp');
+  return path.join(INSTALL_DIR, 'venv', 'bin', 'slp-server');
 }
 
 function needsInstall() {
@@ -136,15 +123,20 @@ function downloadFile(url, destPath, onProgress, maxRedirects = 5) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// macOS install: download Python + wheels, create venv, pip install
+// Install: download Python + wheels, create venv, pip install
+// Same flow on macOS and Linux.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build the python-build-standalone download URL for the current arch.
+ * Build the python-build-standalone download URL for the current platform/arch.
  */
 function getPythonUrl() {
   const arch = os.arch() === 'arm64' ? 'aarch64' : 'x86_64';
-  const filename = `cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE}-${arch}-apple-darwin-install_only.tar.gz`;
+  if (process.platform === 'darwin') {
+    const filename = `cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE}-${arch}-apple-darwin-install_only.tar.gz`;
+    return `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${filename}`;
+  }
+  const filename = `cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE}-${arch}-unknown-linux-gnu-install_only.tar.gz`;
   return `https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${filename}`;
 }
 
@@ -153,10 +145,11 @@ function getPythonUrl() {
  * Expected layout inside the tar: wheels/*.whl
  */
 function getWheelsUrl() {
-  return `${GCS_BUCKET}/dist/darwin/${VERSION}/wheels.tar.gz`;
+  const platform = process.platform === 'darwin' ? 'darwin' : 'linux';
+  return `${GCS_BUCKET}/dist/${platform}/${VERSION}/wheels.tar.gz`;
 }
 
-async function installDarwin(onProgress) {
+async function installService(onProgress) {
   const pythonDir = path.join(INSTALL_DIR, 'python');
   const wheelsDir = path.join(INSTALL_DIR, 'wheels');
   const venvDir = path.join(INSTALL_DIR, 'venv');
@@ -168,6 +161,15 @@ async function installDarwin(onProgress) {
   for (const dir of [pythonDir, wheelsDir, venvDir, binDir]) {
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // Remove legacy artifacts from older install methods (pex, PyInstaller)
+  for (const legacy of ['_internal', 'slp']) {
+    const legacyPath = path.join(INSTALL_DIR, legacy);
+    if (fs.existsSync(legacyPath)) {
+      console.log('[SLP Setup] Removing legacy artifact:', legacy);
+      fs.rmSync(legacyPath, { recursive: true, force: true });
     }
   }
 
@@ -228,12 +230,15 @@ async function installDarwin(onProgress) {
     console.log('[SLP Setup] pip upgrade skipped');
   }
 
-  // Install all wheels (use pypi + extra metal index as fallback for missing/corrupt local wheels)
+  // Install all wheels
+  const extraIndexArgs = process.platform === 'darwin'
+    ? ['--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/metal']
+    : [];
   const wheelFiles = fs.readdirSync(wheelsDir).filter(f => f.endsWith('.whl')).map(f => path.join(wheelsDir, f));
   await runAsync(pip, [
     'install',
     '--index-url', 'https://pypi.org/simple/',
-    '--extra-index-url', 'https://abetlen.github.io/llama-cpp-python/whl/metal',
+    ...extraIndexArgs,
     '--find-links', wheelsDir,
     ...wheelFiles,
   ]);
@@ -245,45 +250,14 @@ async function installDarwin(onProgress) {
   try { fs.unlinkSync(binLink); } catch {}
   fs.symlinkSync(venvBinary, binLink);
 
-  // Remove quarantine xattr
-  try {
-    require('child_process').execSync(`xattr -dr com.apple.quarantine "${INSTALL_DIR}"`, { stdio: 'pipe' });
-  } catch {}
-
-  console.log('[SLP Setup] macOS install complete — binary at', venvBinary);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Linux install: download pex binary
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function installLinux(onProgress) {
-  const destBinary = path.join(INSTALL_DIR, 'slp');
-
-  fs.mkdirSync(INSTALL_DIR, { recursive: true });
-
-  // Remove legacy PyInstaller _internal directory if present
-  const legacyInternal = path.join(INSTALL_DIR, '_internal');
-  if (fs.existsSync(legacyInternal)) {
-    console.log('[SLP Setup] Removing legacy _internal directory');
-    fs.rmSync(legacyInternal, { recursive: true, force: true });
+  // macOS: remove quarantine xattr so Gatekeeper doesn't block the binary
+  if (process.platform === 'darwin') {
+    try {
+      require('child_process').execSync(`xattr -dr com.apple.quarantine "${INSTALL_DIR}"`, { stdio: 'pipe' });
+    } catch {}
   }
 
-  const url = `${GCS_BUCKET}/pex/linux/${VERSION}/slp-server`;
-  console.log('[SLP Setup] Downloading SLP binary from', url);
-  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0 });
-  await downloadFile(url, destBinary, onProgress);
-
-  // Verify SHA-256 hash
-  console.log('[SLP Setup] Verifying hash...');
-  const actualHash = sha256File(destBinary);
-  if (actualHash !== LINUX_PEX_SHA256) {
-    fs.unlinkSync(destBinary);
-    throw new Error(`Hash mismatch! Expected ${LINUX_PEX_SHA256}, got ${actualHash}`);
-  }
-
-  fs.chmodSync(destBinary, 0o755);
-  console.log('[SLP Setup] Binary downloaded and verified at', destBinary);
+  console.log('[SLP Setup] Install complete — binary at', venvBinary);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -312,11 +286,7 @@ async function setupSlpService(onProgress = null) {
   console.log('[SLP Setup] Installing SLP service version', VERSION);
 
   if (!done[0]) {
-    if (process.platform === 'darwin') {
-      await installDarwin(onProgress);
-    } else {
-      await installLinux(onProgress);
-    }
+    await installService(onProgress);
     database.setInstallStepComplete(0);
     console.log('[SLP Setup] Step 0 (install) complete');
   }
