@@ -91,8 +91,13 @@ stop:
 		echo "⚠️  SLP binary not found at ~/.smartloop/venv/bin/slp-server"; \
 	fi
 
+# Bundle pre-signed Python into build/resources for electron-builder extraResources
+bundle-python:
+	@echo "🐍 Bundling Python for electron app..."
+	npm run bundle-python
+
 # Build Electron app for current platform
-build-electron: clean-electron
+build-electron: clean-electron bundle-python
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -101,7 +106,7 @@ build-electron: clean-electron
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron
+build-electron-linux: clean-electron bundle-python
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -111,7 +116,7 @@ build-electron-linux: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron
+build-electron-windows: clean-electron bundle-python
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -121,7 +126,7 @@ build-electron-windows: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron
+build-electron-mac: clean-electron bundle-python
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
