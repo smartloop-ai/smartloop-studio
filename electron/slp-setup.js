@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const https = require('https');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
 const VERSION = '1.0.1';
@@ -15,6 +15,22 @@ const GCS_BUCKET = 'https://storage.googleapis.com/smartloop-gcp-us-east-release
 // ── python-build-standalone + wheels installed into a local venv ─────────────
 const PYTHON_VERSION = '3.11.15';
 const PYTHON_RELEASE = '20260320';
+
+/**
+ * Return the path to the bundled Python tarball shipped inside the app's
+ * resources directory (set up by electron-builder extraResources).
+ * Returns null when running in dev mode or if the file is missing.
+ */
+function getBundledPythonTar() {
+  try {
+    const resourcesPath = process.resourcesPath; // set by Electron at runtime
+    if (!resourcesPath) return null;
+    const tarPath = path.join(resourcesPath, 'python.tar.gz');
+    return fs.existsSync(tarPath) ? tarPath : null;
+  } catch {
+    return null;
+  }
+}
 
 function getInstalledBinaryPath() {
   return path.join(INSTALL_DIR, 'venv', 'bin', 'slp-server');
@@ -173,21 +189,32 @@ async function installService(onProgress) {
     }
   }
 
-  // ── Step 1: Download Python ───────────────────────────────────────────────
-  const pythonUrl = getPythonUrl();
-  const pythonTar = path.join(os.tmpdir(), `slp-python-${PYTHON_VERSION}.tar.gz`);
+  // ── Step 1: Obtain Python ─────────────────────────────────────────────────
+  // Prefer the pre-signed tarball bundled in the app resources (macOS/Linux).
+  // Falls back to downloading from GitHub when running in dev mode or if the
+  // bundled tarball is missing.
+  const bundledTar = getBundledPythonTar();
 
-  console.log('[SLP Setup] Downloading Python from', pythonUrl);
-  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading Python runtime...' });
-  await downloadFile(pythonUrl, pythonTar, (p) => {
-    if (onProgress) onProgress({ ...p, message: 'Downloading Python runtime...' });
-  });
+  if (bundledTar) {
+    console.log('[SLP Setup] Using bundled Python from', bundledTar);
+    if (onProgress) onProgress({ status: 'installing', message: 'Extracting Python runtime...' });
+    await runAsync('tar', ['-xzf', bundledTar, '-C', INSTALL_DIR]);
+  } else {
+    console.log('[SLP Setup] Bundled Python not found — downloading from GitHub');
+    const pythonUrl = getPythonUrl();
+    const pythonTar = path.join(os.tmpdir(), `slp-python-${PYTHON_VERSION}.tar.gz`);
 
-  // Extract — python-build-standalone extracts to a "python" directory
-  console.log('[SLP Setup] Extracting Python...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Extracting Python runtime...' });
-  await runAsync('tar', ['-xzf', pythonTar, '-C', INSTALL_DIR]);
-  try { fs.unlinkSync(pythonTar); } catch {}
+    console.log('[SLP Setup] Downloading Python from', pythonUrl);
+    if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading Python runtime...' });
+    await downloadFile(pythonUrl, pythonTar, (p) => {
+      if (onProgress) onProgress({ ...p, message: 'Downloading Python runtime...' });
+    });
+
+    console.log('[SLP Setup] Extracting Python...');
+    if (onProgress) onProgress({ status: 'installing', message: 'Extracting Python runtime...' });
+    await runAsync('tar', ['-xzf', pythonTar, '-C', INSTALL_DIR]);
+    try { fs.unlinkSync(pythonTar); } catch {}
+  }
 
   const bundledPython = path.join(pythonDir, 'bin', 'python3');
   if (!fs.existsSync(bundledPython)) {
@@ -250,10 +277,30 @@ async function installService(onProgress) {
   try { fs.unlinkSync(binLink); } catch {}
   fs.symlinkSync(venvBinary, binLink);
 
-  // macOS: remove quarantine xattr so Gatekeeper doesn't block the binary
+  // macOS: ad-hoc codesign the venv binaries and shared libraries so
+  // Gatekeeper allows execution under hardened runtime.  The bundled Python
+  // tarball is already signed at build time, but creating a venv copies /
+  // symlinks binaries that need their own signatures.
   if (process.platform === 'darwin') {
+    console.log('[SLP Setup] Ad-hoc codesigning venv binaries...');
     try {
-      require('child_process').execSync(`xattr -dr com.apple.quarantine "${INSTALL_DIR}"`, { stdio: 'pipe' });
+      // Sign .so / .dylib first (leaves loaded by the interpreter)
+      execSync(
+        `find "${venvDir}" -type f \\( -name "*.so" -o -name "*.dylib" \\) -exec codesign --force --sign - {} +`,
+        { stdio: 'pipe' }
+      );
+      // Sign executable binaries in bin/
+      execSync(
+        `find "${venvDir}/bin" -type f -perm +111 -exec codesign --force --sign - {} +`,
+        { stdio: 'pipe' }
+      );
+    } catch (e) {
+      console.warn('[SLP Setup] Ad-hoc codesign warning:', e.message);
+    }
+
+    // Also strip quarantine from any files downloaded at runtime (wheels fallback)
+    try {
+      execSync(`xattr -dr com.apple.quarantine "${INSTALL_DIR}"`, { stdio: 'pipe' });
     } catch {}
   }
 
