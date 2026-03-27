@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, clipboard } = require('electron');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -126,6 +126,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Check if running in Electron
   isElectron: true,
+  // Native clipboard (bypasses web clipboard restrictions in Electron)
+  writeClipboard: (text) => clipboard.writeText(text),
+  readClipboard: () => clipboard.readText(),
   // System info
   platform: process.platform,
   versions: {

@@ -29,6 +29,10 @@
     "@mui/icons-material": "^6.0.1",
     "@mui/material": "^6.0.1",
     "@mui/x-data-grid": "^7.15.0",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
+    "@streamdown/math": "^1.0.2",
+    "@streamdown/mermaid": "^1.0.2",
     "better-sqlite3": "^12.6.2",
     "crypto-js": "^4.2.0",
     "easymde": "^2.20.0",
@@ -56,6 +60,7 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
+    "streamdown": "^2.5.0",
     "typewriter-effect": "^2.21.0",
     "uuid": "^10.0.0"
   },

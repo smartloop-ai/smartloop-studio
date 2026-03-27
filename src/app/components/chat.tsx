@@ -5,15 +5,24 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box } from "@mui/material";
 import OpenAI from 'openai';
 
+import { Streamdown } from 'streamdown';
+import "streamdown/styles.css";
+import { createCodePlugin } from "@streamdown/code";
+const code = createCodePlugin({
+  themes: ['github-light', 'github-dark'],
+});
+import { mermaid } from "@streamdown/mermaid";
+import { math } from "@streamdown/math";
+import { cjk } from "@streamdown/cjk";
+
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MessageInput from './message-input';
 
 import { getLocalApiEndpoint } from '@/app/constants';
-
-import { marked, Renderer, Tokens } from 'marked';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -23,54 +32,6 @@ import { CopyToClipboard } from 'react-copy-to-clipboard';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 
 import '@/app/styles/chat.css';
-
-// Configure marked options for proper code rendering
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
-
-// Custom renderer for code blocks to preserve formatting
-const renderer = new Renderer();
-const originalCodeRenderer = renderer.code.bind(renderer);
-renderer.code = function (token: Tokens.Code) {
-  const code = token.text;
-  const language = token.lang || '';
-
-  // For CSV and csvtext, render as table (each line as a row)
-  if (language.toLowerCase() === 'csv' || language.toLowerCase() === 'csvtext' || language.toLowerCase().includes('csv')) {
-    const lines = code.trim().split('\n').filter(line => line.trim());
-    if (lines.length === 0) return '';
-
-    let tableHtml = '<div class="csv-table-wrapper"><table class="csv-table">';
-
-    // First line as header
-    const headers = lines[0].split(',').map(h => h.trim());
-    tableHtml += '<thead><tr>';
-    headers.forEach(header => {
-      tableHtml += `<th>${header}</th>`;
-    });
-    tableHtml += '</tr></thead>';
-
-    // All remaining lines as data rows
-    tableHtml += '<tbody>';
-    for (let i = 1; i < lines.length; i++) {
-      const cells = lines[i].split(',').map(cell => cell.trim());
-      tableHtml += '<tr>';
-      cells.forEach(cell => {
-        tableHtml += `<td>${cell}</td>`;
-      });
-      tableHtml += '</tr>';
-    }
-    tableHtml += '</tbody>';
-
-    tableHtml += '</table></div>';
-    return tableHtml;
-  }
-  return originalCodeRenderer(token);
-};
-
-marked.use({ renderer });
 
 interface Attachment {
   file_id: string;
@@ -535,7 +496,7 @@ export default function Chat(props: {
         if (savedTemp !== null && savedTemp !== undefined) {
           temperature = savedTemp;
         }
-      } catch {}
+      } catch { }
 
       // Create streaming chat completion
       // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
@@ -1083,67 +1044,63 @@ export default function Chat(props: {
                   <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
-                        <Box className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 relative">
-                          <Box
-                            className="w-3 h-3 rounded-full bg-gradient-to-br from-pink-500 to-purple-500"
-                            sx={msg.is_new ? {
-                              '@keyframes blink': {
-                                '0%, 100%': { opacity: 1 },
-                                '50%': { opacity: 0.3 }
-                              },
-                              animation: 'blink 1s ease-in-out infinite'
-                            } : {}}
-                          ></Box>
-                        </Box>
-
                         <Box className="flex-1">
-                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed relative group">
-                            {/* Copy button - top right */}
-                            {msg.content && !msg.is_new && (
-                              <CopyToClipboard
-                                text={msg.content} onCopy={() => {
-                                  setCopied(msg.id);
-                                  setTimeout(() => setCopied(""), 1000);
-                                }}>
-                                <button
-                                  className="absolute top-2 right-2 p-1.5 rounded transition-colors"
-                                  style={{ color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-white-alpha-20)' }}
-                                  title={copied === msg.id ? "Copied!" : "Copy response"}
-                                >
-                                  {copied === msg.id ? <CheckIcon sx={{ fontSize: 14 }} /> : <ContentCopyIcon sx={{ fontSize: 14 }} />}
-                                </button>
-                              </CopyToClipboard>
-                            )}
+                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="prose prose-invert max-w-none chat-content">
-                              {(!msg.content || msg.content.trim() === '') && msg.is_new ? (
-                                <span
-                                  className="inline-block bg-white"
-                                  style={{
-                                    width: '2px',
-                                    height: '10px',
-                                    animation: 'blink 1s ease-in-out infinite'
-                                  }}
-                                ></span>
-                              ) : (
-                                <>
-                                  <div dangerouslySetInnerHTML={{
-                                    __html: marked(msg.content || '')
-                                  }} />
-                                  {msg.is_new && (
-                                    <span
-                                      className="inline-block bg-white ml-1"
-                                      style={{
-                                        width: '2px',
-                                        height: '10px',
-                                        animation: 'blink 1s ease-in-out infinite',
-                                        verticalAlign: 'middle'
-                                      }}
-                                    ></span>
-                                  )}
-                                </>
-                              )}
+                              <Streamdown
+                                mode={msg.is_new ? "streaming" : "static"}
+                                animated
+                                caret="block"
+                                controls={false}
+                                plugins={{ code, mermaid, math, cjk }}>
+                                {msg.content || ''}
+                              </Streamdown>
                             </div>
                           </div>
+                          {msg.content && !msg.is_new && (
+                            <div className="flex items-center gap-2 mt-2 px-1">
+                              <CopyToClipboard
+                                text={msg.content}
+                                onCopy={() => {
+                                  setCopied(msg.id);
+                                  setTimeout(() => setCopied(""), 1500);
+                                }}>
+                                <button
+                                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
+                                  style={{
+                                    color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
+                                    borderColor: 'var(--sl-border-default, #374151)',
+                                    background: 'transparent',
+                                  }}
+                                  title="Copy response"
+                                >
+                                  {copied === msg.id
+                                    ? <><CheckIcon sx={{ fontSize: 12 }} /> Copied</>
+                                    : <><ContentCopyIcon sx={{ fontSize: 12 }} /> Copy</>}
+                                </button>
+                              </CopyToClipboard>
+                              <button
+                                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
+                                style={{
+                                  color: 'var(--sl-text-muted)',
+                                  borderColor: 'var(--sl-border-default, #374151)',
+                                  background: 'transparent',
+                                }}
+                                title="Download as Markdown"
+                                onClick={() => {
+                                  const blob = new Blob([msg.content], { type: 'text/markdown' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = 'response.md';
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                              >
+                                <FileDownloadIcon sx={{ fontSize: 12 }} /> Download
+                              </button>
+                            </div>
+                          )}
                         </Box>
                       </Box>
                       : <Box className="flex justify-end">
@@ -1180,9 +1137,8 @@ export default function Chat(props: {
 
                             {/* Message bubble */}
                             <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
-                              <div className="user-message-content text-wrap break-words py-3" dangerouslySetInnerHTML={{
-                                __html: marked(msg.content)
-                              }}>
+                              <div className="user-message-content text-wrap break-words py-3">
+                                {msg.content}
                               </div>
                             </div>
                           </Box>

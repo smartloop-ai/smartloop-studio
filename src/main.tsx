@@ -12,6 +12,21 @@ import { colors } from '@/app/theme/colors';
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 const Router = isElectron ? HashRouter : BrowserRouter;
 
+// Polyfill navigator.clipboard for Electron — streamdown's copy/download buttons
+// use navigator.clipboard.writeText which is restricted in file:// contexts.
+if (isElectron && window.electronAPI?.writeClipboard) {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: {
+      writeText: (text: string) => {
+        window.electronAPI!.writeClipboard(text);
+        return Promise.resolve();
+      },
+      readText: () => Promise.resolve(window.electronAPI!.readClipboard?.() ?? ''),
+    },
+    configurable: true,
+  });
+}
+
 // Global handler for network-related errors (chunk loading failures, etc.)
 window.addEventListener('error', (event) => {
   const networkErrorPatterns = ['ERR_NETWORK_CHANGED', 'ERR_INTERNET_DISCONNECTED', 'ChunkLoadError', 'Loading chunk', 'net::'];
