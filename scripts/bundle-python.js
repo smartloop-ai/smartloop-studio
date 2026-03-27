@@ -2,8 +2,9 @@
  * bundle-python.js
  *
  * Downloads python-build-standalone for the target platform/arch,
- * ad-hoc codesigns it on macOS, and places it in build/resources/
- * so electron-builder can include it as an extraResource.
+ * codesigns it on macOS (Developer ID when available, ad-hoc otherwise),
+ * and places it in build/resources/ so electron-builder can include it
+ * as an extraResource.
  *
  * Usage:
  *   node scripts/bundle-python.js [--arch arm64|x64] [--platform darwin|linux]
@@ -142,16 +143,37 @@ async function main() {
       throw new Error(`Expected 'python/' directory inside tarball, not found at ${pythonRoot}`);
     }
 
-    // Ad-hoc codesign all Mach-O binaries and .so/.dylib files
-    console.log('Ad-hoc codesigning all binaries and shared libraries…');
+    // Determine signing identity: use Developer ID if available (CI), else ad-hoc
+    const entitlements = path.join(__dirname, '..', 'build', 'entitlements.mac.plist');
+    let useDevId = false;
+    let signIdentity = '-';
+    let signFlags = '--force --sign -';
+
+    try {
+      const result = execSync(
+        'security find-identity -v -p codesigning | grep "Developer ID Application"',
+        { stdio: 'pipe', encoding: 'utf8' }
+      );
+      if (result.trim()) {
+        useDevId = true;
+        signIdentity = 'Developer ID Application';
+        signFlags = `--force --timestamp --options runtime --entitlements "${entitlements}" --sign "${signIdentity}"`;
+        console.log('Found Developer ID certificate — signing for notarization');
+      }
+    } catch {
+      console.log('No Developer ID certificate found — using ad-hoc signing');
+    }
+
+    // Codesign all Mach-O binaries and .so/.dylib files
+    console.log(`Codesigning all binaries and shared libraries (identity: ${signIdentity})…`);
     // Sign .so and .dylib files first (leaves, before the main binaries that load them)
     execSync(
-      `find "${pythonRoot}" -type f \\( -name "*.so" -o -name "*.dylib" \\) -exec codesign --force --sign - {} +`,
+      `find "${pythonRoot}" -type f \\( -name "*.so" -o -name "*.dylib" \\) -exec codesign ${signFlags} {} +`,
       { stdio: 'inherit' }
     );
     // Sign executable binaries
     execSync(
-      `find "${pythonRoot}/bin" -type f -perm +111 -exec codesign --force --sign - {} +`,
+      `find "${pythonRoot}/bin" -type f -perm +111 -exec codesign ${signFlags} {} +`,
       { stdio: 'inherit' }
     );
 
