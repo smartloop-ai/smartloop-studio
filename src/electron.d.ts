@@ -55,6 +55,9 @@ export interface ElectronAPI {
   }>;
   // System info
   isElectron: boolean;
+  // Native clipboard (bypasses web clipboard restrictions in Electron)
+  writeClipboard: (text: string) => void;
+  readClipboard: () => string;
   platform: string;
   versions: {
     node: string;
