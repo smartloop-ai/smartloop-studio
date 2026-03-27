@@ -84,7 +84,7 @@ export default function Project() {
   const editorOptions = useMemo(() => {
     return {
       spellChecker: false,
-      placeholder: "Add project-specific rules and guidelines that will be included with every message...",
+      placeholder: "Add project-specific skills and guidelines that will be included with every message...",
       status: false,
       toolbar: [
         "bold", "italic", "heading", "|",
@@ -825,7 +825,7 @@ export default function Project() {
                                   <Box className="space-y-6">
                                     <div className="space-y-3">
                                       <Box className="flex items-center justify-between mb-2">
-                                        <label className="text-white text-sm font-medium">Project Rules (.smartlooprules)</label>
+                                        <label className="text-white text-sm font-medium">Project Skills (.smartlooprules)</label>
                                         <span className="text-xs text-gray-500">
                                           {projectRules.length}/300
                                         </span>
@@ -868,7 +868,7 @@ export default function Project() {
                                           />
                                         </Box>
                                       </Box>
-                                      <p className="text-xs text-gray-500">Project rules will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
+                                      <p className="text-xs text-gray-500">Project skills will be automatically saved and included with every message sent to the AI. Use this to define guidelines, constraints, or context that should always be considered.</p>
                                     </div>
                                     <div className="space-y-3">
                                       <Box className="flex items-center justify-between">

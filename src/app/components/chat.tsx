@@ -1013,7 +1013,7 @@ export default function Chat(props: {
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Customize with project rules:</span> Visit the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium">Settings</span> tab to define project rules that refine how the AI responds to your specific needs
+                        <span className="font-semibold text-white">Customize with project skills:</span> Visit the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium">Settings</span> tab to define project skills that refine how the AI responds to your specific needs
                       </p>
                     </div>
 
@@ -1047,14 +1047,18 @@ export default function Chat(props: {
                         <Box className="flex-1">
                           <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="prose prose-invert max-w-none chat-content">
-                              <Streamdown
-                                mode={msg.is_new ? "streaming" : "static"}
-                                animated
-                                caret="block"
-                                controls={false}
-                                plugins={{ code, mermaid, math, cjk }}>
-                                {msg.content || ''}
-                              </Streamdown>
+                              {msg.is_new && !msg.content ? (
+                                <span className="inline-block w-2 h-4 bg-white/80 rounded-sm animate-pulse" />
+                              ) : (
+                                <Streamdown
+                                  mode={msg.is_new ? "streaming" : "static"}
+                                  animated
+                                  caret="block"
+                                  controls={false}
+                                  plugins={{ code, mermaid, math, cjk }}>
+                                  {msg.content || ''}
+                                </Streamdown>
+                              )}
                             </div>
                           </div>
                           {msg.content && !msg.is_new && (

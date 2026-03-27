@@ -55,6 +55,7 @@ exports.default = async function afterSign(context) {
 
     const signArgs = [
       '--force',
+      '--timestamp',
       '--options runtime',
       `--entitlements "${entitlements}"`,
       `--sign "${identity}"`,
@@ -88,7 +89,7 @@ exports.default = async function afterSign(context) {
     // Re-sign the app bundle so the modified resource is covered by the signature
     console.log('[afterSign] Re-signing .app bundle…');
     execSync(
-      `codesign --force --deep --options runtime --entitlements "${entitlements}" --sign "${identity}" "${appPath}"`,
+      `codesign --force --deep --timestamp --options runtime --entitlements "${entitlements}" --sign "${identity}" "${appPath}"`,
       { stdio: 'inherit' }
     );
 
