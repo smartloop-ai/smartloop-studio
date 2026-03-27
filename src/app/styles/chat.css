@@ -418,29 +418,16 @@
   margin: 1em 0;
 }
 
-/* Retro block cursor */
-#message textarea {
-  caret-color: transparent;
+/* Blinking caret for streaming responses */
+.chat-content > div > *:last-child::after {
+  animation: streamdown-blink 1s step-end infinite;
 }
 
-#message textarea::after {
-  content: '';
-  position: absolute;
-  width: 8px;
-  height: 1.2em;
-  background-color: var(--sl-brand-primary);
-  animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-
-  0%,
-  50% {
+@keyframes streamdown-blink {
+  0%, 50% {
     opacity: 1;
   }
-
-  50.1%,
-  100% {
+  50.1%, 100% {
     opacity: 0;
   }
 }

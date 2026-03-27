@@ -82,7 +82,7 @@ export default function RightSidebar({
       'quote',
     ] as const,
     minHeight: '300px',
-    placeholder: 'Add rules or guidelines for this project...',
+    placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
 
   // Collapse sidebar only when switching to a different project
@@ -97,7 +97,7 @@ export default function RightSidebar({
 
   // Ensure sidebar is collapsed for system projects
   useEffect(() => {
-    if (selectedProject?.system && (activeSection === 'rules' || activeSection === 'documents')) {
+    if (selectedProject?.system && (activeSection === 'documents')) {
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
@@ -538,7 +538,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Rules' : activeSection === 'mcp' ? 'MCP Servers' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Skills' : activeSection === 'mcp' ? 'MCP Servers' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
@@ -612,7 +612,7 @@ export default function RightSidebar({
               </Box>
               <p className="text-gray-400 text-[10px] leading-relaxed">
                 <ul>
-                  <li>- Use markdown to format the rules.</li>
+                  <li>- Use markdown to format the skills.</li>
                   <li>- Clearly define guidelines for document processing.</li>
                   <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
                   <li>- Press Ctrl+S (Cmd+S on Mac) to save changes.</li>
@@ -1049,20 +1049,19 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={selectedProject?.system ? "Rules (Disabled)" : "Rules"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={"Skills"} placement="left">
+          <span className={'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'rules' ? null : 'rules')}
-              disabled={selectedProject?.system}
+              onClick={() => setActiveSection(activeSection === 'rules' ? null : 'rules')}
               sx={{
                 color: activeSection === 'rules' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: activeSection === 'rules' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
-                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
+                  color:  'var(--sl-brand-primary)',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
