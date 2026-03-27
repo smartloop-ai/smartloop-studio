@@ -95,6 +95,10 @@ stop:
 bundle-python:
 	@echo "🐍 Bundling Python for electron app..."
 	npm run bundle-python
+ifeq ($(shell uname),Darwin)
+	@echo "🐍 Bundling Python (x64) for universal macOS build..."
+	node scripts/bundle-python.js --arch x64
+endif
 
 # Build Electron app for current platform
 build-electron: clean-electron bundle-python

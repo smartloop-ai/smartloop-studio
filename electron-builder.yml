@@ -2,7 +2,6 @@ appId: ai.smartloop.studio
 productName: Smartloop Studio
 copyright: Copyright © 2025 Smartloop Inc.
 buildVersion: 1.0.0
-afterSign: scripts/afterSign.js
 directories:
   output: dist
   buildResources: build
