@@ -1,10 +1,10 @@
 {
   "name": "smartloop-studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SmartLoop Studio",
   "author": {
-    "name": "Mehfuz Hossain",
-    "email": "mehfuz@smartloop.ai"
+    "name": "Smartloop Inc",
+    "email": "support@smartloop.ai"
   },
   "private": true,
   "main": "electron/main.js",

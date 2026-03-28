@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const https = require('https');
+const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
@@ -10,7 +11,7 @@ const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
 
 // ── GCS bucket for pre-built artifacts ──────────────────────────────────────
-const GCS_BUCKET = 'https://storage.googleapis.com/smartloop-gcp-us-east-releases';
+const GCS_BUCKET = 'https://dl.smartloop.ai';
 
 // ── python-build-standalone + wheels installed into a local venv ─────────────
 const PYTHON_VERSION = '3.11.15';
@@ -138,6 +139,41 @@ function downloadFile(url, destPath, onProgress, maxRedirects = 5) {
   });
 }
 
+/**
+ * Fetch a small text file (e.g. .sha256) from a URL and return its contents.
+ */
+function fetchText(url, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    function doRequest(currentUrl, redirectsLeft) {
+      const mod = currentUrl.startsWith('https') ? https : require('http');
+      mod.get(currentUrl, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
+          return doRequest(res.headers.location, redirectsLeft - 1);
+        }
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => resolve(data.trim()));
+      }).on('error', reject);
+    }
+    doRequest(url, maxRedirects);
+  });
+}
+
+/**
+ * Compute SHA-256 hash of a local file.
+ */
+function fileSha256(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Install: download Python + wheels, create venv, pip install
 // Same flow on macOS and Linux.
@@ -221,22 +257,60 @@ async function installService(onProgress) {
     throw new Error(`Bundled Python not found at ${bundledPython}`);
   }
 
-  // ── Step 2: Download wheels ───────────────────────────────────────────────
+  // ── Step 2: Download wheels (skip if SHA matches) ─────────────────────────
   const wheelsUrl = getWheelsUrl();
   const wheelsTar = path.join(os.tmpdir(), `slp-wheels-${VERSION}.tar.gz`);
+  const localShaFile = path.join(INSTALL_DIR, '.wheels-sha256');
 
-  console.log('[SLP Setup] Downloading wheels from', wheelsUrl);
-  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading framework...' });
-  await downloadFile(wheelsUrl, wheelsTar, (p) => {
-    if (onProgress) onProgress({ ...p, message: 'Downloading framework...' });
-  });
+  let skipWheels = false;
+  try {
+    const remoteSha = await fetchText(`${wheelsUrl}.sha256`);
+    // The .sha256 file may contain "hash  filename" or just the hash
+    const remoteShaHash = remoteSha.split(/\s+/)[0];
+    if (fs.existsSync(localShaFile)) {
+      const localSha = fs.readFileSync(localShaFile, 'utf8').trim();
+      if (localSha === remoteShaHash && fs.existsSync(wheelsDir)) {
+        console.log('[SLP Setup] Wheels SHA matches — skipping download');
+        skipWheels = true;
+      }
+    }
+  } catch (err) {
+    console.log('[SLP Setup] Could not fetch remote SHA, will download wheels:', err.message);
+  }
 
-  // Extract wheels
-  console.log('[SLP Setup] Extracting wheels...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Extracting framework...' });
-  fs.mkdirSync(wheelsDir, { recursive: true });
-  await runAsync('tar', ['-xzf', wheelsTar, '-C', INSTALL_DIR]);
-  try { fs.unlinkSync(wheelsTar); } catch {}
+  if (!skipWheels) {
+    console.log('[SLP Setup] Downloading wheels from', wheelsUrl);
+    if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading framework...' });
+    await downloadFile(wheelsUrl, wheelsTar, (p) => {
+      if (onProgress) onProgress({ ...p, message: 'Downloading framework...' });
+    });
+
+    // Verify downloaded file SHA if we have the remote hash
+    let downloadedSha;
+    try {
+      downloadedSha = await fileSha256(wheelsTar);
+      const remoteSha = await fetchText(`${wheelsUrl}.sha256`);
+      const remoteShaHash = remoteSha.split(/\s+/)[0];
+      if (downloadedSha !== remoteShaHash) {
+        console.warn('[SLP Setup] SHA mismatch! Expected:', remoteShaHash, 'Got:', downloadedSha);
+      }
+    } catch {}
+
+    // Extract wheels
+    console.log('[SLP Setup] Extracting wheels...');
+    if (onProgress) onProgress({ status: 'installing', message: 'Extracting framework...' });
+    if (fs.existsSync(wheelsDir)) {
+      fs.rmSync(wheelsDir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(wheelsDir, { recursive: true });
+    await runAsync('tar', ['-xzf', wheelsTar, '-C', INSTALL_DIR]);
+    try { fs.unlinkSync(wheelsTar); } catch {}
+
+    // Save the SHA for future comparisons
+    if (downloadedSha) {
+      fs.writeFileSync(localShaFile, downloadedSha, 'utf8');
+    }
+  }
 
   // ── Step 3: Create venv ───────────────────────────────────────────────────
   console.log('[SLP Setup] Creating virtual environment...');

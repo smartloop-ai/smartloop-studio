@@ -1,7 +1,7 @@
 appId: ai.smartloop.studio
 productName: Smartloop Studio
-copyright: Copyright © 2025 Smartloop Inc.
-buildVersion: 1.0.0
+copyright: Copyright © 2026 Smartloop Inc.
+buildVersion: 1.0.1
 directories:
   output: dist
   buildResources: build
@@ -23,7 +23,7 @@ files:
 mac:
   category: public.app-category.productivity
   icon: icon.icns
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: studio-${version}-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -43,7 +43,7 @@ mac:
         - x64
 win:
   icon: public/img/logo.png
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: studio-Setup-${version}.${ext}
   target:
     - nsis
     - portable
@@ -51,7 +51,7 @@ linux:
   icon: public/img/logo.png
   category: Development
   executableName: smartloop-studio
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: studio-${version}-${arch}.${ext}
   extraResources:
     - from: build/resources/python-${arch}.tar.gz
       to: python.tar.gz
