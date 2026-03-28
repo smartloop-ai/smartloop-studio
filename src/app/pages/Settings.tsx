@@ -10,6 +10,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DnsIcon from '@mui/icons-material/Dns';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
@@ -619,13 +621,13 @@ export default function SettingsPage() {
                         );
                     })()}
 
-                    {/* Service Status */}
+                    {/* Service */}
                     {isElectron && (
                         <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                             <Box className="flex items-center justify-between mb-4">
                                 <Box className="flex items-center gap-2">
                                     <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                    <h2 className="text-lg md:text-xl font-semibold text-white">Service Status</h2>
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Service</h2>
                                     {/* Status badge next to title */}
                                     <Box sx={{
                                         display: 'inline-flex',
@@ -703,7 +705,23 @@ export default function SettingsPage() {
                                             Server URL
                                         </Box>
                                         <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                            {serverHealth?.url || 'Not available'}
+                                            <Box className="flex items-center gap-1">
+                                                <span>{serverHealth?.url || 'Not available'}</span>
+                                                {serverHealth?.url && (
+                                                    <CopyToClipboard text={serverHealth.url}>
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{
+                                                                color: 'var(--sl-white-alpha-40)',
+                                                                padding: '2px',
+                                                                '&:hover': { color: 'var(--sl-white-alpha-80)' },
+                                                            }}
+                                                        >
+                                                            <ContentCopyIcon sx={{ fontSize: 13 }} />
+                                                        </IconButton>
+                                                    </CopyToClipboard>
+                                                )}
+                                            </Box>
                                         </Box>
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
