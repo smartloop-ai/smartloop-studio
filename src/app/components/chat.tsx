@@ -1141,9 +1141,9 @@ export default function Chat(props: {
 
                             {/* Message bubble */}
                             <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
-                              <div className="user-message-content text-wrap break-words py-3">
+                              <pre className="user-message-content text-wrap break-words py-3 whitespace-pre-wrap font-[inherit]">
                                 {msg.content}
-                              </div>
+                              </pre>
                             </div>
                           </Box>
 
