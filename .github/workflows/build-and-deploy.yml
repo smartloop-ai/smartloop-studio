@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 env:
-  GCP_BUCKET: gs://electron-releases
+  GCP_BUCKET: gs://smartloop-gcp-us-east-releases
   APP_NAME: smartloop-studio
 
 jobs:
