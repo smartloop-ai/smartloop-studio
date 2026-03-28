@@ -504,18 +504,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       }}>
         <Box className="flex items-center justify-between">
           <Box
-            onClick={() => {
-              navigate('/');
-              onMobileClose?.();
-            }}
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 0.5,
-              cursor: 'pointer',
-              '&:hover': {
-                opacity: 0.85,
-              },
+              gap: 0.5
             }}
           >
             <span className="text-xl font-semibold text-white tracking-tight">smartloop</span>
