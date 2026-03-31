@@ -29,9 +29,6 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true
-  extraResources:
-    - from: build/resources/python-${arch}.tar.gz
-      to: python.tar.gz
   target:
     - target: dmg
       arch:
@@ -52,9 +49,6 @@ linux:
   category: Development
   executableName: smartloop-studio
   artifactName: studio-${version}-${arch}.${ext}
-  extraResources:
-    - from: build/resources/python-${arch}.tar.gz
-      to: python.tar.gz
   target:
     - AppImage
     - deb

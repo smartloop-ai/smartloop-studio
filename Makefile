@@ -85,23 +85,14 @@ clean-electron:
 # Stop the running SLP service
 stop:
 	@echo "🛑 Stopping SLP service..."
-	@if [ -f "$(HOME)/.smartloop/venv/bin/slp-server" ]; then \
-		$(HOME)/.smartloop/venv/bin/slp-server stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
+	@if [ -f "$(HOME)/.smartloop/1.0.1/slp" ]; then \
+		$(HOME)/.smartloop/1.0.1/slp server stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
 	else \
-		echo "⚠️  SLP binary not found at ~/.smartloop/venv/bin/slp-server"; \
+		echo "⚠️  SLP binary not found at ~/.smartloop/1.0.1/slp"; \
 	fi
 
-# Bundle pre-signed Python into build/resources for electron-builder extraResources
-bundle-python:
-	@echo "🐍 Bundling Python for electron app..."
-	npm run bundle-python
-ifeq ($(shell uname),Darwin)
-	@echo "🐍 Bundling Python (x64) for universal macOS build..."
-	node scripts/bundle-python.js --arch x64
-endif
-
 # Build Electron app for current platform
-build-electron: clean-electron bundle-python
+build-electron: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -110,7 +101,7 @@ build-electron: clean-electron bundle-python
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron bundle-python
+build-electron-linux: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -120,7 +111,7 @@ build-electron-linux: clean-electron bundle-python
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron bundle-python
+build-electron-windows: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -130,7 +121,7 @@ build-electron-windows: clean-electron bundle-python
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron bundle-python
+build-electron-mac: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
