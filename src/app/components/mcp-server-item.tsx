@@ -1,6 +1,6 @@
 import { Box, IconButton, CircularProgress, Dialog } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import CableIcon from '@mui/icons-material/Cable';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -91,7 +91,7 @@ export default function McpServerItem({
             ) : isLocal ? (
               <TerminalIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
             ) : (
-              <CableIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+              <PowerOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
             )}
           </Box>
 
@@ -227,7 +227,7 @@ export default function McpServerItem({
               ) : isLocal ? (
                 <TerminalIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
               ) : (
-                <CableIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
+                <PowerOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
               )}
             </Box>
             <Box>
