@@ -228,12 +228,12 @@ export default function Project() {
         const response = await fetch(url, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rules: [{ content: config.rules }] }),
+          body: JSON.stringify({ skills: [{ name: 'default', content: config.rules }] }),
         });
 
         if (!response.ok) {
           const result = await response.json().catch(() => ({}));
-          throw result.detail || result.message || 'Failed to save rules';
+          throw result.detail || result.message || 'Failed to save skills';
         }
       }
     } catch (ex: any) {
@@ -267,17 +267,17 @@ export default function Project() {
       const response = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rules: [{ content: rules }] }),
+        body: JSON.stringify({ skills: [{ name: 'default', content: rules }] }),
       });
 
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
-        throw result.detail || result.message || 'Failed to save rules';
+        throw result.detail || result.message || 'Failed to save skills';
       }
 
       lastSavedRulesRef.current = rules;
     } catch (ex: any) {
-      console.error('Error saving project rules:', ex);
+      console.error('Error saving project skills:', ex);
     } finally {
       setIsSavingRules(false);
     }
@@ -337,10 +337,10 @@ export default function Project() {
 
       setCurrent(project);
 
-      // Extract rules from project data
-      const rules = (project.rules || []).map((r: any) => r.content).join('\n\n');
-      setProjectRules(rules);
-      lastSavedRulesRef.current = rules;
+      // Extract skills from project data
+      const skills = (project.skills || []).map((s: any) => s.content).join('\n\n');
+      setProjectRules(skills);
+      lastSavedRulesRef.current = skills;
       setIsLoading(false);
 
       // Start polling if there are processing documents

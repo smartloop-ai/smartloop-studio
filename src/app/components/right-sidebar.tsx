@@ -3,12 +3,12 @@ import AddBoxIcon from '@mui/icons-material/AddBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
+import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
-import CableIcon from '@mui/icons-material/Cable';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -17,12 +17,17 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 
+interface Skill {
+  name: string;
+  content: string;
+}
+
 interface RightSidebarProps {
   selectedProject: any;
   currentProjectData: any;
-  projectRules: string;
-  isSavingRules: boolean;
-  onSaveRules: (rules: string) => void;
+  projectSkills: Skill[];
+  isSavingSkills: boolean;
+  onSaveSkills: (skills: Skill[]) => void;
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
   user: any;
@@ -31,9 +36,9 @@ interface RightSidebarProps {
 export default function RightSidebar({
   selectedProject,
   currentProjectData,
-  projectRules,
-  isSavingRules,
-  onSaveRules,
+  projectSkills,
+  isSavingSkills,
+  onSaveSkills,
   onAddDocument,
   onDeleteDocument,
 }: RightSidebarProps) {
@@ -46,16 +51,21 @@ export default function RightSidebar({
   const [processingDocs, setProcessingDocs] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
+  const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
+  const [editingSkillContent, setEditingSkillContent] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [currentRulesValue, setCurrentRulesValue] = useState('');
-  const initialLoadRef = useRef<boolean>(true);
+  const [newSkillName, setNewSkillName] = useState('');
+  const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
+
+  // Resizable sidebar
+  const [sidebarWidth, setSidebarWidth] = useState(380);
+  const isResizing = useRef(false);
 
   // MCP Servers state
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
-  const [showAddMcpForm, setShowAddMcpForm] = useState(false);
   const [newMcpName, setNewMcpName] = useState('');
   const [newMcpUrl, setNewMcpUrl] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
@@ -84,6 +94,34 @@ export default function RightSidebar({
     minHeight: '300px',
     placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
+
+  // Resize handler
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizing.current) return;
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.min(800, Math.max(280, startWidth + delta));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [sidebarWidth]);
 
   // Collapse sidebar only when switching to a different project
   const prevProjectIdRef = useRef<string | null>(selectedProject?.id ?? null);
@@ -121,42 +159,24 @@ export default function RightSidebar({
 
   // Reset states when project changes
   useEffect(() => {
-    initialLoadRef.current = true;
+    setEditingSkillIndex(null);
+    setEditingSkillContent('');
     setHasUnsavedChanges(false);
-    setCurrentRulesValue(projectRules || '');
-  }, [selectedProject?.id, projectRules]);
+    setNewSkillName('');
+  }, [selectedProject?.id]);
 
-  // Load rules into editor when rules section is opened
-  useEffect(() => {
-    if (activeSection === 'rules' && editorRef.current) {
-      setTimeout(() => {
-        const codemirror = editorRef.current?.codemirror;
-        if (codemirror) {
-          if (initialLoadRef.current) {
-            const currentValue = codemirror.getValue();
-            if (currentValue !== projectRules) {
-              codemirror.setValue(projectRules || '');
-              codemirror.refresh();
-            }
-            setCurrentRulesValue(projectRules || '');
-            setHasUnsavedChanges(false);
-            initialLoadRef.current = false;
-          }
-        }
-      }, 100);
-    } else if (activeSection !== 'rules') {
-      initialLoadRef.current = true;
-      setHasUnsavedChanges(false);
-    }
-  }, [activeSection, projectRules]);
-
-  // Keyboard shortcut handler for Ctrl+S
+  // Keyboard shortcut handler for Ctrl+S to save skill
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (activeSection === 'rules' && hasUnsavedChanges) {
-          onSaveRules(currentRulesValue);
+        if (activeSection === 'rules' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
+          const isNew = editingSkillIndex >= projectSkills.length;
+          const updated = isNew
+            ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
+            : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
+          onSaveSkills(updated);
+          if (isNew) setNewSkillName('');
           setHasUnsavedChanges(false);
         }
       }
@@ -166,7 +186,7 @@ export default function RightSidebar({
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [activeSection, hasUnsavedChanges, currentRulesValue, onSaveRules]);
+  }, [activeSection, hasUnsavedChanges, editingSkillIndex, editingSkillContent, projectSkills, onSaveSkills]);
 
   // Load MCP servers from project data
   useEffect(() => {
@@ -296,8 +316,7 @@ export default function RightSidebar({
         // OAuth required - open auth URL (session stored server-side)
         setNewMcpName('');
         setNewMcpUrl('');
-        setShowAddMcpForm(false);
-        mcpServerCountRef.current = mcpServers.length;
+                mcpServerCountRef.current = mcpServers.length;
         setMcpPolling(true);
 
         console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
@@ -313,8 +332,7 @@ export default function RightSidebar({
         const serverId = data.id || data.server_id;
         setNewMcpName('');
         setNewMcpUrl('');
-        setShowAddMcpForm(false);
-        await loadMcpServers();
+                await loadMcpServers();
         if (serverId) {
           setDiscoveringServerId(serverId);
         }
@@ -363,8 +381,7 @@ export default function RightSidebar({
         const serverId = resData?.id || resData?.server_id;
         setNewMcpName('');
         setNewMcpEnv('');
-        setShowAddMcpForm(false);
-        setMcpServerType('remote');
+                setMcpServerType('remote');
         await loadMcpServers();
         if (serverId) {
           setDiscoveringServerId(serverId);
@@ -516,16 +533,37 @@ export default function RightSidebar({
 
   return (
     <Box
-      className="border-l border-gray-900 relative"
+      className="relative"
       sx={{
-        width: { xs: '0', md: activeSection ? '30%' : '48px' },
-        minWidth: { xs: '0', md: activeSection ? '320px' : '48px' },
-        maxWidth: { xs: '0', md: activeSection ? '450px' : '48px' },
+        width: { xs: '0', md: activeSection ? `${sidebarWidth}px` : '48px' },
+        minWidth: { xs: '0', md: activeSection ? '280px' : '48px' },
+        maxWidth: { xs: '0', md: activeSection ? '800px' : '48px' },
         display: { xs: 'none', md: 'flex' },
         flexDirection: 'row',
-        transition: 'width 0.3s ease',
+        flexShrink: 0,
       }}
     >
+      {/* Resize Handle */}
+      {activeSection && (
+        <Box
+          onMouseDown={handleMouseDown}
+          sx={{
+            width: '4px',
+            cursor: 'col-resize',
+            flexShrink: 0,
+            bgcolor: 'transparent',
+            borderLeft: '1px solid',
+            borderColor: 'var(--sl-white-alpha-10)',
+            transition: 'background-color 0.15s ease',
+            '&:hover': {
+              bgcolor: 'var(--sl-brand-alpha-30)',
+            },
+          }}
+        />
+      )}
+      {!activeSection && (
+        <Box sx={{ width: '1px', bgcolor: 'var(--sl-white-alpha-10)', flexShrink: 0 }} />
+      )}
       {/* Content Area */}
       {activeSection && (
         <Box
@@ -549,23 +587,28 @@ export default function RightSidebar({
                 <span>Add</span>
               </button>
             )}
-            {selectedProject && activeSection === 'rules' && (
+            {selectedProject && activeSection === 'rules' && editingSkillIndex !== null && (
               <button
                 onClick={() => {
-                  if (hasUnsavedChanges && !isSavingRules) {
-                    onSaveRules(currentRulesValue);
+                  if (hasUnsavedChanges && !isSavingSkills && editingSkillContent.trim()) {
+                    const isNew = editingSkillIndex >= projectSkills.length;
+                    const updated = isNew
+                      ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
+                      : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
+                    onSaveSkills(updated);
+                    if (isNew) setNewSkillName('');
                     setHasUnsavedChanges(false);
                   }
                 }}
-                disabled={isSavingRules || !hasUnsavedChanges}
-                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${isSavingRules
+                disabled={isSavingSkills || !hasUnsavedChanges}
+                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${isSavingSkills
                   ? 'text-pink-400 border border-pink-400 cursor-wait'
                   : hasUnsavedChanges
                     ? 'text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400'
                     : 'text-pink-500 border border-pink-400 cursor-default'
                   }`}
               >
-                {isSavingRules ? (
+                {isSavingSkills ? (
                   <>
                     <CircularProgress size={10} sx={{ color: 'var(--sl-brand-light)' }} />
                     <span>Saving...</span>
@@ -583,41 +626,209 @@ export default function RightSidebar({
                 )}
               </button>
             )}
-            {selectedProject && activeSection === 'mcp' && (
-              <button
-                onClick={() => setShowAddMcpForm(true)}
-                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
-              >
-                <AddBoxIcon sx={{ fontSize: 12 }} />
-                <span>Add</span>
-              </button>
-            )}
           </Box>
 
-          {/* Project Rules Section */}
+          {/* Skills Section */}
           {activeSection === 'rules' && selectedProject && currentProjectData && (
-            <div className=" w-full">
-              <Box className="markdown-editor-container w-full">
-                <SimpleMDE
-                  value={currentRulesValue}
-                  onChange={(value: string) => {
-                    setCurrentRulesValue(value);
-                    setHasUnsavedChanges(value !== projectRules);
-                  }}
-                  options={editorOptions}
-                  getMdeInstance={(instance) => {
-                    editorRef.current = instance;
-                  }}
-                />
-              </Box>
-              <p className="text-gray-400 text-[10px] leading-relaxed">
-                <ul>
-                  <li>- Use markdown to format the skills.</li>
-                  <li>- Clearly define guidelines for document processing.</li>
-                  <li>- Examples: preferred response style, prohibited content, specific instructions.</li>
-                  <li>- Press Ctrl+S (Cmd+S on Mac) to save changes.</li>
-                </ul>
-              </p>
+            <div className="w-full">
+              {editingSkillIndex !== null ? (
+                /* Skill Editor */
+                <div className="w-full">
+                  <button
+                    onClick={() => {
+                      const isNew = editingSkillIndex >= projectSkills.length;
+                      if (hasUnsavedChanges && editingSkillContent.trim()) {
+                        const updated = isNew
+                          ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
+                          : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
+                        onSaveSkills(updated);
+                        if (isNew) setNewSkillName('');
+                      }
+                      setEditingSkillIndex(null);
+                      setEditingSkillContent('');
+                      setHasUnsavedChanges(false);
+                    }}
+                    className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 mb-3 transition-colors"
+                  >
+                    <span>&larr;</span>
+                    <span>Back to skills</span>
+                  </button>
+                  <div className="text-xs text-white font-medium mb-2">
+                    {editingSkillIndex < projectSkills.length
+                      ? projectSkills[editingSkillIndex]?.name
+                      : newSkillName}
+                  </div>
+                  <Box className="markdown-editor-container w-full">
+                    <SimpleMDE
+                      value={editingSkillContent}
+                      onChange={(value: string) => {
+                        setEditingSkillContent(value);
+                        const isNew = editingSkillIndex >= projectSkills.length;
+                        setHasUnsavedChanges(isNew ? value.trim() !== '' : value !== projectSkills[editingSkillIndex]?.content);
+                      }}
+                      options={editorOptions}
+                      getMdeInstance={(instance) => {
+                        editorRef.current = instance;
+                      }}
+                    />
+                  </Box>
+                  <p className="text-gray-400 text-[10px] leading-relaxed mt-2">
+                    Press Ctrl+S (Cmd+S on Mac) to save changes.
+                  </p>
+                </div>
+              ) : (
+                /* Skills List */
+                <div className="space-y-2">
+                  {/* Search / Add Skill Input */}
+                  <TextField
+                    size="small"
+                    placeholder="Search or add a skill..."
+                    value={newSkillName}
+                    onChange={(e) => setNewSkillName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newSkillName.trim()) {
+                        const match = projectSkills.find(s => s.name.toLowerCase() === newSkillName.trim().toLowerCase());
+                        if (match) {
+                          const idx = projectSkills.indexOf(match);
+                          setEditingSkillIndex(idx);
+                          setEditingSkillContent(match.content);
+                          setHasUnsavedChanges(false);
+                        } else {
+                          // Add new skill — open editor, save when content is provided
+                          setEditingSkillIndex(projectSkills.length);
+                          setEditingSkillContent('');
+                          setHasUnsavedChanges(false);
+                        }
+                      }
+                    }}
+                    fullWidth
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
+                    }}
+                  />
+
+                  {/* Skill Items (filtered by search) */}
+                  {(() => {
+                    const query = newSkillName.trim().toLowerCase();
+                    const filtered = projectSkills.filter(s =>
+                      !query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query)
+                    );
+                    return filtered.length > 0 ? (
+                    filtered.map((skill) => {
+                      const index = projectSkills.indexOf(skill);
+                      return (
+                      <Box
+                        key={`skill-${index}`}
+                        onClick={() => {
+                          setEditingSkillIndex(index);
+                          setEditingSkillContent(skill.content);
+                          setHasUnsavedChanges(false);
+                        }}
+                        onMouseEnter={() => setHoveredSkillIndex(index)}
+                        onMouseLeave={() => setHoveredSkillIndex(null)}
+                        sx={{
+                          padding: '10px',
+                          borderRadius: '6px',
+                          bgcolor: 'var(--sl-white-alpha-2)',
+                          border: '1px solid var(--sl-white-alpha-5)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          '&:hover': {
+                            bgcolor: 'var(--sl-white-alpha-5)',
+                            borderColor: 'var(--sl-white-alpha-8)',
+                          },
+                          position: 'relative',
+                        }}
+                      >
+                        <Box className="flex items-center justify-between">
+                          <Box className="flex items-center gap-2 min-w-0">
+                            <PsychologyOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
+                            <span className="text-xs text-white font-medium truncate">
+                              {skill.name || 'Untitled Skill'}
+                            </span>
+                          </Box>
+                          {!skill.name?.startsWith('system:') && (
+                            <Tooltip title="Delete Skill" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const updated = projectSkills.filter((_, i) => i !== index);
+                                  onSaveSkills(updated);
+                                }}
+                                sx={{
+                                  opacity: hoveredSkillIndex === index ? 1 : 0,
+                                  transition: 'opacity 0.15s ease',
+                                  color: 'var(--sl-text-muted)',
+                                  bgcolor: 'var(--sl-danger-alpha-10)',
+                                  padding: '4px',
+                                  '&:hover': {
+                                    color: 'var(--sl-status-error)',
+                                    bgcolor: 'var(--sl-danger-alpha-15)',
+                                  },
+                                }}
+                              >
+                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </Box>
+                        {skill.content && (
+                          <div
+                            className="text-[10px] text-gray-400 leading-relaxed mt-1.5 ml-6"
+                            style={{
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {skill.content.replace(/\n/g, ' ').trim()}
+                          </div>
+                        )}
+                      </Box>
+                    );})
+                  ) : query ? (
+                    <Box className="text-center py-4">
+                      <Box className="text-gray-400 text-xs mb-1">
+                        No skills match "{newSkillName.trim()}"
+                      </Box>
+                      <Box className="text-gray-500 text-[10px]">
+                        Press Enter to create it
+                      </Box>
+                    </Box>
+                  ) : (
+                    <Box className="flex flex-col items-center justify-center py-8 text-center">
+                      <PsychologyOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                      <Box className="text-gray-400 text-sm mb-1">
+                        No skills configured
+                      </Box>
+                      <Box className="text-gray-500 text-xs">
+                        Type a name above and press Enter to add one
+                      </Box>
+                    </Box>
+                  );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 
@@ -868,89 +1079,79 @@ export default function RightSidebar({
           {/* MCP Servers Section */}
           {activeSection === 'mcp' && (
             <div className="space-y-3">
-              {/* Add MCP Server Form */}
-              {showAddMcpForm && (
-                <Box
-                  sx={{
-                    padding: '10px',
-                    borderRadius: '6px',
-                    bgcolor: 'var(--sl-white-alpha-2)',
-                    border: '1px solid var(--sl-white-alpha-8)',
-                  }}
-                >
-                  {/* Remote / Local toggle */}
-                  <Box className="flex mb-2 rounded overflow-hidden border border-gray-700">
-                    <button
-                      onClick={() => setMcpServerType('remote')}
-                      className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'remote'
-                        ? 'bg-pink-600 text-white'
-                        : 'bg-transparent text-gray-400 hover:text-gray-300'
-                        }`}
-                    >
-                      Remote
-                    </button>
-                    <button
-                      onClick={() => setMcpServerType('local')}
-                      className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'local'
-                        ? 'bg-pink-600 text-white'
-                        : 'bg-transparent text-gray-400 hover:text-gray-300'
-                        }`}
-                    >
-                      Local
-                    </button>
-                  </Box>
-
-                  <TextField
-                    size="small"
-                    autoFocus
-                    placeholder={mcpServerType === 'remote' ? 'Server URL (e.g., https://mcp.example.com)' : 'Server name'}
-                    value={mcpServerType === 'remote' ? newMcpUrl : newMcpName}
-                    onChange={(e) => mcpServerType === 'remote' ? setNewMcpUrl(e.target.value) : setNewMcpName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !isAddingMcp) {
-                        if (mcpServerType === 'remote' && newMcpUrl.trim()) {
-                          handleAddMcpServer();
-                        } else if (mcpServerType === 'local' && newMcpName.trim()) {
-                          handleAddLocalMcpServer();
-                        }
-                      } else if (e.key === 'Escape') {
-                        setShowAddMcpForm(false);
-                        setNewMcpName('');
-                        setNewMcpUrl('');
-                        setNewMcpEnv('');
-                        setMcpServerType('remote');
-                        setMcpError('');
-                      }
-                    }}
-                    disabled={isAddingMcp}
-                    fullWidth
-                    InputProps={{
-                      endAdornment: isAddingMcp ? (
-                        <InputAdornment position="end">
-                          <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                        </InputAdornment>
-                      ) : null,
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'var(--sl-white-alpha-2)',
-                        fontSize: '0.75rem',
-                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                      },
-                      '& .MuiInputBase-input': {
-                        color: 'var(--sl-text-primary)',
-                        padding: '8px 12px',
-                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                      },
-                    }}
-                  />
-                  <Box className="text-gray-600 text-[10px] mt-1 px-1">
-                    Press Enter to add &middot; Esc to cancel
-                  </Box>
+              {/* Add MCP Server Form - Always Visible */}
+              <Box
+                sx={{
+                  padding: '10px',
+                  borderRadius: '6px',
+                  bgcolor: 'var(--sl-white-alpha-2)',
+                  border: '1px solid var(--sl-white-alpha-8)',
+                }}
+              >
+                {/* Remote / Local toggle */}
+                <Box className="flex mb-2 rounded overflow-hidden border border-gray-700">
+                  <button
+                    onClick={() => setMcpServerType('remote')}
+                    className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'remote'
+                      ? 'border border-pink-500 text-pink-400 bg-transparent'
+                      : 'bg-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                  >
+                    Remote
+                  </button>
+                  <button
+                    onClick={() => setMcpServerType('local')}
+                    className={`flex-1 px-3 py-1 text-[10px] font-medium transition-colors ${mcpServerType === 'local'
+                      ? 'border border-pink-500 text-pink-400 bg-transparent'
+                      : 'bg-transparent text-gray-400 hover:text-gray-300'
+                      }`}
+                  >
+                    Local
+                  </button>
                 </Box>
-              )}
+
+                <TextField
+                  size="small"
+                  placeholder={mcpServerType === 'remote' ? 'Server URL (e.g., https://mcp.example.com)' : 'Server name'}
+                  value={mcpServerType === 'remote' ? newMcpUrl : newMcpName}
+                  onChange={(e) => mcpServerType === 'remote' ? setNewMcpUrl(e.target.value) : setNewMcpName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isAddingMcp) {
+                      if (mcpServerType === 'remote' && newMcpUrl.trim()) {
+                        handleAddMcpServer();
+                      } else if (mcpServerType === 'local' && newMcpName.trim()) {
+                        handleAddLocalMcpServer();
+                      }
+                    }
+                  }}
+                  disabled={isAddingMcp}
+                  fullWidth
+                  InputProps={{
+                    endAdornment: isAddingMcp ? (
+                      <InputAdornment position="end">
+                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                      </InputAdornment>
+                    ) : null,
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'var(--sl-white-alpha-2)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: 'var(--sl-text-primary)',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                    },
+                  }}
+                />
+                <Box className="text-gray-600 text-[10px] mt-1 px-1">
+                  Press Enter to add
+                </Box>
+              </Box>
 
               {/* Error Message */}
               {mcpError && (
@@ -987,7 +1188,7 @@ export default function RightSidebar({
               ) : (
                 /* Empty State */
                 <Box className="flex flex-col items-center justify-center py-8 text-center">
-                  <CableIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                  <PowerOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
                   <Box className="text-gray-400 text-sm mb-1">
                     No MCP servers configured
                   </Box>
@@ -1073,14 +1274,14 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <RuleOutlinedIcon fontSize="small" />
+              <PsychologyOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title="MCP Servers" placement="left">
           <span>
             <IconButton
-              onClick={() => { setShowAddMcpForm(false); setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
+              onClick={() => { setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
               sx={{
                 color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: activeSection === 'mcp' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
@@ -1101,7 +1302,7 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <CableIcon fontSize="small" />
+              <PowerOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
