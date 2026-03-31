@@ -41,11 +41,10 @@ export default function Home() {
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
-  const [projectRules, setProjectRules] = useState('');
+  const [projectSkills, setProjectSkills] = useState<Array<{ name: string; content: string }>>([]);
   const [_projectMemory, setProjectMemory] = useState(true);
-  const [isSavingRules, setIsSavingRules] = useState(false);
+  const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  const lastSavedRulesRef = useRef<string>('');
 
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
@@ -436,18 +435,16 @@ export default function Home() {
 
           prevProjectIdRef.current = selectedProject.id;
 
-          // Extract rules from project data
-          const rules = (selectedProject.rules || []).map((r: any) => r.content).join('\n\n');
-          setProjectRules(rules);
-          lastSavedRulesRef.current = rules;
+          // Extract skills from project data
+          const skills = (selectedProject.skills || []).map((s: any) => ({ name: s.name || '', content: s.content || '' }));
+          setProjectSkills(skills);
         } catch {
-          setProjectRules('');
-          lastSavedRulesRef.current = '';
+          setProjectSkills([]);
         }
       })();
     } else {
       setCurrentProjectData(null);
-      setProjectRules('');
+      setProjectSkills([]);
       setProjectMemory(true);
     }
   }, [selectedProject]);
@@ -596,12 +593,10 @@ export default function Home() {
   }, []);
 
 
-  const saveProjectRules = async (rules: string) => {
-    if (!selectedProject || !rules) return;
+  const saveProjectSkills = async (skills: Array<{ name: string; content: string }>) => {
+    if (!selectedProject) return;
 
-    console.log('Saving project rules for project:', selectedProject.id);
-
-    setIsSavingRules(true);
+    setIsSavingSkills(true);
 
     try {
       const localBase = await getLocalApiEndpoint();
@@ -610,19 +605,18 @@ export default function Home() {
       const response = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rules: [{ content: rules }] }),
+        body: JSON.stringify({ skills }),
       });
 
       if (response.ok) {
-        lastSavedRulesRef.current = rules;
-        setProjectRules(rules);
+        setProjectSkills(skills);
       } else {
-        console.error('Failed to save project rules. Status:', response.status);
+        console.error('Failed to save project skills. Status:', response.status);
       }
     } catch (ex: any) {
-      console.error('Error saving project rules:', ex);
+      console.error('Error saving project skills:', ex);
     } finally {
-      setIsSavingRules(false);
+      setIsSavingSkills(false);
     }
   };
 
@@ -1436,11 +1430,9 @@ export default function Home() {
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}
-                      projectRules={projectRules}
-                      isSavingRules={isSavingRules}
-                      onSaveRules={(rules: string) => {
-                        saveProjectRules(rules || '');
-                      }}
+                      projectSkills={projectSkills}
+                      isSavingSkills={isSavingSkills}
+                      onSaveSkills={saveProjectSkills}
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}
                       user={user}
