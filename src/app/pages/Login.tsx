@@ -47,9 +47,14 @@ export default function Login() {
                 await storageService.setItem('u', userData);
               }
 
-              // Note: Don't start token refresh here - useAuth will start it
-              // after verifying the token. Starting it here causes a race condition
-              // where the refresh can invalidate the token before navigation completes.
+              // Set auth token on local SLP service
+              try {
+                console.log('[Login] Setting auth token on local SLP service...');
+                const authResult = await window.electronAPI.slpSetAuth({ type: 'access_token', token: accessToken });
+                console.log('[Login] SLP auth result:', authResult);
+              } catch (err) {
+                console.warn('[Login] Failed to set auth on local SLP service:', err);
+              }
 
               setStatusMessage("Success! Redirecting...");
 
@@ -83,6 +88,14 @@ export default function Login() {
         if (isElectron && window.electronAPI) {
           const validation = await window.electronAPI.validateToken(token);
           if (validation.valid) {
+            // Set auth token on local SLP service
+            if (window.electronAPI?.slpSetAuth) {
+              try {
+                await window.electronAPI.slpSetAuth({ type: 'access_token', token });
+              } catch (err) {
+                console.warn('Failed to set auth on local SLP service:', err);
+              }
+            }
             navigate('/', { replace: true });
           } else {
             await storageService.removeItem('token');
