@@ -72,10 +72,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
     const handleUserUpdated = () => checkAuth();
     window.addEventListener('userUpdated', handleUserUpdated);
-    window.addEventListener('tokenRefreshed', handleUserUpdated);
     return () => {
       window.removeEventListener('userUpdated', handleUserUpdated);
-      window.removeEventListener('tokenRefreshed', handleUserUpdated);
     };
   }, []);
 

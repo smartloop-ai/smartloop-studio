@@ -471,6 +471,145 @@ ipcMain.handle('unload-model', async () => {
   return { success: true };
 });
 
+// IPC: Set auth token on local SLP service
+ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, token })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log('[SLP] Auth token set successfully');
+      return { success: true, data };
+    } else {
+      console.error('[SLP] Failed to set auth token:', res.status);
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    console.error('[SLP] Error setting auth token:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Check auth status on local SLP service
+ipcMain.handle('slp-auth-status', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth/status`);
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, ...data };
+    } else {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Fetch available models from local SLP service
+ipcMain.handle('slp-list-models', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const modelsRes = await fetch(`${baseUrl}/v1/models`);
+    if (modelsRes.ok) {
+      const data = await modelsRes.json();
+      const models = Array.isArray(data) ? data : (data.data || data.models || []);
+      return { success: true, models };
+    } else {
+      return { success: false, error: `HTTP ${modelsRes.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Download a model via local SLP service (SSE streaming progress)
+ipcMain.handle('slp-download-model', async (event, modelName) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  return new Promise((resolve) => {
+    const http = require('http');
+    const url = new URL(`${baseUrl}/v1/models/download`);
+
+    const postData = JSON.stringify({ model: modelName });
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        return;
+      }
+
+      let buffer = '';
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const progress = bootstrapProgress(data);
+
+              // Send download progress to renderer
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('model-download-progress', {
+                  model: modelName,
+                  ...progress,
+                });
+              }
+            } catch {
+              // ignore unparseable SSE data
+            }
+          }
+        }
+      });
+
+      res.on('end', () => {
+        // Send completion event
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('model-download-progress', {
+            model: modelName,
+            percent: 100,
+            status: 'Ready',
+            downloading: false,
+          });
+        }
+        resolve({ success: true, model: modelName });
+      });
+
+      res.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+});
+
 // Register custom protocol for OAuth callback
 const PROTOCOL = 'smartloop';
 
