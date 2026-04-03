@@ -69,6 +69,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
+  // SLP auth and model management
+  slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
+  slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
+  slpListModels: () => ipcRenderer.invoke('slp-list-models'),
+  slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
+  onModelDownloadProgress: (callback) => {
+    ipcRenderer.on('model-download-progress', (event, data) => callback(data));
+  },
+  removeModelDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('model-download-progress');
+  },
   // SLP service lifecycle
   slpServiceStart: () => ipcRenderer.invoke('slp-service-start'),
   slpServiceStop: () => ipcRenderer.invoke('slp-service-stop'),

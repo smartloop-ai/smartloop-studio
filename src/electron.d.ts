@@ -6,12 +6,6 @@ export interface ElectronAPI {
   validateToken: (token: string) => Promise<{ valid: boolean; user?: any; error?: string }>;
   onOAuthCallback: (callback: (data: { accessToken?: string; error?: string }) => void) => void;
   removeOAuthCallbackListener: () => void;
-  // Token refresh methods
-  refreshToken: (token: string) => Promise<{ success: boolean; token?: string; error?: string; status?: number }>;
-  startTokenRefresh: () => Promise<{ success: boolean }>;
-  stopTokenRefresh: () => Promise<{ success: boolean }>;
-  onTokenRefreshed: (callback: (data: { success: boolean; token?: string; error?: string; requiresReauth?: boolean }) => void) => void;
-  removeTokenRefreshListener: () => void;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;
@@ -43,6 +37,13 @@ export interface ElectronAPI {
   slpServiceUninstall: () => Promise<{ success: boolean; error?: string }>;
   // Model management (additional)
   loadModel: () => Promise<any>;
+  // SLP auth and model management
+  slpSetAuth: (params: { type: string; token: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; error?: string }>;
+  slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
+  onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
+  removeModelDownloadProgressListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // System hardware info

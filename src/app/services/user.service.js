@@ -17,69 +17,7 @@ const logout = async () => {
   await storageService.removeItem("u");
   await storageService.removeItem("dev_token");
   sessionStorage.clear();
-  stopTokenRefresh();
 }
-
-// Check if running in Electron
-const isElectron = () => {
-  return typeof window !== 'undefined' && window.electronAPI?.isElectron;
-};
-
-// Track if token refresh is already initialized to prevent duplicate calls
-let tokenRefreshInitialized = false;
-
-// Initialize token refresh (call this after successful login)
-const initializeTokenRefresh = async () => {
-  if (!isElectron()) {
-    console.log('[TokenRefresh] Not in Electron, skipping token refresh setup');
-    return;
-  }
-
-  // Prevent duplicate initialization - refresh token invalidates the old token
-  // so we should only call this once per session
-  if (tokenRefreshInitialized) {
-    console.log('[TokenRefresh] Already initialized, skipping');
-    return;
-  }
-
-  const token = await getToken();
-  if (!token) {
-    console.log('[TokenRefresh] No token found, skipping refresh setup');
-    return;
-  }
-
-  console.log('[TokenRefresh] Initializing token refresh...');
-  tokenRefreshInitialized = true;
-
-  // Set up listener for token refresh events from main process
-  window.electronAPI.onTokenRefreshed(async (data) => {
-    if (data.success && data.token) {
-      console.log('[TokenRefresh] Received new token from main process');
-      await storageService.setItem('token', data.token);
-
-      // Dispatch event so other parts of the app can react if needed
-      window.dispatchEvent(new CustomEvent('tokenRefreshed', { detail: { token: data.token } }));
-    } else if (data.requiresReauth) {
-      console.log('[TokenRefresh] Token expired, redirecting to login');
-      redirectToLogin();
-    }
-  });
-
-  // Start the background refresh
-  window.electronAPI.startTokenRefresh();
-};
-
-// Stop token refresh
-const stopTokenRefresh = () => {
-  if (!isElectron()) {
-    return;
-  }
-
-  console.log('[TokenRefresh] Stopping token refresh...');
-  tokenRefreshInitialized = false; // Reset flag so it can be initialized again after re-login
-  window.electronAPI.removeTokenRefreshListener();
-  window.electronAPI.stopTokenRefresh();
-};
 
 const redirectToLogin = async () => {
   await logout();
@@ -332,6 +270,4 @@ export const userService = {
   redirectToLogin: redirectToLogin,
   fetchAndStoreUser: fetchAndStoreUser,
   updateSettings: updateSettings,
-  initializeTokenRefresh: initializeTokenRefresh,
-  stopTokenRefresh: stopTokenRefresh
 }
