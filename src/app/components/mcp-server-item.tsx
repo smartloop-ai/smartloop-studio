@@ -45,7 +45,7 @@ export default function McpServerItem({
   const icon = serverInfo?.icons?.[0];
   const iconUrl = icon?.src || (icon as any)?.url;
 
-  const tools = server.tools ?? server.metadata?.tools ?? [];
+  const allTools = server.tools ?? server.metadata?.tools ?? [];
 
   return (
     <>
@@ -167,8 +167,8 @@ export default function McpServerItem({
               <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
               <span className="text-gray-400">Discovering tools...</span>
             </>
-          ) : tools.length > 0 ? (
-            <span>{tools.length} {tools.length === 1 ? 'tool' : 'tools'}</span>
+          ) : allTools.length > 0 ? (
+            <span>{allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}</span>
           ) : null}
         </div>
       </Box>
@@ -246,10 +246,10 @@ export default function McpServerItem({
 
           {/* Tools List */}
           <div className="text-xs text-gray-400 font-medium mb-2">
-            Tools ({tools.length})
+            Tools ({allTools.length})
           </div>
 
-          {tools.length > 0 ? (
+          {allTools.length > 0 ? (
             <Box
               sx={{
                 maxHeight: 400,
@@ -259,7 +259,7 @@ export default function McpServerItem({
                 gap: '2px',
               }}
             >
-              {tools.map((tool: any) => (
+              {allTools.map((tool: any) => (
                 <Box
                   key={tool.name}
                   sx={{

@@ -1425,7 +1425,7 @@ export default function Home() {
                     )}
                   </Box>
 
-                  {/* Right Sidebar - Rules & Documents */}
+                  {/* Right Sidebar - Documents, MCP, Skills */}
                   {activeTab !== 1 && (
                     <RightSidebar
                       selectedProject={selectedProject}

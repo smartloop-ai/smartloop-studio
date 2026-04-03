@@ -3,7 +3,7 @@ import AddBoxIcon from '@mui/icons-material/AddBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
+import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
@@ -191,9 +191,7 @@ export default function RightSidebar({
   // Load MCP servers from project data
   useEffect(() => {
     if (Array.isArray(currentProjectData?.mcp)) {
-      setMcpServers(currentProjectData.mcp as McpServer[]);
-    } else if (currentProjectData?.mcp?.servers) {
-      setMcpServers(currentProjectData.mcp.servers as McpServer[]);
+      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id.includes('__system_tools__')));
     } else {
       setMcpServers([]);
     }
@@ -729,7 +727,8 @@ export default function RightSidebar({
                   {(() => {
                     const query = newSkillName.trim().toLowerCase();
                     const filtered = projectSkills.filter(s =>
-                      !query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query)
+                      !(s as any).system &&
+                      (!query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query))
                     );
                     return filtered.length > 0 ? (
                     filtered.map((skill) => {
@@ -760,7 +759,7 @@ export default function RightSidebar({
                       >
                         <Box className="flex items-center justify-between">
                           <Box className="flex items-center gap-2 min-w-0">
-                            <PsychologyOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
+                            <BuildOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
                             <span className="text-xs text-white font-medium truncate">
                               {skill.name || 'Untitled Skill'}
                             </span>
@@ -817,7 +816,7 @@ export default function RightSidebar({
                     </Box>
                   ) : (
                     <Box className="flex flex-col items-center justify-center py-8 text-center">
-                      <PsychologyOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                      <BuildOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
                       <Box className="text-gray-400 text-sm mb-1">
                         No skills configured
                       </Box>
@@ -1274,7 +1273,7 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <PsychologyOutlinedIcon fontSize="small" />
+              <BuildOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
