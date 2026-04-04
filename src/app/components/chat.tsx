@@ -512,6 +512,9 @@ export default function Chat(props: {
       if (projectId) {
         requestBody.project_id = projectId;
       }
+      if (props.project?.folder_path) {
+        requestBody.cwd = props.project.folder_path;
+      }
 
       const createStream = async () => {
         return await openai.chat.completions.create({

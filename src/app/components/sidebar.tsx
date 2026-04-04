@@ -12,6 +12,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
@@ -42,6 +43,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [createProjectError, setCreateProjectError] = useState('');
+  const [folderPath, setFolderPath] = useState('');
+  const [folderPathTouched, setFolderPathTouched] = useState(false);
+  const [homeDir, setHomeDir] = useState('~');
+
+  // Load OS home directory for display in folder path field
+  useEffect(() => {
+    window.electronAPI?.getHomeDir?.().then((dir) => {
+      if (dir) setHomeDir(dir);
+    });
+  }, []);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<any>(null);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
@@ -393,6 +404,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
+    setFolderPath(`${homeDir}/smartloop`);
+    setFolderPathTouched(false);
     setOpenCreateProjectDialog(true);
   };
 
@@ -401,6 +414,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
+    setFolderPath(`${homeDir}/smartloop`);
+    setFolderPathTouched(false);
+  };
+
+  const handleBrowseFolder = async () => {
+    const selected = await window.electronAPI?.selectFolder?.();
+    if (selected) {
+      setFolderPath(selected);
+      setFolderPathTouched(true);
+    }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -416,10 +439,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
     try {
       const selectedModel = await storageService.getItem('selected_model') || '';
+      const slug = newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_');
+      const defaultPath = `~/smartloop/${slug}`;
       const result = await projectService.createProject({
         name: newProjectTitle.trim(),
         color: selectedColor,
         model_name: selectedModel,
+        folder_path: folderPath.trim() || defaultPath,
       });
 
       if (result.success && result.data) {
@@ -1048,7 +1074,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 fullWidth
                 placeholder="Project name"
                 value={newProjectTitle}
-                onChange={(e) => setNewProjectTitle(e.target.value)}
+                onChange={(e) => {
+                  setNewProjectTitle(e.target.value);
+                  if (!folderPathTouched) {
+                    const slug = e.target.value.trim().toLowerCase().replace(/\s+/g, '_');
+                    setFolderPath(slug ? `${homeDir}/smartloop/${slug}` : `${homeDir}/smartloop`);
+                  }
+                }}
                 error={!!createProjectError}
                 helperText={createProjectError}
                 sx={{
@@ -1099,6 +1131,61 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     />
                   ))}
                 </Box>
+              </Box>
+
+              {/* Folder Path */}
+              <Box>
+                <Typography className="text-gray-400 text-sm mb-2">
+                  Working Directory
+                </Typography>
+                <Box className="flex gap-2 items-center">
+                  <TextField
+                    autoComplete="off"
+                    type="text"
+                    placeholder={`${homeDir}/smartloop/${newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_') || 'project-name'}`}
+                    value={folderPath}
+                    onChange={(e) => {
+                      setFolderPath(e.target.value);
+                      setFolderPathTouched(true);
+                    }}
+                    fullWidth
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        color: 'white',
+                        bgcolor: 'var(--sl-bg-base)',
+                        '& fieldset': { borderColor: 'var(--sl-border-default)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input::placeholder': {
+                        color: 'var(--sl-text-disabled)',
+                        opacity: 1,
+                      },
+                    }}
+                  />
+                  {window.electronAPI?.selectFolder && (
+                    <IconButton
+                      onClick={handleBrowseFolder}
+                      title="Browse folder"
+                      sx={{
+                        color: 'var(--sl-text-muted)',
+                        border: '1px solid var(--sl-border-default)',
+                        borderRadius: '8px',
+                        padding: '8px',
+                        flexShrink: 0,
+                        '&:hover': {
+                          color: 'var(--sl-brand-primary)',
+                          borderColor: 'var(--sl-brand-primary)',
+                        },
+                      }}
+                    >
+                      <FolderOpenIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Box>
+                <Typography sx={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
+                  Used as working directory for chat commands.
+                </Typography>
               </Box>
 
               <Box className="flex gap-3 pt-2">

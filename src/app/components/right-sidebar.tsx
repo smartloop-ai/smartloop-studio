@@ -8,7 +8,10 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -30,6 +33,7 @@ interface RightSidebarProps {
   onSaveSkills: (skills: Skill[]) => void;
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
+  onFolderPathChange?: (path: string) => void;
   user: any;
 }
 
@@ -41,8 +45,9 @@ export default function RightSidebar({
   onSaveSkills,
   onAddDocument,
   onDeleteDocument,
+  onFolderPathChange,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'rules' | 'documents' | 'mcp' | null>(null);
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -56,6 +61,7 @@ export default function RightSidebar({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [newSkillName, setNewSkillName] = useState('');
   const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
+  const [localFolderPath, setLocalFolderPath] = useState('');
 
   // Resizable sidebar
   const [sidebarWidth, setSidebarWidth] = useState(380);
@@ -94,6 +100,11 @@ export default function RightSidebar({
     minHeight: '300px',
     placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
+
+  // Sync local folder path when project or its data changes
+  useEffect(() => {
+    setLocalFolderPath(currentProjectData?.folder_path || '');
+  }, [currentProjectData?.folder_path, selectedProject?.id]);
 
   // Resize handler
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -170,7 +181,7 @@ export default function RightSidebar({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (activeSection === 'rules' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
+        if (activeSection === 'settings' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
           const isNew = editingSkillIndex >= projectSkills.length;
           const updated = isNew
             ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
@@ -182,7 +193,7 @@ export default function RightSidebar({
       }
     };
 
-    if (activeSection === 'rules') {
+    if (activeSection === 'settings') {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
@@ -314,7 +325,7 @@ export default function RightSidebar({
         // OAuth required - open auth URL (session stored server-side)
         setNewMcpName('');
         setNewMcpUrl('');
-                mcpServerCountRef.current = mcpServers.length;
+        mcpServerCountRef.current = mcpServers.length;
         setMcpPolling(true);
 
         console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
@@ -330,7 +341,7 @@ export default function RightSidebar({
         const serverId = data.id || data.server_id;
         setNewMcpName('');
         setNewMcpUrl('');
-                await loadMcpServers();
+        await loadMcpServers();
         if (serverId) {
           setDiscoveringServerId(serverId);
         }
@@ -379,7 +390,7 @@ export default function RightSidebar({
         const serverId = resData?.id || resData?.server_id;
         setNewMcpName('');
         setNewMcpEnv('');
-                setMcpServerType('remote');
+        setMcpServerType('remote');
         await loadMcpServers();
         if (serverId) {
           setDiscoveringServerId(serverId);
@@ -529,6 +540,20 @@ export default function RightSidebar({
     }
   };
 
+  const handleBrowseFolder = async () => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI?.selectFolder) return;
+    const selected = await electronAPI.selectFolder();
+    if (selected) {
+      setLocalFolderPath(selected);
+      if (onFolderPathChange) onFolderPathChange(selected);
+    }
+  };
+
+  const handleSaveFolderPath = () => {
+    if (onFolderPathChange) onFolderPathChange(localFolderPath);
+  };
+
   return (
     <Box
       className="relative"
@@ -574,7 +599,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'rules' ? 'Skills' : activeSection === 'mcp' ? 'MCP Servers' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
@@ -585,7 +610,7 @@ export default function RightSidebar({
                 <span>Add</span>
               </button>
             )}
-            {selectedProject && activeSection === 'rules' && editingSkillIndex !== null && (
+            {selectedProject && activeSection === 'settings' && editingSkillIndex !== null && (
               <button
                 onClick={() => {
                   if (hasUnsavedChanges && !isSavingSkills && editingSkillContent.trim()) {
@@ -626,84 +651,25 @@ export default function RightSidebar({
             )}
           </Box>
 
-          {/* Skills Section */}
-          {activeSection === 'rules' && selectedProject && currentProjectData && (
-            <div className="w-full">
-              {editingSkillIndex !== null ? (
-                /* Skill Editor */
-                <div className="w-full">
-                  <button
-                    onClick={() => {
-                      const isNew = editingSkillIndex >= projectSkills.length;
-                      if (hasUnsavedChanges && editingSkillContent.trim()) {
-                        const updated = isNew
-                          ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
-                          : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
-                        onSaveSkills(updated);
-                        if (isNew) setNewSkillName('');
-                      }
-                      setEditingSkillIndex(null);
-                      setEditingSkillContent('');
-                      setHasUnsavedChanges(false);
-                    }}
-                    className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 mb-3 transition-colors"
-                  >
-                    <span>&larr;</span>
-                    <span>Back to skills</span>
-                  </button>
-                  <div className="text-xs text-white font-medium mb-2">
-                    {editingSkillIndex < projectSkills.length
-                      ? projectSkills[editingSkillIndex]?.name
-                      : newSkillName}
-                  </div>
-                  <Box className="markdown-editor-container w-full">
-                    <SimpleMDE
-                      value={editingSkillContent}
-                      onChange={(value: string) => {
-                        setEditingSkillContent(value);
-                        const isNew = editingSkillIndex >= projectSkills.length;
-                        setHasUnsavedChanges(isNew ? value.trim() !== '' : value !== projectSkills[editingSkillIndex]?.content);
-                      }}
-                      options={editorOptions}
-                      getMdeInstance={(instance) => {
-                        editorRef.current = instance;
-                      }}
-                    />
-                  </Box>
-                  <p className="text-gray-400 text-[10px] leading-relaxed mt-2">
-                    Press Ctrl+S (Cmd+S on Mac) to save changes.
-                  </p>
-                </div>
-              ) : (
-                /* Skills List */
-                <div className="space-y-2">
-                  {/* Search / Add Skill Input */}
+          {/* Project Settings Section */}
+          {activeSection === 'settings' && selectedProject && currentProjectData && (
+            <div className="space-y-6">
+
+              {/* Working Directory */}
+              <div>
+                <div className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">Working Directory</div>
+                <Box className="flex gap-2 items-start">
                   <TextField
                     size="small"
-                    placeholder="Search or add a skill..."
-                    value={newSkillName}
-                    onChange={(e) => setNewSkillName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newSkillName.trim()) {
-                        const match = projectSkills.find(s => s.name.toLowerCase() === newSkillName.trim().toLowerCase());
-                        if (match) {
-                          const idx = projectSkills.indexOf(match);
-                          setEditingSkillIndex(idx);
-                          setEditingSkillContent(match.content);
-                          setHasUnsavedChanges(false);
-                        } else {
-                          // Add new skill — open editor, save when content is provided
-                          setEditingSkillIndex(projectSkills.length);
-                          setEditingSkillContent('');
-                          setHasUnsavedChanges(false);
-                        }
-                      }
-                    }}
+                    value={localFolderPath}
+                    onChange={(e) => setLocalFolderPath(e.target.value)}
+                    onBlur={handleSaveFolderPath}
+                    placeholder={`~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
                     fullWidth
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <SearchIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                          <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
                         </InputAdornment>
                       ),
                     }}
@@ -722,112 +688,268 @@ export default function RightSidebar({
                       },
                     }}
                   />
+                  <Box sx={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                    {!!(window as any).electronAPI?.selectFolder && (
+                      <Tooltip title="Browse folder" placement="left">
+                        <IconButton
+                          size="small"
+                          onClick={handleBrowseFolder}
+                          sx={{
+                            color: 'var(--sl-text-muted)',
+                            bgcolor: 'var(--sl-white-alpha-5)',
+                            borderRadius: '6px',
+                            padding: '8px',
+                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-brand-alpha-10)' },
+                          }}
+                        >
+                          <FolderOpenIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
 
-                  {/* Skill Items (filtered by search) */}
-                  {(() => {
-                    const query = newSkillName.trim().toLowerCase();
-                    const filtered = projectSkills.filter(s =>
-                      !(s as any).system &&
-                      (!query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query))
-                    );
-                    return filtered.length > 0 ? (
-                    filtered.map((skill) => {
-                      const index = projectSkills.indexOf(skill);
-                      return (
-                      <Box
-                        key={`skill-${index}`}
+                  </Box>
+                </Box>
+                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                  Sent as working directory (<code>cwd</code>) with each chat message.
+                </p>
+              </div>
+
+              {/* Skills */}
+              <div>
+                <div className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">Skills</div>
+                <div className="w-full">
+                  {editingSkillIndex !== null ? (
+                    /* Skill Editor */
+                    <div className="w-full">
+                      <button
                         onClick={() => {
-                          setEditingSkillIndex(index);
-                          setEditingSkillContent(skill.content);
+                          const isNew = editingSkillIndex >= projectSkills.length;
+                          if (hasUnsavedChanges && editingSkillContent.trim()) {
+                            const updated = isNew
+                              ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
+                              : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
+                            onSaveSkills(updated);
+                            if (isNew) setNewSkillName('');
+                          }
+                          setEditingSkillIndex(null);
+                          setEditingSkillContent('');
                           setHasUnsavedChanges(false);
                         }}
-                        onMouseEnter={() => setHoveredSkillIndex(index)}
-                        onMouseLeave={() => setHoveredSkillIndex(null)}
-                        sx={{
-                          padding: '10px',
-                          borderRadius: '6px',
-                          bgcolor: 'var(--sl-white-alpha-2)',
-                          border: '1px solid var(--sl-white-alpha-5)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                          '&:hover': {
-                            bgcolor: 'var(--sl-white-alpha-5)',
-                            borderColor: 'var(--sl-white-alpha-8)',
-                          },
-                          position: 'relative',
-                        }}
+                        className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 mb-3 transition-colors"
                       >
-                        <Box className="flex items-center justify-between">
-                          <Box className="flex items-center gap-2 min-w-0">
-                            <BuildOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
-                            <span className="text-xs text-white font-medium truncate">
-                              {skill.name || 'Untitled Skill'}
-                            </span>
-                          </Box>
-                          {!skill.name?.startsWith('system:') && (
-                            <Tooltip title="Delete Skill" arrow>
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const updated = projectSkills.filter((_, i) => i !== index);
-                                  onSaveSkills(updated);
+                        <span>&larr;</span>
+                        <span>Back to skills</span>
+                      </button>
+                      <div className="text-xs text-white font-medium mb-2">
+                        {editingSkillIndex < projectSkills.length
+                          ? projectSkills[editingSkillIndex]?.name
+                          : newSkillName}
+                      </div>
+                      <Box className="markdown-editor-container w-full">
+                        <SimpleMDE
+                          value={editingSkillContent}
+                          onChange={(value: string) => {
+                            setEditingSkillContent(value);
+                            const isNew = editingSkillIndex >= projectSkills.length;
+                            setHasUnsavedChanges(isNew ? value.trim() !== '' : value !== projectSkills[editingSkillIndex]?.content);
+                          }}
+                          options={editorOptions}
+                          getMdeInstance={(instance) => {
+                            editorRef.current = instance;
+                          }}
+                        />
+                      </Box>
+                      <p className="text-gray-400 text-[10px] leading-relaxed mt-2">
+                        Press Ctrl+S (Cmd+S on Mac) to save changes.
+                      </p>
+                    </div>
+                  ) : (
+                    /* Skills List */
+                    <div className="space-y-2">
+                      {/* Search / Add Skill Input */}
+                      <TextField
+                        size="small"
+                        placeholder="Search or add a skill..."
+                        value={newSkillName}
+                        onChange={(e) => setNewSkillName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newSkillName.trim()) {
+                            const match = projectSkills.find(s => s.name.toLowerCase() === newSkillName.trim().toLowerCase());
+                            if (match) {
+                              const idx = projectSkills.indexOf(match);
+                              setEditingSkillIndex(idx);
+                              setEditingSkillContent(match.content);
+                              setHasUnsavedChanges(false);
+                            } else {
+                              // Add new skill — open editor, save when content is provided
+                              setEditingSkillIndex(projectSkills.length);
+                              setEditingSkillContent('');
+                              setHasUnsavedChanges(false);
+                            }
+                          }
+                        }}
+                        fullWidth
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <SearchIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                            </InputAdornment>
+                          ),
+                        }}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            backgroundColor: 'var(--sl-white-alpha-2)',
+                            fontSize: '0.75rem',
+                            '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                            '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                            '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                          },
+                          '& .MuiInputBase-input': {
+                            color: 'var(--sl-text-primary)',
+                            padding: '8px 12px',
+                            '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                          },
+                        }}
+                      />
+
+                      {/* Skill Items (filtered by search) */}
+                      {(() => {
+                        const query = newSkillName.trim().toLowerCase();
+                        const filtered = projectSkills.filter(s =>
+                          !(s as any).system &&
+                          (!query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query))
+                        );
+                        return filtered.length > 0 ? (
+                          filtered.map((skill) => {
+                            const index = projectSkills.indexOf(skill);
+                            return (
+                              <Box
+                                key={`skill-${index}`}
+                                onClick={() => {
+                                  setEditingSkillIndex(index);
+                                  setEditingSkillContent(skill.content);
+                                  setHasUnsavedChanges(false);
                                 }}
+                                onMouseEnter={() => setHoveredSkillIndex(index)}
+                                onMouseLeave={() => setHoveredSkillIndex(null)}
                                 sx={{
-                                  opacity: hoveredSkillIndex === index ? 1 : 0,
-                                  transition: 'opacity 0.15s ease',
-                                  color: 'var(--sl-text-muted)',
-                                  bgcolor: 'var(--sl-danger-alpha-10)',
-                                  padding: '4px',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  bgcolor: 'var(--sl-white-alpha-2)',
+                                  border: '1px solid var(--sl-white-alpha-5)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  position: 'relative',
                                   '&:hover': {
-                                    color: 'var(--sl-status-error)',
-                                    bgcolor: 'var(--sl-danger-alpha-15)',
+                                    bgcolor: 'var(--sl-white-alpha-5)',
+                                    borderColor: 'var(--sl-white-alpha-8)',
                                   },
                                 }}
                               >
-                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                              </IconButton>
-                            </Tooltip>
-                          )}
-                        </Box>
-                        {skill.content && (
-                          <div
-                            className="text-[10px] text-gray-400 leading-relaxed mt-1.5 ml-6"
-                            style={{
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {skill.content.replace(/\n/g, ' ').trim()}
-                          </div>
-                        )}
-                      </Box>
-                    );})
-                  ) : query ? (
-                    <Box className="text-center py-4">
-                      <Box className="text-gray-400 text-xs mb-1">
-                        No skills match "{newSkillName.trim()}"
-                      </Box>
-                      <Box className="text-gray-500 text-[10px]">
-                        Press Enter to create it
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Box className="flex flex-col items-center justify-center py-8 text-center">
-                      <BuildOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
-                      <Box className="text-gray-400 text-sm mb-1">
-                        No skills configured
-                      </Box>
-                      <Box className="text-gray-500 text-xs">
-                        Type a name above and press Enter to add one
-                      </Box>
-                    </Box>
-                  );
-                  })()}
+                                <Box className="flex items-start gap-2">
+                                  {/* Skill Icon Badge */}
+                                  <Box
+                                    sx={{
+                                      width: 32,
+                                      height: 32,
+                                      borderRadius: '50%',
+                                      bgcolor: 'var(--sl-brand-alpha-10)',
+                                      flexShrink: 0,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginTop: '2px',
+                                    }}
+                                  >
+                                    <BuildOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                                  </Box>
+
+                                  {/* Skill Content */}
+                                  <Box className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                      <span className="text-xs text-white font-medium truncate">
+                                        {skill.name || 'Untitled Skill'}
+                                      </span>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', opacity: hoveredSkillIndex === index ? 1 : 0, transition: 'opacity 0.15s ease' }}>
+                                        <IconButton
+                                          size="small"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditingSkillIndex(index);
+                                            setEditingSkillContent(skill.content);
+                                            setHasUnsavedChanges(false);
+                                          }}
+                                          sx={{
+                                            color: 'var(--sl-text-muted)',
+                                            padding: '4px',
+                                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-white-alpha-5)' },
+                                          }}
+                                        >
+                                          <EditOutlinedIcon sx={{ fontSize: 14 }} />
+                                        </IconButton>
+                                        {!skill.name?.startsWith('system:') && (
+                                          <IconButton
+                                            size="small"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const updated = projectSkills.filter((_, i) => i !== index);
+                                              onSaveSkills(updated);
+                                            }}
+                                            sx={{
+                                              color: 'var(--sl-text-muted)',
+                                              padding: '4px',
+                                              '&:hover': { color: 'var(--sl-status-error)', bgcolor: 'var(--sl-danger-alpha-10)' },
+                                            }}
+                                          >
+                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                          </IconButton>
+                                        )}
+                                      </Box>
+                                    </div>
+                                    {skill.content && (
+                                      <div
+                                        className="text-[10px] text-gray-400 leading-relaxed"
+                                        style={{
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: 2,
+                                          WebkitBoxOrient: 'vertical',
+                                          overflow: 'hidden',
+                                          wordBreak: 'break-word',
+                                        }}
+                                      >
+                                        {skill.content.replace(/\n/g, ' ').trim()}
+                                      </div>
+                                    )}
+                                  </Box>
+                                </Box>
+                              </Box>
+                            );
+                          })
+                        ) : query ? (
+                          <Box className="text-center py-4">
+                            <Box className="text-gray-400 text-xs mb-1">
+                              No skills match "{newSkillName.trim()}"
+                            </Box>
+                            <Box className="text-gray-500 text-[10px]">
+                              Press Enter to create it
+                            </Box>
+                          </Box>
+                        ) : (
+                          <Box className="flex flex-col items-center justify-center py-8 text-center">
+                            <BuildOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                            <Box className="text-gray-400 text-sm mb-1">
+                              No skills configured
+                            </Box>
+                            <Box className="text-gray-500 text-xs">
+                              Type a name above and press Enter to add one
+                            </Box>
+                          </Box>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1227,7 +1349,7 @@ export default function RightSidebar({
               disabled={selectedProject?.system}
               sx={{
                 color: activeSection === 'documents' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: activeSection === 'documents' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
+                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
@@ -1249,41 +1371,13 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={"Skills"} placement="left">
-          <span className={'cursor-default'}>
-            <IconButton
-              onClick={() => setActiveSection(activeSection === 'rules' ? null : 'rules')}
-              sx={{
-                color: activeSection === 'rules' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: activeSection === 'rules' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                '&:hover': {
-                  color:  'var(--sl-brand-primary)',
-                  bgcolor: 'var(--sl-brand-alpha-10)',
-                },
-                '&.Mui-disabled': {
-                  color: 'var(--sl-text-disabled)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  opacity: 0.5,
-                  cursor: 'not-allowed',
-                  pointerEvents: 'auto',
-                },
-              }}
-              size="small"
-            >
-              <BuildOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
         <Tooltip title="MCP Servers" placement="left">
           <span>
             <IconButton
               onClick={() => { setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
               sx={{
                 color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: activeSection === 'mcp' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
+                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: 'pointer',
@@ -1302,6 +1396,32 @@ export default function RightSidebar({
               size="small"
             >
               <PowerOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        {/* Spacer pushes Settings icon to bottom */}
+        <Box sx={{ flex: 1 }} />
+
+        {/* Project Settings gear icon */}
+        <Tooltip title="Project Settings" placement="left">
+          <span>
+            <IconButton
+              onClick={() => setActiveSection(activeSection === 'settings' ? null : 'settings')}
+              sx={{
+                color: activeSection === 'settings' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: 'var(--sl-white-alpha-5)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: 'var(--sl-brand-primary)',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
+                },
+              }}
+              size="small"
+            >
+              <SettingsIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
