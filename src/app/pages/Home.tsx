@@ -132,15 +132,14 @@ export default function Home() {
     loadModel();
   }, [selectedProject]);
 
-  // Load a single project — try local API first, fall back to user.projects
+  // Load a single project from local SLP service (enriched with SQLite metadata)
   const loadProjectFromApi = async (projectId: string) => {
     try {
       const projects = await projectService.getProjects();
-      const found = projects.find((p: any) => p.id === projectId);
-      if (found) return found;
-    } catch { }
-    // Fall back to user.projects when local API is unavailable
-    return user?.projects?.find((p: any) => p.id === projectId) || null;
+      return projects.find((p: any) => p.id === projectId) || null;
+    } catch {
+      return null;
+    }
   };
 
   // Ensure a project is always selected — fall back to system project
@@ -618,6 +617,14 @@ export default function Home() {
     } finally {
       setIsSavingSkills(false);
     }
+  };
+
+  const handleFolderPathChange = async (path: string) => {
+    if (!selectedProject?.id) return;
+    await storageService.updateProjectMeta(selectedProject.id, { folder_path: path });
+    const updated = { ...currentProjectData, folder_path: path };
+    setCurrentProjectData(updated);
+    setSelectedProject((prev: any) => prev ? { ...prev, folder_path: path } : prev);
   };
 
 
@@ -1435,6 +1442,7 @@ export default function Home() {
                       onSaveSkills={saveProjectSkills}
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}
+                      onFolderPathChange={handleFolderPathChange}
                       user={user}
                     />
                   )}

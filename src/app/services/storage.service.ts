@@ -239,7 +239,7 @@ class StorageService {
 
   // --- Project metadata (SQLite) ---
 
-  async upsertProject(project: { id: string; name: string; color?: string; temperature?: number; system?: boolean }): Promise<any> {
+  async upsertProject(project: { id: string; name: string; color?: string; temperature?: number; system?: boolean; folder_path?: string }): Promise<any> {
     if (!this.db) return null;
     try {
       return await this.db.upsertProject(project);
@@ -269,7 +269,7 @@ class StorageService {
     }
   }
 
-  async updateProjectMeta(projectId: string, updates: { name?: string; color?: string; temperature?: number }): Promise<any> {
+  async updateProjectMeta(projectId: string, updates: { name?: string; color?: string; temperature?: number; folder_path?: string }): Promise<any> {
     if (!this.db) return null;
     try {
       return await this.db.updateProject(projectId, updates);

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -87,6 +87,19 @@ ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
   fs.writeFileSync(filePath, Buffer.from(buffer));
   return filePath;
 });
+
+// IPC: select a folder using native dialog
+ipcMain.handle('select-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Select Project Folder',
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// IPC: get the OS home directory
+ipcMain.handle('get-home-dir', () => os.homedir());
 
 // --- SQLite database IPC handlers ---
 
@@ -413,7 +426,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.remove('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -432,7 +445,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(statusText)};
       document.getElementById('progress-fill').style.width = '${pct}%';
       document.getElementById('progress-fill').classList.remove('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -442,7 +455,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -452,7 +465,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = 'Starting service...';
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 }

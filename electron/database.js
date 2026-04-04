@@ -93,6 +93,13 @@ function openDatabase() {
     console.log('[DB] Added is_selected column to conversations');
   }
 
+  // Migration: add folder_path column to projects
+  const projectCols = db.prepare("PRAGMA table_info(projects)").all();
+  if (!projectCols.find(c => c.name === 'folder_path')) {
+    db.exec("ALTER TABLE projects ADD COLUMN folder_path TEXT");
+    console.log('[DB] Added folder_path column to projects');
+  }
+
   console.log('[DB] Database opened at', DB_PATH);
   return db;
 }
@@ -107,19 +114,39 @@ function closeDatabase() {
 
 // --- Projects ---
 
-function upsertProject({ id, name, color, temperature, system }) {
+/**
+ * Expand ~ to home directory and create the folder if it does not exist.
+ * Returns the resolved absolute path, or the original value on error.
+ */
+function ensureFolderPath(folderPath) {
+  if (!folderPath) return folderPath;
+  try {
+    const resolved = folderPath.startsWith('~')
+      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      : folderPath;
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
+  } catch (err) {
+    console.warn('[DB] Could not create project folder:', folderPath, err.message);
+    return folderPath;
+  }
+}
+
+function upsertProject({ id, name, color, temperature, system, folder_path }) {
   const d = openDatabase();
   const now = new Date().toISOString();
+  const resolvedPath = ensureFolderPath(folder_path);
   d.prepare(`
-    INSERT INTO projects (id, name, color, temperature, system, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, color, temperature, system, folder_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       color = COALESCE(excluded.color, projects.color),
       temperature = COALESCE(excluded.temperature, projects.temperature),
       system = COALESCE(excluded.system, projects.system),
+      folder_path = COALESCE(excluded.folder_path, projects.folder_path),
       updated_at = excluded.updated_at
-  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, now, now);
+  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, resolvedPath || null, now, now);
   return getProject(id);
 }
 
@@ -142,6 +169,7 @@ function updateProject(id, updates) {
   if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
   if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
   if (updates.temperature !== undefined) { fields.push('temperature = ?'); values.push(updates.temperature); }
+  if (updates.folder_path !== undefined) { fields.push('folder_path = ?'); values.push(ensureFolderPath(updates.folder_path)); }
 
   if (fields.length === 0) return getProject(id);
 
@@ -165,6 +193,7 @@ function formatProject(row) {
     color: row.color,
     temperature: row.temperature,
     system: !!row.system,
+    folder_path: row.folder_path || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

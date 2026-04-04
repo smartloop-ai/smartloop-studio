@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, IconButton, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Chip } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderIcon from '@mui/icons-material/Folder';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -32,6 +33,15 @@ export default function ProjectsList() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Default to grid view
   const [sortBy, setSortBy] = useState<'name' | 'lastUsed'>('lastUsed');
   const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
+  const [folderPath, setFolderPath] = useState('');
+  const [folderPathTouched, setFolderPathTouched] = useState(false);
+  const [homeDir, setHomeDir] = useState('~');
+
+  useEffect(() => {
+    window.electronAPI?.getHomeDir?.().then((dir) => {
+      if (dir) setHomeDir(dir);
+    });
+  }, []);
   const navigate = useNavigate();
 
   // Optimized search and sort using useMemo
@@ -153,6 +163,8 @@ export default function ProjectsList() {
   const handleOpenCreateDialog = () => {
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
+    setFolderPath(`${homeDir}/smartloop`);
+    setFolderPathTouched(false);
     setErrorMessage('');
     setOpenCreateDialog(true);
   };
@@ -161,7 +173,18 @@ export default function ProjectsList() {
     setOpenCreateDialog(false);
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
+    setFolderPath(`${homeDir}/smartloop`);
+    setFolderPathTouched(false);
     setErrorMessage('');
+  };
+
+  const handleBrowseFolder = async () => {
+    if (!window.electronAPI?.selectFolder) return;
+    const selected = await window.electronAPI.selectFolder();
+    if (selected) {
+      setFolderPath(selected);
+      setFolderPathTouched(true);
+    }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -178,10 +201,13 @@ export default function ProjectsList() {
     try {
       // Use project service to create project
       const selectedModel = await storageService.getItem('selected_model') || '';
+      const slug = newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_');
+      const defaultPath = `~/smartloop/${slug}`;
       const result = await projectService.createProject({
         name: newProjectTitle.trim(),
         color: selectedColor,
         model_name: selectedModel,
+        folder_path: folderPath.trim() || defaultPath,
       });
 
       if (result.success && result.data) {
@@ -208,563 +234,625 @@ export default function ProjectsList() {
           <Box className="min-h-screen bg-black text-white">
             <Box className="p-4">
               <Box className="max-w-6xl mx-auto mt-6 md:mt-8">
-              {/* Header */}
-              <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
-                <Box>
-                  <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-1">Projects</h1>
-                  <p className="text-gray-400 text-xs md:text-sm mt-2">Manage your projects and their documents</p>
-                </Box>
-
-                <Box className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
-                  <Box className="flex items-center gap-1 bg-gray-900/50 border border-gray-700 rounded-lg p-1">
-                    <IconButton
-                      size="small"
-                      onClick={() => setViewMode('grid')}
-                      sx={{
-                        color: viewMode === 'grid' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                        bgcolor: viewMode === 'grid' ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                        border: viewMode === 'grid' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
-                        '&:hover': {
-                          bgcolor: 'var(--sl-brand-alpha-10)',
-                          borderColor: 'var(--sl-brand-alpha-20)',
-                        },
-                        padding: '8px',
-                        borderRadius: '6px',
-                      }}
-                    >
-                      <CalendarViewMonthIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => setViewMode('list')}
-                      sx={{
-                        color: viewMode === 'list' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                        bgcolor: viewMode === 'list' ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                        border: viewMode === 'list' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
-                        '&:hover': {
-                          bgcolor: 'var(--sl-brand-alpha-10)',
-                          borderColor: 'var(--sl-brand-alpha-20)',
-                        },
-                        padding: '8px',
-                        borderRadius: '6px',
-                      }}
-                    >
-                      <ViewListIcon fontSize="small" />
-                    </IconButton>
+                {/* Header */}
+                <Box className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
+                  <Box>
+                    <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-1">Projects</h1>
+                    <p className="text-gray-400 text-xs md:text-sm mt-2">Manage your projects and their documents</p>
                   </Box>
 
-                  <button
-                    onClick={handleOpenCreateDialog}
-                    className="flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg border border-pink-500/30 transition-all shadow-lg shadow-pink-500/20"
-                  >
-                    <AddIcon sx={{ fontSize: { xs: 18, md: 20 } }} />
-                    <span className="text-xs md:text-sm font-medium">New Project</span>
-                  </button>
+                  <Box className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
+                    <Box className="flex items-center gap-1 bg-gray-900/50 border border-gray-700 rounded-lg p-1">
+                      <IconButton
+                        size="small"
+                        onClick={() => setViewMode('grid')}
+                        sx={{
+                          color: viewMode === 'grid' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                          bgcolor: viewMode === 'grid' ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                          border: viewMode === 'grid' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
+                          '&:hover': {
+                            bgcolor: 'var(--sl-brand-alpha-10)',
+                            borderColor: 'var(--sl-brand-alpha-20)',
+                          },
+                          padding: '8px',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        <CalendarViewMonthIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => setViewMode('list')}
+                        sx={{
+                          color: viewMode === 'list' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                          bgcolor: viewMode === 'list' ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                          border: viewMode === 'list' ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
+                          '&:hover': {
+                            bgcolor: 'var(--sl-brand-alpha-10)',
+                            borderColor: 'var(--sl-brand-alpha-20)',
+                          },
+                          padding: '8px',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        <ViewListIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
 
-                  <button
-                    onClick={(e) => setSortMenuAnchor(e.currentTarget)}
-                    className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-gray-900/50 hover:bg-gray-800/50 text-gray-300 rounded-lg border border-gray-700 hover:border-gray-600 transition-all"
-                  >
-                    <span className="text-xs md:text-sm">Sort</span>
-                    <SortIcon sx={{ fontSize: { xs: 16, md: 20 } }} />
-                  </button>
-                </Box>
-              </Box>
-
-              {/* Sort Menu */}
-              <Menu
-                anchorEl={sortMenuAnchor}
-                open={Boolean(sortMenuAnchor)}
-                onClose={() => setSortMenuAnchor(null)}
-                PaperProps={{
-                  sx: {
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                    border: '1px solid var(--sl-border-default)',
-                    borderRadius: '8px',
-                    minWidth: '180px',
-                    mt: 1,
-                  }
-                }}
-              >
-                <MenuItem
-                  onClick={() => {
-                    setSortBy('name');
-                    setSortMenuAnchor(null);
-                  }}
-                  sx={{
-                    color: 'var(--sl-text-secondary)',
-                    fontSize: '14px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
-                  }}
-                >
-                  <span>By Name</span>
-                  {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setSortBy('lastUsed');
-                    setSortMenuAnchor(null);
-                  }}
-                  sx={{
-                    color: 'var(--sl-text-secondary)',
-                    fontSize: '14px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
-                  }}
-                >
-                  <span>By Last Used</span>
-                  {sortBy === 'lastUsed' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
-                </MenuItem>
-              </Menu>
-
-              {/* Search Bar */}
-              <Box className="mb-6">
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    bgcolor: 'rgba(17, 24, 39, 0.5)',
-                    borderRadius: '16px',
-                    padding: '14px 18px',
-                    border: '1px solid rgba(75, 85, 99, 0.3)',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      borderColor: 'var(--sl-brand-alpha-50)',
-                    },
-                    '&:focus-within': {
-                      borderColor: 'var(--sl-brand-primary)',
-                    },
-                  }}
-                >
-                  <SearchIcon sx={{ color: 'var(--sl-text-disabled)' }} />
-                  <input
-                    type="text"
-                    placeholder="Search projects..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-transparent border-none outline-none text-white text-sm flex-1 placeholder-gray-500"
-                  />
-                  <span className="text-gray-500 text-xs bg-gray-800 px-2 py-1 rounded">⌘ K</span>
-                </Box>
-              </Box>
-
-              {/* Projects Grid/List */}
-              <Box className={filteredProjects.length > 0 ? (viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-3') : ''}>
-                {filteredProjects.length > 0 ? (
-                  filteredProjects.map((project: any, index: number) => (
-                    <Box
-                      key={`${project.id}-${index}`}
-                      sx={{
-                        bgcolor: 'rgba(17, 24, 39, 0.6)',
-                        border: '1px solid rgba(75, 85, 99, 0.3)',
-                        borderRadius: '16px',
-                        padding: '24px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        height: viewMode === 'grid' ? '100%' : 'auto',
-                        '&:hover': {
-                          bgcolor: 'rgba(17, 24, 39, 0.8)',
-                          borderColor: 'var(--sl-brand-alpha-40)',
-                        }
-                      }}
-                      onClick={() => handleOpenProject(project, 0)}
+                    <button
+                      onClick={handleOpenCreateDialog}
+                      className="flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg border border-pink-500/30 transition-all shadow-lg shadow-pink-500/20"
                     >
-                      <Box className={viewMode === 'grid' ? 'flex flex-col h-full' : 'flex items-center justify-between'}>
-                        <Box className="flex-1">
-                          <h3 className="text-white font-medium text-base mb-2">
-                            {viewMode === 'grid'
-                              ? `${(project.title || project.name || 'Untitled Project').substring(0, 20)}${(project.title || project.name || '').length > 20 ? '...' : ''}`
-                              : (project.title || project.name || 'Untitled Project')
-                            }
-                          </h3>
+                      <AddIcon sx={{ fontSize: { xs: 18, md: 20 } }} />
+                      <span className="text-xs md:text-sm font-medium">New Project</span>
+                    </button>
 
-                          <Box className="text-gray-500 text-xs mb-3 font-light">
-                            Last updated: {formatDate(project.updated_at || project.created_at)}
+                    <button
+                      onClick={(e) => setSortMenuAnchor(e.currentTarget)}
+                      className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 bg-gray-900/50 hover:bg-gray-800/50 text-gray-300 rounded-lg border border-gray-700 hover:border-gray-600 transition-all"
+                    >
+                      <span className="text-xs md:text-sm">Sort</span>
+                      <SortIcon sx={{ fontSize: { xs: 16, md: 20 } }} />
+                    </button>
+                  </Box>
+                </Box>
+
+                {/* Sort Menu */}
+                <Menu
+                  anchorEl={sortMenuAnchor}
+                  open={Boolean(sortMenuAnchor)}
+                  onClose={() => setSortMenuAnchor(null)}
+                  PaperProps={{
+                    sx: {
+                      bgcolor: 'var(--sl-bg-surface-1)',
+                      border: '1px solid var(--sl-border-default)',
+                      borderRadius: '8px',
+                      minWidth: '180px',
+                      mt: 1,
+                    }
+                  }}
+                >
+                  <MenuItem
+                    onClick={() => {
+                      setSortBy('name');
+                      setSortMenuAnchor(null);
+                    }}
+                    sx={{
+                      color: 'var(--sl-text-secondary)',
+                      fontSize: '14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
+                    }}
+                  >
+                    <span>By Name</span>
+                    {sortBy === 'name' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setSortBy('lastUsed');
+                      setSortMenuAnchor(null);
+                    }}
+                    sx={{
+                      color: 'var(--sl-text-secondary)',
+                      fontSize: '14px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      '&:hover': { bgcolor: 'var(--sl-bg-surface-2)' }
+                    }}
+                  >
+                    <span>By Last Used</span>
+                    {sortBy === 'lastUsed' && <CheckIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)', ml: 2 }} />}
+                  </MenuItem>
+                </Menu>
+
+                {/* Search Bar */}
+                <Box className="mb-6">
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      bgcolor: 'rgba(17, 24, 39, 0.5)',
+                      borderRadius: '16px',
+                      padding: '14px 18px',
+                      border: '1px solid rgba(75, 85, 99, 0.3)',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        borderColor: 'var(--sl-brand-alpha-50)',
+                      },
+                      '&:focus-within': {
+                        borderColor: 'var(--sl-brand-primary)',
+                      },
+                    }}
+                  >
+                    <SearchIcon sx={{ color: 'var(--sl-text-disabled)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search projects..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="bg-transparent border-none outline-none text-white text-sm flex-1 placeholder-gray-500"
+                    />
+                    <span className="text-gray-500 text-xs bg-gray-800 px-2 py-1 rounded">⌘ K</span>
+                  </Box>
+                </Box>
+
+                {/* Projects Grid/List */}
+                <Box className={filteredProjects.length > 0 ? (viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-3') : ''}>
+                  {filteredProjects.length > 0 ? (
+                    filteredProjects.map((project: any, index: number) => (
+                      <Box
+                        key={`${project.id}-${index}`}
+                        sx={{
+                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          border: '1px solid rgba(75, 85, 99, 0.3)',
+                          borderRadius: '16px',
+                          padding: '24px',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          height: viewMode === 'grid' ? '100%' : 'auto',
+                          '&:hover': {
+                            bgcolor: 'rgba(17, 24, 39, 0.8)',
+                            borderColor: 'var(--sl-brand-alpha-40)',
+                          }
+                        }}
+                        onClick={() => handleOpenProject(project, 0)}
+                      >
+                        <Box className={viewMode === 'grid' ? 'flex flex-col h-full' : 'flex items-center justify-between'}>
+                          <Box className="flex-1">
+                            <h3 className="text-white font-medium text-base mb-2">
+                              {viewMode === 'grid'
+                                ? `${(project.title || project.name || 'Untitled Project').substring(0, 20)}${(project.title || project.name || '').length > 20 ? '...' : ''}`
+                                : (project.title || project.name || 'Untitled Project')
+                              }
+                            </h3>
+
+                            <Box className="text-gray-500 text-xs mb-3 font-light">
+                              Last updated: {formatDate(project.updated_at || project.created_at)}
+                            </Box>
+
+                            <Box className="flex items-center gap-2">
+                              <Chip
+                                label="#documents"
+                                size="small"
+                                variant="outlined"
+                                sx={{
+                                  bgcolor: 'transparent',
+                                  color: 'var(--sl-brand-primary)',
+                                  fontSize: '11px',
+                                  height: '22px',
+                                  fontWeight: 500,
+                                  border: '1px solid var(--sl-brand-alpha-30)',
+                                  borderRadius: '4px',
+                                }}
+                              />
+                              <Chip
+                                label={(project.documents || []).length}
+                                size="small"
+                                variant="outlined"
+                                sx={{
+                                  bgcolor: 'transparent',
+                                  color: 'var(--sl-brand-primary)',
+                                  fontSize: '11px',
+                                  height: '22px',
+                                  fontWeight: 600,
+                                  border: '1px solid var(--sl-brand-alpha-30)',
+                                  borderRadius: '4px',
+                                }}
+                              />
+                            </Box>
                           </Box>
 
-                          <Box className="flex items-center gap-2">
-                            <Chip
-                              label="#documents"
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                bgcolor: 'transparent',
-                                color: 'var(--sl-brand-primary)',
-                                fontSize: '11px',
-                                height: '22px',
-                                fontWeight: 500,
-                                border: '1px solid var(--sl-brand-alpha-30)',
-                                borderRadius: '4px',
-                              }}
-                            />
-                            <Chip
-                              label={(project.documents || []).length}
-                              size="small"
-                              variant="outlined"
-                              sx={{
-                                bgcolor: 'transparent',
-                                color: 'var(--sl-brand-primary)',
-                                fontSize: '11px',
-                                height: '22px',
-                                fontWeight: 600,
-                                border: '1px solid var(--sl-brand-alpha-30)',
-                                borderRadius: '4px',
-                              }}
-                            />
-                          </Box>
-                        </Box>
-
-                        {/* Action Icons */}
-                        <Box
-                          className={viewMode === 'grid' ? 'flex items-center gap-2 mt-4 pt-4 border-t border-gray-800' : 'flex items-center gap-2'}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenProject(project, 0);
-                            }}
-                            sx={{
-                              color: 'var(--sl-text-muted)',
-                              bgcolor: 'var(--sl-brand-alpha-10)',
-                              border: '1px solid var(--sl-brand-alpha-20)',
-                              '&:hover': {
-                                color: 'var(--sl-brand-primary)',
-                                bgcolor: 'var(--sl-brand-alpha-20)',
-                                borderColor: 'var(--sl-brand-alpha-40)',
-                                transform: 'scale(1.05)',
-                              },
-                              transition: 'all 0.2s',
-                            }}
+                          {/* Action Icons */}
+                          <Box
+                            className={viewMode === 'grid' ? 'flex items-center gap-2 mt-4 pt-4 border-t border-gray-800' : 'flex items-center gap-2'}
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <FolderIcon fontSize="small" />
-                          </IconButton>
-
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenSettings(project);
-                            }}
-                            sx={{
-                              color: 'var(--sl-text-muted)',
-                              bgcolor: 'rgba(168, 85, 247, 0.1)',
-                              border: '1px solid rgba(168, 85, 247, 0.2)',
-                              '&:hover': {
-                                color: 'var(--sl-status-purple)',
-                                bgcolor: 'rgba(168, 85, 247, 0.2)',
-                                borderColor: 'rgba(168, 85, 247, 0.4)',
-                                transform: 'scale(1.05)',
-                              },
-                              transition: 'all 0.2s',
-                            }}
-                          >
-                            <SettingsIcon fontSize="small" />
-                          </IconButton>
-
-                          {!project.system && (
                             <IconButton
                               size="small"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenDeleteDialog(project);
+                                handleOpenProject(project, 0);
                               }}
                               sx={{
                                 color: 'var(--sl-text-muted)',
-                                bgcolor: 'var(--sl-danger-alpha-10)',
-                                border: '1px solid var(--sl-danger-alpha-20)',
+                                bgcolor: 'var(--sl-brand-alpha-10)',
+                                border: '1px solid var(--sl-brand-alpha-20)',
                                 '&:hover': {
-                                  color: 'var(--sl-status-error)',
-                                  bgcolor: 'var(--sl-danger-alpha-20)',
-                                  borderColor: 'var(--sl-danger-alpha-50)',
+                                  color: 'var(--sl-brand-primary)',
+                                  bgcolor: 'var(--sl-brand-alpha-20)',
+                                  borderColor: 'var(--sl-brand-alpha-40)',
                                   transform: 'scale(1.05)',
                                 },
                                 transition: 'all 0.2s',
                               }}
                             >
-                              <DeleteIcon fontSize="small" />
+                              <FolderIcon fontSize="small" />
                             </IconButton>
-                          )}
+
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenSettings(project);
+                              }}
+                              sx={{
+                                color: 'var(--sl-text-muted)',
+                                bgcolor: 'rgba(168, 85, 247, 0.1)',
+                                border: '1px solid rgba(168, 85, 247, 0.2)',
+                                '&:hover': {
+                                  color: 'var(--sl-status-purple)',
+                                  bgcolor: 'rgba(168, 85, 247, 0.2)',
+                                  borderColor: 'rgba(168, 85, 247, 0.4)',
+                                  transform: 'scale(1.05)',
+                                },
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              <SettingsIcon fontSize="small" />
+                            </IconButton>
+
+                            {!project.system && (
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenDeleteDialog(project);
+                                }}
+                                sx={{
+                                  color: 'var(--sl-text-muted)',
+                                  bgcolor: 'var(--sl-danger-alpha-10)',
+                                  border: '1px solid var(--sl-danger-alpha-20)',
+                                  '&:hover': {
+                                    color: 'var(--sl-status-error)',
+                                    bgcolor: 'var(--sl-danger-alpha-20)',
+                                    borderColor: 'var(--sl-danger-alpha-50)',
+                                    transform: 'scale(1.05)',
+                                  },
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </Box>
                         </Box>
                       </Box>
+                    ))
+                  ) : (
+                    <Box className="text-center py-20">
+                      <Box className="text-gray-500 text-lg mb-2">No projects yet</Box>
+                      <Box className="text-gray-600 text-sm">
+                        Create your first project by clicking the <strong className="text-pink-100">+ New Project</strong> button above.
+                      </Box>
                     </Box>
-                  ))
-                ) : (
-                  <Box className="text-center py-20">
-                    <Box className="text-gray-500 text-lg mb-2">No projects yet</Box>
-                    <Box className="text-gray-600 text-sm">
-                      Create your first project by clicking the <strong className="text-pink-100">+ New Project</strong> button above.
-                    </Box>
-                  </Box>
-                )}
+                  )}
+                </Box>
               </Box>
             </Box>
-          </Box>
 
-          {/* Delete Project Dialog */}
-          <Dialog
-            open={openDeleteDialog}
-            onClose={handleCloseDeleteDialog}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paper
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative p-6">
-              {/* Close Button */}
-              <IconButton
-                onClick={handleCloseDeleteDialog}
-                sx={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  color: 'var(--sl-text-disabled)',
-                  '&:hover': {
-                    color: 'var(--sl-text-primary)',
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
+            {/* Delete Project Dialog */}
+            <Dialog
+              open={openDeleteDialog}
+              onClose={handleCloseDeleteDialog}
+              maxWidth="sm"
+              fullWidth
+              PaperProps={{
+                sx: dialogStyles.paper
+              }}
+              BackdropProps={{
+                sx: dialogStyles.backdrop
+              }}
+            >
+              <Box className="relative p-6">
+                {/* Close Button */}
+                <IconButton
+                  onClick={handleCloseDeleteDialog}
+                  sx={{
+                    position: 'absolute',
+                    right: 12,
+                    top: 12,
+                    color: 'var(--sl-text-disabled)',
+                    '&:hover': {
+                      color: 'var(--sl-text-primary)',
+                      bgcolor: 'var(--sl-bg-surface-1)',
+                    },
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
 
-              {/* Title */}
-              <h3 className="text-white font-semibold text-lg mb-6">
-                Delete Project
-              </h3>
-              <form onSubmit={handleDeleteProject}>
-                <Box className="space-y-4">
-                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                    <DeleteIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
+                {/* Title */}
+                <h3 className="text-white font-semibold text-lg mb-6">
+                  Delete Project
+                </h3>
+                <form onSubmit={handleDeleteProject}>
+                  <Box className="space-y-4">
+                    <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                      <DeleteIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
+                      <Box>
+                        <Typography className="text-red-400 font-medium mb-1">
+                          Warning: This action cannot be undone
+                        </Typography>
+                        <Typography className="text-gray-300 text-sm">
+                          Deleting "{projectToDelete?.title || projectToDelete?.name || 'this project'}" will permanently remove all documents, chat history, and associated data.
+                        </Typography>
+                      </Box>
+                    </Box>
+
                     <Box>
-                      <Typography className="text-red-400 font-medium mb-1">
-                        Warning: This action cannot be undone
+                      <Typography className="text-gray-300 text-sm mb-3">
+                        Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
                       </Typography>
-                      <Typography className="text-gray-300 text-sm">
-                        Deleting "{projectToDelete?.title || projectToDelete?.name || 'this project'}" will permanently remove all documents, chat history, and associated data.
-                      </Typography>
+                      <TextField
+                        autoComplete="off"
+                        type="text"
+                        placeholder="Type 'delete' to confirm"
+                        value={deleteConfirm}
+                        onChange={(e) => setDeleteConfirm(e.target.value)}
+                        fullWidth
+                        autoFocus
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            color: 'white',
+                            bgcolor: 'var(--sl-bg-base)',
+                            borderRadius: '8px',
+                            '& fieldset': {
+                              borderColor: 'var(--sl-border-default)',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: 'var(--sl-border-hover)',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: 'var(--sl-status-error)',
+                            },
+                          },
+                          '& .MuiInputBase-input::placeholder': {
+                            color: 'var(--sl-text-disabled)',
+                            opacity: 1,
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    {errorMessage.length > 0 && (
+                      <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                        <Typography className="text-red-400 text-sm">
+                          {errorMessage}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    <Box className="flex items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCloseDeleteDialog}
+                        className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={deleteConfirm.toLowerCase() !== 'delete' || isDeleting}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDeleting ? (
+                          <CircularProgress size={18} sx={{ color: 'white' }} />
+                        ) : (
+                          <>
+                            <DeleteIcon fontSize="small" />
+                            Delete Project
+                          </>
+                        )}
+                      </button>
                     </Box>
                   </Box>
+                </form>
+              </Box>
+            </Dialog>
 
-                  <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
-                    </Typography>
-                    <TextField
-                      autoComplete="off"
-                      type="text"
-                      placeholder="Type 'delete' to confirm"
-                      value={deleteConfirm}
-                      onChange={(e) => setDeleteConfirm(e.target.value)}
-                      fullWidth
-                      autoFocus
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'var(--sl-bg-base)',
-                          borderRadius: '8px',
-                          '& fieldset': {
-                            borderColor: 'var(--sl-border-default)',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: 'var(--sl-border-hover)',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: 'var(--sl-status-error)',
-                          },
-                        },
-                        '& .MuiInputBase-input::placeholder': {
-                          color: 'var(--sl-text-disabled)',
-                          opacity: 1,
-                        },
-                      }}
-                    />
-                  </Box>
+            {/* Create Project Dialog */}
+            <Dialog
+              open={openCreateDialog}
+              onClose={handleCloseCreateDialog}
+              maxWidth="sm"
+              fullWidth
+              PaperProps={{
+                sx: dialogStyles.paper
+              }}
+              BackdropProps={{
+                sx: dialogStyles.backdrop
+              }}
+            >
+              <Box className="relative p-6">
+                {/* Close Button */}
+                <IconButton
+                  onClick={handleCloseCreateDialog}
+                  sx={{
+                    position: 'absolute',
+                    right: 12,
+                    top: 12,
+                    color: 'var(--sl-text-disabled)',
+                    '&:hover': {
+                      color: 'var(--sl-text-primary)',
+                      bgcolor: 'var(--sl-bg-surface-1)',
+                    },
+                  }}
+                >
+                  <CloseIcon />
+                </IconButton>
 
-                  {errorMessage.length > 0 && (
-                    <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                      <Typography className="text-red-400 text-sm">
-                        {errorMessage}
+                {/* Title */}
+                <h3 className="text-white font-semibold text-lg mb-6">
+                  Create New Project
+                </h3>
+                <form onSubmit={handleCreateProject}>
+                  <Box className="space-y-4 py-4">
+                    <Box>
+                      <Typography className="text-gray-300 text-sm mb-3">
+                        Enter a name for your new project:
                       </Typography>
+                      <TextField
+                        autoComplete="off"
+                        type="text"
+                        placeholder="Project name"
+                        value={newProjectTitle}
+                        onChange={(e) => {
+                          setNewProjectTitle(e.target.value);
+                          if (!folderPathTouched) {
+                            const slug = e.target.value.trim().toLowerCase().replace(/\s+/g, '_');
+                            setFolderPath(slug ? `${homeDir}/smartloop/${slug}` : `${homeDir}/smartloop`);
+                          }
+                        }}
+                        fullWidth
+                        autoFocus
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            color: 'white',
+                            bgcolor: 'var(--sl-bg-base)',
+                            borderRadius: '8px',
+                            '& fieldset': {
+                              borderColor: 'var(--sl-border-default)',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: 'var(--sl-border-hover)',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: 'var(--sl-brand-primary)',
+                            },
+                          },
+                          '& .MuiInputBase-input::placeholder': {
+                            color: 'var(--sl-text-disabled)',
+                            opacity: 1,
+                          },
+                        }}
+                      />
                     </Box>
-                  )}
 
-                  <Box className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleCloseDeleteDialog}
-                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={deleteConfirm.toLowerCase() !== 'delete' || isDeleting}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isDeleting ? (
-                        <CircularProgress size={18} sx={{ color: 'white' }} />
-                      ) : (
-                        <>
-                          <DeleteIcon fontSize="small" />
-                          Delete Project
-                        </>
-                      )}
-                    </button>
-                  </Box>
-                </Box>
-              </form>
-            </Box>
-          </Dialog>
+                    {/* Color Label Selector */}
+                    <Box>
+                      <Typography className="text-gray-300 text-sm mb-3">
+                        Select a color label:
+                      </Typography>
+                      <Box className="flex flex-wrap gap-1.5">
+                        {PROJECT_COLORS.map((color) => (
+                          <Box
+                            key={color.value}
+                            onClick={() => setSelectedColor(color.value)}
+                            sx={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              bgcolor: color.value,
+                              cursor: 'pointer',
+                              border: selectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
+                              boxShadow: selectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
+                              transition: 'all 0.2s ease',
+                              '&:hover': {
+                                transform: 'scale(1.1)',
+                                boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
+                              },
+                            }}
+                            title={color.name}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
 
-          {/* Create Project Dialog */}
-          <Dialog
-            open={openCreateDialog}
-            onClose={handleCloseCreateDialog}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-              sx: dialogStyles.paper
-            }}
-            BackdropProps={{
-              sx: dialogStyles.backdrop
-            }}
-          >
-            <Box className="relative p-6">
-              {/* Close Button */}
-              <IconButton
-                onClick={handleCloseCreateDialog}
-                sx={{
-                  position: 'absolute',
-                  right: 12,
-                  top: 12,
-                  color: 'var(--sl-text-disabled)',
-                  '&:hover': {
-                    color: 'var(--sl-text-primary)',
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                  },
-                }}
-              >
-                <CloseIcon />
-              </IconButton>
-
-              {/* Title */}
-              <h3 className="text-white font-semibold text-lg mb-6">
-                Create New Project
-              </h3>
-              <form onSubmit={handleCreateProject}>
-                <Box className="space-y-4 py-4">
-                  <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Enter a name for your new project:
-                    </Typography>
-                    <TextField
-                      autoComplete="off"
-                      type="text"
-                      placeholder="Project name"
-                      value={newProjectTitle}
-                      onChange={(e) => setNewProjectTitle(e.target.value)}
-                      fullWidth
-                      autoFocus
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'var(--sl-bg-base)',
-                          borderRadius: '8px',
-                          '& fieldset': {
-                            borderColor: 'var(--sl-border-default)',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: 'var(--sl-border-hover)',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: 'var(--sl-brand-primary)',
-                          },
-                        },
-                        '& .MuiInputBase-input::placeholder': {
-                          color: 'var(--sl-text-disabled)',
-                          opacity: 1,
-                        },
-                      }}
-                    />
-                  </Box>
-
-                  {/* Color Label Selector */}
-                  <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Select a color label:
-                    </Typography>
-                    <Box className="flex flex-wrap gap-1.5">
-                      {PROJECT_COLORS.map((color) => (
-                        <Box
-                          key={color.value}
-                          onClick={() => setSelectedColor(color.value)}
+                    {/* Folder Path */}
+                    <Box>
+                      <Typography className="text-gray-300 text-sm mb-3">
+                        Project folder path:
+                      </Typography>
+                      <Box className="flex gap-2 items-center">
+                        <TextField
+                          autoComplete="off"
+                          type="text"
+                          placeholder={`${homeDir}/smartloop/${newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_') || 'project-name'}`}
+                          value={folderPath}
+                          onChange={(e) => {
+                            setFolderPath(e.target.value);
+                            setFolderPathTouched(true);
+                          }}
+                          fullWidth
                           sx={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '6px',
-                            bgcolor: color.value,
-                            cursor: 'pointer',
-                            border: selectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
-                            boxShadow: selectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              transform: 'scale(1.1)',
-                              boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
+                            '& .MuiOutlinedInput-root': {
+                              color: 'white',
+                              bgcolor: 'var(--sl-bg-base)',
+                              borderRadius: '8px',
+                              '& fieldset': { borderColor: 'var(--sl-border-default)' },
+                              '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
+                              '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                            },
+                            '& .MuiInputBase-input::placeholder': {
+                              color: 'var(--sl-text-disabled)',
+                              opacity: 1,
                             },
                           }}
-                          title={color.name}
                         />
-                      ))}
-                    </Box>
-                  </Box>
-
-                  {errorMessage.length > 0 && (
-                    <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-                      <Typography className="text-red-400 text-sm">
-                        {errorMessage}
+                        {window.electronAPI?.selectFolder && (
+                          <IconButton
+                            onClick={handleBrowseFolder}
+                            title="Browse folder"
+                            sx={{
+                              color: 'var(--sl-text-muted)',
+                              border: '1px solid var(--sl-border-default)',
+                              borderRadius: '8px',
+                              padding: '8px',
+                              flexShrink: 0,
+                              '&:hover': {
+                                color: 'var(--sl-brand-primary)',
+                                borderColor: 'var(--sl-brand-primary)',
+                              },
+                            }}
+                          >
+                            <FolderOpenIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Box>
+                      <Typography className="text-gray-500 text-xs mt-1">
+                        Used as working directory for chat commands.
                       </Typography>
                     </Box>
-                  )}
 
-                  <Box className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={handleCloseCreateDialog}
-                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={!newProjectTitle.trim() || isCreating}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-pink-500/20"
-                    >
-                      {isCreating ? (
-                        <CircularProgress size={18} sx={{ color: 'white' }} />
-                      ) : (
-                        <>
-                          <AddIcon fontSize="small" />
-                          Create Project
-                        </>
-                      )}
-                    </button>
+                    {errorMessage.length > 0 && (
+                      <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                        <Typography className="text-red-400 text-sm">
+                          {errorMessage}
+                        </Typography>
+                      </Box>
+                    )}
+
+                    <Box className="flex items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCloseCreateDialog}
+                        className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!newProjectTitle.trim() || isCreating}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-pink-500/20"
+                      >
+                        {isCreating ? (
+                          <CircularProgress size={18} sx={{ color: 'white' }} />
+                        ) : (
+                          <>
+                            <AddIcon fontSize="small" />
+                            Create Project
+                          </>
+                        )}
+                      </button>
+                    </Box>
                   </Box>
-                </Box>
-              </form>
-            </Box>
-          </Dialog>
+                </form>
+              </Box>
+            </Dialog>
           </Box>
         </>
       )}

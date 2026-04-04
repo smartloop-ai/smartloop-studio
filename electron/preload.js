@@ -101,6 +101,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
+  // Select a folder using native file dialog
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+  // Get the OS home directory
+  getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
   // SQLite database methods
   db: {
     // Projects
