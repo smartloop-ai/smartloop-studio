@@ -127,7 +127,7 @@ const getProjects = async (): Promise<any[]> => {
 
     const enriched = projects.map((p: any) => {
       const meta = metaMap.get(p.id);
-      return { ...p, color: meta?.color || null, folder_path: meta?.folder_path || null };
+      return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: meta?.folder_path || null };
     });
     return enriched;
   } catch (error: any) {

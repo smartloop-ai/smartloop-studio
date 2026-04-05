@@ -1340,6 +1340,7 @@ description: A clear description of what this skill does and when to use it
                     },
                   }}
                 />
+                <div className="text-[10px] text-gray-600 mt-1">Press Enter to save</div>
               </div>
 
               {/* Project Color */}
