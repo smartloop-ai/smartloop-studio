@@ -54,6 +54,15 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
         folder_path: params.folder_path,
       });
 
+      // Auto-register a local MCP server for the new project
+      await storageService.addMcpServer({
+        id: `mcp_local_${project.id}`,
+        project_id: project.id,
+        name: name.trim(),
+        server_type: 'local',
+        config: { name: name.trim() },
+      });
+
       return { success: true, data: { ...project, color, folder_path: params.folder_path } };
     }
 
@@ -82,6 +91,7 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     if (response.status === 200 || response.status === 204) {
       // Delete all local conversations (and their messages via cascade) for this project
       await storageService.deleteConversationsByProject(projectId);
+      await storageService.deleteMcpServersByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
       return { success: true, data: { projectId } };
     }

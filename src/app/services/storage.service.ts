@@ -336,6 +336,45 @@ class StorageService {
       return [];
     }
   }
+  // --- MCP Servers (SQLite) ---
+
+  async addMcpServer(server: { id: string; project_id: string; name: string; server_type?: string; config?: any }): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.addMcpServer(server);
+    } catch (error) {
+      console.error('Error adding MCP server:', error);
+      return null;
+    }
+  }
+
+  async getMcpServersByProject(projectId: string): Promise<any[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.getMcpServersByProject(projectId);
+    } catch (error) {
+      console.error('Error getting MCP servers:', error);
+      return [];
+    }
+  }
+
+  async deleteMcpServer(id: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteMcpServer(id);
+    } catch (error) {
+      console.error('Error deleting MCP server:', error);
+    }
+  }
+
+  async deleteMcpServersByProject(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteMcpServersByProject(projectId);
+    } catch (error) {
+      console.error('Error deleting MCP servers by project:', error);
+    }
+  }
 }
 
 export const storageService = new StorageService();

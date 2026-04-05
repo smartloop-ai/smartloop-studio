@@ -627,7 +627,24 @@ export default function Home() {
     setSelectedProject((prev: any) => prev ? { ...prev, folder_path: path } : prev);
   };
 
+  const handleColorChange = async (color: string) => {
+    if (!selectedProject?.id) return;
+    await storageService.updateProjectMeta(selectedProject.id, { color });
+    setCurrentProjectData((prev: any) => prev ? { ...prev, color } : prev);
+    setSelectedProject((prev: any) => prev ? { ...prev, color } : prev);
+    window.dispatchEvent(new CustomEvent('projectUpdated'));
+  };
 
+  const handleRenameProject = async (name: string) => {
+    if (!selectedProject?.id) return;
+    const result = await projectService.updateProject(selectedProject.id, { name });
+    if (result.success) {
+      await storageService.updateProjectMeta(selectedProject.id, { name });
+      setSelectedProject((prev: any) => prev ? { ...prev, name } : prev);
+      setCurrentProjectData((prev: any) => prev ? { ...prev, name } : prev);
+      window.dispatchEvent(new CustomEvent('projectUpdated'));
+    }
+  };
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
     console.log('[Home handleFileAttached] Called with:', documentId, fileName);
@@ -1443,6 +1460,8 @@ export default function Home() {
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}
                       onFolderPathChange={handleFolderPathChange}
+                      onColorChange={handleColorChange}
+                      onRenameProject={handleRenameProject}
                       user={user}
                     />
                   )}
