@@ -4,6 +4,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
+import ConstructionIcon from '@mui/icons-material/Construction';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CircleIcon from '@mui/icons-material/Circle';
@@ -19,6 +20,8 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
+import { PROJECT_COLORS } from '@/app/constants';
+import { marked } from 'marked';
 
 interface Skill {
   name: string;
@@ -34,6 +37,8 @@ interface RightSidebarProps {
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
   onFolderPathChange?: (path: string) => void;
+  onColorChange?: (color: string) => void;
+  onRenameProject?: (name: string) => void;
   user: any;
 }
 
@@ -46,8 +51,10 @@ export default function RightSidebar({
   onAddDocument,
   onDeleteDocument,
   onFolderPathChange,
+  onColorChange,
+  onRenameProject,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'settings' | null>(null);
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -62,6 +69,7 @@ export default function RightSidebar({
   const [newSkillName, setNewSkillName] = useState('');
   const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
   const [localFolderPath, setLocalFolderPath] = useState('');
+  const [localProjectName, setLocalProjectName] = useState('');
 
   // Resizable sidebar
   const [sidebarWidth, setSidebarWidth] = useState(380);
@@ -82,6 +90,24 @@ export default function RightSidebar({
   const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
+  const DEFAULT_SKILL_TEMPLATE = `---
+name: my-skill-name
+description: A clear description of what this skill does and when to use it
+---
+
+# My Skill Name
+
+[Add your instructions here that Claude will follow when this skill is active]
+
+## Examples
+- Example usage 1
+- Example usage 2
+
+## Guidelines
+- Guideline 1
+- Guideline 2
+`;
+
   // SimpleMDE editor options
   const editorOptions = useMemo(() => ({
     spellChecker: false,
@@ -101,10 +127,11 @@ export default function RightSidebar({
     placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
 
-  // Sync local folder path when project or its data changes
+  // Sync local folder path and project name when project changes
   useEffect(() => {
     setLocalFolderPath(currentProjectData?.folder_path || '');
-  }, [currentProjectData?.folder_path, selectedProject?.id]);
+    setLocalProjectName(selectedProject?.name || '');
+  }, [currentProjectData?.folder_path, selectedProject?.id, selectedProject?.name]);
 
   // Resize handler
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -146,7 +173,7 @@ export default function RightSidebar({
 
   // Ensure sidebar is collapsed for system projects
   useEffect(() => {
-    if (selectedProject?.system && (activeSection === 'documents')) {
+    if (selectedProject?.system && (activeSection === 'documents' || activeSection === 'skills')) {
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
@@ -181,7 +208,7 @@ export default function RightSidebar({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (activeSection === 'settings' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
+        if (activeSection === 'skills' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
           const isNew = editingSkillIndex >= projectSkills.length;
           const updated = isNew
             ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
@@ -193,7 +220,7 @@ export default function RightSidebar({
       }
     };
 
-    if (activeSection === 'settings') {
+    if (activeSection === 'skills') {
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
@@ -599,7 +626,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
@@ -610,7 +637,7 @@ export default function RightSidebar({
                 <span>Add</span>
               </button>
             )}
-            {selectedProject && activeSection === 'settings' && editingSkillIndex !== null && (
+            {selectedProject && activeSection === 'skills' && editingSkillIndex !== null && (
               <button
                 onClick={() => {
                   if (hasUnsavedChanges && !isSavingSkills && editingSkillContent.trim()) {
@@ -651,72 +678,10 @@ export default function RightSidebar({
             )}
           </Box>
 
-          {/* Project Settings Section */}
-          {activeSection === 'settings' && selectedProject && currentProjectData && (
+          {/* Skills Section */}
+          {activeSection === 'skills' && selectedProject && currentProjectData && (
             <div className="space-y-6">
-
-              {/* Working Directory */}
               <div>
-                <div className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">Working Directory</div>
-                <Box className="flex gap-2 items-start">
-                  <TextField
-                    size="small"
-                    value={localFolderPath}
-                    onChange={(e) => setLocalFolderPath(e.target.value)}
-                    onBlur={handleSaveFolderPath}
-                    placeholder={`~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
-                    fullWidth
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'var(--sl-white-alpha-2)',
-                        fontSize: '0.75rem',
-                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                      },
-                      '& .MuiInputBase-input': {
-                        color: 'var(--sl-text-primary)',
-                        padding: '8px 12px',
-                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                      },
-                    }}
-                  />
-                  <Box sx={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                    {!!(window as any).electronAPI?.selectFolder && (
-                      <Tooltip title="Browse folder" placement="left">
-                        <IconButton
-                          size="small"
-                          onClick={handleBrowseFolder}
-                          sx={{
-                            color: 'var(--sl-text-muted)',
-                            bgcolor: 'var(--sl-white-alpha-5)',
-                            borderRadius: '6px',
-                            padding: '8px',
-                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-brand-alpha-10)' },
-                          }}
-                        >
-                          <FolderOpenIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-
-                  </Box>
-                </Box>
-                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
-                  Sent as working directory (<code>cwd</code>) with each chat message.
-                </p>
-              </div>
-
-              {/* Skills */}
-              <div>
-                <div className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-3">Skills</div>
                 <div className="w-full">
                   {editingSkillIndex !== null ? (
                     /* Skill Editor */
@@ -781,9 +746,10 @@ export default function RightSidebar({
                               setEditingSkillContent(match.content);
                               setHasUnsavedChanges(false);
                             } else {
-                              // Add new skill — open editor, save when content is provided
+                              // Add new skill — open editor with template, save when content is provided
+                              const template = DEFAULT_SKILL_TEMPLATE.replace(/my-skill-name/g, newSkillName.trim().toLowerCase().replace(/\s+/g, '-')).replace('My Skill Name', newSkillName.trim());
                               setEditingSkillIndex(projectSkills.length);
-                              setEditingSkillContent('');
+                              setEditingSkillContent(template);
                               setHasUnsavedChanges(false);
                             }
                           }
@@ -861,7 +827,7 @@ export default function RightSidebar({
                                       marginTop: '2px',
                                     }}
                                   >
-                                    <BuildOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                                    <ConstructionIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
                                   </Box>
 
                                   {/* Skill Content */}
@@ -936,7 +902,7 @@ export default function RightSidebar({
                           </Box>
                         ) : (
                           <Box className="flex flex-col items-center justify-center py-8 text-center">
-                            <BuildOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                            <ConstructionIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
                             <Box className="text-gray-400 text-sm mb-1">
                               No skills configured
                             </Box>
@@ -1121,27 +1087,33 @@ export default function RightSidebar({
                                   )}
                                 </div>
 
-                                {/* Uploading indicator or Document Summary */}
+                                {/* Uploading indicator or Document Preview */}
                                 {processingDocs.has(doc.id) ? (
                                   <div className="text-[10px] text-gray-400 leading-relaxed mb-1.5">
                                     {processingDocs.get(doc.id) || 'Processing document...'}
                                   </div>
                                 ) : (doc.summary || doc.markdown) ? (
                                   <div
-                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5"
+                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5 doc-preview-markdown"
                                     style={{
                                       wordBreak: 'break-word',
                                       display: '-webkit-box',
-                                      WebkitLineClamp: 2,
+                                      WebkitLineClamp: 5,
                                       WebkitBoxOrient: 'vertical',
                                       overflow: 'hidden',
                                     }}
-                                  >
-                                    {doc.summary
-                                      ? doc.summary
-                                      : doc.markdown.replace(/\n/g, ' ').trim()}
+                                    dangerouslySetInnerHTML={{
+                                      __html: marked.parse(
+                                        (doc.summary || doc.markdown || '').split('\n').slice(0, 8).join('\n'),
+                                        { async: false }
+                                      ) as string
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="text-[10px] text-gray-500 italic leading-relaxed mb-1.5">
+                                    Pending processing
                                   </div>
-                                ) : null}
+                                )}
 
                                 {/* Document Metadata */}
                                 <div className="text-[10px] text-gray-500 flex items-center gap-2 flex-wrap">
@@ -1326,6 +1298,138 @@ export default function RightSidebar({
             </div>
           )}
 
+          {/* Project Settings Section */}
+          {activeSection === 'settings' && selectedProject && currentProjectData && (
+            <div className="space-y-6">
+              {/* Project Name */}
+              <div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Project Name</div>
+                <TextField
+                  size="small"
+                  value={localProjectName}
+                  onChange={(e) => setLocalProjectName(e.target.value)}
+                  onBlur={() => {
+                    const trimmed = localProjectName.trim();
+                    if (trimmed && trimmed !== selectedProject?.name) {
+                      onRenameProject?.(trimmed);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const trimmed = localProjectName.trim();
+                      if (trimmed && trimmed !== selectedProject?.name) {
+                        onRenameProject?.(trimmed);
+                      }
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  placeholder="Project name"
+                  fullWidth
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'var(--sl-white-alpha-2)',
+                      fontSize: '0.75rem',
+                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                    },
+                    '& .MuiInputBase-input': {
+                      color: 'var(--sl-text-primary)',
+                      padding: '8px 12px',
+                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                    },
+                  }}
+                />
+              </div>
+
+              {/* Project Color */}
+              <div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Label Color</div>
+                <Box sx={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {PROJECT_COLORS.map((color: any) => (
+                    <Box
+                      key={color.value}
+                      onClick={() => onColorChange?.(color.value)}
+                      sx={{
+                        borderRadius: '6px',
+                        bgcolor: color.value,
+                        cursor: 'pointer',
+                        flex: '1 1 auto',
+                        aspectRatio: '1',
+                        border: (selectedProject?.color || currentProjectData?.color) === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
+                        boxShadow: (selectedProject?.color || currentProjectData?.color) === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          transform: 'scale(1.1)',
+                          boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
+                        },
+                      }}
+                      title={color.name}
+                    />
+                  ))}
+                </Box>
+              </div>
+
+              {/* Working Directory */}
+              <div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Working Directory</div>
+                <Box className="flex gap-2 items-start">
+                  <TextField
+                    size="small"
+                    value={localFolderPath}
+                    onChange={(e) => setLocalFolderPath(e.target.value)}
+                    onBlur={handleSaveFolderPath}
+                    placeholder={`~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                    fullWidth
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
+                    }}
+                  />
+                  <Box sx={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                    {!!(window as any).electronAPI?.selectFolder && (
+                      <Tooltip title="Browse folder" placement="left">
+                        <IconButton
+                          size="small"
+                          onClick={handleBrowseFolder}
+                          sx={{
+                            color: 'var(--sl-text-muted)',
+                            bgcolor: 'var(--sl-white-alpha-5)',
+                            borderRadius: '6px',
+                            padding: '8px',
+                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-brand-alpha-10)' },
+                          }}
+                        >
+                          <FolderOpenIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                </Box>
+                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                  Sent as working directory (<code>cwd</code>) with each chat message.
+                </p>
+              </div>
+            </div>
+          )}
+
         </Box>
       )}
 
@@ -1396,6 +1500,36 @@ export default function RightSidebar({
               size="small"
             >
               <PowerOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title={selectedProject?.system ? "Skills (Disabled)" : "Skills"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+            <IconButton
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'skills' ? null : 'skills')}
+              disabled={selectedProject?.system}
+              sx={{
+                color: activeSection === 'skills' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: 'var(--sl-white-alpha-5)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                '&:hover': {
+                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
+                },
+                '&.Mui-disabled': {
+                  color: 'var(--sl-text-disabled)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <ConstructionIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>

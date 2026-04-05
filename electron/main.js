@@ -138,6 +138,13 @@ ipcMain.handle('db-get-setting', (event, key) => database.getSetting(key));
 ipcMain.handle('db-set-setting', (event, key, value) => database.setSetting(key, value));
 ipcMain.handle('db-get-all-settings', () => database.getAllSettings());
 
+// MCP Servers
+ipcMain.handle('db-add-mcp-server', (event, server) => database.addMcpServer(server));
+ipcMain.handle('db-get-mcp-server', (event, id) => database.getMcpServer(id));
+ipcMain.handle('db-get-mcp-servers-by-project', (event, projectId) => database.getMcpServersByProject(projectId));
+ipcMain.handle('db-delete-mcp-server', (event, id) => database.deleteMcpServer(id));
+ipcMain.handle('db-delete-mcp-servers-by-project', (event, projectId) => database.deleteMcpServersByProject(projectId));
+
 // --- Local SLP service helpers ---
 
 

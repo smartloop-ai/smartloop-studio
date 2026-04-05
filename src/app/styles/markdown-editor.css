@@ -63,3 +63,32 @@
 .markdown-editor-container .EasyMDEContainer .CodeMirror-scroll {
     min-height: 200px;
 }
+
+/* Document preview markdown styles */
+.doc-preview-markdown p,
+.doc-preview-markdown li,
+.doc-preview-markdown h1,
+.doc-preview-markdown h2,
+.doc-preview-markdown h3 {
+    margin: 0;
+    padding: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+}
+.doc-preview-markdown h1,
+.doc-preview-markdown h2,
+.doc-preview-markdown h3 {
+    font-weight: 600;
+}
+.doc-preview-markdown ul,
+.doc-preview-markdown ol {
+    margin: 0;
+    padding-left: 1em;
+}
+.doc-preview-markdown code {
+    font-size: 0.9em;
+    background: var(--sl-white-alpha-5);
+    padding: 0 2px;
+    border-radius: 2px;
+}

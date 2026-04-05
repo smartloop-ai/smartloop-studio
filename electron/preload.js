@@ -138,6 +138,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSetting: (key) => ipcRenderer.invoke('db-get-setting', key),
     setSetting: (key, value) => ipcRenderer.invoke('db-set-setting', key, value),
     getAllSettings: () => ipcRenderer.invoke('db-get-all-settings'),
+    // MCP Servers
+    addMcpServer: (server) => ipcRenderer.invoke('db-add-mcp-server', server),
+    getMcpServer: (id) => ipcRenderer.invoke('db-get-mcp-server', id),
+    getMcpServersByProject: (projectId) => ipcRenderer.invoke('db-get-mcp-servers-by-project', projectId),
+    deleteMcpServer: (id) => ipcRenderer.invoke('db-delete-mcp-server', id),
+    deleteMcpServersByProject: (projectId) => ipcRenderer.invoke('db-delete-mcp-servers-by-project', projectId),
   },
   // Check if running in Electron
   isElectron: true,

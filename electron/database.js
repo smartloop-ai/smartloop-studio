@@ -77,6 +77,19 @@ function openDatabase() {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      server_type TEXT NOT NULL DEFAULT 'local',
+      config TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_servers_project ON mcp_servers(project_id);
   `);
 
   // Seed install_status rows (4 steps) if not present
@@ -98,6 +111,23 @@ function openDatabase() {
   if (!projectCols.find(c => c.name === 'folder_path')) {
     db.exec("ALTER TABLE projects ADD COLUMN folder_path TEXT");
     console.log('[DB] Added folder_path column to projects');
+  }
+
+  // Migration: seed default local MCP server for existing projects that don't have one
+  const existingProjects = db.prepare('SELECT id, name FROM projects').all();
+  const insertMcp = db.prepare(`
+    INSERT OR IGNORE INTO mcp_servers (id, project_id, name, server_type, config, created_at, updated_at)
+    VALUES (?, ?, ?, 'local', ?, ?, ?)
+  `);
+  const now = new Date().toISOString();
+  for (const proj of existingProjects) {
+    const existing = db.prepare('SELECT id FROM mcp_servers WHERE project_id = ?').get(proj.id);
+    if (!existing) {
+      const mcpId = `mcp_local_${proj.id}`;
+      const config = JSON.stringify({ name: proj.name });
+      insertMcp.run(mcpId, proj.id, proj.name, config, now, now);
+      console.log(`[DB] Seeded default local MCP server for project: ${proj.name}`);
+    }
   }
 
   console.log('[DB] Database opened at', DB_PATH);
@@ -449,6 +479,58 @@ function getAllSettings() {
   return result;
 }
 
+// --- MCP Servers ---
+
+function addMcpServer({ id, project_id, name, server_type, config }) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT OR REPLACE INTO mcp_servers (id, project_id, name, server_type, config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, project_id, name, server_type || 'local', config ? JSON.stringify(config) : null, now, now);
+  return getMcpServer(id);
+}
+
+function getMcpServer(id) {
+  const d = openDatabase();
+  const row = d.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
+  return row ? formatMcpServer(row) : null;
+}
+
+function getMcpServersByProject(projectId) {
+  const d = openDatabase();
+  return d.prepare('SELECT * FROM mcp_servers WHERE project_id = ? ORDER BY created_at ASC')
+    .all(projectId).map(formatMcpServer);
+}
+
+function deleteMcpServer(id) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
+}
+
+function deleteMcpServersByProject(projectId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM mcp_servers WHERE project_id = ?').run(projectId);
+}
+
+function formatMcpServer(row) {
+  let config = null;
+  try {
+    config = row.config ? JSON.parse(row.config) : null;
+  } catch {
+    config = row.config;
+  }
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    name: row.name,
+    server_type: row.server_type,
+    config,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 module.exports = {
   openDatabase,
   closeDatabase,
@@ -488,4 +570,10 @@ module.exports = {
   getSetting,
   setSetting,
   getAllSettings,
+  // MCP Servers
+  addMcpServer,
+  getMcpServer,
+  getMcpServersByProject,
+  deleteMcpServer,
+  deleteMcpServersByProject,
 };
