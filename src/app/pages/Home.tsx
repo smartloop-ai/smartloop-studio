@@ -9,6 +9,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import DocumentsTab from '@/app/components/documents-tab';
+import SkillsTab from '@/app/components/skills-tab';
 import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -1444,6 +1445,14 @@ export default function Home() {
                         setCurrentProjectData={setCurrentProjectData}
                         setActiveTab={setActiveTab}
                       />
+                    ) : activeTab === 2 && selectedProject ? (
+                      <SkillsTab
+                        selectedProject={selectedProject}
+                        projectSkills={projectSkills}
+                        isSavingSkills={isSavingSkills}
+                        onSaveSkills={saveProjectSkills}
+                        setActiveTab={setActiveTab}
+                      />
                     ) : (
                       // Show Chat component (it handles the case when conversation is null)
                       <Chat
@@ -1464,19 +1473,17 @@ export default function Home() {
                     )}
                   </Box>
 
-                  {/* Right Sidebar - Documents, MCP, Skills */}
-                  {activeTab !== 1 && (
+                  {/* Right Sidebar - Documents, MCP, Settings */}
+                  {activeTab !== 1 && activeTab !== 2 && (
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}
-                      projectSkills={projectSkills}
-                      isSavingSkills={isSavingSkills}
-                      onSaveSkills={saveProjectSkills}
                       onAddDocument={() => setShowFileUploadDialog(true)}
                       onDeleteDocument={handleOpenDeleteDocDialog}
                       onFolderPathChange={handleFolderPathChange}
                       onColorChange={handleColorChange}
                       onRenameProject={handleRenameProject}
+                      onSkillsClick={() => setActiveTab(2)}
                       user={user}
                     />
                   )}

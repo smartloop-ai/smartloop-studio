@@ -3,58 +3,42 @@ import AddBoxIcon from '@mui/icons-material/AddBox';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import CircleIcon from '@mui/icons-material/Circle';
-import SaveIcon from '@mui/icons-material/Save';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import McpServerItem from './mcp-server-item';
-import SimpleMDE from 'react-simplemde-editor';
-import 'easymde/dist/easymde.min.css';
-import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS } from '@/app/constants';
 import { marked } from 'marked';
 
-interface Skill {
-  name: string;
-  content: string;
-}
-
 interface RightSidebarProps {
   selectedProject: any;
   currentProjectData: any;
-  projectSkills: Skill[];
-  isSavingSkills: boolean;
-  onSaveSkills: (skills: Skill[]) => void;
   onAddDocument: () => void;
   onDeleteDocument: (doc: any) => void;
   onFolderPathChange?: (path: string) => void;
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
+  onSkillsClick?: () => void;
   user: any;
 }
 
 export default function RightSidebar({
   selectedProject,
   currentProjectData,
-  projectSkills,
-  isSavingSkills,
-  onSaveSkills,
   onAddDocument,
   onDeleteDocument,
   onFolderPathChange,
   onColorChange,
   onRenameProject,
+  onSkillsClick,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -62,12 +46,6 @@ export default function RightSidebar({
   const [uploadError, setUploadError] = useState('');
   const [processingDocs, setProcessingDocs] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<any>(null);
-  const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
-  const [editingSkillContent, setEditingSkillContent] = useState('');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [newSkillName, setNewSkillName] = useState('');
-  const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
   const [localFolderPath, setLocalFolderPath] = useState('');
   const [localProjectName, setLocalProjectName] = useState('');
 
@@ -90,42 +68,6 @@ export default function RightSidebar({
   const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
-  const DEFAULT_SKILL_TEMPLATE = `---
-name: my-skill-name
-description: A clear description of what this skill does and when to use it
----
-
-# My Skill Name
-
-[Add your instructions here that Claude will follow when this skill is active]
-
-## Examples
-- Example usage 1
-- Example usage 2
-
-## Guidelines
-- Guideline 1
-- Guideline 2
-`;
-
-  // SimpleMDE editor options
-  const editorOptions = useMemo(() => ({
-    spellChecker: false,
-    status: ["words", "lines"] as const,
-
-    toolbar: [
-      'bold',
-      'italic',
-      'heading',
-      '|',
-      'unordered-list',
-      'ordered-list',
-      '|',
-      'quote',
-    ] as const,
-    minHeight: '300px',
-    placeholder: 'Add skills or guidelines for this project...',
-  }), [selectedProject?.id]);
 
   // Sync local folder path and project name when project changes
   useEffect(() => {
@@ -173,7 +115,7 @@ description: A clear description of what this skill does and when to use it
 
   // Ensure sidebar is collapsed for system projects
   useEffect(() => {
-    if (selectedProject?.system && (activeSection === 'documents' || activeSection === 'skills')) {
+    if (selectedProject?.system && activeSection === 'documents') {
       setActiveSection(null);
     }
   }, [selectedProject?.system, activeSection]);
@@ -194,37 +136,6 @@ description: A clear description of what this skill does and when to use it
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
     return [...serverDocs, ...pending];
   }, [currentProjectData?.documents, uploadingDocs]);
-
-  // Reset states when project changes
-  useEffect(() => {
-    setEditingSkillIndex(null);
-    setEditingSkillContent('');
-    setHasUnsavedChanges(false);
-    setNewSkillName('');
-  }, [selectedProject?.id]);
-
-  // Keyboard shortcut handler for Ctrl+S to save skill
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        if (activeSection === 'skills' && hasUnsavedChanges && editingSkillIndex !== null && editingSkillContent.trim()) {
-          const isNew = editingSkillIndex >= projectSkills.length;
-          const updated = isNew
-            ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
-            : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
-          onSaveSkills(updated);
-          if (isNew) setNewSkillName('');
-          setHasUnsavedChanges(false);
-        }
-      }
-    };
-
-    if (activeSection === 'skills') {
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [activeSection, hasUnsavedChanges, editingSkillIndex, editingSkillContent, projectSkills, onSaveSkills]);
 
   // Load MCP servers from project data
   useEffect(() => {
@@ -632,7 +543,7 @@ description: A clear description of what this skill does and when to use it
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
@@ -643,287 +554,8 @@ description: A clear description of what this skill does and when to use it
                 <span>Add</span>
               </button>
             )}
-            {selectedProject && activeSection === 'skills' && editingSkillIndex !== null && (
-              <button
-                onClick={() => {
-                  if (hasUnsavedChanges && !isSavingSkills && editingSkillContent.trim()) {
-                    const isNew = editingSkillIndex >= projectSkills.length;
-                    const updated = isNew
-                      ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
-                      : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
-                    onSaveSkills(updated);
-                    if (isNew) setNewSkillName('');
-                    setHasUnsavedChanges(false);
-                  }
-                }}
-                disabled={isSavingSkills || !hasUnsavedChanges}
-                className={`flex items-center gap-1 px-2 py-1 text-[10px] font-normal rounded-sm transition-all ${isSavingSkills
-                  ? 'text-pink-400 border border-pink-400 cursor-wait'
-                  : hasUnsavedChanges
-                    ? 'text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400'
-                    : 'text-pink-500 border border-pink-400 cursor-default'
-                  }`}
-              >
-                {isSavingSkills ? (
-                  <>
-                    <CircularProgress size={10} sx={{ color: 'var(--sl-brand-light)' }} />
-                    <span>Saving...</span>
-                  </>
-                ) : hasUnsavedChanges ? (
-                  <>
-                    <SaveIcon sx={{ fontSize: 12 }} />
-                    <span>Save</span>
-                  </>
-                ) : (
-                  <>
-                    <CircleIcon className="text-pink-500" sx={{ fontSize: 12 }} />
-                    <span>Saved</span>
-                  </>
-                )}
-              </button>
-            )}
           </Box>
 
-          {/* Skills Section */}
-          {activeSection === 'skills' && selectedProject && currentProjectData && (
-            <div className="space-y-6">
-              <div>
-                <div className="w-full">
-                  {editingSkillIndex !== null ? (
-                    /* Skill Editor */
-                    <div className="w-full">
-                      <button
-                        onClick={() => {
-                          const isNew = editingSkillIndex >= projectSkills.length;
-                          if (hasUnsavedChanges && editingSkillContent.trim()) {
-                            const updated = isNew
-                              ? [...projectSkills, { name: newSkillName.trim(), content: editingSkillContent }]
-                              : projectSkills.map((s, i) => i === editingSkillIndex ? { ...s, content: editingSkillContent } : s);
-                            onSaveSkills(updated);
-                            if (isNew) setNewSkillName('');
-                          }
-                          setEditingSkillIndex(null);
-                          setEditingSkillContent('');
-                          setHasUnsavedChanges(false);
-                        }}
-                        className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 mb-3 transition-colors"
-                      >
-                        <span>&larr;</span>
-                        <span>Back to skills</span>
-                      </button>
-                      <div className="text-xs text-white font-medium mb-2">
-                        {editingSkillIndex < projectSkills.length
-                          ? projectSkills[editingSkillIndex]?.name
-                          : newSkillName}
-                      </div>
-                      <Box className="markdown-editor-container w-full">
-                        <SimpleMDE
-                          value={editingSkillContent}
-                          onChange={(value: string) => {
-                            setEditingSkillContent(value);
-                            const isNew = editingSkillIndex >= projectSkills.length;
-                            setHasUnsavedChanges(isNew ? value.trim() !== '' : value !== projectSkills[editingSkillIndex]?.content);
-                          }}
-                          options={editorOptions}
-                          getMdeInstance={(instance) => {
-                            editorRef.current = instance;
-                          }}
-                        />
-                      </Box>
-                      <p className="text-gray-400 text-[10px] leading-relaxed mt-2">
-                        Press Ctrl+S (Cmd+S on Mac) to save changes.
-                      </p>
-                    </div>
-                  ) : (
-                    /* Skills List */
-                    <div className="space-y-2">
-                      {/* Search / Add Skill Input */}
-                      <TextField
-                        size="small"
-                        placeholder="Search or add a skill..."
-                        value={newSkillName}
-                        onChange={(e) => setNewSkillName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newSkillName.trim()) {
-                            const match = projectSkills.find(s => s.name.toLowerCase() === newSkillName.trim().toLowerCase());
-                            if (match) {
-                              const idx = projectSkills.indexOf(match);
-                              setEditingSkillIndex(idx);
-                              setEditingSkillContent(match.content);
-                              setHasUnsavedChanges(false);
-                            } else {
-                              // Add new skill — open editor with template, save when content is provided
-                              const template = DEFAULT_SKILL_TEMPLATE.replace(/my-skill-name/g, newSkillName.trim().toLowerCase().replace(/\s+/g, '-')).replace('My Skill Name', newSkillName.trim());
-                              setEditingSkillIndex(projectSkills.length);
-                              setEditingSkillContent(template);
-                              setHasUnsavedChanges(false);
-                            }
-                          }
-                        }}
-                        fullWidth
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <SearchIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-                            </InputAdornment>
-                          ),
-                        }}
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            backgroundColor: 'var(--sl-white-alpha-2)',
-                            fontSize: '0.75rem',
-                            '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                            '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                            '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                          },
-                          '& .MuiInputBase-input': {
-                            color: 'var(--sl-text-primary)',
-                            padding: '8px 12px',
-                            '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                          },
-                        }}
-                      />
-
-                      {/* Skill Items (filtered by search) */}
-                      {(() => {
-                        const query = newSkillName.trim().toLowerCase();
-                        const filtered = projectSkills.filter(s =>
-                          !(s as any).system &&
-                          (!query || s.name.toLowerCase().includes(query) || s.content.toLowerCase().includes(query))
-                        );
-                        return filtered.length > 0 ? (
-                          filtered.map((skill) => {
-                            const index = projectSkills.indexOf(skill);
-                            return (
-                              <Box
-                                key={`skill-${index}`}
-                                onClick={() => {
-                                  setEditingSkillIndex(index);
-                                  setEditingSkillContent(skill.content);
-                                  setHasUnsavedChanges(false);
-                                }}
-                                onMouseEnter={() => setHoveredSkillIndex(index)}
-                                onMouseLeave={() => setHoveredSkillIndex(null)}
-                                sx={{
-                                  padding: '10px',
-                                  borderRadius: '6px',
-                                  bgcolor: 'var(--sl-white-alpha-2)',
-                                  border: '1px solid var(--sl-white-alpha-5)',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.15s ease',
-                                  position: 'relative',
-                                  '&:hover': {
-                                    bgcolor: 'var(--sl-white-alpha-5)',
-                                    borderColor: 'var(--sl-white-alpha-8)',
-                                  },
-                                }}
-                              >
-                                <Box className="flex items-start gap-2">
-                                  {/* Skill Icon Badge */}
-                                  <Box
-                                    sx={{
-                                      width: 32,
-                                      height: 32,
-                                      borderRadius: '50%',
-                                      bgcolor: 'var(--sl-brand-alpha-10)',
-                                      flexShrink: 0,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      marginTop: '2px',
-                                    }}
-                                  >
-                                    <ConstructionIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
-                                  </Box>
-
-                                  {/* Skill Content */}
-                                  <Box className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                      <span className="text-xs text-white font-medium truncate">
-                                        {skill.name || 'Untitled Skill'}
-                                      </span>
-                                      <Box sx={{ display: 'flex', alignItems: 'center', opacity: hoveredSkillIndex === index ? 1 : 0, transition: 'opacity 0.15s ease' }}>
-                                        <IconButton
-                                          size="small"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditingSkillIndex(index);
-                                            setEditingSkillContent(skill.content);
-                                            setHasUnsavedChanges(false);
-                                          }}
-                                          sx={{
-                                            color: 'var(--sl-text-muted)',
-                                            padding: '4px',
-                                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-white-alpha-5)' },
-                                          }}
-                                        >
-                                          <EditOutlinedIcon sx={{ fontSize: 14 }} />
-                                        </IconButton>
-                                        {!skill.name?.startsWith('system:') && (
-                                          <IconButton
-                                            size="small"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const updated = projectSkills.filter((_, i) => i !== index);
-                                              onSaveSkills(updated);
-                                            }}
-                                            sx={{
-                                              color: 'var(--sl-text-muted)',
-                                              padding: '4px',
-                                              '&:hover': { color: 'var(--sl-status-error)', bgcolor: 'var(--sl-danger-alpha-10)' },
-                                            }}
-                                          >
-                                            <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                                          </IconButton>
-                                        )}
-                                      </Box>
-                                    </div>
-                                    {skill.content && (
-                                      <div
-                                        className="text-[10px] text-gray-400 leading-relaxed"
-                                        style={{
-                                          display: '-webkit-box',
-                                          WebkitLineClamp: 2,
-                                          WebkitBoxOrient: 'vertical',
-                                          overflow: 'hidden',
-                                          wordBreak: 'break-word',
-                                        }}
-                                      >
-                                        {skill.content.replace(/\n/g, ' ').trim()}
-                                      </div>
-                                    )}
-                                  </Box>
-                                </Box>
-                              </Box>
-                            );
-                          })
-                        ) : query ? (
-                          <Box className="text-center py-4">
-                            <Box className="text-gray-400 text-xs mb-1">
-                              No skills match "{newSkillName.trim()}"
-                            </Box>
-                            <Box className="text-gray-500 text-[10px]">
-                              Press Enter to create it
-                            </Box>
-                          </Box>
-                        ) : (
-                          <Box className="flex flex-col items-center justify-center py-8 text-center">
-                            <ConstructionIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
-                            <Box className="text-gray-400 text-sm mb-1">
-                              No skills configured
-                            </Box>
-                            <Box className="text-gray-500 text-xs">
-                              Type a name above and press Enter to add one
-                            </Box>
-                          </Box>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Documents Section */}
           {activeSection === 'documents' && (
@@ -1514,10 +1146,10 @@ description: A clear description of what this skill does and when to use it
         <Tooltip title={selectedProject?.system ? "Skills (Disabled)" : "Skills"} placement="left">
           <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'skills' ? null : 'skills')}
+              onClick={() => !selectedProject?.system && onSkillsClick?.()}
               disabled={selectedProject?.system}
               sx={{
-                color: activeSection === 'skills' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                color: 'var(--sl-text-muted)',
                 bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
