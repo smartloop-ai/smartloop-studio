@@ -1476,7 +1476,7 @@ export default function Home() {
                   </Box>
 
                   {/* Right Sidebar - Documents, MCP, Settings */}
-                  {activeTab !== 1 && (
+                  {activeTab !== 1 && activeTab !== 2 && (
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}

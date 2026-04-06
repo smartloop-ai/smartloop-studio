@@ -130,24 +130,10 @@ export default function ConversationTabs({
           </div>
         )}
 
-        {/* New Conversation Button - right after last conversation */}
-        <button
-          onClick={!currentConversation ? undefined : onNewConversation}
-          disabled={!currentConversation}
-          className={`px-2 py-1.5 mb-1 mr-5 transition-colors ${
-            !currentConversation
-              ? 'text-gray-600 cursor-not-allowed opacity-40'
-              : 'text-gray-400 hover:text-pink-500 cursor-pointer'
-          }`}
-          title={!currentConversation ? "Already creating a new conversation" : "New conversation"}
-        >
-          <AddBoxIcon className="text-[20px]" />
-        </button>
-
         {/* Skills Tab - shown when skills view is active */}
         {activeTab === 2 && (
           <div
-            style={{ width: `${tabWidth}px`, flexShrink: 0, marginLeft: 'auto' }}
+            style={{ width: `${tabWidth}px`, flexShrink: 0 }}
             className="
               group px-4 py-2 pb-[10px] cursor-pointer text-[13px]
               flex items-center gap-1.5 relative -mb-px
@@ -170,6 +156,20 @@ export default function ConversationTabs({
             />
           </div>
         )}
+
+        {/* New Conversation Button */}
+        <button
+          onClick={!currentConversation ? undefined : onNewConversation}
+          disabled={!currentConversation}
+          className={`px-2 py-1.5 mb-1 mr-5 transition-colors ${
+            !currentConversation
+              ? 'text-gray-600 cursor-not-allowed opacity-40'
+              : 'text-gray-400 hover:text-pink-500 cursor-pointer'
+          }`}
+          title={!currentConversation ? "Already creating a new conversation" : "New conversation"}
+        >
+          <AddBoxIcon className="text-[20px]" />
+        </button>
       </Box>
     </Box>
   );
