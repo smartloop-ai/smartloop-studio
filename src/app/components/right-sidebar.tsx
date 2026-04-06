@@ -33,7 +33,6 @@ export default function RightSidebar({
   currentProjectData,
   onAddDocument,
   onDeleteDocument,
-  onFolderPathChange,
   onColorChange,
   onRenameProject,
   onSkillsClick,
@@ -484,19 +483,6 @@ export default function RightSidebar({
     }
   };
 
-  const handleBrowseFolder = async () => {
-    const electronAPI = (window as any).electronAPI;
-    if (!electronAPI?.selectFolder) return;
-    const selected = await electronAPI.selectFolder();
-    if (selected) {
-      setLocalFolderPath(selected);
-      if (onFolderPathChange) onFolderPathChange(selected);
-    }
-  };
-
-  const handleSaveFolderPath = () => {
-    if (onFolderPathChange) onFolderPathChange(localFolderPath);
-  };
 
   return (
     <Box
@@ -1012,58 +998,40 @@ export default function RightSidebar({
               {/* Working Directory */}
               <div>
                 <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Working Directory</div>
-                <Box className="flex gap-2 items-start">
-                  <TextField
-                    size="small"
-                    value={localFolderPath}
-                    onChange={(e) => setLocalFolderPath(e.target.value)}
-                    onBlur={handleSaveFolderPath}
-                    placeholder={`~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
-                    fullWidth
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        backgroundColor: 'var(--sl-white-alpha-2)',
-                        fontSize: '0.75rem',
-                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
-                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                      },
-                      '& .MuiInputBase-input': {
-                        color: 'var(--sl-text-primary)',
-                        padding: '8px 12px',
-                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                      },
-                    }}
-                  />
-                  <Box sx={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                    {!!(window as any).electronAPI?.selectFolder && (
-                      <Tooltip title="Browse folder" placement="left">
-                        <IconButton
-                          size="small"
-                          onClick={handleBrowseFolder}
-                          sx={{
-                            color: 'var(--sl-text-muted)',
-                            bgcolor: 'var(--sl-white-alpha-5)',
-                            borderRadius: '6px',
-                            padding: '8px',
-                            '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'var(--sl-brand-alpha-10)' },
-                          }}
-                        >
-                          <FolderOpenIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Box>
+                <Box
+                  onClick={() => {
+                    const path = localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`;
+                    (window as any).electronAPI?.openInFinder?.(path);
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-10)',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: 'var(--sl-white-alpha-5)',
+                      borderColor: 'var(--sl-brand-alpha-30)',
+                    },
+                  }}
+                >
+                  <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
+                  <span style={{
+                    fontSize: '0.75rem',
+                    color: 'var(--sl-text-primary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}>
+                    {localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                  </span>
                 </Box>
                 <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
-                  Sent as working directory (<code>cwd</code>) with each chat message.
+                  Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
                 </p>
               </div>
             </div>
