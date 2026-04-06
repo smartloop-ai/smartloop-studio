@@ -179,9 +179,10 @@ export default function DocumentsTab({
                           className="text-xs text-gray-400 leading-relaxed mb-2"
                           style={{ wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                         >
-                          {doc.summary
+                          {(doc.summary
                             ? doc.summary
-                            : doc.markdown.replace(/\n/g, ' ').trim()}
+                            : doc.markdown.replace(/\n/g, ' ').trim()
+                          ).slice(0, 50) + (doc.summary || doc.markdown.length > 50 ? '…' : '')}
                         </div>
                       )}
                       <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">

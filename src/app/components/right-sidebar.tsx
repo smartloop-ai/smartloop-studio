@@ -1104,7 +1104,7 @@ description: A clear description of what this skill does and when to use it
                                     }}
                                     dangerouslySetInnerHTML={{
                                       __html: marked.parse(
-                                        (doc.summary || doc.markdown || '').split('\n').slice(0, 8).join('\n'),
+                                        ((s) => { const t = s.slice(0, 100); const i = t.lastIndexOf(' '); return (s.length > 100 ? (i > 0 ? t.slice(0, i) : t) + '...' : t); })((doc.summary || doc.markdown || '').replace(/\n/g, ' ').trim()),
                                         { async: false }
                                       ) as string
                                     }}
