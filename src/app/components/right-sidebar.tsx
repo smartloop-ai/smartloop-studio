@@ -277,12 +277,20 @@ description: A clear description of what this skill does and when to use it
     }
   }, [selectedProject?.id, mcpPolling]);
 
-  // Poll for new MCP servers while waiting (OAuth or error)
+  // Poll for new MCP servers while waiting (OAuth flow)
   useEffect(() => {
     if (!mcpPolling || !selectedProject?.id) return;
 
+    let attempts = 0;
+    const maxAttempts = 20; // ~60s
+
     const interval = setInterval(() => {
+      attempts++;
       loadMcpServers();
+      if (attempts >= maxAttempts) {
+        setMcpPolling(false);
+        clearInterval(interval);
+      }
     }, 3000);
 
     return () => clearInterval(interval);
@@ -376,8 +384,6 @@ description: A clear description of what this skill does and when to use it
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
       setMcpError(error.message || 'An error occurred');
-      mcpServerCountRef.current = mcpServers.length;
-      setMcpPolling(true);
     } finally {
       setIsAddingMcp(false);
     }

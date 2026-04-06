@@ -639,6 +639,21 @@ export default function Home() {
     if (!selectedProject?.id) return;
     const result = await projectService.updateProject(selectedProject.id, { name });
     if (result.success) {
+      // Update folder_path if it matches the old project name pattern
+      const oldName = selectedProject.name;
+      const currentPath = currentProjectData?.folder_path || '';
+      if (oldName && currentPath) {
+        const oldSlug = oldName.toLowerCase().replace(/\s+/g, '_');
+        const newSlug = name.toLowerCase().replace(/\s+/g, '_');
+        if (currentPath.endsWith(`/${oldSlug}`) || currentPath === oldSlug) {
+          const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
+          await storageService.updateProjectMeta(selectedProject.id, { name, folder_path: newPath });
+          setCurrentProjectData((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
+          setSelectedProject((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
+          window.dispatchEvent(new CustomEvent('projectUpdated'));
+          return;
+        }
+      }
       await storageService.updateProjectMeta(selectedProject.id, { name });
       setSelectedProject((prev: any) => prev ? { ...prev, name } : prev);
       setCurrentProjectData((prev: any) => prev ? { ...prev, name } : prev);
