@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  // Open a folder in Finder / file manager
+  openInFinder: (path) => ipcRenderer.invoke('open-in-finder', path),
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),

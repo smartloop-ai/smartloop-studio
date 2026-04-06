@@ -52,6 +52,18 @@ ipcMain.handle('open-external', async (event, url) => {
   return false;
 });
 
+// Open a folder in the system file manager (Finder on macOS)
+ipcMain.handle('open-in-finder', async (event, folderPath) => {
+  if (folderPath) {
+    const resolved = folderPath.startsWith('~')
+      ? folderPath.replace('~', require('os').homedir())
+      : folderPath;
+    await shell.openPath(resolved);
+    return true;
+  }
+  return false;
+});
+
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
