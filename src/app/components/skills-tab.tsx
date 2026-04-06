@@ -5,7 +5,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import CircleIcon from '@mui/icons-material/Circle';
 import SaveIcon from '@mui/icons-material/Save';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -21,7 +20,6 @@ interface SkillsTabProps {
   projectSkills: Skill[];
   isSavingSkills: boolean;
   onSaveSkills: (skills: Skill[]) => void;
-  setActiveTab: (tab: number) => void;
 }
 
 const DEFAULT_SKILL_TEMPLATE = `---
@@ -47,7 +45,6 @@ export default function SkillsTab({
   projectSkills,
   isSavingSkills,
   onSaveSkills,
-  setActiveTab,
 }: SkillsTabProps) {
   const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
   const [editingSkillContent, setEditingSkillContent] = useState('');
@@ -117,17 +114,7 @@ export default function SkillsTab({
   return (
     <Box className="flex flex-col h-full overflow-hidden" sx={{ bgcolor: 'var(--sl-bg-primary)' }}>
       {/* Header */}
-      <Box className="flex items-center justify-between px-6 py-4 border-b" sx={{ borderColor: 'var(--sl-white-alpha-10)' }}>
-        <Box className="flex items-center gap-3">
-          <IconButton
-            size="small"
-            onClick={() => setActiveTab(0)}
-            sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-text-primary)' } }}
-          >
-            <ArrowBackIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-          <span className="text-sm font-medium text-gray-300 uppercase tracking-wider">Skills</span>
-        </Box>
+      <Box className="flex items-center justify-end px-6 py-3" sx={{ borderColor: 'var(--sl-white-alpha-10)' }}>
         {editingSkillIndex !== null && (
           <button
             onClick={handleSave}

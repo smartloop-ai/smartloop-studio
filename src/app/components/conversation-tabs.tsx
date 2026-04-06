@@ -1,6 +1,7 @@
 import { Box } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import AddBoxIcon from '@mui/icons-material/AddBox';
+import ConstructionIcon from '@mui/icons-material/Construction';
 import { useEffect, useState, useRef } from 'react';
 
 interface ConversationTabsProps {
@@ -9,6 +10,8 @@ interface ConversationTabsProps {
   onConversationSelect: (conversationId: string) => void;
   onConversationDelete: (e: React.MouseEvent, conversationId: string) => void;
   onNewConversation: () => void;
+  activeTab?: number;
+  onSkillsTabClose?: () => void;
 }
 
 export default function ConversationTabs({
@@ -17,6 +20,8 @@ export default function ConversationTabs({
   onConversationSelect,
   onConversationDelete,
   onNewConversation,
+  activeTab,
+  onSkillsTabClose,
 }: ConversationTabsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tabWidth, setTabWidth] = useState<number>(200);
@@ -138,6 +143,33 @@ export default function ConversationTabs({
         >
           <AddBoxIcon className="text-[20px]" />
         </button>
+
+        {/* Skills Tab - shown when skills view is active */}
+        {activeTab === 2 && (
+          <div
+            style={{ width: `${tabWidth}px`, flexShrink: 0, marginLeft: 'auto' }}
+            className="
+              group px-4 py-2 pb-[10px] cursor-pointer text-[13px]
+              flex items-center gap-1.5 relative -mb-px
+              transition-all duration-200
+              font-medium text-white bg-pink-500/10
+              border-l border-r border-b border-t border-pink-500/30
+              border-b-pink-500/10
+            "
+          >
+            <ConstructionIcon sx={{ fontSize: 14 }} />
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+              Skills
+            </span>
+            <CloseIcon
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkillsTabClose?.();
+              }}
+              className="text-[14px] opacity-0 group-hover:opacity-100 transition-all duration-150 cursor-pointer hover:text-red-500 flex-shrink-0"
+            />
+          </div>
+        )}
       </Box>
     </Box>
   );

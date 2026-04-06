@@ -1421,6 +1421,7 @@ export default function Home() {
                     projectConversations={projectConversations}
                     currentConversation={conversation}
                     onConversationSelect={(conversationId) => {
+                      if (activeTab === 2) setActiveTab(0);
                       const newUrl = selectedProject
                         ? `/?conversation=${conversationId}&project=${selectedProject.id}`
                         : `/?conversation=${conversationId}`;
@@ -1428,6 +1429,8 @@ export default function Home() {
                     }}
                     onConversationDelete={handleDeleteConversationFromList}
                     onNewConversation={handleStartNewConversation}
+                    activeTab={activeTab}
+                    onSkillsTabClose={() => setActiveTab(0)}
                   />
                 )}
 
@@ -1451,7 +1454,6 @@ export default function Home() {
                         projectSkills={projectSkills}
                         isSavingSkills={isSavingSkills}
                         onSaveSkills={saveProjectSkills}
-                        setActiveTab={setActiveTab}
                       />
                     ) : (
                       // Show Chat component (it handles the case when conversation is null)
@@ -1474,7 +1476,7 @@ export default function Home() {
                   </Box>
 
                   {/* Right Sidebar - Documents, MCP, Settings */}
-                  {activeTab !== 1 && activeTab !== 2 && (
+                  {activeTab !== 1 && (
                     <RightSidebar
                       selectedProject={selectedProject}
                       currentProjectData={currentProjectData}
@@ -1483,7 +1485,7 @@ export default function Home() {
                       onFolderPathChange={handleFolderPathChange}
                       onColorChange={handleColorChange}
                       onRenameProject={handleRenameProject}
-                      onSkillsClick={() => setActiveTab(2)}
+                      onSkillsClick={() => setActiveTab(activeTab === 2 ? 0 : 2)}
                       user={user}
                     />
                   )}
