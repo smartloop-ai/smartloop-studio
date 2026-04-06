@@ -1539,19 +1539,20 @@ description: A clear description of what this skill does and when to use it
         <Box sx={{ flex: 1 }} />
 
         {/* Project Settings gear icon */}
-        <Tooltip title="Project Settings" placement="left">
-          <span>
+        <Tooltip title={selectedProject?.system ? "Settings (Disabled)" : "Project Settings"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => setActiveSection(activeSection === 'settings' ? null : 'settings')}
+              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'settings' ? null : 'settings')}
+              disabled={selectedProject?.system}
               sx={{
                 color: activeSection === 'settings' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: 'pointer',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: 'var(--sl-brand-primary)',
-                  bgcolor: 'var(--sl-brand-alpha-10)',
+                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
               }}
               size="small"
