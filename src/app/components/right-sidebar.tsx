@@ -16,6 +16,8 @@ import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS } from '@/app/constants';
 import { marked } from 'marked';
 
+import { OpenTab } from './conversation-tabs';
+
 interface RightSidebarProps {
   selectedProject: any;
   currentProjectData: any;
@@ -24,8 +26,10 @@ interface RightSidebarProps {
   onFolderPathChange?: (path: string) => void;
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
-  onSkillsClick?: () => void;
   user: any;
+  activeTab: string;
+  onTabChange: (tab: OpenTab) => void;
+  projectSkills?: Array<{ name: string; content: string }>;
 }
 
 export default function RightSidebar({
@@ -35,9 +39,11 @@ export default function RightSidebar({
   onDeleteDocument,
   onColorChange,
   onRenameProject,
-  onSkillsClick,
+  activeTab,
+  onTabChange,
+  projectSkills = [],
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'settings' | null>(null);
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -529,7 +535,7 @@ export default function RightSidebar({
           {/* Section Title and Actions */}
           <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
             {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
               <button
@@ -644,11 +650,16 @@ export default function RightSidebar({
                             key={doc.id || `doc-${i}`}
                             onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
                             onMouseLeave={() => setHoveredDocId(null)}
+                            onClick={() => {
+                              const docName = (doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document');
+                              onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: docName, data: doc });
+                            }}
                             sx={{
                               padding: '10px',
                               borderRadius: '6px',
                               bgcolor: 'var(--sl-white-alpha-2)',
                               border: '1px solid var(--sl-white-alpha-5)',
+                              cursor: 'pointer',
                               transition: 'all 0.15s ease',
                               '&:hover': {
                                 bgcolor: 'var(--sl-white-alpha-5)',
@@ -881,25 +892,33 @@ export default function RightSidebar({
                 /* Server List */
                 <Box className="space-y-2">
                   {mcpServers.map((server, index) => (
-                    <McpServerItem
+                    <Box
                       key={server.id || `mcp-${index}`}
-                      server={server}
-                      projectId={selectedProject?.id || ''}
-                      onDelete={handleDeleteMcpServer}
-                      discovering={discoveringServerId === server.id}
-                      onServerUpdate={(updatedServer) => {
-                        setMcpServers(prev => {
-                          const newServers = prev.map(s =>
-                            s.id === updatedServer.id ? updatedServer : s
-                          );
-                          // Save to storage when server is updated
-                          if (selectedProject?.id) {
-                            mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
-                          }
-                          return newServers;
-                        });
+                      onClick={() => {
+                        const serverInfo = server.server_info;
+                        const displayName = serverInfo?.title || serverInfo?.name || server.name || 'MCP Server';
+                        onTabChange({ id: `mcp-${server.id || index}`, type: 'mcp', title: displayName, data: server });
                       }}
-                    />
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <McpServerItem
+                        server={server}
+                        projectId={selectedProject?.id || ''}
+                        onDelete={handleDeleteMcpServer}
+                        discovering={discoveringServerId === server.id}
+                        onServerUpdate={(updatedServer) => {
+                          setMcpServers(prev => {
+                            const newServers = prev.map(s =>
+                              s.id === updatedServer.id ? updatedServer : s
+                            );
+                            if (selectedProject?.id) {
+                              mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                            }
+                            return newServers;
+                          });
+                        }}
+                      />
+                    </Box>
                   ))}
                 </Box>
               ) : (
@@ -919,6 +938,62 @@ export default function RightSidebar({
               <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
                 MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
               </p>
+            </div>
+          )}
+
+          {/* Skills Section */}
+          {activeSection === 'skills' && (
+            <div className="space-y-3">
+              {/* Add New Skill Button */}
+              <button
+                onClick={() => {
+                  onTabChange({ id: 'skill-new', type: 'skill', title: 'New Skill', data: { index: projectSkills.length, isNew: true } });
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
+              >
+                <AddBoxIcon sx={{ fontSize: 12 }} />
+                <span>Add Skill</span>
+              </button>
+
+              {projectSkills.length > 0 ? (
+                <Box className="space-y-2">
+                  {projectSkills.map((skill, index) => (
+                    <Box
+                      key={`skill-${index}`}
+                      onClick={() => {
+                        onTabChange({ id: `skill-${index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { skill, index } });
+                      }}
+                      sx={{
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        bgcolor: 'var(--sl-white-alpha-2)',
+                        border: '1px solid var(--sl-white-alpha-5)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        '&:hover': {
+                          bgcolor: 'var(--sl-white-alpha-5)',
+                          borderColor: 'var(--sl-white-alpha-8)',
+                        },
+                      }}
+                    >
+                      <Box className="flex items-center gap-2">
+                        <ConstructionIcon sx={{ fontSize: 14, color: 'var(--sl-text-muted)' }} />
+                        <span className="text-xs text-white font-medium truncate">
+                          {skill.name || 'Untitled Skill'}
+                        </span>
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Box className="flex flex-col items-center justify-center py-8 text-center">
+                  <ConstructionIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
+                  <Box className="text-gray-400 text-sm mb-1">No skills configured</Box>
+                  <Box className="text-gray-500 text-xs">
+                    Add skills to customize assistant behavior
+                  </Box>
+                </Box>
+              )}
             </div>
           )}
 
@@ -1056,10 +1131,13 @@ export default function RightSidebar({
         <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
           <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'documents' ? null : 'documents')}
+              onClick={() => {
+                if (selectedProject?.system) return;
+                setActiveSection(activeSection === 'documents' ? null : 'documents');
+              }}
               disabled={selectedProject?.system}
               sx={{
-                color: activeSection === 'documents' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                color: (activeSection === 'documents' || activeTab === 'document') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
@@ -1082,42 +1160,16 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="MCP Servers" placement="left">
-          <span>
-            <IconButton
-              onClick={() => { setMcpError(''); setActiveSection(activeSection === 'mcp' ? null : 'mcp'); }}
-              sx={{
-                color: activeSection === 'mcp' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: 'var(--sl-white-alpha-5)',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                '&:hover': {
-                  color: 'var(--sl-brand-primary)',
-                  bgcolor: 'var(--sl-brand-alpha-10)',
-                },
-                '&.Mui-disabled': {
-                  color: 'var(--sl-text-disabled)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  opacity: 0.5,
-                  cursor: 'not-allowed',
-                  pointerEvents: 'auto',
-                },
-              }}
-              size="small"
-            >
-              <PowerOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-
         <Tooltip title={selectedProject?.system ? "Skills (Disabled)" : "Skills"} placement="left">
           <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && onSkillsClick?.()}
+              onClick={() => {
+                if (selectedProject?.system) return;
+                setActiveSection(activeSection === 'skills' ? null : 'skills');
+              }}
               disabled={selectedProject?.system}
               sx={{
-                color: 'var(--sl-text-muted)',
+                color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
@@ -1137,6 +1189,37 @@ export default function RightSidebar({
               size="small"
             >
               <ConstructionIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="MCP Servers" placement="left">
+          <span>
+            <IconButton
+              onClick={() => {
+                setMcpError('');
+                setActiveSection(activeSection === 'mcp' ? null : 'mcp');
+              }}
+              sx={{
+                color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                bgcolor: 'var(--sl-white-alpha-5)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: 'var(--sl-brand-primary)',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
+                },
+                '&.Mui-disabled': {
+                  color: 'var(--sl-text-disabled)',
+                  bgcolor: 'var(--sl-white-alpha-2)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <PowerOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>

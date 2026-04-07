@@ -64,6 +64,37 @@
     min-height: 200px;
 }
 
+.markdown-editor-container .EasyMDEContainer .editor-statusbar {
+    color: var(--sl-text-muted);
+    background-color: var(--sl-bg-surface-1);
+    border-top: 1px solid var(--sl-border-default);
+}
+
+.markdown-editor-container .EasyMDEContainer .editor-statusbar .lines::before,
+.markdown-editor-container .EasyMDEContainer .editor-statusbar .words::before {
+    color: var(--sl-text-disabled);
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-selected {
+    background: var(--sl-brand-alpha-20) !important;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header {
+    color: var(--sl-brand-primary);
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-link {
+    color: var(--sl-brand-primary);
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-url {
+    color: var(--sl-text-muted);
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-comment {
+    color: var(--sl-text-muted);
+}
+
 /* Document preview markdown styles */
 .doc-preview-markdown p,
 .doc-preview-markdown li,
