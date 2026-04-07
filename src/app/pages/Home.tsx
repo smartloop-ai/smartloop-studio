@@ -8,8 +8,8 @@ import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-import DocumentsTab from '@/app/components/documents-tab';
-import SkillsTab from '@/app/components/skills-tab';
+// import DocumentsTab from '@/app/components/documents-tab';
+import SkillEditor from '@/app/components/skill-editor';
 import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -21,7 +21,9 @@ import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
-import ConversationTabs from '@/app/components/conversation-tabs';
+import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
+import McpTab from '@/app/components/mcp-tab';
+import DocumentViewer from '@/app/components/document-viewer';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 export default function Home() {
@@ -40,7 +42,8 @@ export default function Home() {
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
   const [deleteProjectError, setDeleteProjectError] = useState('');
-  const [activeTab, setActiveTab] = useState(0);
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
   const [projectSkills, setProjectSkills] = useState<Array<{ name: string; content: string }>>([]);
   const [_projectMemory, setProjectMemory] = useState(true);
@@ -341,7 +344,12 @@ export default function Home() {
 
         console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
         setConversation({ ...foundConversation });
-        setActiveTab(0);
+        // Open conversation tab
+        handleOpenTab({
+          id: `conv-${foundConversation.id}`,
+          type: 'conversation',
+          title: foundConversation.title || 'New Conversation',
+        });
 
         // Persist selection in SQLite
         await storageService.selectConversation(urlConversationId);
@@ -473,6 +481,12 @@ export default function Home() {
       window.removeEventListener('documentUploaded', refreshDocuments);
       window.removeEventListener('documentProcessingComplete', refreshDocuments);
     };
+  }, [selectedProject?.id]);
+
+  // Reset tabs when project changes
+  useEffect(() => {
+    setOpenTabs([]);
+    setActiveTabId(null);
   }, [selectedProject?.id]);
 
   // Load conversations for the selected project
@@ -729,7 +743,8 @@ export default function Home() {
     }
   };
 
-  const handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
+  // @ts-ignore - kept for future use with tab close
+  const _handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation(); // Prevent navigation when clicking delete
 
     console.log('[Home] Deleting conversation:', convId);
@@ -843,11 +858,40 @@ export default function Home() {
 
 
 
+  const handleOpenTab = (tab: OpenTab) => {
+    setOpenTabs((prev) => {
+      const existing = prev.find((t) => t.id === tab.id);
+      if (!existing) {
+        return [...prev, tab];
+      }
+      // Update data if tab already exists
+      return prev.map((t) => t.id === tab.id ? { ...t, ...tab } : t);
+    });
+    setActiveTabId(tab.id);
+  };
+
+  const handleCloseTab = (tabId: string) => {
+    const idx = openTabs.findIndex((t) => t.id === tabId);
+    const newTabs = openTabs.filter((t) => t.id !== tabId);
+    setOpenTabs(newTabs);
+    if (activeTabId === tabId) {
+      // Switch to adjacent tab or null
+      if (newTabs.length > 0) {
+        const newIdx = Math.min(idx, newTabs.length - 1);
+        setActiveTabId(newTabs[newIdx].id);
+      } else {
+        setActiveTabId(null);
+      }
+    }
+  };
+
+  const getActiveTab = () => openTabs.find((t) => t.id === activeTabId) || null;
+
   const handleStartNewConversation = () => {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
     setChatMessage(null);
-    setActiveTab(0);
+    handleOpenTab({ id: 'conv-new', type: 'conversation', title: 'New Conversation' });
     storageService.clearSelectedConversation();
 
     // Update URL with new=1 to signal explicit new conversation (not auto-select)
@@ -871,7 +915,11 @@ export default function Home() {
 
     // Set state immediately and persist selection
     setConversation(newConversation);
-    setActiveTab(0);
+    // Replace the "New Conversation" tab with the actual conversation tab
+    setOpenTabs((prev) => prev.map((t) =>
+      t.id === 'conv-new' ? { id: `conv-${newConversation.id}`, type: 'conversation' as const, title: newConversation.title || 'Untitled' } : t
+    ));
+    setActiveTabId(`conv-${newConversation.id}`);
     storageService.selectConversation(newConversation.id);
 
     // Dispatch conversationCreated event so sidebar refreshes from SQLite
@@ -902,6 +950,15 @@ export default function Home() {
 
     // Update local conversation state
     setConversation(updatedConversation);
+
+    // Update tab title if conversation title changed
+    if (updatedConversation.title) {
+      setOpenTabs((prev) =>
+        prev.map((t) =>
+          t.id === `conv-${updatedConversation.id}` ? { ...t, title: updatedConversation.title } : t
+        )
+      );
+    }
 
     // Sync messages to storage
     if (updatedConversation.id && updatedConversation.messages) {
@@ -1415,80 +1472,76 @@ export default function Home() {
                   </Box>
                 </Box>
 
-                {/* Tabs - show each conversation as tab plus Configuration */}
+                {/* Content Tabs */}
                 {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
-                  <ConversationTabs
-                    projectConversations={projectConversations}
-                    currentConversation={conversation}
-                    onConversationSelect={(conversationId) => {
-                      if (activeTab === 2) setActiveTab(0);
-                      const newUrl = selectedProject
-                        ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                        : `/?conversation=${conversationId}`;
-                      navigate(newUrl);
-                    }}
-                    onConversationDelete={handleDeleteConversationFromList}
+                  <ContentTabs
+                    tabs={openTabs}
+                    activeTabId={activeTabId}
+                    onTabSelect={setActiveTabId}
+                    onTabClose={handleCloseTab}
                     onNewConversation={handleStartNewConversation}
-                    activeTab={activeTab}
-                    onSkillsTabClose={() => setActiveTab(0)}
                   />
                 )}
 
                 {/* Main Content Area - 2 columns */}
                 <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                  {/* Left Column - Chat or Documents Tab */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                    {activeTab === 1 && selectedProject ? (
-                      <DocumentsTab
-                        user={user}
-                        setUser={setUser}
-                        selectedProject={selectedProject}
-                        setSelectedProject={setSelectedProject}
-                        currentProjectData={currentProjectData}
-                        setCurrentProjectData={setCurrentProjectData}
-                        setActiveTab={setActiveTab}
-                      />
-                    ) : activeTab === 2 && selectedProject ? (
-                      <SkillsTab
-                        selectedProject={selectedProject}
-                        projectSkills={projectSkills}
-                        isSavingSkills={isSavingSkills}
-                        onSaveSkills={saveProjectSkills}
-                      />
-                    ) : (
-                      // Show Chat component (it handles the case when conversation is null)
-                      <Chat
-                        project={selectedProject}
-                        initialMessage={chatMessage}
-                        attachments={messageAttachments}
-                        conversation={conversation}
-                        onFileAttached={handleFileAttached}
-                        onAttachmentsClear={() => {
-                          setMessageAttachments([]);
-                        }}
-                        onTokenUpdate={() => {
-                          window.dispatchEvent(new Event('refreshUserTokens'));
-                        }}
-                        onConversationCreated={handleConversationCreated}
-                        onConversationUpdate={handleConversationUpdate}
-                      />
-                    )}
+                  {/* Main Content Area */}
+                  <Box className="flex-1 overflow-hidden">
+                    {(() => {
+                      const currentTab = getActiveTab();
+                      if (currentTab?.type === 'document' && currentTab.data) {
+                        return <DocumentViewer document={currentTab.data} />;
+                      }
+                      if (currentTab?.type === 'skill' && selectedProject) {
+                        return (
+                          <SkillEditor
+                            selectedProject={selectedProject}
+                            projectSkills={projectSkills}
+                            skillIndex={currentTab.data?.index ?? 0}
+                            isSavingSkills={isSavingSkills}
+                            onSaveSkills={saveProjectSkills}
+                            isNew={currentTab.data?.isNew}
+                          />
+                        );
+                      }
+                      if (currentTab?.type === 'mcp' && currentTab.data) {
+                        return <McpTab server={currentTab.data} />;
+                      }
+                      // Default: conversation view
+                      return (
+                        <Chat
+                          project={selectedProject}
+                          initialMessage={chatMessage}
+                          attachments={messageAttachments}
+                          conversation={conversation}
+                          onFileAttached={handleFileAttached}
+                          onAttachmentsClear={() => {
+                            setMessageAttachments([]);
+                          }}
+                          onTokenUpdate={() => {
+                            window.dispatchEvent(new Event('refreshUserTokens'));
+                          }}
+                          onConversationCreated={handleConversationCreated}
+                          onConversationUpdate={handleConversationUpdate}
+                        />
+                      );
+                    })()}
                   </Box>
 
-                  {/* Right Sidebar - Documents, MCP, Settings */}
-                  {activeTab !== 1 && activeTab !== 2 && (
-                    <RightSidebar
-                      selectedProject={selectedProject}
-                      currentProjectData={currentProjectData}
-                      onAddDocument={() => setShowFileUploadDialog(true)}
-                      onDeleteDocument={handleOpenDeleteDocDialog}
-                      onFolderPathChange={handleFolderPathChange}
-                      onColorChange={handleColorChange}
-                      onRenameProject={handleRenameProject}
-                      onSkillsClick={() => setActiveTab(activeTab === 2 ? 0 : 2)}
-                      user={user}
-                    />
-                  )}
+                  {/* Right Sidebar */}
+                  <RightSidebar
+                    selectedProject={selectedProject}
+                    currentProjectData={currentProjectData}
+                    onAddDocument={() => setShowFileUploadDialog(true)}
+                    onDeleteDocument={handleOpenDeleteDocDialog}
+                    onFolderPathChange={handleFolderPathChange}
+                    onColorChange={handleColorChange}
+                    onRenameProject={handleRenameProject}
+                    user={user}
+                    activeTab={getActiveTab()?.type || 'conversation'}
+                    onTabChange={handleOpenTab}
+                    projectSkills={projectSkills}
+                  />
                 </Box>
               </>
             </Box>

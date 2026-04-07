@@ -20,6 +20,7 @@ interface SkillsTabProps {
   projectSkills: Skill[];
   isSavingSkills: boolean;
   onSaveSkills: (skills: Skill[]) => void;
+  initialSkillIndex?: number;
 }
 
 const DEFAULT_SKILL_TEMPLATE = `---
@@ -45,13 +46,22 @@ export default function SkillsTab({
   projectSkills,
   isSavingSkills,
   onSaveSkills,
+  initialSkillIndex,
 }: SkillsTabProps) {
-  const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
+  const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(initialSkillIndex ?? null);
   const [editingSkillContent, setEditingSkillContent] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [newSkillName, setNewSkillName] = useState('');
   const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
   const editorRef = useRef<any>(null);
+
+  // Auto-select skill when opened from sidebar
+  useEffect(() => {
+    if (initialSkillIndex !== undefined && initialSkillIndex < projectSkills.length) {
+      setEditingSkillIndex(initialSkillIndex);
+      setEditingSkillContent(projectSkills[initialSkillIndex].content);
+    }
+  }, [initialSkillIndex]);
 
   const editorOptions = useMemo(() => ({
     spellChecker: false,

@@ -17,7 +17,7 @@ interface DocumentsTabProps {
   setSelectedProject: (project: any) => void;
   currentProjectData: any;
   setCurrentProjectData: (project: any) => void;
-  setActiveTab: (tab: number) => void;
+  setActiveTab?: (tab: number) => void;
 }
 
 export default function DocumentsTab({
@@ -95,7 +95,7 @@ export default function DocumentsTab({
           }
         }
         // Stay on Documents tab
-        setActiveTab(1);
+        setActiveTab?.(1);
 
         handleCloseDeleteDocDialog();
       } else {
@@ -228,7 +228,7 @@ export default function DocumentsTab({
         onSuccess={() => {
           // Just start polling and stay on Documents tab
           // The dialog already dispatches documentUploaded event which triggers polling
-          setActiveTab(1);
+          setActiveTab?.(1);
         }}
         user={user}
         setUser={setUser}
