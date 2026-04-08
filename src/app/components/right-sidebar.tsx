@@ -61,6 +61,7 @@ export default function RightSidebar({
   const [localProjectName, setLocalProjectName] = useState('');
 
   // Inline skill editing
+  const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
   const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
   const [editingSkillIsNew, setEditingSkillIsNew] = useState(false);
   const [skillContent, setSkillContent] = useState('');
@@ -1034,6 +1035,8 @@ description: A clear description of what this skill does and when to use it
                       {projectSkills.map((skill, index) => (
                         <Box
                           key={`skill-${index}`}
+                          onMouseEnter={() => setHoveredSkillIndex(index)}
+                          onMouseLeave={() => setHoveredSkillIndex(null)}
                           onClick={() => {
                             setEditingSkillIndex(index);
                             setEditingSkillIsNew(false);
@@ -1055,9 +1058,34 @@ description: A clear description of what this skill does and when to use it
                         >
                           <Box className="flex items-center gap-2">
                             <ConstructionIcon sx={{ fontSize: 14, color: 'var(--sl-text-muted)' }} />
-                            <span className="text-xs text-white font-medium truncate">
+                            <span className="text-xs text-white font-medium truncate flex-1">
                               {skill.name || 'Untitled Skill'}
                             </span>
+                            <Tooltip title="Delete Skill" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onSaveSkills) {
+                                    const updated = projectSkills.filter((_, i) => i !== index);
+                                    onSaveSkills(updated);
+                                  }
+                                }}
+                                sx={{
+                                  opacity: hoveredSkillIndex === index ? 1 : 0,
+                                  transition: 'opacity 0.15s ease',
+                                  color: 'var(--sl-text-muted)',
+                                  bgcolor: 'var(--sl-danger-alpha-10)',
+                                  padding: '4px',
+                                  '&:hover': {
+                                    color: 'var(--sl-status-error)',
+                                    bgcolor: 'var(--sl-danger-alpha-15)',
+                                  },
+                                }}
+                              >
+                                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </Tooltip>
                           </Box>
                         </Box>
                       ))}
