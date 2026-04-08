@@ -862,10 +862,10 @@ export default function RightSidebar({
                 </Box>
               )}
 
-              {mcpServers.length > 0 ? (
+              {mcpServers.filter((s: any) => s.name !== '__system_mcp__' && !s.system).length > 0 ? (
                 /* Server List */
                 <Box className="space-y-2">
-                  {mcpServers.map((server, index) => (
+                  {mcpServers.filter((s: any) => s.name !== '__system_mcp__' && !s.system).map((server, index) => (
                     <Box
                       key={server.id || `mcp-${index}`}
                     >
