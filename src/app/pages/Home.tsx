@@ -1653,6 +1653,7 @@ export default function Home() {
                     activeTab={getActiveTab()?.type || 'conversation'}
                     onTabChange={handleOpenTab}
                     projectSkills={projectSkills}
+                    onSaveSkills={saveProjectSkills}
                   />
                 </Box>
               </>
