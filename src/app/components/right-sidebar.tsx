@@ -84,7 +84,7 @@ description: A clear description of what this skill does and when to use it
       'bold', 'italic', 'heading', '|',
       'unordered-list', 'ordered-list', '|', 'quote',
     ] as const,
-    minHeight: '300px',
+    minHeight: '200px',
     placeholder: 'Add skills or guidelines for this project...',
   }), []);
 

@@ -7,9 +7,10 @@
     color: var(--sl-text-primary);
     border: 1px solid var(--sl-border-default);
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 12px;
     font-family: monospace;
     min-height: 200px;
+    line-height: 1.5;
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror:hover {
@@ -33,6 +34,9 @@
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button {
     color: var(--sl-text-muted) !important;
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 12px !important;
 }
 
 .markdown-editor-container .EasyMDEContainer .editor-toolbar button:hover {
@@ -81,6 +85,26 @@
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header {
     color: var(--sl-brand-primary);
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-1 {
+    font-size: 14px !important;
+    font-weight: 600;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-2 {
+    font-size: 13px !important;
+    font-weight: 600;
+}
+
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-3,
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-4,
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-5,
+.markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-header-6 {
+    font-size: 13px !important;
+    font-weight: 500;
 }
 
 .markdown-editor-container .EasyMDEContainer .CodeMirror-line .cm-link {
