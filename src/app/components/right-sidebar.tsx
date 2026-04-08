@@ -52,6 +52,7 @@ export default function RightSidebar({
   const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
   const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -605,15 +606,6 @@ description: A clear description of what this skill does and when to use it
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
-            {selectedProject && activeSection === 'documents' && (
-              <button
-                onClick={onAddDocument}
-                className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
-              >
-                <AddBoxIcon sx={{ fontSize: 12 }} />
-                <span>Add</span>
-              </button>
-            )}
           </Box>
 
 
@@ -626,73 +618,61 @@ description: A clear description of what this skill does and when to use it
               onDrop={handleDrop}
             >
               {selectedProject ? (
-                effectiveDocuments.length > 0 ? (
-                  <>
-                    {/* Hidden file input */}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.docx,.txt,.csv"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt,.csv"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
 
-                    {/* Drop zone overlay when dragging */}
-                    {isDragging && (
-                      <Box
-                        className="border-2 border-dashed border-pink-500 bg-pink-500/10 rounded-sm p-3 text-center"
-                      >
-                        <Box className="flex items-center justify-center gap-2">
-                          <CloudUploadIcon sx={{ fontSize: 16, color: '#ec4899' }} />
-                          <span className="text-pink-400 text-xs">Drop file to upload</span>
-                        </Box>
+                  {/* Drop zone overlay when dragging */}
+                  {isDragging && (
+                    <Box className="border-2 border-dashed border-pink-500 bg-pink-500/10 rounded-sm p-3 text-center">
+                      <Box className="flex items-center justify-center gap-2">
+                        <CloudUploadIcon sx={{ fontSize: 16, color: '#ec4899' }} />
+                        <span className="text-pink-400 text-xs">Drop file to upload</span>
                       </Box>
-                    )}
+                    </Box>
+                  )}
 
-                    {uploadError && (
-                      <Box className="text-red-400 text-xs text-center -mt-1">
-                        {uploadError}
-                      </Box>
-                    )}
+                  {uploadError && (
+                    <Box className="text-red-400 text-xs text-center">{uploadError}</Box>
+                  )}
 
-                    {/* Search Input */}
-                    <TextField
-                      size="small"
-                      placeholder="Search documents..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
-                          </InputAdornment>
-                        ),
-                      }}
-                      sx={{
-                        width: '100%',
-                        '& .MuiOutlinedInput-root': {
-                          backgroundColor: 'var(--sl-white-alpha-2)',
-                          fontSize: '0.75rem',
-                          '& fieldset': {
-                            borderColor: 'var(--sl-white-alpha-10)',
-                          },
-                          '&:hover fieldset': {
-                            borderColor: 'var(--sl-brand-alpha-30)',
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: 'var(--sl-brand-primary)',
-                          },
-                        },
-                        '& .MuiInputBase-input': {
-                          color: 'var(--sl-text-primary)',
-                          padding: '8px 12px',
-                          '&::placeholder': {
-                            color: 'var(--sl-text-muted)',
-                            opacity: 1,
-                          },
-                        },
-                      }}
-                    />
+                  {/* Search */}
+                  <TextField
+                    size="small"
+                    placeholder="Search documents..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                    sx={{
+                      width: '100%',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
+                    }}
+                  />
+
+                  {/* Document List */}
+                  {effectiveDocuments.length > 0 ? (
                     <Box className="space-y-2">
                       {effectiveDocuments
                         .filter((doc: any) => {
@@ -700,8 +680,7 @@ description: A clear description of what this skill does and when to use it
                           const query = searchQuery.toLowerCase();
                           const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
                           const summary = (doc.summary || '').toLowerCase();
-                          const markdown = (doc.markdown || '').toLowerCase();
-                          return filename.includes(query) || summary.includes(query) || markdown.includes(query);
+                          return filename.includes(query) || summary.includes(query);
                         })
                         .map((doc: any, i: number) => (
                           <Box
@@ -709,138 +688,65 @@ description: A clear description of what this skill does and when to use it
                             onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
                             onMouseLeave={() => setHoveredDocId(null)}
                             sx={{
-                              padding: '10px',
+                              padding: '8px 10px',
                               borderRadius: '6px',
                               bgcolor: 'var(--sl-white-alpha-2)',
                               border: '1px solid var(--sl-white-alpha-5)',
                               transition: 'all 0.15s ease',
-                              position: 'relative',
                             }}
                           >
-                            <Box className="flex items-start gap-2">
-                              {/* Document Icon */}
-                              <Box
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: '50%',
-                                  bgcolor: 'var(--sl-brand-alpha-10)',
-                                  flexShrink: 0,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  marginTop: '2px',
-                                }}
-                              >
+                            <Box className="flex items-center gap-2">
+                              {processingDocs.has(doc.id)
+                                ? <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
+                                : <InsertDriveFileIcon sx={{ fontSize: 14, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
+                              }
+                              <span className="text-xs text-white font-medium truncate flex-1">
                                 {processingDocs.has(doc.id)
-                                  ? <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                  : <InsertDriveFileIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                                  ? (processingDocs.get(doc.id) || 'Processing...')
+                                  : ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document'))
                                 }
-                              </Box>
-
-                              {/* Document Content */}
-                              <Box className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2 mb-1">
-                                  <span className="text-xs text-white font-medium truncate">
-                                    {(doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document')}
-                                  </span>
-                                  {/* Delete Icon - Appears on Hover (hidden for uploading docs) */}
-                                  {!processingDocs.has(doc.id) && (
-                                    <Tooltip title="Delete Document" arrow>
-                                      <IconButton
-                                        size="small"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onDeleteDocument(doc);
-                                        }}
-                                        sx={{
-                                          opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
-                                          transition: 'opacity 0.15s ease',
-                                          color: 'var(--sl-text-muted)',
-                                          bgcolor: 'var(--sl-danger-alpha-10)',
-                                          padding: '4px',
-                                          '&:hover': {
-                                            color: 'var(--sl-status-error)',
-                                            bgcolor: 'var(--sl-danger-alpha-15)',
-                                          },
-                                        }}
-                                      >
-                                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
-                                </div>
-
-                                {/* Uploading indicator or Document Preview */}
-                                {processingDocs.has(doc.id) ? (
-                                  <div className="text-[10px] text-gray-400 leading-relaxed mb-1.5">
-                                    {processingDocs.get(doc.id) || 'Processing document...'}
-                                  </div>
-                                ) : (doc.summary || doc.markdown) ? (
-                                  <div
-                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5"
-                                    style={{
-                                      wordBreak: 'break-word',
-                                      display: '-webkit-box',
-                                      WebkitLineClamp: 3,
-                                      WebkitBoxOrient: 'vertical',
-                                      overflow: 'hidden',
+                              </span>
+                              {!processingDocs.has(doc.id) && (
+                                <Tooltip title="Delete Document" arrow>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteDocument(doc);
+                                    }}
+                                    sx={{
+                                      opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
+                                      transition: 'opacity 0.15s ease',
+                                      color: 'var(--sl-text-muted)',
+                                      bgcolor: 'var(--sl-danger-alpha-10)',
+                                      padding: '4px',
+                                      '&:hover': {
+                                        color: 'var(--sl-status-error)',
+                                        bgcolor: 'var(--sl-danger-alpha-15)',
+                                      },
                                     }}
                                   >
-                                    {((s) => { const t = s.slice(0, 100); const i = t.lastIndexOf(' '); return s.length > 100 ? (i > 0 ? t.slice(0, i) : t) + '...' : t; })((doc.summary || doc.markdown || '').replace(/[#*_\[\]()>`~|]/g, '').replace(/\n/g, ' ').trim())}
-                                  </div>
-                                ) : (
-                                  <div className="text-[10px] text-gray-500 italic leading-relaxed mb-1.5">
-                                    Pending processing
-                                  </div>
-                                )}
-
-                                {/* Document Metadata */}
-                                <div className="text-[10px] text-gray-500 flex items-center gap-2 flex-wrap">
-                                </div>
-                              </Box>
+                                    <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                             </Box>
                           </Box>
                         ))}
                     </Box>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.docx,.txt,.csv"
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                    <Box
-                      onDragOver={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={`border-2 border-dashed rounded-sm p-8 text-center transition-all cursor-pointer ${isDragging
-                        ? 'border-pink-500 bg-pink-500/10'
-                        : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
-                        }`}
-                    >
-                      <CloudUploadIcon className="text-5xl text-gray-500 mb-2" />
-                      <Box className="text-gray-300 text-sm mb-1">
-                        Drag and drop your file here
-                      </Box>
-                      <Box className="text-gray-500 text-xs mb-3">
-                        or click to browse
-                      </Box>
-                      <Box className="text-gray-600 text-xs">
-                        Supported: PDF, DOCX, TXT, CSV (Max 50MB)
-                      </Box>
-                    </Box>
-                    {uploadError && (
-                      <Box className="text-red-400 text-xs mt-2 text-center">
-                        {uploadError}
-                      </Box>
-                    )}
-                  </>
-                )
+                  ) : (
+                    <Box className="text-gray-500 text-xs text-center py-4">No documents yet</Box>
+                  )}
+
+                  {/* + New Document */}
+                  <button
+                    onClick={onAddDocument}
+                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-normal text-pink-400 hover:bg-pink-500/10 cursor-pointer rounded-sm transition-all w-full"
+                  >
+                    <AddBoxIcon sx={{ fontSize: 14 }} />
+                    <span>New Document</span>
+                  </button>
+                </>
               ) : (
                 <Box className="text-gray-500 text-xs py-4 text-center">
                   Select a project to view documents
@@ -1016,23 +922,46 @@ description: A clear description of what this skill does and when to use it
                 </div>
               ) : (
                 <>
-                  {/* Add New Skill Button */}
-                  <button
-                    onClick={() => {
-                      setEditingSkillIsNew(true);
-                      setEditingSkillIndex(null);
-                      setSkillContent(DEFAULT_SKILL_TEMPLATE);
-                      setSkillHasUnsavedChanges(false);
+                  {/* Search */}
+                  <TextField
+                    size="small"
+                    placeholder="Search skills..."
+                    value={skillSearchQuery}
+                    onChange={(e) => setSkillSearchQuery(e.target.value)}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ fontSize: 18, color: 'var(--sl-text-muted)' }} />
+                        </InputAdornment>
+                      ),
                     }}
-                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
-                  >
-                    <AddBoxIcon sx={{ fontSize: 12 }} />
-                    <span>Add Skill</span>
-                  </button>
+                    sx={{
+                      width: '100%',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: 'var(--sl-white-alpha-2)',
+                        fontSize: '0.75rem',
+                        '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
+                      },
+                      '& .MuiInputBase-input': {
+                        color: 'var(--sl-text-primary)',
+                        padding: '8px 12px',
+                        '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      },
+                    }}
+                  />
 
+                  {/* Skill List */}
                   {projectSkills.length > 0 ? (
                     <Box className="space-y-2">
-                      {projectSkills.map((skill, index) => (
+                      {projectSkills
+                        .filter((skill) => {
+                          if (!skillSearchQuery) return true;
+                          const query = skillSearchQuery.toLowerCase();
+                          return (skill.name || '').toLowerCase().includes(query) || (skill.content || '').toLowerCase().includes(query);
+                        })
+                        .map((skill, index) => (
                         <Box
                           key={`skill-${index}`}
                           onMouseEnter={() => setHoveredSkillIndex(index)}
@@ -1044,7 +973,7 @@ description: A clear description of what this skill does and when to use it
                             setSkillHasUnsavedChanges(false);
                           }}
                           sx={{
-                            padding: '10px 12px',
+                            padding: '8px 10px',
                             borderRadius: '6px',
                             bgcolor: 'var(--sl-white-alpha-2)',
                             border: '1px solid var(--sl-white-alpha-5)',
@@ -1057,7 +986,7 @@ description: A clear description of what this skill does and when to use it
                           }}
                         >
                           <Box className="flex items-center gap-2">
-                            <ConstructionIcon sx={{ fontSize: 14, color: 'var(--sl-text-muted)' }} />
+                            <ConstructionIcon sx={{ fontSize: 14, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
                             <span className="text-xs text-white font-medium truncate flex-1">
                               {skill.name || 'Untitled Skill'}
                             </span>
@@ -1091,14 +1020,22 @@ description: A clear description of what this skill does and when to use it
                       ))}
                     </Box>
                   ) : (
-                    <Box className="flex flex-col items-center justify-center py-8 text-center">
-                      <ConstructionIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
-                      <Box className="text-gray-400 text-sm mb-1">No skills configured</Box>
-                      <Box className="text-gray-500 text-xs">
-                        Add skills to customize assistant behavior
-                      </Box>
-                    </Box>
+                    <Box className="text-gray-500 text-xs text-center py-4">No skills yet</Box>
                   )}
+
+                  {/* + New Skill */}
+                  <button
+                    onClick={() => {
+                      setEditingSkillIsNew(true);
+                      setEditingSkillIndex(null);
+                      setSkillContent(DEFAULT_SKILL_TEMPLATE);
+                      setSkillHasUnsavedChanges(false);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-normal text-pink-400 hover:bg-pink-500/10 cursor-pointer rounded-sm transition-all w-full"
+                  >
+                    <AddBoxIcon sx={{ fontSize: 14 }} />
+                    <span>New Skill</span>
+                  </button>
                 </>
               )}
             </div>
