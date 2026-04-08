@@ -17,6 +17,8 @@ export interface ElectronAPI {
   getMachineId: () => Promise<string | null>;
   // Save a file to a temp directory for local SLP document upload
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
+  // Read a text file from disk
+  readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   // Select a folder using native file dialog
   selectFolder: () => Promise<string | null>;
   // Get the OS home directory

@@ -1,31 +1,118 @@
 import { Box } from '@mui/material';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { marked } from 'marked';
+import { useState, useEffect } from 'react';
 
 interface DocumentViewerProps {
   document: any;
+  projectId?: string;
 }
 
-export default function DocumentViewer({ document }: DocumentViewerProps) {
-  const content = document?.markdown || document?.summary || '';
+export default function DocumentViewer({ document, projectId }: DocumentViewerProps) {
+  const [fileContent, setFileContent] = useState<string | null>(null);
+
   const filename = (document?.path || document?.source)
     ? ((document.path || document.source).split('/').pop() || 'Untitled Document')
     : (document?.filename || document?.name || 'Untitled Document');
+
+  const baseName = filename.replace(/\.[^/.]+$/, '');
+  const extension = filename.includes('.') ? filename.split('.').pop()?.toUpperCase() || '' : '';
+
+  // Try to read the .md file from the project's sources directory
+  useEffect(() => {
+    setFileContent(null);
+
+    const readFromDisk = async () => {
+      if (!window.electronAPI?.readTextFile) return;
+
+      // Try multiple possible paths for the markdown file
+      const candidates: string[] = [];
+
+      const source = document?.path || document?.source || '';
+      const sourceFile = source.split('/').pop() || '';
+      const sourceBase = sourceFile.replace(/\.[^/.]+$/, '');
+
+      // Primary: read from ~/.smartloop/{projectId}/sources/{name}.md
+      if (projectId) {
+        candidates.push(`~/.smartloop/${projectId}/sources/${baseName}.md`);
+        if (sourceBase && sourceBase !== baseName) {
+          candidates.push(`~/.smartloop/${projectId}/sources/${sourceBase}.md`);
+        }
+      }
+
+      // Fallback: if source is already an .md path, try it directly
+      if (source.endsWith('.md')) {
+        candidates.push(source);
+      }
+
+      for (const path of candidates) {
+        if (!path) continue;
+        const result = await window.electronAPI.readTextFile(path);
+        if (result.success && result.content) {
+          setFileContent(result.content);
+          return;
+        }
+      }
+    };
+
+    readFromDisk();
+  }, [document?.id, projectId, baseName]);
+
+  // Prefer file from disk, then markdown field; skip summary (it's just an excerpt)
+  const content = fileContent || document?.markdown || '';
 
   if (!content) {
     return (
       <Box className="flex flex-col items-center justify-center h-full text-center px-4">
         <Box className="text-gray-400 text-sm mb-1">No content available</Box>
         <Box className="text-gray-500 text-xs">
-          This document is still being processed
+          This document may still be processing
         </Box>
       </Box>
     );
   }
 
   return (
-    <Box className="h-full overflow-y-auto p-6">
-      <Box className="max-w-3xl mx-auto">
-        <Box className="text-[11px] text-gray-500 mb-6 uppercase tracking-wider">{filename}</Box>
+    <Box
+      className="h-full overflow-y-auto"
+      sx={{
+        bgcolor: '#0d1117',
+        borderLeft: '1px solid',
+        borderColor: 'var(--sl-white-alpha-10)',
+      }}
+    >
+      {/* Document header bar */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          px: 5,
+          py: 1.5,
+          borderBottom: '1px solid var(--sl-white-alpha-8)',
+          bgcolor: 'rgba(255,255,255,0.02)',
+        }}
+      >
+        <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+        <Box sx={{ fontSize: '12px', color: 'var(--sl-text-secondary)', fontWeight: 500 }}>{filename}</Box>
+        {extension && (
+          <Box
+            sx={{
+              fontSize: '10px',
+              color: 'var(--sl-text-muted)',
+              bgcolor: 'var(--sl-white-alpha-8)',
+              px: 1,
+              py: 0.25,
+              borderRadius: '3px',
+              fontWeight: 600,
+              letterSpacing: '0.5px',
+            }}
+          >
+            {extension}
+          </Box>
+        )}
+      </Box>
+      <Box className="max-w-3xl mx-auto px-10 py-8">
         <Box
           className="document-markdown-viewer"
           sx={{

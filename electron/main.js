@@ -100,6 +100,20 @@ ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
   return filePath;
 });
 
+// IPC: read a text file from disk
+ipcMain.handle('read-text-file', async (event, filePath) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+    const content = fs.readFileSync(resolved, 'utf-8');
+    return { success: true, content };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: select a folder using native dialog
 ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog({

@@ -1597,7 +1597,7 @@ export default function Home() {
                     {(() => {
                       const currentTab = getActiveTab();
                       if (currentTab?.type === 'document' && currentTab.data) {
-                        return <DocumentViewer document={currentTab.data} />;
+                        return <DocumentViewer document={currentTab.data} projectId={selectedProject?.id} />;
                       }
                       if (currentTab?.type === 'skill' && selectedProject) {
                         return (
