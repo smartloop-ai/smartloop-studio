@@ -1,15 +1,19 @@
 import { Box } from '@mui/material';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import { marked } from 'marked';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface DocumentViewerProps {
   document: any;
   projectId?: string;
+  onStartConversation?: (selectedText: string, documentName: string) => void;
 }
 
-export default function DocumentViewer({ document, projectId }: DocumentViewerProps) {
+export default function DocumentViewer({ document, projectId, onStartConversation }: DocumentViewerProps) {
   const [fileContent, setFileContent] = useState<string | null>(null);
+  const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number } | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const filename = (document?.path || document?.source)
     ? ((document.path || document.source).split('/').pop() || 'Untitled Document')
@@ -58,6 +62,53 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
     readFromDisk();
   }, [document?.id, projectId, baseName]);
 
+  // Handle text selection to show popup
+  const handleMouseUp = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      setSelectionPopup(null);
+      return;
+    }
+
+    const text = selection.toString().trim();
+    if (text.length < 3) {
+      setSelectionPopup(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const containerRect = contentRef.current?.getBoundingClientRect();
+
+    if (containerRect) {
+      setSelectionPopup({
+        text,
+        x: rect.left + rect.width / 2 - containerRect.left,
+        y: rect.top - containerRect.top - 8,
+      });
+    }
+  }, []);
+
+  // Dismiss popup when clicking outside
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.selection-popup')) {
+        setSelectionPopup(null);
+      }
+    };
+    window.addEventListener('mousedown', handleMouseDown);
+    return () => window.removeEventListener('mousedown', handleMouseDown);
+  }, []);
+
+  const handleAskAboutSelection = () => {
+    if (selectionPopup && onStartConversation) {
+      onStartConversation(selectionPopup.text, filename);
+      setSelectionPopup(null);
+      window.getSelection()?.removeAllRanges();
+    }
+  };
+
   // Prefer file from disk, then markdown field; skip summary (it's just an excerpt)
   const content = fileContent || document?.markdown || '';
 
@@ -76,7 +127,6 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
     <Box
       className="h-full overflow-y-auto"
       sx={{
-        bgcolor: '#0d1117',
         borderLeft: '1px solid',
         borderColor: 'var(--sl-white-alpha-10)',
       }}
@@ -112,7 +162,55 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
           </Box>
         )}
       </Box>
-      <Box className="max-w-3xl mx-auto px-10 py-8">
+      <Box ref={contentRef} className="max-w-3xl mx-auto px-10 py-8" sx={{ position: 'relative' }} onMouseUp={handleMouseUp}>
+        {/* Selection popup */}
+        {selectionPopup && onStartConversation && (
+          <Box
+            className="selection-popup"
+            onMouseDown={(e) => e.stopPropagation()}
+            sx={{
+              position: 'absolute',
+              left: selectionPopup.x,
+              top: selectionPopup.y,
+              transform: 'translate(-50%, -100%)',
+              zIndex: 100,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.75,
+              px: 1.5,
+              py: 0.75,
+              bgcolor: 'var(--sl-brand-primary)',
+              color: 'white',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              whiteSpace: 'nowrap',
+              userSelect: 'none',
+              '&:hover': {
+                filter: 'brightness(1.1)',
+              },
+              // Arrow pointing down
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                bottom: '-5px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 0,
+                height: 0,
+                borderLeft: '5px solid transparent',
+                borderRight: '5px solid transparent',
+                borderTop: '5px solid var(--sl-brand-primary)',
+              },
+            }}
+            onClick={handleAskAboutSelection}
+          >
+            <ChatBubbleOutlineIcon sx={{ fontSize: 13 }} />
+            Ask about this
+          </Box>
+        )}
         <Box
           className="document-markdown-viewer"
           sx={{
