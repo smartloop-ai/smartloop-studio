@@ -637,21 +637,12 @@ export default function RightSidebar({
                             key={doc.id || `doc-${i}`}
                             onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
                             onMouseLeave={() => setHoveredDocId(null)}
-                            onClick={() => {
-                              const docName = (doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document');
-                              onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: docName, data: doc });
-                            }}
                             sx={{
                               padding: '10px',
                               borderRadius: '6px',
                               bgcolor: 'var(--sl-white-alpha-2)',
                               border: '1px solid var(--sl-white-alpha-5)',
-                              cursor: 'pointer',
                               transition: 'all 0.15s ease',
-                              '&:hover': {
-                                bgcolor: 'var(--sl-white-alpha-5)',
-                                borderColor: 'var(--sl-white-alpha-8)',
-                              },
                               position: 'relative',
                             }}
                           >
