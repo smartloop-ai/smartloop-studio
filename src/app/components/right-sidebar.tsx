@@ -80,10 +80,7 @@ description: A clear description of what this skill does and when to use it
   const skillEditorOptions = useMemo(() => ({
     spellChecker: false,
     status: false as const,
-    toolbar: [
-      'bold', 'italic', 'heading', '|',
-      'unordered-list', 'ordered-list', '|', 'quote',
-    ] as const,
+    toolbar: false as const,
     minHeight: '200px',
     placeholder: 'Add skills or guidelines for this project...',
   }), []);
@@ -1003,6 +1000,7 @@ description: A clear description of what this skill does and when to use it
                       <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)' }} />
                     )}
                   </Box>
+                  <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mb: 1 }}>Markdown</Box>
                   <Box className="markdown-editor-container" sx={{
                     '& .EasyMDEContainer': { border: 'none' },
                     '& .CodeMirror': { bgcolor: 'var(--sl-white-alpha-2)', border: '1px solid var(--sl-white-alpha-10)', borderRadius: '6px', color: 'var(--sl-text-primary)' },
