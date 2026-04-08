@@ -1000,7 +1000,6 @@ description: A clear description of what this skill does and when to use it
                       <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)' }} />
                     )}
                   </Box>
-                  <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mb: 1 }}>Markdown</Box>
                   <Box className="markdown-editor-container" sx={{
                     '& .EasyMDEContainer': { border: 'none' },
                     '& .CodeMirror': { bgcolor: 'var(--sl-white-alpha-2)', border: '1px solid var(--sl-white-alpha-10)', borderRadius: '6px', color: 'var(--sl-text-primary)' },
@@ -1012,6 +1011,7 @@ description: A clear description of what this skill does and when to use it
                       options={skillEditorOptions}
                     />
                   </Box>
+                  <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mt: 1, textAlign: 'right' }}>Markdown supported</Box>
                 </div>
               ) : (
                 <>
