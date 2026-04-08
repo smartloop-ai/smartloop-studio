@@ -217,7 +217,7 @@ description: A clear description of what this skill does and when to use it
   // Load MCP servers from project data
   useEffect(() => {
     if (Array.isArray(currentProjectData?.mcp)) {
-      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id.includes('__system_tools__')));
+      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id.includes('__system_tools__') && s.name !== '__system_mcp__' && !(s as any).system));
     } else {
       setMcpServers([]);
     }
@@ -249,7 +249,7 @@ description: A clear description of what this skill does and when to use it
     try {
       const result = await mcpServerService.getMcpServers(selectedProject.id);
       if (result.success && result.data) {
-        const servers = result.data as McpServer[];
+        const servers = (result.data as McpServer[]).filter(s => s.name !== '__system_mcp__' && !(s as any).system);
         setMcpServers(servers);
         // Stop polling if a new server appeared
         if (mcpPolling && servers.length > mcpServerCountRef.current) {
@@ -296,7 +296,7 @@ description: A clear description of what this skill does and when to use it
       try {
         const result = await mcpServerService.getMcpServers(selectedProject.id);
         if (result.success && result.data) {
-          const servers = result.data as McpServer[];
+          const servers = (result.data as McpServer[]).filter(s => s.name !== '__system_mcp__' && !(s as any).system);
           setMcpServers(servers);
           const target = servers.find(s => s.id === discoveringServerId);
           const tools = target?.tools ?? target?.metadata?.tools ?? [];
@@ -739,13 +739,30 @@ description: A clear description of what this skill does and when to use it
                   )}
 
                   {/* + New Document */}
-                  <button
+                  <Box
                     onClick={onAddDocument}
-                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-normal text-pink-400 hover:bg-pink-500/10 cursor-pointer rounded-sm transition-all w-full"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      padding: '9px 11px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      bgcolor: 'transparent',
+                      color: 'var(--sl-white-alpha-40)',
+                      fontWeight: 500,
+                      fontSize: '13.5px',
+                      transition: 'all 0.12s ease',
+                      border: '1px solid transparent',
+                      '&:hover': {
+                        bgcolor: 'var(--sl-white-alpha-5)',
+                        color: 'white',
+                      },
+                    }}
                   >
-                    <AddBoxIcon sx={{ fontSize: 14 }} />
+                    <AddBoxIcon sx={{ fontSize: 18 }} />
                     <span>New Document</span>
-                  </button>
+                  </Box>
                 </>
               ) : (
                 <Box className="text-gray-500 text-xs py-4 text-center">
@@ -839,10 +856,10 @@ description: A clear description of what this skill does and when to use it
                 </Box>
               )}
 
-              {mcpServers.filter((s: any) => s.name !== '__system_mcp__' && !s.system).length > 0 ? (
+              {mcpServers.length > 0 ? (
                 /* Server List */
                 <Box className="space-y-2">
-                  {mcpServers.filter((s: any) => s.name !== '__system_mcp__' && !s.system).map((server, index) => (
+                  {mcpServers.map((server, index) => (
                     <Box
                       key={server.id || `mcp-${index}`}
                     >
@@ -1024,18 +1041,35 @@ description: A clear description of what this skill does and when to use it
                   )}
 
                   {/* + New Skill */}
-                  <button
+                  <Box
                     onClick={() => {
                       setEditingSkillIsNew(true);
                       setEditingSkillIndex(null);
                       setSkillContent(DEFAULT_SKILL_TEMPLATE);
                       setSkillHasUnsavedChanges(false);
                     }}
-                    className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-normal text-pink-400 hover:bg-pink-500/10 cursor-pointer rounded-sm transition-all w-full"
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      padding: '9px 11px',
+                      borderRadius: '7px',
+                      cursor: 'pointer',
+                      bgcolor: 'transparent',
+                      color: 'var(--sl-white-alpha-40)',
+                      fontWeight: 500,
+                      fontSize: '13.5px',
+                      transition: 'all 0.12s ease',
+                      border: '1px solid transparent',
+                      '&:hover': {
+                        bgcolor: 'var(--sl-white-alpha-5)',
+                        color: 'white',
+                      },
+                    }}
                   >
-                    <AddBoxIcon sx={{ fontSize: 14 }} />
+                    <AddBoxIcon sx={{ fontSize: 18 }} />
                     <span>New Skill</span>
-                  </button>
+                  </Box>
                 </>
               )}
             </div>
