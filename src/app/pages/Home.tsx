@@ -1597,7 +1597,12 @@ export default function Home() {
                     {(() => {
                       const currentTab = getActiveTab();
                       if (currentTab?.type === 'document' && currentTab.data) {
-                        return <DocumentViewer document={currentTab.data} projectId={selectedProject?.id} />;
+                        return <DocumentViewer document={currentTab.data} projectId={selectedProject?.id} onStartConversation={(selectedText, docName) => {
+                          setConversation(null);
+                          setChatMessage(`> From "${docName}":\n> ${selectedText.split('\n').join('\n> ')}\n\n`);
+                          handleOpenTab({ id: 'conv-new', type: 'conversation', title: 'New Conversation' });
+                          storageService.clearSelectedConversation();
+                        }} />;
                       }
                       if (currentTab?.type === 'skill' && selectedProject) {
                         return (
