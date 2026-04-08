@@ -116,7 +116,7 @@ export default function SkillEditor({
   };
 
   return (
-    <Box className="h-full flex flex-col overflow-hidden">
+    <Box className="h-full flex flex-col overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-white-alpha-10)' }}>
       {/* Header */}
       <Box className="flex-none flex items-center px-6 py-3 border-b border-gray-800">
         <Box className="flex items-center gap-2">
