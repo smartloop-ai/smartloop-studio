@@ -508,10 +508,10 @@ ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
   try {
-    const res = await fetch(`${baseUrl}/v1/auth`, {
+    const res = await fetch(`${baseUrl}/v1/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, token })
+      body: JSON.stringify({ token, type: type || 'access_token' })
     });
     if (res.ok) {
       const data = await res.json();
