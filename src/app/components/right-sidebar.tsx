@@ -653,6 +653,7 @@ export default function RightSidebar({
                             onClick={() => {
                               const docName = (doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document');
                               onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: docName, data: doc });
+                              setActiveSection(null);
                             }}
                             sx={{
                               padding: '10px',
@@ -894,12 +895,6 @@ export default function RightSidebar({
                   {mcpServers.map((server, index) => (
                     <Box
                       key={server.id || `mcp-${index}`}
-                      onClick={() => {
-                        const serverInfo = server.server_info;
-                        const displayName = serverInfo?.title || serverInfo?.name || server.name || 'MCP Server';
-                        onTabChange({ id: `mcp-${server.id || index}`, type: 'mcp', title: displayName, data: server });
-                      }}
-                      sx={{ cursor: 'pointer' }}
                     >
                       <McpServerItem
                         server={server}
@@ -948,6 +943,7 @@ export default function RightSidebar({
               <button
                 onClick={() => {
                   onTabChange({ id: 'skill-new', type: 'skill', title: 'New Skill', data: { index: projectSkills.length, isNew: true } });
+                  setActiveSection(null);
                 }}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
               >
@@ -962,6 +958,7 @@ export default function RightSidebar({
                       key={`skill-${index}`}
                       onClick={() => {
                         onTabChange({ id: `skill-${index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { skill, index } });
+                        setActiveSection(null);
                       }}
                       sx={{
                         padding: '10px 12px',

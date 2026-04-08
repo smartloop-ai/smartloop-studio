@@ -1,5 +1,4 @@
-import { Box, CircularProgress } from '@mui/material';
-import SaveIcon from '@mui/icons-material/Save';
+import { Box } from '@mui/material';
 import CircleIcon from '@mui/icons-material/Circle';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -42,7 +41,6 @@ export default function SkillEditor({
   selectedProject,
   projectSkills,
   skillIndex,
-  isSavingSkills,
   onSaveSkills,
   isNew = false,
 }: SkillEditorProps) {
@@ -68,7 +66,7 @@ export default function SkillEditor({
     placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
 
-  // Keyboard shortcut: Ctrl+S to save
+  // Keyboard shortcut: Ctrl/Cmd+S to save immediately
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -81,6 +79,21 @@ export default function SkillEditor({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [hasUnsavedChanges, content, projectSkills, skillIndex, isNew]);
+
+  // Auto-save after 1.5s of inactivity
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!hasUnsavedChanges || !content.trim()) return;
+
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave();
+    }, 1500);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [content, hasUnsavedChanges]);
 
   const handleSave = () => {
     if (isNew) {
@@ -105,7 +118,7 @@ export default function SkillEditor({
   return (
     <Box className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <Box className="flex-none flex items-center justify-between px-6 py-3 border-b border-gray-800">
+      <Box className="flex-none flex items-center px-6 py-3 border-b border-gray-800">
         <Box className="flex items-center gap-2">
           <span className="text-sm text-white font-medium">
             {isNew ? 'New Skill' : (skill?.name || 'Untitled Skill')}
@@ -114,22 +127,6 @@ export default function SkillEditor({
             <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)' }} />
           )}
         </Box>
-        <button
-          onClick={handleSave}
-          disabled={!hasUnsavedChanges || isSavingSkills}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-all ${
-            hasUnsavedChanges && !isSavingSkills
-              ? 'bg-pink-500/20 text-pink-400 hover:bg-pink-500/30 cursor-pointer border border-pink-500/30'
-              : 'bg-gray-800/50 text-gray-500 cursor-not-allowed border border-gray-700'
-          }`}
-        >
-          {isSavingSkills ? (
-            <CircularProgress size={12} sx={{ color: 'inherit' }} />
-          ) : (
-            <SaveIcon sx={{ fontSize: 14 }} />
-          )}
-          <span>Save</span>
-        </button>
       </Box>
 
       {/* Editor */}

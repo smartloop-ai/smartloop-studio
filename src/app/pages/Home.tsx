@@ -483,11 +483,82 @@ export default function Home() {
     };
   }, [selectedProject?.id]);
 
-  // Reset tabs when project changes
+  // Restore saved tabs when project changes, or reset if none saved
+  const tabsLoadedForProjectRef = useRef<string | null>(null);
   useEffect(() => {
-    setOpenTabs([]);
-    setActiveTabId(null);
+    const projectId = selectedProject?.id;
+    if (!projectId) {
+      setOpenTabs([]);
+      setActiveTabId(null);
+      return;
+    }
+    // Avoid reloading if already loaded for this project
+    if (tabsLoadedForProjectRef.current === projectId) return;
+    tabsLoadedForProjectRef.current = projectId;
+
+    const restoreTabs = async () => {
+      const saved = await storageService.getSetting(`openTabs_${projectId}`);
+      let tabs: OpenTab[];
+      let activeId: string;
+
+      if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
+        tabs = saved.tabs;
+        activeId = saved.activeTabId || tabs[0]?.id || '';
+      } else {
+        // Default: open a new conversation tab
+        const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
+        tabs = [defaultTab];
+        activeId = defaultTab.id;
+      }
+
+      setOpenTabs(tabs);
+      setActiveTabId(activeId);
+
+      // Load content for the active tab
+      const activeTab = tabs.find((t) => t.id === activeId);
+      if (activeTab?.type === 'conversation') {
+        const convId = activeTab.id.replace('conv-', '');
+        if (convId === 'new') {
+          setConversation(null);
+          setChatMessage(null);
+        } else {
+          const stored = await storageService.getConversation(convId);
+          if (stored) {
+            const messages = await storageService.getMessages(convId);
+            setConversation({ ...stored, messages: messages || [] });
+          } else {
+            setConversation(null);
+          }
+        }
+      } else {
+        // Non-conversation tab is active, clear conversation
+        setConversation(null);
+      }
+    };
+    restoreTabs();
   }, [selectedProject?.id]);
+
+  // Persist open tabs to SQLite whenever they change
+  const tabsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const projectId = selectedProject?.id;
+    if (!projectId) return;
+    // Don't save until we've loaded for this project
+    if (tabsLoadedForProjectRef.current !== projectId) return;
+
+    // Debounce saves to avoid excessive writes
+    if (tabsSaveTimerRef.current) clearTimeout(tabsSaveTimerRef.current);
+    tabsSaveTimerRef.current = setTimeout(() => {
+      storageService.setSetting(`openTabs_${projectId}`, {
+        tabs: openTabs,
+        activeTabId,
+      });
+    }, 300);
+
+    return () => {
+      if (tabsSaveTimerRef.current) clearTimeout(tabsSaveTimerRef.current);
+    };
+  }, [openTabs, activeTabId, selectedProject?.id]);
 
   // Load conversations for the selected project
   const loadProjectConversations = async () => {
@@ -624,6 +695,23 @@ export default function Home() {
 
       if (response.ok) {
         setProjectSkills(skills);
+        // Update any open skill tabs with new data/titles
+        setOpenTabs((prev) =>
+          prev.map((t) => {
+            if (t.type !== 'skill') return t;
+            if (t.id === 'skill-new') {
+              // New skill was just saved - update to reflect its actual index/name
+              const newIndex = skills.length - 1;
+              const saved = skills[newIndex];
+              return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
+            }
+            const idx = t.data?.index;
+            if (idx !== undefined && skills[idx]) {
+              return { ...t, title: skills[idx].name || 'Untitled Skill', data: { ...t.data, skill: skills[idx] } };
+            }
+            return t;
+          })
+        );
       } else {
         console.error('Failed to save project skills. Status:', response.status);
       }
@@ -868,6 +956,25 @@ export default function Home() {
       return prev.map((t) => t.id === tab.id ? { ...t, ...tab } : t);
     });
     setActiveTabId(tab.id);
+  };
+
+  const handleTabSelect = async (tabId: string) => {
+    setActiveTabId(tabId);
+    const tab = openTabs.find((t) => t.id === tabId);
+    if (tab?.type === 'conversation') {
+      // Extract conversation ID from tab id (format: "conv-{id}" or "conv-new")
+      const convId = tab.id.replace('conv-', '');
+      if (convId === 'new') {
+        setConversation(null);
+        setChatMessage(null);
+      } else if (convId !== conversation?.id) {
+        const stored = await storageService.getConversation(convId);
+        if (stored) {
+          const messages = await storageService.getMessages(convId);
+          setConversation({ ...stored, messages: messages || [] });
+        }
+      }
+    }
   };
 
   const handleCloseTab = (tabId: string) => {
@@ -1477,7 +1584,7 @@ export default function Home() {
                   <ContentTabs
                     tabs={openTabs}
                     activeTabId={activeTabId}
-                    onTabSelect={setActiveTabId}
+                    onTabSelect={handleTabSelect}
                     onTabClose={handleCloseTab}
                     onNewConversation={handleStartNewConversation}
                   />

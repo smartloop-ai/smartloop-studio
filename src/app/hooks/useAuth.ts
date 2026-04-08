@@ -52,11 +52,15 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
     // When SLP service comes online, sync auth token and refresh projects
     const handleSlpReady = async () => {
-      // Sync access token to local SLP service
+      // Sync access token to local SLP service and verify
       try {
         const token = await storageService.getItem('token');
         if (token && window.electronAPI?.slpSetAuth) {
-          await window.electronAPI.slpSetAuth({ type: 'access_token', token });
+          const result = await window.electronAPI.slpSetAuth({ type: 'access_token', token });
+          if (result?.success && window.electronAPI?.slpAuthStatus) {
+            const status = await window.electronAPI.slpAuthStatus();
+            console.log('useAuth: Auth token synced, status:', status?.has_access_token ? 'verified' : 'not verified');
+          }
         }
       } catch (err) {
         console.warn('useAuth: Failed to sync auth token to SLP service:', err);

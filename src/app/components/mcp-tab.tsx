@@ -1,6 +1,4 @@
 import { Box } from '@mui/material';
-import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
-import TerminalIcon from '@mui/icons-material/Terminal';
 import { McpServer } from '@/app/services/mcp-server.service';
 
 interface McpTabProps {
@@ -14,65 +12,36 @@ export default function McpTab({ server }: McpTabProps) {
     ? server.name || 'Local Server'
     : serverInfo?.website_url || (serverInfo as any)?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
   const displayName = serverInfo?.title || serverInfo?.name || server.name || 'MCP Server';
-  const icon = serverInfo?.icons?.[0];
-  const iconUrl = icon?.src || (icon as any)?.url;
   const allTools = server.tools ?? server.metadata?.tools ?? [];
 
   return (
     <Box className="h-full overflow-y-auto p-6">
       <Box className="max-w-3xl mx-auto">
-        {/* Server Header */}
-        <Box className="flex items-center gap-4 mb-6">
-          <Box
-            sx={{
-              width: 48,
-              height: 48,
-              borderRadius: '10px',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: 'var(--sl-white-alpha-5)',
-              overflow: 'hidden',
-            }}
-          >
-            {iconUrl ? (
-              <img
-                src={iconUrl}
-                alt={displayName}
-                className="w-full h-full object-cover rounded-lg"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : isLocal ? (
-              <TerminalIcon sx={{ fontSize: 24, color: 'var(--sl-text-muted)' }} />
-            ) : (
-              <PowerOutlinedIcon sx={{ fontSize: 24, color: 'var(--sl-text-muted)' }} />
-            )}
+        {/* Server name as subtitle, matching document viewer */}
+        <Box className="text-[11px] text-gray-500 mb-1 uppercase tracking-wider">{displayName}</Box>
+        {displayUrl && (
+          <Box className="text-[11px] text-gray-600 mb-6">{displayUrl}</Box>
+        )}
+        {!displayUrl && <Box className="mb-6" />}
+
+        {server.description && (
+          <Box className="text-sm text-gray-400 mb-6 leading-relaxed">
+            {server.description}
           </Box>
-          <Box>
-            <div className="text-lg text-white font-medium">{displayName}</div>
-            {serverInfo?.version && (
-              <div className="text-xs text-gray-500">v{serverInfo.version}</div>
-            )}
-            {server.description && (
-              <div className="text-sm text-gray-400 mt-1">{server.description}</div>
-            )}
-            <div className="text-xs text-gray-500 mt-0.5" title={displayUrl}>
-              {displayUrl}
-            </div>
-          </Box>
-        </Box>
+        )}
+
+        {serverInfo?.version && (
+          <Box className="text-xs text-gray-500 mb-6">Version {serverInfo.version}</Box>
+        )}
 
         {/* Tools Section */}
         <Box className="mb-4">
-          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+          <Box className="text-[11px] text-gray-500 uppercase tracking-wider mb-4">
             Tools ({allTools.length})
-          </div>
+          </Box>
 
           {allTools.length > 0 ? (
-            <Box className="space-y-2">
+            <Box className="space-y-3">
               {allTools.map((tool: any) => (
                 <Box
                   key={tool.name}
@@ -81,22 +50,37 @@ export default function McpTab({ server }: McpTabProps) {
                     borderRadius: '6px',
                     bgcolor: 'var(--sl-white-alpha-2)',
                     border: '1px solid var(--sl-white-alpha-5)',
-                    '&:hover': { bgcolor: 'var(--sl-white-alpha-5)' },
                   }}
                 >
-                  <div className="text-sm text-white font-medium">{tool.name}</div>
+                  <Box className="text-sm text-white font-medium mb-1" sx={{ fontFamily: 'monospace' }}>
+                    {tool.name}
+                  </Box>
                   {tool.description && (
-                    <div className="text-xs text-gray-500 leading-snug mt-1">
+                    <Box className="text-xs text-gray-400 leading-relaxed">
                       {tool.description}
-                    </div>
+                    </Box>
+                  )}
+                  {tool.inputSchema?.properties && (
+                    <Box className="mt-2 pt-2 border-t border-gray-800">
+                      <Box className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Parameters</Box>
+                      {Object.entries(tool.inputSchema.properties).map(([name, schema]: [string, any]) => (
+                        <Box key={name} className="flex items-baseline gap-2 text-xs py-0.5">
+                          <span className="text-gray-300 font-mono">{name}</span>
+                          {schema.type && <span className="text-gray-600">{schema.type}</span>}
+                          {tool.inputSchema.required?.includes(name) && (
+                            <span className="text-pink-400/60 text-[10px]">required</span>
+                          )}
+                        </Box>
+                      ))}
+                    </Box>
                   )}
                 </Box>
               ))}
             </Box>
           ) : (
-            <div className="text-xs text-gray-500 py-4 text-center">
-              No tools available
-            </div>
+            <Box className="text-xs text-gray-500 py-4">
+              No tools available. The server may still be initializing.
+            </Box>
           )}
         </Box>
       </Box>
