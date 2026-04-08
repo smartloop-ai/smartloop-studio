@@ -14,7 +14,7 @@ import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS } from '@/app/constants';
-import { marked } from 'marked';
+
 
 import { OpenTab } from './conversation-tabs';
 
@@ -500,6 +500,8 @@ export default function RightSidebar({
         display: { xs: 'none', md: 'flex' },
         flexDirection: 'row',
         flexShrink: 0,
+        borderLeft: '1px solid',
+        borderColor: 'var(--sl-white-alpha-10)',
       }}
     >
       {/* Resize Handle */}
@@ -511,17 +513,12 @@ export default function RightSidebar({
             cursor: 'col-resize',
             flexShrink: 0,
             bgcolor: 'transparent',
-            borderLeft: '1px solid',
-            borderColor: 'var(--sl-white-alpha-10)',
             transition: 'background-color 0.15s ease',
             '&:hover': {
               bgcolor: 'var(--sl-brand-alpha-30)',
             },
           }}
         />
-      )}
-      {!activeSection && (
-        <Box sx={{ width: '1px', bgcolor: 'var(--sl-white-alpha-10)', flexShrink: 0 }} />
       )}
       {/* Content Area */}
       {activeSection && (
@@ -537,7 +534,7 @@ export default function RightSidebar({
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
-            {selectedProject && activeSection === 'documents' && effectiveDocuments.length > 0 && (
+            {selectedProject && activeSection === 'documents' && (
               <button
                 onClick={onAddDocument}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
@@ -569,27 +566,17 @@ export default function RightSidebar({
                       className="hidden"
                     />
 
-                    {/* Compact Drop Zone */}
-                    {/* <Box
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-sm p-4 text-center transition-all cursor-pointer ${
-                    isDragging
-                      ? 'border-pink-500 bg-pink-500/10'
-                      : 'border-gray-700 hover:border-pink-500/50 bg-gray-900/30'
-                  }`}
-                >
-                  {isUploading ? (
-                    <Box className="flex items-center justify-center gap-2">
-                      <CircularProgress size={16} sx={{ color: '#ec4899' }} />
-                      <span className="text-gray-300 text-xs">Uploading...</span>
-                    </Box>
-                  ) : (
-                    <Box className="flex items-center justify-center gap-2">
-                      <CloudUploadIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
-                      <span className="text-gray-400 text-xs">Drop files here or click to upload</span>
-                    </Box>
-                  )}
-                </Box> */}
+                    {/* Drop zone overlay when dragging */}
+                    {isDragging && (
+                      <Box
+                        className="border-2 border-dashed border-pink-500 bg-pink-500/10 rounded-sm p-3 text-center"
+                      >
+                        <Box className="flex items-center justify-center gap-2">
+                          <CloudUploadIcon sx={{ fontSize: 16, color: '#ec4899' }} />
+                          <span className="text-pink-400 text-xs">Drop file to upload</span>
+                        </Box>
+                      </Box>
+                    )}
 
                     {uploadError && (
                       <Box className="text-red-400 text-xs text-center -mt-1">
@@ -653,7 +640,6 @@ export default function RightSidebar({
                             onClick={() => {
                               const docName = (doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled Document') : (doc.filename || doc.name || 'Untitled Document');
                               onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: docName, data: doc });
-                              setActiveSection(null);
                             }}
                             sx={{
                               padding: '10px',
@@ -730,21 +716,17 @@ export default function RightSidebar({
                                   </div>
                                 ) : (doc.summary || doc.markdown) ? (
                                   <div
-                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5 doc-preview-markdown"
+                                    className="text-[10px] text-gray-400 leading-relaxed mb-1.5"
                                     style={{
                                       wordBreak: 'break-word',
                                       display: '-webkit-box',
-                                      WebkitLineClamp: 5,
+                                      WebkitLineClamp: 3,
                                       WebkitBoxOrient: 'vertical',
                                       overflow: 'hidden',
                                     }}
-                                    dangerouslySetInnerHTML={{
-                                      __html: marked.parse(
-                                        ((s) => { const t = s.slice(0, 100); const i = t.lastIndexOf(' '); return (s.length > 100 ? (i > 0 ? t.slice(0, i) : t) + '...' : t); })((doc.summary || doc.markdown || '').replace(/\n/g, ' ').trim()),
-                                        { async: false }
-                                      ) as string
-                                    }}
-                                  />
+                                  >
+                                    {((s) => { const t = s.slice(0, 100); const i = t.lastIndexOf(' '); return s.length > 100 ? (i > 0 ? t.slice(0, i) : t) + '...' : t; })((doc.summary || doc.markdown || '').replace(/[#*_\[\]()>`~|]/g, '').replace(/\n/g, ' ').trim())}
+                                  </div>
                                 ) : (
                                   <div className="text-[10px] text-gray-500 italic leading-relaxed mb-1.5">
                                     Pending processing
@@ -943,7 +925,6 @@ export default function RightSidebar({
               <button
                 onClick={() => {
                   onTabChange({ id: 'skill-new', type: 'skill', title: 'New Skill', data: { index: projectSkills.length, isNew: true } });
-                  setActiveSection(null);
                 }}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-normal text-pink-400 hover:bg-pink-500/20 cursor-pointer border border-pink-400 rounded-sm transition-all"
               >
@@ -958,7 +939,6 @@ export default function RightSidebar({
                       key={`skill-${index}`}
                       onClick={() => {
                         onTabChange({ id: `skill-${index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { skill, index } });
-                        setActiveSection(null);
                       }}
                       sx={{
                         padding: '10px 12px',
@@ -1114,7 +1094,6 @@ export default function RightSidebar({
 
       {/* Vertical Tab Bar on Right Edge */}
       <Box
-        className="border-l border-gray-900"
         sx={{
           width: '48px',
           display: 'flex',
