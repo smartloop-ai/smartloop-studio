@@ -17,6 +17,8 @@ export interface BootstrapProgress {
     model: string;
     /** True while download / init is still in progress */
     downloading: boolean;
+    /** Current stage of the bootstrap process */
+    stage?: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export function bootstrapProgress(data: Record<string, any>): BootstrapProgress 
 
     let percent = 0;
     let status = 'Initializing...';
+    let stage = 'initializing';
 
     // Byte-level download progress (downloaded / total)
     if (data.downloaded !== undefined && data.total > 0) {
@@ -35,18 +38,32 @@ export function bootstrapProgress(data: Record<string, any>): BootstrapProgress 
         const downloadedMB = (data.downloaded / (1024 * 1024)).toFixed(1);
         const totalMB = (data.total / (1024 * 1024)).toFixed(1);
         status = `Downloading... ${downloadedMB} / ${totalMB} MB`;
+        stage = 'downloading';
     } else {
         // Explicit percentage fields
         const pct = data.progress ?? data.percent ?? data.percentage;
         if (pct !== undefined) {
             percent = Number(pct);
             status = rawStatus || 'Downloading...';
+            stage = 'downloading';
         } else if (rawStatus === 'downloading') {
             status = data.message || 'Downloading model...';
+            stage = 'downloading';
         } else if (rawStatus === 'checking') {
             status = data.message || 'Checking workspace...';
+            stage = 'checking';
         } else if (rawStatus === 'starting' || rawStatus === 'preparing') {
             status = data.message || 'Starting service...';
+            stage = 'preparing';
+        } else if (rawStatus === 'building' || rawStatus === 'loading') {
+            status = data.message || 'Building model...';
+            stage = 'building';
+        } else if (rawStatus === 'extracting') {
+            status = data.message || 'Extracting...';
+            stage = 'extracting';
+        } else if (rawStatus === 'verifying') {
+            status = data.message || 'Verifying...';
+            stage = 'verifying';
         } else if (rawStatus) {
             status = rawStatus;
         }
@@ -56,7 +73,8 @@ export function bootstrapProgress(data: Record<string, any>): BootstrapProgress 
     if (rawStatus === 'complete' || rawStatus === 'ready' || rawStatus === 'done') {
         percent = 100;
         status = 'Ready';
+        stage = 'complete';
     }
 
-    return { percent, status, model, downloading: percent < 100 };
+    return { percent, status, model, downloading: percent < 100, stage };
 }

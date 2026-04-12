@@ -47,9 +47,38 @@ export default function Login() {
                 await storageService.setItem('u', userData);
               }
 
-              // Note: Don't start token refresh here - useAuth will start it
-              // after verifying the token. Starting it here causes a race condition
-              // where the refresh can invalidate the token before navigation completes.
+              // Set auth token on local SLP service and verify
+              setStatusMessage("Setting up local service...");
+              try {
+                console.log('[Login] Setting auth token on local SLP service...');
+                const authResult = await window.electronAPI.slpSetAuth({ type: 'access_token', token: accessToken });
+                console.log('[Login] SLP auth result:', authResult);
+
+                if (!authResult?.success) {
+                  setErrorMessage('Failed to set auth token on local service. Please try again.');
+                  setIsLoading(false);
+                  setStatusMessage("");
+                  return;
+                }
+
+                // Verify the token was stored
+                if (window.electronAPI.slpAuthStatus) {
+                  const status = await window.electronAPI.slpAuthStatus();
+                  console.log('[Login] SLP auth status after setting token:', status);
+                  if (!status?.success || !status?.has_access_token) {
+                    setErrorMessage('Token verification failed. Please try again.');
+                    setIsLoading(false);
+                    setStatusMessage("");
+                    return;
+                  }
+                }
+              } catch (err) {
+                console.warn('[Login] Failed to set auth on local SLP service:', err);
+                setErrorMessage('Could not connect to local service. Please try again.');
+                setIsLoading(false);
+                setStatusMessage("");
+                return;
+              }
 
               setStatusMessage("Success! Redirecting...");
 
@@ -83,6 +112,14 @@ export default function Login() {
         if (isElectron && window.electronAPI) {
           const validation = await window.electronAPI.validateToken(token);
           if (validation.valid) {
+            // Set auth token on local SLP service
+            if (window.electronAPI?.slpSetAuth) {
+              try {
+                await window.electronAPI.slpSetAuth({ type: 'access_token', token });
+              } catch (err) {
+                console.warn('Failed to set auth on local SLP service:', err);
+              }
+            }
             navigate('/', { replace: true });
           } else {
             await storageService.removeItem('token');

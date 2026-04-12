@@ -1,89 +1,56 @@
 import { Box } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import AddBoxIcon from '@mui/icons-material/AddBox';
-import { useEffect, useState, useRef } from 'react';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import ConstructionIcon from '@mui/icons-material/Construction';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 
-interface ConversationTabsProps {
-  projectConversations: any[];
-  currentConversation: any;
-  onConversationSelect: (conversationId: string) => void;
-  onConversationDelete: (e: React.MouseEvent, conversationId: string) => void;
+export type TabType = 'conversation' | 'document' | 'skill' | 'mcp';
+
+export interface OpenTab {
+  id: string;
+  type: TabType;
+  title: string;
+  data?: any;
+}
+
+const TAB_ICONS: Record<TabType, React.ReactNode> = {
+  conversation: <ChatBubbleOutlineIcon sx={{ fontSize: 14 }} />,
+  document: <DescriptionOutlinedIcon sx={{ fontSize: 14 }} />,
+  skill: <ConstructionIcon sx={{ fontSize: 14 }} />,
+  mcp: <PowerOutlinedIcon sx={{ fontSize: 14 }} />,
+};
+
+interface ContentTabsProps {
+  tabs: OpenTab[];
+  activeTabId: string | null;
+  onTabSelect: (tabId: string) => void;
+  onTabClose: (tabId: string) => void;
   onNewConversation: () => void;
 }
 
-export default function ConversationTabs({
-  projectConversations,
-  currentConversation,
-  onConversationSelect,
-  onConversationDelete,
+export default function ContentTabs({
+  tabs,
+  activeTabId,
+  onTabSelect,
+  onTabClose,
   onNewConversation,
-}: ConversationTabsProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [tabWidth, setTabWidth] = useState<number>(200);
-
-  // Calculate dynamic tab width based on container size and number of tabs
-  useEffect(() => {
-    const calculateTabWidth = () => {
-      if (!containerRef.current) return;
-
-      const containerWidth = containerRef.current.offsetWidth;
-      const buttonWidth = 60; // Approximate width for + button and margins
-      const availableWidth = containerWidth - buttonWidth;
-      // Account for "New Conversation" tab only when user explicitly starts one (existing conversations exist)
-      const showNewTab = !currentConversation && projectConversations.length > 0;
-      const tabCount = projectConversations.length + (showNewTab ? 1 : 0);
-
-      if (tabCount === 0) {
-        setTabWidth(200);
-        return;
-      }
-
-      const calculatedWidth = availableWidth / tabCount;
-      const maxWidth = 200;
-      const minWidth = 80; // Lower minimum to accommodate more tabs
-
-      // Always fit within available space, but respect maxWidth when possible
-      if (calculatedWidth > maxWidth) {
-        setTabWidth(maxWidth);
-      } else {
-        // Allow shrinking below minWidth if necessary to fit all tabs
-        setTabWidth(Math.max(minWidth, calculatedWidth));
-      }
-    };
-
-    calculateTabWidth();
-
-    // Recalculate on window resize
-    window.addEventListener('resize', calculateTabWidth);
-    return () => window.removeEventListener('resize', calculateTabWidth);
-  }, [projectConversations.length, currentConversation]);
-
-  // Listen for conversation created events to refresh tab list
-  useEffect(() => {
-    const handleConversationCreated = () => {
-      // Parent component will handle the actual refresh via user data update
-      // This effect ensures the component re-renders when events fire
-    };
-
-    window.addEventListener('conversationCreated', handleConversationCreated);
-    return () => window.removeEventListener('conversationCreated', handleConversationCreated);
-  }, []);
-
+}: ContentTabsProps) {
   return (
-    <Box ref={containerRef} className="flex-none border-b border-gray-800 px-4 overflow-hidden">
+    <Box className="flex-none border-b border-gray-800 px-4 overflow-hidden">
       <Box className="flex items-end gap-[2px]">
-        {/* Conversation Tabs */}
-        {projectConversations.map((conv: any) => {
-          const isActive = currentConversation && currentConversation.id === conv.id;
+        {tabs.map((tab) => {
+          const isActive = activeTabId === tab.id;
+
           return (
             <div
-              key={conv.id}
-              onClick={() => onConversationSelect(conv.id)}
-              style={{ width: `${tabWidth}px`, flexShrink: 0 }}
+              key={tab.id}
+              onClick={() => onTabSelect(tab.id)}
               className={`
                 group px-4 py-2 pb-[10px] cursor-pointer text-[13px]
                 flex items-center gap-1.5 relative -mb-px
-                transition-all duration-200
+                transition-all duration-200 max-w-[200px]
                 ${isActive ? 'font-medium text-white bg-pink-500/10' : 'font-normal text-white/60 bg-transparent'}
                 ${isActive ? 'border-l border-r border-b border-t border-pink-500/30' : 'border-l border-r border-b border-t border-white/10'}
                 ${isActive ? 'border-b-pink-500/10' : ''}
@@ -91,14 +58,14 @@ export default function ConversationTabs({
                 ${isActive ? 'hover:bg-pink-500/10' : 'hover:bg-white/5'}
               `}
             >
+              {TAB_ICONS[tab.type]}
               <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1">
-                {conv.title || 'Untitled'}
+                {tab.title}
               </span>
               <CloseIcon
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('[ConversationTabs] Delete icon clicked for conversation:', conv.id);
-                  onConversationDelete(e, conv.id);
+                  onTabClose(tab.id);
                 }}
                 className="text-[14px] opacity-0 group-hover:opacity-100 transition-all duration-150 cursor-pointer hover:text-red-500 flex-shrink-0"
               />
@@ -106,35 +73,11 @@ export default function ConversationTabs({
           );
         })}
 
-        {/* New Conversation Tab - only shown when user explicitly starts a new one (existing conversations exist) */}
-        {!currentConversation && projectConversations.length > 0 && (
-          <div
-            style={{ width: `${tabWidth}px`, flexShrink: 0 }}
-            className="
-              group px-4 py-2 pb-[10px] text-[13px]
-              flex items-center gap-1.5 relative -mb-px
-              transition-all duration-200
-              font-medium text-white bg-pink-500/10
-              border-l border-r border-b border-t border-pink-500/30
-              border-b-pink-500/10
-            "
-          >
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1 italic opacity-75">
-              New Conversation
-            </span>
-          </div>
-        )}
-
-        {/* New Conversation Button - right after last conversation */}
+        {/* New Conversation Button (+) */}
         <button
-          onClick={!currentConversation ? undefined : onNewConversation}
-          disabled={!currentConversation}
-          className={`px-2 py-1.5 mb-1 mr-5 transition-colors ${
-            !currentConversation
-              ? 'text-gray-600 cursor-not-allowed opacity-40'
-              : 'text-gray-400 hover:text-pink-500 cursor-pointer'
-          }`}
-          title={!currentConversation ? "Already creating a new conversation" : "New conversation"}
+          onClick={onNewConversation}
+          className="px-2 py-1.5 mb-1 ml-1 transition-colors text-gray-400 hover:text-pink-500 cursor-pointer"
+          title="New conversation"
         >
           <AddBoxIcon className="text-[20px]" />
         </button>

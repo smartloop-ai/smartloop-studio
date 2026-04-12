@@ -6,12 +6,6 @@ export interface ElectronAPI {
   validateToken: (token: string) => Promise<{ valid: boolean; user?: any; error?: string }>;
   onOAuthCallback: (callback: (data: { accessToken?: string; error?: string }) => void) => void;
   removeOAuthCallbackListener: () => void;
-  // Token refresh methods
-  refreshToken: (token: string) => Promise<{ success: boolean; token?: string; error?: string; status?: number }>;
-  startTokenRefresh: () => Promise<{ success: boolean }>;
-  stopTokenRefresh: () => Promise<{ success: boolean }>;
-  onTokenRefreshed: (callback: (data: { success: boolean; token?: string; error?: string; requiresReauth?: boolean }) => void) => void;
-  removeTokenRefreshListener: () => void;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;
@@ -23,6 +17,12 @@ export interface ElectronAPI {
   getMachineId: () => Promise<string | null>;
   // Save a file to a temp directory for local SLP document upload
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
+  // Read a text file from disk
+  readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  // Select a folder using native file dialog
+  selectFolder: () => Promise<string | null>;
+  // Get the OS home directory
+  getHomeDir: () => Promise<string>;
   // SLP document upload (proxied through main process)
   slpAddDocument: (filePath: string, projectId?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   onSlpDocumentProgress: (callback: (data: { percent: number; status: string }) => void) => void;
@@ -43,6 +43,13 @@ export interface ElectronAPI {
   slpServiceUninstall: () => Promise<{ success: boolean; error?: string }>;
   // Model management (additional)
   loadModel: () => Promise<any>;
+  // SLP auth and model management
+  slpSetAuth: (params: { type: string; token: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
+  slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; error?: string }>;
+  slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
+  onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
+  removeModelDownloadProgressListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // System hardware info

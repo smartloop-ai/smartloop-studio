@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { projectService } from '@/app/services/project.service';
+import { storageService } from '@/app/services/storage.service';
 
 /**
  * Custom hook for local-only authentication
@@ -49,8 +50,21 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
 
-    // When SLP service comes online, refresh projects and auto-create system project if needed
+    // When SLP service comes online, sync auth token and refresh projects
     const handleSlpReady = async () => {
+      // Sync access token to local SLP service and verify
+      try {
+        const token = await storageService.getItem('token');
+        if (token && window.electronAPI?.slpSetAuth) {
+          const result = await window.electronAPI.slpSetAuth({ type: 'access_token', token });
+          if (result?.success && window.electronAPI?.slpAuthStatus) {
+            const status = await window.electronAPI.slpAuthStatus();
+            console.log('useAuth: Auth token synced, status:', status?.has_access_token ? 'verified' : 'not verified');
+          }
+        }
+      } catch (err) {
+        console.warn('useAuth: Failed to sync auth token to SLP service:', err);
+      }
       try {
         let projects = await projectService.getProjects();
 
