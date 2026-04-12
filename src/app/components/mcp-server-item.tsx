@@ -22,7 +22,6 @@ export default function McpServerItem({
   onDelete,
   discovering = false,
 }: McpServerItemProps) {
-  const [isHovered, setIsHovered] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   const isLocal = server.server_type === 'local';
@@ -50,8 +49,6 @@ export default function McpServerItem({
   return (
     <>
       <Box
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         sx={{
           padding: '8px 12px',
           borderRadius: '6px',
