@@ -823,7 +823,7 @@ export default function RightSidebar({
                               )}
                               <span className="text-[9px]">
                                 {isProcessing
-                                  ? <span style={{ color: 'var(--sl-brand-primary)' }}>{processingDocs.get(doc.id) || 'Processing…'}</span>
+                                  ? <span style={{ color: 'var(--sl-text-faint)' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
                                   : (doc.markdown || doc.summary)
                                     ? <><span style={{ color: 'var(--sl-text-faint)' }}>Last updated</span>{processedDates[doc.id] && <span style={{ color: 'var(--sl-text-faint)' }}> on {new Date(processedDates[doc.id]).toLocaleDateString()}</span>}</>
                                     : <span style={{ color: 'var(--sl-text-faint)' }}>Pending</span>}
