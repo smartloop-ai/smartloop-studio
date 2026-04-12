@@ -12,6 +12,7 @@ interface CreateProjectParams {
   color?: string;
   system?: boolean;
   model_name?: string;
+  folder_path?: string;
 }
 
 interface ProjectServiceResponse {
@@ -50,9 +51,19 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
         name: project.name,
         color,
         system,
+        folder_path: params.folder_path,
       });
 
-      return { success: true, data: { ...project, color } };
+      // Auto-register a local MCP server for the new project
+      await storageService.addMcpServer({
+        id: `mcp_local_${project.id}`,
+        project_id: project.id,
+        name: name.trim(),
+        server_type: 'local',
+        config: { name: name.trim() },
+      });
+
+      return { success: true, data: { ...project, color, folder_path: params.folder_path } };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -80,6 +91,7 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     if (response.status === 200 || response.status === 204) {
       // Delete all local conversations (and their messages via cascade) for this project
       await storageService.deleteConversationsByProject(projectId);
+      await storageService.deleteMcpServersByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
       return { success: true, data: { projectId } };
     }
@@ -115,7 +127,7 @@ const getProjects = async (): Promise<any[]> => {
 
     const enriched = projects.map((p: any) => {
       const meta = metaMap.get(p.id);
-      return { ...p, color: meta?.color || null };
+      return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: meta?.folder_path || null };
     });
     return enriched;
   } catch (error: any) {
@@ -149,6 +161,7 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
       const metaUpdates: any = {};
       if (updates.name) metaUpdates.name = updates.name;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
+      if (updates.folder_path !== undefined) metaUpdates.folder_path = updates.folder_path;
       if (Object.keys(metaUpdates).length > 0) {
         await storageService.updateProjectMeta(projectId, metaUpdates);
       }

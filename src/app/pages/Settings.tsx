@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { API_ENDPOINT } from '@/app/constants';
-import MemoryIcon from '@mui/icons-material/Memory';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DnsIcon from '@mui/icons-material/Dns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
+import ViewListIcon from '@mui/icons-material/ViewList';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
@@ -124,11 +125,13 @@ function TpsLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; timest
 interface GlobalSettings {
     default_memory: boolean;
     default_temperature: number;
+    analytics_enabled: boolean;
 }
 
 const DEFAULT_SETTINGS: GlobalSettings = {
     default_memory: true,
     default_temperature: 0.3,
+    analytics_enabled: true,
 };
 
 export default function SettingsPage() {
@@ -150,6 +153,13 @@ export default function SettingsPage() {
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [isRestarting, setIsRestarting] = useState(false);
+
+    // Available models (from SLP auth + remote listing)
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
+    const [availableModelsLoading, setAvailableModelsLoading] = useState(false);
+    const [availableModelsError, setAvailableModelsError] = useState('');
+    const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
+    const [downloadProgress, setDownloadProgress] = useState<{ percent: number; status: string } | null>(null);
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
@@ -245,6 +255,73 @@ export default function SettingsPage() {
         } finally {}
     }, []);
 
+    // Fetch available models via SLP auth status check
+    const fetchAvailableModels = useCallback(async () => {
+        const api = (window as any).electronAPI;
+        if (!api?.slpAuthStatus || !api?.slpListModels) return;
+
+        setAvailableModelsLoading(true);
+        setAvailableModelsError('');
+        try {
+            const authStatus = await api.slpAuthStatus();
+            if (!authStatus.success || !authStatus.has_access_token) {
+                setAvailableModelsError('Please login to see available models.');
+                return;
+            }
+            const result = await api.slpListModels();
+            if (result.success && result.models) {
+                setAvailableModels(result.models);
+            } else {
+                setAvailableModelsError(result.error || 'Failed to fetch models');
+            }
+        } catch (err: any) {
+            setAvailableModelsError(err.message || 'Failed to fetch available models');
+        } finally {
+            setAvailableModelsLoading(false);
+        }
+    }, []);
+
+    // Download a model and set it as current
+    const handleDownloadModel = useCallback(async (modelName: string) => {
+        const api = (window as any).electronAPI;
+        if (!api?.slpDownloadModel) return;
+
+        setDownloadingModel(modelName);
+        setDownloadProgress({ percent: 0, status: 'Starting download...' });
+
+        // Listen for progress events
+        api.onModelDownloadProgress?.((data: any) => {
+            if (data.model === modelName) {
+                setDownloadProgress({ percent: data.percent, status: data.status });
+                if (!data.downloading && data.percent >= 100) {
+                    setDownloadingModel(null);
+                    setDownloadProgress(null);
+                }
+            }
+        });
+
+        try {
+            const result = await api.slpDownloadModel(modelName);
+            if (result.success) {
+                // Save downloaded model as current selected model
+                setSelectedModel(modelName);
+                await storageService.setItem('selected_model', modelName);
+                await storageService.setSetting('selected_model', modelName);
+
+                // Refresh local models list
+                await fetchLocalModels();
+            } else {
+                console.error('Model download failed:', result.error);
+            }
+        } catch (err: any) {
+            console.error('Model download error:', err);
+        } finally {
+            setDownloadingModel(null);
+            setDownloadProgress(null);
+            api.removeModelDownloadProgressListener?.();
+        }
+    }, [fetchLocalModels]);
+
     // Restart the SLP service and refresh all panels
     const handleRestartService = useCallback(async () => {
         const api = (window as any).electronAPI;
@@ -287,7 +364,8 @@ export default function SettingsPage() {
         fetchLocalModels();
         fetchRemoteModels();
         fetchServerHealth();
-    }, [user, fetchLocalModels, fetchRemoteModels, fetchServerHealth]);
+        fetchAvailableModels();
+    }, [user, fetchLocalModels, fetchRemoteModels, fetchServerHealth, fetchAvailableModels]);
 
     // Set selected model: load from storage first, fallback to local config
     // Validates stored model still exists in SLP config to avoid showing stale/deleted models
@@ -354,7 +432,8 @@ export default function SettingsPage() {
             const saved = await storageService.getAllSettings();
             const temp = saved.default_temperature ?? user?.default_temperature ?? DEFAULT_SETTINGS.default_temperature;
             const memory = saved.default_memory ?? user?.default_memory ?? DEFAULT_SETTINGS.default_memory;
-            setSettings({ default_temperature: temp, default_memory: memory });
+            const analytics = saved.analytics_enabled ?? DEFAULT_SETTINGS.analytics_enabled;
+            setSettings({ default_temperature: temp, default_memory: memory, analytics_enabled: analytics });
 
             // Restore selected model from SQLite settings
             if (saved.selected_model && !selectedModel) {
@@ -375,6 +454,7 @@ export default function SettingsPage() {
             // Persist to SQLite
             await storageService.setSetting('default_temperature', newSettings.default_temperature);
             await storageService.setSetting('default_memory', newSettings.default_memory);
+            await storageService.setSetting('analytics_enabled', newSettings.analytics_enabled);
 
             // Also sync to remote API
             const updatedUser = await userService.updateSettings(newSettings);
@@ -801,6 +881,168 @@ export default function SettingsPage() {
                         </Box>
                     )}
 
+                    {/* Available Models */}
+                    {isElectron && (
+                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                            <Box className="flex items-center justify-between mb-4">
+                                <Box className="flex items-center gap-2">
+                                    <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                </Box>
+                                <IconButton
+                                    onClick={fetchAvailableModels}
+                                    disabled={availableModelsLoading}
+                                    size="small"
+                                    title="Refresh models"
+                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                >
+                                    {availableModelsLoading
+                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        : <RefreshIcon sx={{ fontSize: 20 }} />
+                                    }
+                                </IconButton>
+                            </Box>
+
+                            {availableModelsError && (
+                                <Box sx={{
+                                    mb: 2,
+                                    p: 2,
+                                    bgcolor: 'var(--sl-white-alpha-5)',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--sl-white-alpha-8)',
+                                }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--sl-white-alpha-50)' }}>
+                                        {availableModelsError}
+                                    </span>
+                                </Box>
+                            )}
+
+                            {availableModels.length > 0 && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                    {availableModels.map((model: any) => {
+                                        const name = model.name || model.id || model.model;
+                                        const description = model.description || '';
+                                        const size = model.size || model.file_size;
+                                        const isLocal = localModels.some((m: any) => (m.name || m.id || m.model) === name);
+                                        const isDownloading = downloadingModel === name;
+                                        const isSelected = selectedModel === name;
+
+                                        return (
+                                            <Box
+                                                key={name}
+                                                sx={{
+                                                    p: 2,
+                                                    bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-black-alpha-40)',
+                                                    border: `1px solid ${isSelected ? 'var(--sl-brand-alpha-25)' : 'var(--sl-white-alpha-8)'}`,
+                                                    borderRadius: '10px',
+                                                    transition: 'all 0.2s ease',
+                                                    '&:hover': {
+                                                        borderColor: 'var(--sl-white-alpha-15)',
+                                                    },
+                                                }}
+                                            >
+                                                <Box className="flex items-center justify-between">
+                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                        <Box className="flex items-center gap-2">
+                                                            <span style={{
+                                                                fontSize: '14px',
+                                                                fontWeight: 600,
+                                                                fontFamily: 'monospace',
+                                                                color: 'var(--sl-white-alpha-80)',
+                                                            }}>
+                                                                {name}
+                                                            </span>
+                                                            {isLocal && (
+                                                                <Box sx={{
+                                                                    px: 1,
+                                                                    py: 0.25,
+                                                                    bgcolor: 'rgba(34, 197, 94, 0.1)',
+                                                                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                                                                    borderRadius: '4px',
+                                                                }}>
+                                                                    <span style={{ fontSize: '10px', color: 'var(--sl-status-success)', fontWeight: 600 }}>LOCAL</span>
+                                                                </Box>
+                                                            )}
+                                                            {isSelected && (
+                                                                <Box sx={{
+                                                                    px: 1,
+                                                                    py: 0.25,
+                                                                    bgcolor: 'var(--sl-brand-alpha-10)',
+                                                                    border: '1px solid var(--sl-brand-alpha-25)',
+                                                                    borderRadius: '4px',
+                                                                }}>
+                                                                    <span style={{ fontSize: '10px', color: 'var(--sl-brand-primary)', fontWeight: 600 }}>ACTIVE</span>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                        {description && (
+                                                            <p style={{ fontSize: '12px', color: 'var(--sl-white-alpha-40)', marginTop: 4, marginBottom: 0 }}>
+                                                                {description}
+                                                            </p>
+                                                        )}
+                                                        {size && (
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontFamily: 'monospace' }}>
+                                                                {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
+                                                            </span>
+                                                        )}
+                                                    </Box>
+                                                    {!isLocal && !isDownloading && (
+                                                        <IconButton
+                                                            onClick={() => handleDownloadModel(name)}
+                                                            size="small"
+                                                            title="Download model"
+                                                            sx={{
+                                                                color: 'var(--sl-brand-primary)',
+                                                                '&:hover': { bgcolor: 'var(--sl-brand-alpha-10)' },
+                                                            }}
+                                                        >
+                                                            <CloudDownloadIcon sx={{ fontSize: 22 }} />
+                                                        </IconButton>
+                                                    )}
+                                                </Box>
+
+                                                {/* Download progress bar */}
+                                                {isDownloading && downloadProgress && (
+                                                    <Box sx={{ mt: 1.5 }}>
+                                                        <Box className="flex items-center justify-between mb-1">
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-50)' }}>
+                                                                {downloadProgress.status}
+                                                            </span>
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-brand-primary)', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                {downloadProgress.percent}%
+                                                            </span>
+                                                        </Box>
+                                                        <LinearProgress
+                                                            variant="determinate"
+                                                            value={downloadProgress.percent}
+                                                            sx={{
+                                                                height: 6,
+                                                                borderRadius: '3px',
+                                                                bgcolor: 'var(--sl-white-alpha-5)',
+                                                                '& .MuiLinearProgress-bar': {
+                                                                    bgcolor: 'var(--sl-brand-primary)',
+                                                                    borderRadius: '3px',
+                                                                },
+                                                            }}
+                                                        />
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+                            )}
+
+                            {!availableModelsLoading && !availableModelsError && availableModels.length === 0 && (
+                                <Box sx={{ p: 3, textAlign: 'center' }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--sl-white-alpha-30)' }}>
+                                        No models available
+                                    </span>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
@@ -835,29 +1077,32 @@ export default function SettingsPage() {
                         </Box>
                     </Box>
 
-                    {/* Memory Settings */}
+                    {/* Analytics */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
-                            <MemoryIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold text-white">Memory Settings</h2>
+                            <SpeedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold text-white">Analytics</h2>
                         </Box>
 
                         <Box className="flex items-center justify-between p-4 bg-black/50 rounded-lg">
                             <Box>
-                                <h3 className="text-sm font-medium text-white mb-1">Enable Memory by Default</h3>
+                                <h3 className="text-sm font-medium text-white mb-1">Enable Analytics</h3>
                                 <p className="text-xs text-gray-500">
-                                    AI will remember context from previous conversations in new projects
+                                    Collect usage data anonymously when logged in to render dashboards in the console
                                 </p>
                             </Box>
                             <Switch
-                                checked={settings.default_memory}
-                                onChange={(e) => handleChange('default_memory', e.target.checked)}
+                                checked={settings.analytics_enabled}
+                                onChange={(e) => handleChange('analytics_enabled', e.target.checked)}
                                 sx={{
                                     '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
                                     '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
                                 }}
                             />
                         </Box>
+                        <p className="text-xs text-gray-600 mt-3 px-1 leading-relaxed">
+                            Includes token usage, model performance metrics, and session activity. No conversation content or personal data is collected.
+                        </p>
                     </Box>
 
                 </Box>

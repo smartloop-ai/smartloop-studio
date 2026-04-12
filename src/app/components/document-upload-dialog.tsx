@@ -23,7 +23,6 @@ export default function DocumentUploadDialog({
   onClose,
   onSuccess,
   user,
-  setUser,
   preselectedProjectId,
   disableProjectSelection = false
 }: DocumentUploadDialogProps) {
@@ -33,6 +32,7 @@ export default function DocumentUploadDialog({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ percent: number; status: string } | null>(null);
 
   // Set preselected project when dialog opens
   useEffect(() => {
@@ -51,6 +51,7 @@ export default function DocumentUploadDialog({
     setUploadFiles([]);
     setUploadError('');
     setIsDragging(false);
+    setUploadProgress(null);
     onClose();
   };
 
@@ -124,40 +125,31 @@ export default function DocumentUploadDialog({
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
 
-      // Optimistically add a placeholder so the list view reflects the in-progress upload immediately
-      const placeholderId = `uploading-${Date.now()}`;
-      if (user) {
-        const updatedProjects = user.projects.map((p: any) => {
-          if (p.id === targetProject.id) {
-            return {
-              ...p,
-              documents: [
-                ...(p.documents || []),
-                { id: placeholderId, filename: file.name, name: file.name, path: file.name, isUploading: true },
-              ],
-            };
-          }
-          return p;
-        });
-        setUser({ ...user, projects: updatedProjects });
+      // Listen for progress updates
+      setUploadProgress({ percent: 0, status: 'Uploading...' });
+
+      const progressHandler = (data: { percent: number; status: string }) => {
+        setUploadProgress({ percent: data.percent, status: data.status });
+      };
+      window.electronAPI?.onSlpDocumentProgress?.(progressHandler);
+
+      try {
+        await documentService.addLocalDocument(targetProject.id, tempPath);
+        setUploadProgress({ percent: 100, status: 'Complete' });
+      } catch (_err) {
+        // best-effort
+      } finally {
+        window.electronAPI?.removeSlpDocumentProgressListener?.();
+        window.dispatchEvent(new CustomEvent('documentUploaded', {
+          detail: { projectId: targetProject.id },
+        }));
       }
 
-      // Close the dialog and switch to list view right away — upload continues in background
-      handleClose();
-      onSuccess();
-
-      // Background upload — when done, polling will refresh documents and replace the placeholder
-      ;(async () => {
-        try {
-          await documentService.addLocalDocument(targetProject.id, tempPath);
-        } catch (_err) {
-          // best-effort; polling will sync state below
-        } finally {
-          window.dispatchEvent(new CustomEvent('documentUploaded', {
-            detail: { projectId: targetProject.id, placeholderId },
-          }));
-        }
-      })();
+      // Brief pause to show completion, then close
+      setTimeout(() => {
+        handleClose();
+        onSuccess();
+      }, 500);
     } catch (error: any) {
       setUploadError(error.message || 'Failed to upload document');
       setIsUploading(false);
@@ -308,7 +300,27 @@ export default function DocumentUploadDialog({
               Upload Document
             </Typography>
 
-            {uploadFiles.length === 0 ? (
+            {isUploading && uploadProgress ? (
+              <Box sx={{ p: 3, bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-white-alpha-10)', borderRadius: '8px' }}>
+                <Box className="flex items-center gap-3 mb-3">
+                  <InsertDriveFileIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
+                  <Box>
+                    <Typography className="text-white text-sm">{uploadFiles[0]?.name}</Typography>
+                    <Typography className="text-gray-400 text-xs">{uploadProgress.status}</Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ width: '100%', bgcolor: 'var(--sl-white-alpha-10)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                  <Box sx={{
+                    width: `${uploadProgress.percent}%`,
+                    bgcolor: 'var(--sl-brand-primary)',
+                    height: '100%',
+                    borderRadius: '4px',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </Box>
+                <Typography className="text-gray-500 text-xs mt-2 text-right">{uploadProgress.percent}%</Typography>
+              </Box>
+            ) : uploadFiles.length === 0 ? (
               <Box
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}

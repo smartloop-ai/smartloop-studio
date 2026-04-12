@@ -17,7 +17,7 @@ interface DocumentsTabProps {
   setSelectedProject: (project: any) => void;
   currentProjectData: any;
   setCurrentProjectData: (project: any) => void;
-  setActiveTab: (tab: number) => void;
+  setActiveTab?: (tab: number) => void;
 }
 
 export default function DocumentsTab({
@@ -95,7 +95,7 @@ export default function DocumentsTab({
           }
         }
         // Stay on Documents tab
-        setActiveTab(1);
+        setActiveTab?.(1);
 
         handleCloseDeleteDocDialog();
       } else {
@@ -179,9 +179,10 @@ export default function DocumentsTab({
                           className="text-xs text-gray-400 leading-relaxed mb-2"
                           style={{ wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                         >
-                          {doc.summary
+                          {(doc.summary
                             ? doc.summary
-                            : doc.markdown.replace(/\n/g, ' ').trim()}
+                            : doc.markdown.replace(/\n/g, ' ').trim()
+                          ).slice(0, 50) + (doc.summary || doc.markdown.length > 50 ? '…' : '')}
                         </div>
                       )}
                       <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
@@ -227,7 +228,7 @@ export default function DocumentsTab({
         onSuccess={() => {
           // Just start polling and stay on Documents tab
           // The dialog already dispatches documentUploaded event which triggers polling
-          setActiveTab(1);
+          setActiveTab?.(1);
         }}
         user={user}
         setUser={setUser}

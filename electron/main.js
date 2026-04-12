@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -52,6 +52,18 @@ ipcMain.handle('open-external', async (event, url) => {
   return false;
 });
 
+// Open a folder in the system file manager (Finder on macOS)
+ipcMain.handle('open-in-finder', async (event, folderPath) => {
+  if (folderPath) {
+    const resolved = folderPath.startsWith('~')
+      ? folderPath.replace('~', require('os').homedir())
+      : folderPath;
+    await shell.openPath(resolved);
+    return true;
+  }
+  return false;
+});
+
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
@@ -87,6 +99,33 @@ ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
   fs.writeFileSync(filePath, Buffer.from(buffer));
   return filePath;
 });
+
+// IPC: read a text file from disk
+ipcMain.handle('read-text-file', async (event, filePath) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+    const content = fs.readFileSync(resolved, 'utf-8');
+    return { success: true, content };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: select a folder using native dialog
+ipcMain.handle('select-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Select Project Folder',
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// IPC: get the OS home directory
+ipcMain.handle('get-home-dir', () => os.homedir());
 
 // --- SQLite database IPC handlers ---
 
@@ -124,6 +163,27 @@ ipcMain.handle('db-get-tps-history', (event, limit) => database.getTpsHistory(li
 ipcMain.handle('db-get-setting', (event, key) => database.getSetting(key));
 ipcMain.handle('db-set-setting', (event, key, value) => database.setSetting(key, value));
 ipcMain.handle('db-get-all-settings', () => database.getAllSettings());
+
+// MCP Servers
+ipcMain.handle('db-add-mcp-server', (event, server) => database.addMcpServer(server));
+ipcMain.handle('db-get-mcp-server', (event, id) => database.getMcpServer(id));
+ipcMain.handle('db-get-mcp-servers-by-project', (event, projectId) => database.getMcpServersByProject(projectId));
+ipcMain.handle('db-delete-mcp-server', (event, id) => database.deleteMcpServer(id));
+ipcMain.handle('db-delete-mcp-servers-by-project', (event, projectId) => database.deleteMcpServersByProject(projectId));
+
+// Folders
+ipcMain.handle('db-create-folder', (event, folder) => database.createFolder(folder));
+ipcMain.handle('db-list-folders-by-project', (event, projectId) => database.listFoldersByProject(projectId));
+ipcMain.handle('db-rename-folder', (event, id, name) => database.renameFolder(id, name));
+ipcMain.handle('db-delete-folder', (event, id) => database.deleteFolder(id));
+ipcMain.handle('db-set-document-folder', (event, mapping) => database.setDocumentFolder(mapping));
+ipcMain.handle('db-clear-document-folder', (event, documentId) => database.clearDocumentFolder(documentId));
+ipcMain.handle('db-get-document-folders-by-project', (event, projectId) => database.getDocumentFoldersByProject(projectId));
+
+// Document Status
+ipcMain.handle('db-set-document-processed', (event, documentId, projectId) => database.setDocumentProcessed(documentId, projectId));
+ipcMain.handle('db-get-document-status-by-project', (event, projectId) => database.getDocumentStatusByProject(projectId));
+ipcMain.handle('db-delete-document-status', (event, documentId) => database.deleteDocumentStatus(documentId));
 
 // --- Local SLP service helpers ---
 
@@ -413,7 +473,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.remove('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -432,7 +492,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(statusText)};
       document.getElementById('progress-fill').style.width = '${pct}%';
       document.getElementById('progress-fill').classList.remove('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -442,7 +502,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 
@@ -452,7 +512,7 @@ function updateSplashProgress(data) {
       document.getElementById('status-text').textContent = 'Starting service...';
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
-    `).catch(() => {});
+    `).catch(() => { });
     return;
   }
 }
@@ -469,6 +529,145 @@ ipcMain.handle('load-model', async () => {
 ipcMain.handle('unload-model', async () => {
   await slpService.unloadModel();
   return { success: true };
+});
+
+// IPC: Set auth token on local SLP service
+ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, type: type || 'access_token' })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log('[SLP] Auth token set successfully');
+      return { success: true, data };
+    } else {
+      console.error('[SLP] Failed to set auth token:', res.status);
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    console.error('[SLP] Error setting auth token:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Check auth status on local SLP service
+ipcMain.handle('slp-auth-status', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth/status`);
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, ...data };
+    } else {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Fetch available models from local SLP service
+ipcMain.handle('slp-list-models', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const modelsRes = await fetch(`${baseUrl}/v1/models`);
+    if (modelsRes.ok) {
+      const data = await modelsRes.json();
+      const models = Array.isArray(data) ? data : (data.data || data.models || []);
+      return { success: true, models };
+    } else {
+      return { success: false, error: `HTTP ${modelsRes.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: Download a model via local SLP service (SSE streaming progress)
+ipcMain.handle('slp-download-model', async (event, modelName) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  return new Promise((resolve) => {
+    const http = require('http');
+    const url = new URL(`${baseUrl}/v1/models/download`);
+
+    const postData = JSON.stringify({ model: modelName });
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        return;
+      }
+
+      let buffer = '';
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const progress = bootstrapProgress(data);
+
+              // Send download progress to renderer
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('model-download-progress', {
+                  model: modelName,
+                  ...progress,
+                });
+              }
+            } catch {
+              // ignore unparseable SSE data
+            }
+          }
+        }
+      });
+
+      res.on('end', () => {
+        // Send completion event
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('model-download-progress', {
+            model: modelName,
+            percent: 100,
+            status: 'Ready',
+            downloading: false,
+          });
+        }
+        resolve({ success: true, model: modelName });
+      });
+
+      res.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
 });
 
 // Register custom protocol for OAuth callback

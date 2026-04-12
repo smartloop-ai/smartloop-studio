@@ -8,8 +8,6 @@ export interface UserService {
   makeAuthenticatedRequest(url: string, options?: RequestInit): Promise<Response | null>;
   fetchAndStoreUser(token: string): Promise<any>;
   redirectToLogin(): void;
-  initializeTokenRefresh(): void;
-  stopTokenRefresh(): void;
 }
 
 declare const userService: UserService;

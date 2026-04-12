@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  // Open a folder in Finder / file manager
+  openInFinder: (path) => ipcRenderer.invoke('open-in-finder', path),
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),
@@ -69,6 +71,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
+  // SLP auth and model management
+  slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
+  slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
+  slpListModels: () => ipcRenderer.invoke('slp-list-models'),
+  slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
+  onModelDownloadProgress: (callback) => {
+    ipcRenderer.on('model-download-progress', (event, data) => callback(data));
+  },
+  removeModelDownloadProgressListener: () => {
+    ipcRenderer.removeAllListeners('model-download-progress');
+  },
   // SLP service lifecycle
   slpServiceStart: () => ipcRenderer.invoke('slp-service-start'),
   slpServiceStop: () => ipcRenderer.invoke('slp-service-stop'),
@@ -90,6 +103,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
+  // Read a text file from disk
+  readTextFile: (filePath) => ipcRenderer.invoke('read-text-file', filePath),
+  // Select a folder using native file dialog
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+  // Get the OS home directory
+  getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
   // SQLite database methods
   db: {
     // Projects
@@ -123,6 +142,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSetting: (key) => ipcRenderer.invoke('db-get-setting', key),
     setSetting: (key, value) => ipcRenderer.invoke('db-set-setting', key, value),
     getAllSettings: () => ipcRenderer.invoke('db-get-all-settings'),
+    // MCP Servers
+    addMcpServer: (server) => ipcRenderer.invoke('db-add-mcp-server', server),
+    getMcpServer: (id) => ipcRenderer.invoke('db-get-mcp-server', id),
+    getMcpServersByProject: (projectId) => ipcRenderer.invoke('db-get-mcp-servers-by-project', projectId),
+    deleteMcpServer: (id) => ipcRenderer.invoke('db-delete-mcp-server', id),
+    deleteMcpServersByProject: (projectId) => ipcRenderer.invoke('db-delete-mcp-servers-by-project', projectId),
+    // Folders
+    createFolder: (folder) => ipcRenderer.invoke('db-create-folder', folder),
+    listFoldersByProject: (projectId) => ipcRenderer.invoke('db-list-folders-by-project', projectId),
+    renameFolder: (id, name) => ipcRenderer.invoke('db-rename-folder', id, name),
+    deleteFolder: (id) => ipcRenderer.invoke('db-delete-folder', id),
+    setDocumentFolder: (mapping) => ipcRenderer.invoke('db-set-document-folder', mapping),
+    clearDocumentFolder: (documentId) => ipcRenderer.invoke('db-clear-document-folder', documentId),
+    getDocumentFoldersByProject: (projectId) => ipcRenderer.invoke('db-get-document-folders-by-project', projectId),
+    // Document Status
+    setDocumentProcessed: (documentId, projectId) => ipcRenderer.invoke('db-set-document-processed', documentId, projectId),
+    getDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-get-document-status-by-project', projectId),
+    deleteDocumentStatus: (documentId) => ipcRenderer.invoke('db-delete-document-status', documentId),
   },
   // Check if running in Electron
   isElectron: true,

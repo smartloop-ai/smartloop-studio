@@ -1,6 +1,6 @@
 import { Box, IconButton, CircularProgress, Dialog } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import CableIcon from '@mui/icons-material/Cable';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -45,7 +45,7 @@ export default function McpServerItem({
   const icon = serverInfo?.icons?.[0];
   const iconUrl = icon?.src || (icon as any)?.url;
 
-  const tools = server.tools ?? server.metadata?.tools ?? [];
+  const allTools = server.tools ?? server.metadata?.tools ?? [];
 
   return (
     <>
@@ -55,12 +55,10 @@ export default function McpServerItem({
         sx={{
           padding: '8px 12px',
           borderRadius: '6px',
-          bgcolor: 'var(--sl-white-alpha-2)',
-          border: '1px solid var(--sl-white-alpha-5)',
+          border: '1px solid var(--sl-white-alpha-8)',
           transition: 'all 0.15s ease',
           '&:hover': {
-            bgcolor: 'var(--sl-white-alpha-5)',
-            borderColor: 'var(--sl-white-alpha-8)',
+            bgcolor: 'var(--sl-brand-alpha-10)',
           },
         }}
       >
@@ -91,7 +89,7 @@ export default function McpServerItem({
             ) : isLocal ? (
               <TerminalIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
             ) : (
-              <CableIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+              <PowerOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
             )}
           </Box>
 
@@ -102,7 +100,7 @@ export default function McpServerItem({
                 {displayName}
               </span>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {/* Info Icon - opens tools modal */}
                 <IconButton
                   size="small"
@@ -167,8 +165,8 @@ export default function McpServerItem({
               <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
               <span className="text-gray-400">Discovering tools...</span>
             </>
-          ) : tools.length > 0 ? (
-            <span>{tools.length} {tools.length === 1 ? 'tool' : 'tools'}</span>
+          ) : allTools.length > 0 ? (
+            <span>{allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}</span>
           ) : null}
         </div>
       </Box>
@@ -227,7 +225,7 @@ export default function McpServerItem({
               ) : isLocal ? (
                 <TerminalIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
               ) : (
-                <CableIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
+                <PowerOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
               )}
             </Box>
             <Box>
@@ -246,10 +244,10 @@ export default function McpServerItem({
 
           {/* Tools List */}
           <div className="text-xs text-gray-400 font-medium mb-2">
-            Tools ({tools.length})
+            Tools ({allTools.length})
           </div>
 
-          {tools.length > 0 ? (
+          {allTools.length > 0 ? (
             <Box
               sx={{
                 maxHeight: 400,
@@ -259,7 +257,7 @@ export default function McpServerItem({
                 gap: '2px',
               }}
             >
-              {tools.map((tool: any) => (
+              {allTools.map((tool: any) => (
                 <Box
                   key={tool.name}
                   sx={{

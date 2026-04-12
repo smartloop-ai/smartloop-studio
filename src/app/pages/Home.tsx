@@ -8,7 +8,8 @@ import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-import DocumentsTab from '@/app/components/documents-tab';
+// import DocumentsTab from '@/app/components/documents-tab';
+import SkillEditor from '@/app/components/skill-editor';
 import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
@@ -20,7 +21,9 @@ import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
-import ConversationTabs from '@/app/components/conversation-tabs';
+import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
+import McpTab from '@/app/components/mcp-tab';
+import DocumentViewer from '@/app/components/document-viewer';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 export default function Home() {
@@ -39,13 +42,13 @@ export default function Home() {
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
   const [deleteProjectError, setDeleteProjectError] = useState('');
-  const [activeTab, setActiveTab] = useState(0);
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
-  const [projectRules, setProjectRules] = useState('');
+  const [projectSkills, setProjectSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
   const [_projectMemory, setProjectMemory] = useState(true);
-  const [isSavingRules, setIsSavingRules] = useState(false);
+  const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  const lastSavedRulesRef = useRef<string>('');
 
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
@@ -108,7 +111,7 @@ export default function Home() {
 
                       console.log(`[Home] Model download progress: ${progress.percent}% — ${progress.status}`);
                       window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status }
+                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status, stage: progress.stage }
                       }));
                     } catch {
                       // Non-JSON line, log raw
@@ -133,15 +136,14 @@ export default function Home() {
     loadModel();
   }, [selectedProject]);
 
-  // Load a single project — try local API first, fall back to user.projects
+  // Load a single project from local SLP service (enriched with SQLite metadata)
   const loadProjectFromApi = async (projectId: string) => {
     try {
       const projects = await projectService.getProjects();
-      const found = projects.find((p: any) => p.id === projectId);
-      if (found) return found;
-    } catch { }
-    // Fall back to user.projects when local API is unavailable
-    return user?.projects?.find((p: any) => p.id === projectId) || null;
+      return projects.find((p: any) => p.id === projectId) || null;
+    } catch {
+      return null;
+    }
   };
 
   // Ensure a project is always selected — fall back to system project
@@ -342,7 +344,12 @@ export default function Home() {
 
         console.log('[Home] Loading conversation:', foundConversation.id, 'messages:', foundConversation.messages?.length || 0);
         setConversation({ ...foundConversation });
-        setActiveTab(0);
+        // Open conversation tab
+        handleOpenTab({
+          id: `conv-${foundConversation.id}`,
+          type: 'conversation',
+          title: foundConversation.title || 'New Conversation',
+        });
 
         // Persist selection in SQLite
         await storageService.selectConversation(urlConversationId);
@@ -436,18 +443,29 @@ export default function Home() {
 
           prevProjectIdRef.current = selectedProject.id;
 
-          // Extract rules from project data
-          const rules = (selectedProject.rules || []).map((r: any) => r.content).join('\n\n');
-          setProjectRules(rules);
-          lastSavedRulesRef.current = rules;
+          // Load skills from dedicated endpoint
+          try {
+            const localBase = await getLocalApiEndpoint();
+            const skillsRes = await fetch(`${localBase}/v1/projects/${selectedProject.id}/skills`);
+            if (skillsRes.ok) {
+              const skillsData = await skillsRes.json();
+              const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+              setProjectSkills(skills);
+            } else {
+              const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+              setProjectSkills(skills);
+            }
+          } catch {
+            const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+            setProjectSkills(skills);
+          }
         } catch {
-          setProjectRules('');
-          lastSavedRulesRef.current = '';
+          setProjectSkills([]);
         }
       })();
     } else {
       setCurrentProjectData(null);
-      setProjectRules('');
+      setProjectSkills([]);
       setProjectMemory(true);
     }
   }, [selectedProject]);
@@ -477,6 +495,83 @@ export default function Home() {
       window.removeEventListener('documentProcessingComplete', refreshDocuments);
     };
   }, [selectedProject?.id]);
+
+  // Restore saved tabs when project changes, or reset if none saved
+  const tabsLoadedForProjectRef = useRef<string | null>(null);
+  useEffect(() => {
+    const projectId = selectedProject?.id;
+    if (!projectId) {
+      setOpenTabs([]);
+      setActiveTabId(null);
+      return;
+    }
+    // Avoid reloading if already loaded for this project
+    if (tabsLoadedForProjectRef.current === projectId) return;
+    tabsLoadedForProjectRef.current = projectId;
+
+    const restoreTabs = async () => {
+      const saved = await storageService.getSetting(`openTabs_${projectId}`);
+      let tabs: OpenTab[];
+      let activeId: string;
+
+      if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
+        tabs = saved.tabs;
+        activeId = saved.activeTabId || tabs[0]?.id || '';
+      } else {
+        // Default: open a new conversation tab
+        const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
+        tabs = [defaultTab];
+        activeId = defaultTab.id;
+      }
+
+      setOpenTabs(tabs);
+      setActiveTabId(activeId);
+
+      // Load content for the active tab
+      const activeTab = tabs.find((t) => t.id === activeId);
+      if (activeTab?.type === 'conversation') {
+        const convId = activeTab.id.replace('conv-', '');
+        if (convId === 'new') {
+          setConversation(null);
+          setChatMessage(null);
+        } else {
+          const stored = await storageService.getConversation(convId);
+          if (stored) {
+            const messages = await storageService.getMessages(convId);
+            setConversation({ ...stored, messages: messages || [] });
+          } else {
+            setConversation(null);
+          }
+        }
+      } else {
+        // Non-conversation tab is active, clear conversation
+        setConversation(null);
+      }
+    };
+    restoreTabs();
+  }, [selectedProject?.id]);
+
+  // Persist open tabs to SQLite whenever they change
+  const tabsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const projectId = selectedProject?.id;
+    if (!projectId) return;
+    // Don't save until we've loaded for this project
+    if (tabsLoadedForProjectRef.current !== projectId) return;
+
+    // Debounce saves to avoid excessive writes
+    if (tabsSaveTimerRef.current) clearTimeout(tabsSaveTimerRef.current);
+    tabsSaveTimerRef.current = setTimeout(() => {
+      storageService.setSetting(`openTabs_${projectId}`, {
+        tabs: openTabs,
+        activeTabId,
+      });
+    }, 300);
+
+    return () => {
+      if (tabsSaveTimerRef.current) clearTimeout(tabsSaveTimerRef.current);
+    };
+  }, [openTabs, activeTabId, selectedProject?.id]);
 
   // Load conversations for the selected project
   const loadProjectConversations = async () => {
@@ -596,37 +691,131 @@ export default function Home() {
   }, []);
 
 
-  const saveProjectRules = async (rules: string) => {
-    if (!selectedProject || !rules) return;
+  const saveProjectSkills = async (skills: Array<{ id?: string; name: string; content: string }>) => {
+    if (!selectedProject) return;
 
-    console.log('Saving project rules for project:', selectedProject.id);
-
-    setIsSavingRules(true);
+    setIsSavingSkills(true);
 
     try {
       const localBase = await getLocalApiEndpoint();
-      const url = `${localBase}/v1/projects/${selectedProject.id}`;
+      const projectId = selectedProject.id;
+      const oldSkills = projectSkills;
 
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rules: [{ content: rules }] }),
+      // Detect added skills (no id or new entries beyond old length)
+      const added = skills.filter(s => !s.id && !oldSkills.find(o => o.content === s.content));
+      // Detect deleted skills
+      const deletedSkills = oldSkills.filter(o => (o as any).id && !skills.find(s => (s as any).id === (o as any).id));
+      // Detect updated skills
+      const updated = skills.filter(s => {
+        if (!(s as any).id) return false;
+        const old = oldSkills.find(o => (o as any).id === (s as any).id);
+        return old && old.content !== s.content;
       });
 
-      if (response.ok) {
-        lastSavedRulesRef.current = rules;
-        setProjectRules(rules);
+      // Add new skills
+      for (const skill of added) {
+        const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          skill.id = data.id;
+          skill.name = data.name || skill.name;
+        }
+      }
+
+      // Update modified skills
+      for (const skill of updated) {
+        await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
+      }
+
+      // Delete removed skills
+      for (const skill of deletedSkills) {
+        if ((skill as any).id) {
+          await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+            method: 'DELETE',
+          });
+        }
+      }
+
+      // Refresh skills from server
+      const listRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+      if (listRes.ok) {
+        const data = await listRes.json();
+        const refreshed = (data.skills || data || []).map((s: any) => ({ id: s.id, name: s.name, content: s.content, description: s.description || '' }));
+        setProjectSkills(refreshed);
+        setOpenTabs((prev) =>
+          prev.map((t) => {
+            if (t.type !== 'skill') return t;
+            if (t.id === 'skill-new') {
+              const newIndex = refreshed.length - 1;
+              const saved = refreshed[newIndex];
+              return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
+            }
+            const idx = t.data?.index;
+            if (idx !== undefined && refreshed[idx]) {
+              return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
+            }
+            return t;
+          })
+        );
       } else {
-        console.error('Failed to save project rules. Status:', response.status);
+        setProjectSkills(skills);
       }
     } catch (ex: any) {
-      console.error('Error saving project rules:', ex);
+      console.error('Error saving project skills:', ex);
     } finally {
-      setIsSavingRules(false);
+      setIsSavingSkills(false);
     }
   };
 
+  const handleFolderPathChange = async (path: string) => {
+    if (!selectedProject?.id) return;
+    await storageService.updateProjectMeta(selectedProject.id, { folder_path: path });
+    const updated = { ...currentProjectData, folder_path: path };
+    setCurrentProjectData(updated);
+    setSelectedProject((prev: any) => prev ? { ...prev, folder_path: path } : prev);
+  };
 
+  const handleColorChange = async (color: string) => {
+    if (!selectedProject?.id) return;
+    await storageService.updateProjectMeta(selectedProject.id, { color });
+    setCurrentProjectData((prev: any) => prev ? { ...prev, color } : prev);
+    setSelectedProject((prev: any) => prev ? { ...prev, color } : prev);
+    window.dispatchEvent(new CustomEvent('projectUpdated'));
+  };
+
+  const handleRenameProject = async (name: string) => {
+    if (!selectedProject?.id) return;
+    const result = await projectService.updateProject(selectedProject.id, { name });
+    if (result.success) {
+      // Update folder_path if it matches the old project name pattern
+      const oldName = selectedProject.name;
+      const currentPath = currentProjectData?.folder_path || '';
+      if (oldName && currentPath) {
+        const oldSlug = oldName.toLowerCase().replace(/\s+/g, '_');
+        const newSlug = name.toLowerCase().replace(/\s+/g, '_');
+        if (currentPath.endsWith(`/${oldSlug}`) || currentPath === oldSlug) {
+          const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
+          await storageService.updateProjectMeta(selectedProject.id, { name, folder_path: newPath });
+          setCurrentProjectData((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
+          setSelectedProject((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
+          window.dispatchEvent(new CustomEvent('projectUpdated'));
+          return;
+        }
+      }
+      await storageService.updateProjectMeta(selectedProject.id, { name });
+      setSelectedProject((prev: any) => prev ? { ...prev, name } : prev);
+      setCurrentProjectData((prev: any) => prev ? { ...prev, name } : prev);
+      window.dispatchEvent(new CustomEvent('projectUpdated'));
+    }
+  };
 
   const handleFileAttached = async (documentId: string, fileName: string) => {
     console.log('[Home handleFileAttached] Called with:', documentId, fileName);
@@ -695,7 +884,8 @@ export default function Home() {
     }
   };
 
-  const handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
+  // @ts-ignore - kept for future use with tab close
+  const _handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation(); // Prevent navigation when clicking delete
 
     console.log('[Home] Deleting conversation:', convId);
@@ -809,11 +999,86 @@ export default function Home() {
 
 
 
+  const handleOpenTab = (tab: OpenTab) => {
+    setOpenTabs((prev) => {
+      const existing = prev.find((t) => t.id === tab.id);
+      if (!existing) {
+        return [...prev, tab];
+      }
+      // Update data if tab already exists
+      return prev.map((t) => t.id === tab.id ? { ...t, ...tab } : t);
+    });
+    setActiveTabId(tab.id);
+  };
+
+  const handleTabSelect = async (tabId: string) => {
+    setActiveTabId(tabId);
+    const tab = openTabs.find((t) => t.id === tabId);
+    if (tab?.type === 'conversation') {
+      // Extract conversation ID from tab id (format: "conv-{id}" or "conv-new")
+      const convId = tab.id.replace('conv-', '');
+      if (convId === 'new') {
+        setConversation(null);
+        setChatMessage(null);
+      } else if (convId !== conversation?.id) {
+        const stored = await storageService.getConversation(convId);
+        if (stored) {
+          const messages = await storageService.getMessages(convId);
+          setConversation({ ...stored, messages: messages || [] });
+        }
+      }
+    }
+  };
+
+  const handleCloseTab = (tabId: string) => {
+    const idx = openTabs.findIndex((t) => t.id === tabId);
+    const newTabs = openTabs.filter((t) => t.id !== tabId);
+    setOpenTabs(newTabs);
+    if (activeTabId === tabId) {
+      // Switch to adjacent tab or null
+      if (newTabs.length > 0) {
+        const newIdx = Math.min(idx, newTabs.length - 1);
+        setActiveTabId(newTabs[newIdx].id);
+      } else {
+        setActiveTabId(null);
+      }
+    }
+  };
+
+  const getActiveTab = () => openTabs.find((t) => t.id === activeTabId) || null;
+
+  // Cmd/Ctrl + 1..9 jumps to the nth open tab; Cmd/Ctrl + Tab / Shift+Tab cycles tabs
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.altKey) return;
+
+      if (e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key, 10) - 1;
+        if (index < openTabs.length) {
+          e.preventDefault();
+          handleTabSelect(openTabs[index].id);
+        }
+        return;
+      }
+
+      if (e.key === 'Tab' && openTabs.length > 1) {
+        e.preventDefault();
+        const currentIdx = openTabs.findIndex((t) => t.id === activeTabId);
+        const delta = e.shiftKey ? -1 : 1;
+        const nextIdx = (currentIdx + delta + openTabs.length) % openTabs.length;
+        handleTabSelect(openTabs[nextIdx].id);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [openTabs, activeTabId]);
+
   const handleStartNewConversation = () => {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
     setChatMessage(null);
-    setActiveTab(0);
+    handleOpenTab({ id: 'conv-new', type: 'conversation', title: 'New Conversation' });
     storageService.clearSelectedConversation();
 
     // Update URL with new=1 to signal explicit new conversation (not auto-select)
@@ -837,7 +1102,11 @@ export default function Home() {
 
     // Set state immediately and persist selection
     setConversation(newConversation);
-    setActiveTab(0);
+    // Replace the "New Conversation" tab with the actual conversation tab
+    setOpenTabs((prev) => prev.map((t) =>
+      t.id === 'conv-new' ? { id: `conv-${newConversation.id}`, type: 'conversation' as const, title: newConversation.title || 'Untitled' } : t
+    ));
+    setActiveTabId(`conv-${newConversation.id}`);
     storageService.selectConversation(newConversation.id);
 
     // Dispatch conversationCreated event so sidebar refreshes from SQLite
@@ -868,6 +1137,15 @@ export default function Home() {
 
     // Update local conversation state
     setConversation(updatedConversation);
+
+    // Update tab title if conversation title changed
+    if (updatedConversation.title) {
+      setOpenTabs((prev) =>
+        prev.map((t) =>
+          t.id === `conv-${updatedConversation.id}` ? { ...t, title: updatedConversation.title } : t
+        )
+      );
+    }
 
     // Sync messages to storage
     if (updatedConversation.id && updatedConversation.messages) {
@@ -1013,6 +1291,18 @@ export default function Home() {
       const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
 
       if (deleteResult.success) {
+        // Close the tab if this document is open
+        const docTabId = `doc-${documentToDelete.id}`;
+        setOpenTabs((prev) => {
+          const filtered = prev.filter((t) => t.id !== docTabId);
+          if (activeTabId === docTabId && filtered.length > 0) {
+            setActiveTabId(filtered[filtered.length - 1].id);
+          } else if (activeTabId === docTabId) {
+            setActiveTabId(null);
+          }
+          return filtered;
+        });
+
         // Update user state incrementally - remove the deleted document from the specific project
         if (user && selectedProject) {
           const updatedProjects = user.projects.map((p: any) => {
@@ -1381,71 +1671,82 @@ export default function Home() {
                   </Box>
                 </Box>
 
-                {/* Tabs - show each conversation as tab plus Configuration */}
+                {/* Content Tabs */}
                 {(selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) && (
-                  <ConversationTabs
-                    projectConversations={projectConversations}
-                    currentConversation={conversation}
-                    onConversationSelect={(conversationId) => {
-                      const newUrl = selectedProject
-                        ? `/?conversation=${conversationId}&project=${selectedProject.id}`
-                        : `/?conversation=${conversationId}`;
-                      navigate(newUrl);
-                    }}
-                    onConversationDelete={handleDeleteConversationFromList}
+                  <ContentTabs
+                    tabs={openTabs}
+                    activeTabId={activeTabId}
+                    onTabSelect={handleTabSelect}
+                    onTabClose={handleCloseTab}
                     onNewConversation={handleStartNewConversation}
                   />
                 )}
 
                 {/* Main Content Area - 2 columns */}
                 <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
-                  {/* Left Column - Chat or Documents Tab */}
-                  <Box className="flex-1 overflow-hidden" sx={{ width: { xs: '100%', md: selectedProject ? '70%' : '100%' } }}>
-                    {activeTab === 1 && selectedProject ? (
-                      <DocumentsTab
-                        user={user}
-                        setUser={setUser}
-                        selectedProject={selectedProject}
-                        setSelectedProject={setSelectedProject}
-                        currentProjectData={currentProjectData}
-                        setCurrentProjectData={setCurrentProjectData}
-                        setActiveTab={setActiveTab}
-                      />
-                    ) : (
-                      // Show Chat component (it handles the case when conversation is null)
-                      <Chat
-                        project={selectedProject}
-                        initialMessage={chatMessage}
-                        attachments={messageAttachments}
-                        conversation={conversation}
-                        onFileAttached={handleFileAttached}
-                        onAttachmentsClear={() => {
-                          setMessageAttachments([]);
-                        }}
-                        onTokenUpdate={() => {
-                          window.dispatchEvent(new Event('refreshUserTokens'));
-                        }}
-                        onConversationCreated={handleConversationCreated}
-                        onConversationUpdate={handleConversationUpdate}
-                      />
-                    )}
+                  {/* Main Content Area */}
+                  <Box className="flex-1 overflow-hidden">
+                    {(() => {
+                      const currentTab = getActiveTab();
+                      if (currentTab?.type === 'document' && currentTab.data) {
+                        return <DocumentViewer document={currentTab.data} projectId={selectedProject?.id} onStartConversation={(selectedText, docName) => {
+                          setConversation(null);
+                          setChatMessage(`> From "${docName}":\n> ${selectedText.split('\n').join('\n> ')}\n\n`);
+                          handleOpenTab({ id: 'conv-new', type: 'conversation', title: 'New Conversation' });
+                          storageService.clearSelectedConversation();
+                        }} />;
+                      }
+                      if (currentTab?.type === 'skill' && selectedProject) {
+                        return (
+                          <SkillEditor
+                            selectedProject={selectedProject}
+                            projectSkills={projectSkills}
+                            skillIndex={currentTab.data?.index ?? 0}
+                            isSavingSkills={isSavingSkills}
+                            onSaveSkills={saveProjectSkills}
+                            isNew={currentTab.data?.isNew}
+                          />
+                        );
+                      }
+                      if (currentTab?.type === 'mcp' && currentTab.data) {
+                        return <McpTab server={currentTab.data} />;
+                      }
+                      // Default: conversation view
+                      return (
+                        <Chat
+                          project={selectedProject}
+                          initialMessage={chatMessage}
+                          attachments={messageAttachments}
+                          conversation={conversation}
+                          onFileAttached={handleFileAttached}
+                          onAttachmentsClear={() => {
+                            setMessageAttachments([]);
+                          }}
+                          onTokenUpdate={() => {
+                            window.dispatchEvent(new Event('refreshUserTokens'));
+                          }}
+                          onConversationCreated={handleConversationCreated}
+                          onConversationUpdate={handleConversationUpdate}
+                        />
+                      );
+                    })()}
                   </Box>
 
-                  {/* Right Sidebar - Rules & Documents */}
-                  {activeTab !== 1 && (
-                    <RightSidebar
-                      selectedProject={selectedProject}
-                      currentProjectData={currentProjectData}
-                      projectRules={projectRules}
-                      isSavingRules={isSavingRules}
-                      onSaveRules={(rules: string) => {
-                        saveProjectRules(rules || '');
-                      }}
-                      onAddDocument={() => setShowFileUploadDialog(true)}
-                      onDeleteDocument={handleOpenDeleteDocDialog}
-                      user={user}
-                    />
-                  )}
+                  {/* Right Sidebar */}
+                  <RightSidebar
+                    selectedProject={selectedProject}
+                    currentProjectData={currentProjectData}
+                    onAddDocument={() => setShowFileUploadDialog(true)}
+                    onDeleteDocument={handleOpenDeleteDocDialog}
+                    onFolderPathChange={handleFolderPathChange}
+                    onColorChange={handleColorChange}
+                    onRenameProject={handleRenameProject}
+                    user={user}
+                    activeTab={getActiveTab()?.type || 'conversation'}
+                    onTabChange={handleOpenTab}
+                    projectSkills={projectSkills}
+                    onSaveSkills={saveProjectSkills}
+                  />
                 </Box>
               </>
             </Box>

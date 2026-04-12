@@ -77,6 +77,49 @@ function openDatabase() {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      server_type TEXT NOT NULL DEFAULT 'local',
+      config TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mcp_servers_project ON mcp_servers(project_id);
+
+    CREATE TABLE IF NOT EXISTS folders (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
+
+    CREATE TABLE IF NOT EXISTS document_folders (
+      document_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      folder_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_folders_project ON document_folders(project_id);
+    CREATE INDEX IF NOT EXISTS idx_document_folders_folder ON document_folders(folder_id);
+
+    CREATE TABLE IF NOT EXISTS document_status (
+      document_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_status_project ON document_status(project_id);
   `);
 
   // Seed install_status rows (4 steps) if not present
@@ -93,6 +136,30 @@ function openDatabase() {
     console.log('[DB] Added is_selected column to conversations');
   }
 
+  // Migration: add folder_path column to projects
+  const projectCols = db.prepare("PRAGMA table_info(projects)").all();
+  if (!projectCols.find(c => c.name === 'folder_path')) {
+    db.exec("ALTER TABLE projects ADD COLUMN folder_path TEXT");
+    console.log('[DB] Added folder_path column to projects');
+  }
+
+  // Migration: seed default local MCP server for existing projects that don't have one
+  const existingProjects = db.prepare('SELECT id, name FROM projects').all();
+  const insertMcp = db.prepare(`
+    INSERT OR IGNORE INTO mcp_servers (id, project_id, name, server_type, config, created_at, updated_at)
+    VALUES (?, ?, ?, 'local', ?, ?, ?)
+  `);
+  const now = new Date().toISOString();
+  for (const proj of existingProjects) {
+    const existing = db.prepare('SELECT id FROM mcp_servers WHERE project_id = ?').get(proj.id);
+    if (!existing) {
+      const mcpId = `mcp_local_${proj.id}`;
+      const config = JSON.stringify({ name: proj.name });
+      insertMcp.run(mcpId, proj.id, proj.name, config, now, now);
+      console.log(`[DB] Seeded default local MCP server for project: ${proj.name}`);
+    }
+  }
+
   console.log('[DB] Database opened at', DB_PATH);
   return db;
 }
@@ -107,19 +174,39 @@ function closeDatabase() {
 
 // --- Projects ---
 
-function upsertProject({ id, name, color, temperature, system }) {
+/**
+ * Expand ~ to home directory and create the folder if it does not exist.
+ * Returns the resolved absolute path, or the original value on error.
+ */
+function ensureFolderPath(folderPath) {
+  if (!folderPath) return folderPath;
+  try {
+    const resolved = folderPath.startsWith('~')
+      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      : folderPath;
+    fs.mkdirSync(resolved, { recursive: true });
+    return resolved;
+  } catch (err) {
+    console.warn('[DB] Could not create project folder:', folderPath, err.message);
+    return folderPath;
+  }
+}
+
+function upsertProject({ id, name, color, temperature, system, folder_path }) {
   const d = openDatabase();
   const now = new Date().toISOString();
+  const resolvedPath = ensureFolderPath(folder_path);
   d.prepare(`
-    INSERT INTO projects (id, name, color, temperature, system, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, color, temperature, system, folder_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       color = COALESCE(excluded.color, projects.color),
       temperature = COALESCE(excluded.temperature, projects.temperature),
       system = COALESCE(excluded.system, projects.system),
+      folder_path = COALESCE(excluded.folder_path, projects.folder_path),
       updated_at = excluded.updated_at
-  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, now, now);
+  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, resolvedPath || null, now, now);
   return getProject(id);
 }
 
@@ -142,6 +229,7 @@ function updateProject(id, updates) {
   if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
   if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
   if (updates.temperature !== undefined) { fields.push('temperature = ?'); values.push(updates.temperature); }
+  if (updates.folder_path !== undefined) { fields.push('folder_path = ?'); values.push(ensureFolderPath(updates.folder_path)); }
 
   if (fields.length === 0) return getProject(id);
 
@@ -165,6 +253,7 @@ function formatProject(row) {
     color: row.color,
     temperature: row.temperature,
     system: !!row.system,
+    folder_path: row.folder_path || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -420,6 +509,168 @@ function getAllSettings() {
   return result;
 }
 
+// --- MCP Servers ---
+
+function addMcpServer({ id, project_id, name, server_type, config }) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT OR REPLACE INTO mcp_servers (id, project_id, name, server_type, config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, project_id, name, server_type || 'local', config ? JSON.stringify(config) : null, now, now);
+  return getMcpServer(id);
+}
+
+function getMcpServer(id) {
+  const d = openDatabase();
+  const row = d.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
+  return row ? formatMcpServer(row) : null;
+}
+
+function getMcpServersByProject(projectId) {
+  const d = openDatabase();
+  return d.prepare('SELECT * FROM mcp_servers WHERE project_id = ? ORDER BY created_at ASC')
+    .all(projectId).map(formatMcpServer);
+}
+
+function deleteMcpServer(id) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM mcp_servers WHERE id = ?').run(id);
+}
+
+function deleteMcpServersByProject(projectId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM mcp_servers WHERE project_id = ?').run(projectId);
+}
+
+function formatMcpServer(row) {
+  let config = null;
+  try {
+    config = row.config ? JSON.parse(row.config) : null;
+  } catch {
+    config = row.config;
+  }
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    name: row.name,
+    server_type: row.server_type,
+    config,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+// --- Folders (UI-only grouping for documents) ---
+
+function createFolder({ id, project_id, name }) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  const folderId = id || `folder_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  d.prepare(`
+    INSERT INTO folders (id, project_id, name, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(folderId, project_id, name, now, now);
+  return getFolder(folderId);
+}
+
+function getFolder(id) {
+  const d = openDatabase();
+  const row = d.prepare('SELECT * FROM folders WHERE id = ?').get(id);
+  return row ? formatFolder(row) : null;
+}
+
+function listFoldersByProject(projectId) {
+  const d = openDatabase();
+  const rows = d.prepare(`
+    SELECT f.*, (
+      SELECT COUNT(*) FROM document_folders df WHERE df.folder_id = f.id
+    ) AS document_count
+    FROM folders f
+    WHERE f.project_id = ?
+    ORDER BY f.created_at ASC
+  `).all(projectId);
+  return rows.map(formatFolder);
+}
+
+function renameFolder(id, name) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare('UPDATE folders SET name = ?, updated_at = ? WHERE id = ?').run(name, now, id);
+  return getFolder(id);
+}
+
+function deleteFolder(id) {
+  const d = openDatabase();
+  // document_folders rows cascade-deleted via FK
+  d.prepare('DELETE FROM folders WHERE id = ?').run(id);
+}
+
+function setDocumentFolder({ document_id, project_id, folder_id }) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT INTO document_folders (document_id, project_id, folder_id, created_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(document_id) DO UPDATE SET
+      folder_id = excluded.folder_id,
+      project_id = excluded.project_id
+  `).run(document_id, project_id, folder_id, now);
+}
+
+function clearDocumentFolder(document_id) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM document_folders WHERE document_id = ?').run(document_id);
+}
+
+function getDocumentFoldersByProject(projectId) {
+  const d = openDatabase();
+  const rows = d.prepare('SELECT document_id, folder_id FROM document_folders WHERE project_id = ?').all(projectId);
+  const map = {};
+  for (const row of rows) {
+    map[row.document_id] = row.folder_id;
+  }
+  return map;
+}
+
+// --- Document Status ---
+
+function setDocumentProcessed(documentId, projectId) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT INTO document_status (document_id, project_id, processed_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(document_id) DO UPDATE SET processed_at = excluded.processed_at
+  `).run(documentId, projectId, now);
+}
+
+function getDocumentStatusByProject(projectId) {
+  const d = openDatabase();
+  const rows = d.prepare('SELECT document_id, processed_at FROM document_status WHERE project_id = ?').all(projectId);
+  const map = {};
+  for (const row of rows) {
+    map[row.document_id] = row.processed_at;
+  }
+  return map;
+}
+
+function deleteDocumentStatus(documentId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM document_status WHERE document_id = ?').run(documentId);
+}
+
+function formatFolder(row) {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    name: row.name,
+    document_count: row.document_count ?? 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 module.exports = {
   openDatabase,
   closeDatabase,
@@ -459,4 +710,23 @@ module.exports = {
   getSetting,
   setSetting,
   getAllSettings,
+  // MCP Servers
+  addMcpServer,
+  getMcpServer,
+  getMcpServersByProject,
+  deleteMcpServer,
+  deleteMcpServersByProject,
+  // Folders
+  createFolder,
+  getFolder,
+  listFoldersByProject,
+  renameFolder,
+  deleteFolder,
+  setDocumentFolder,
+  clearDocumentFolder,
+  getDocumentFoldersByProject,
+  // Document Status
+  setDocumentProcessed,
+  getDocumentStatusByProject,
+  deleteDocumentStatus,
 };
