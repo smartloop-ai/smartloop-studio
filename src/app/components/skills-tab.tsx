@@ -8,7 +8,8 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 
 interface Skill {
   name: string;
@@ -23,22 +24,9 @@ interface SkillsTabProps {
   initialSkillIndex?: number;
 }
 
-const DEFAULT_SKILL_TEMPLATE = `---
-name: my-skill-name
-description: A clear description of what this skill does and when to use it
----
+const DEFAULT_SKILL_TEMPLATE = `# My Skill Name
 
-# My Skill Name
-
-[Add your instructions here that Claude will follow when this skill is active]
-
-## Examples
-- Example usage 1
-- Example usage 2
-
-## Guidelines
-- Guideline 1
-- Guideline 2
+[Add your instructions here]
 `;
 
 export default function SkillsTab({
@@ -53,6 +41,7 @@ export default function SkillsTab({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [newSkillName, setNewSkillName] = useState('');
   const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
+  const [skillDragOver, setSkillDragOver] = useState(false);
   const editorRef = useRef<any>(null);
 
   // Auto-select skill when opened from sidebar
@@ -120,6 +109,47 @@ export default function SkillsTab({
       setHasUnsavedChanges(false);
     }
   };
+
+  const handleSkillFileContent = useCallback((content: string, fileName: string) => {
+    const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
+    const name = nameMatch?.[1]?.trim() || fileName.replace(/\.md$/i, '');
+    onSaveSkills([...projectSkills, { name, content }]);
+  }, [onSaveSkills, projectSkills]);
+
+  const handleSkillDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setSkillDragOver(false);
+    if (!e.dataTransfer.files?.length) return;
+    const file = e.dataTransfer.files[0];
+    if (!file.name.endsWith('.md') && file.type !== 'text/markdown' && file.type !== 'text/plain') return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') handleSkillFileContent(reader.result, file.name);
+    };
+    reader.readAsText(file);
+  }, [handleSkillFileContent]);
+
+  const handleSkillPaste = useCallback((e: React.ClipboardEvent) => {
+    if (editingSkillIndex !== null) return;
+    const files = e.clipboardData?.files;
+    if (files?.length) {
+      const file = files[0];
+      if (file.name.endsWith('.md') || file.type === 'text/markdown' || file.type === 'text/plain') {
+        e.preventDefault();
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') handleSkillFileContent(reader.result, file.name);
+        };
+        reader.readAsText(file);
+        return;
+      }
+    }
+    const text = e.clipboardData?.getData('text/plain');
+    if (text && text.includes('---') && text.includes('name:')) {
+      e.preventDefault();
+      handleSkillFileContent(text, 'pasted-skill');
+    }
+  }, [editingSkillIndex, handleSkillFileContent]);
 
   return (
     <Box className="flex flex-col h-full overflow-hidden" sx={{ bgcolor: 'var(--sl-bg-primary)' }}>
@@ -205,7 +235,13 @@ export default function SkillsTab({
           </div>
         ) : (
           /* Skills List */
-          <div className="w-full max-w-4xl mx-auto space-y-3">
+          <div
+            className="w-full max-w-4xl mx-auto space-y-3"
+            onDragOver={(e) => { e.preventDefault(); setSkillDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setSkillDragOver(false); }}
+            onDrop={handleSkillDrop}
+            onPaste={handleSkillPaste}
+          >
             {/* Search / Add Skill Input */}
             <TextField
               size="small"
@@ -386,6 +422,24 @@ export default function SkillsTab({
                 </Box>
               );
             })()}
+
+            {/* Drop zone for .md files */}
+            <Box
+              sx={{
+                border: skillDragOver ? '2px dashed var(--sl-brand-primary)' : '2px dashed var(--sl-white-alpha-10)',
+                borderRadius: '8px',
+                padding: '24px 16px',
+                textAlign: 'center',
+                transition: 'all 0.15s ease',
+                bgcolor: skillDragOver ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                mt: 2,
+              }}
+            >
+              <ContentPasteIcon sx={{ fontSize: 28, color: skillDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)', mb: 1 }} />
+              <Box className="text-xs text-gray-500">
+                Drop a .md file here or paste skill content
+              </Box>
+            </Box>
           </div>
         )}
       </Box>

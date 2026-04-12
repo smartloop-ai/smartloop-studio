@@ -65,11 +65,18 @@
 /* ── Links ───────────────────────────────────────────────────────────────── */
 .chat-content [data-streamdown="link"] {
   color: var(--sl-brand-primary);
-  text-decoration: underline;
+  text-decoration: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--sl-brand-alpha-10);
+  border: 1px solid var(--sl-brand-alpha-20);
+  transition: all 0.15s ease;
 }
 
 .chat-content [data-streamdown="link"]:hover {
   color: var(--sl-brand-light);
+  background-color: var(--sl-brand-alpha-15);
+  border-color: var(--sl-brand-alpha-30);
 }
 
 /* ── Headings ────────────────────────────────────────────────────────────── */
@@ -290,14 +297,99 @@
 
 .chat-content a {
   color: var(--sl-brand-primary);
-  text-decoration: underline;
+  text-decoration: none;
   word-wrap: break-word;
   overflow-wrap: break-word;
   word-break: break-word;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--sl-brand-alpha-10);
+  border: 1px solid var(--sl-brand-alpha-20);
+  transition: all 0.15s ease;
 }
 
 .chat-content a:hover {
   color: var(--sl-brand-light);
+  background-color: var(--sl-brand-alpha-15);
+  border-color: var(--sl-brand-alpha-30);
+}
+
+/* File download links — URLs ending in common file extensions */
+.chat-content a[href$=".pdf"],
+.chat-content a[href$=".doc"],
+.chat-content a[href$=".docx"],
+.chat-content a[href$=".csv"],
+.chat-content a[href$=".xlsx"],
+.chat-content a[href$=".zip"],
+.chat-content a[href$=".tar.gz"],
+.chat-content a[href$=".png"],
+.chat-content a[href$=".jpg"],
+.chat-content a[href$=".jpeg"],
+.chat-content a[href$=".gif"],
+.chat-content a[href$=".svg"],
+.chat-content a[href$=".mp4"],
+.chat-content a[href$=".mp3"],
+.chat-content a[href$=".txt"],
+.chat-content a[href$=".md"],
+.chat-content a[href$=".json"],
+.chat-content a[href$=".yaml"],
+.chat-content a[href$=".yml"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background-color: var(--sl-bg-surface-1);
+  border: 1px solid var(--sl-border-code);
+  border-radius: 6px;
+  font-size: 0.875em;
+  text-decoration: none;
+}
+
+.chat-content a[href$=".pdf"]::before,
+.chat-content a[href$=".doc"]::before,
+.chat-content a[href$=".docx"]::before,
+.chat-content a[href$=".csv"]::before,
+.chat-content a[href$=".xlsx"]::before,
+.chat-content a[href$=".zip"]::before,
+.chat-content a[href$=".tar.gz"]::before,
+.chat-content a[href$=".png"]::before,
+.chat-content a[href$=".jpg"]::before,
+.chat-content a[href$=".jpeg"]::before,
+.chat-content a[href$=".gif"]::before,
+.chat-content a[href$=".svg"]::before,
+.chat-content a[href$=".mp4"]::before,
+.chat-content a[href$=".mp3"]::before,
+.chat-content a[href$=".txt"]::before,
+.chat-content a[href$=".md"]::before,
+.chat-content a[href$=".json"]::before,
+.chat-content a[href$=".yaml"]::before,
+.chat-content a[href$=".yml"]::before {
+  content: "\2913";
+  font-size: 1em;
+  color: var(--sl-brand-primary);
+}
+
+.chat-content a[href$=".pdf"]:hover,
+.chat-content a[href$=".doc"]:hover,
+.chat-content a[href$=".docx"]:hover,
+.chat-content a[href$=".csv"]:hover,
+.chat-content a[href$=".xlsx"]:hover,
+.chat-content a[href$=".zip"]:hover,
+.chat-content a[href$=".tar.gz"]:hover,
+.chat-content a[href$=".png"]:hover,
+.chat-content a[href$=".jpg"]:hover,
+.chat-content a[href$=".jpeg"]:hover,
+.chat-content a[href$=".gif"]:hover,
+.chat-content a[href$=".svg"]:hover,
+.chat-content a[href$=".mp4"]:hover,
+.chat-content a[href$=".mp3"]:hover,
+.chat-content a[href$=".txt"]:hover,
+.chat-content a[href$=".md"]:hover,
+.chat-content a[href$=".json"]:hover,
+.chat-content a[href$=".yaml"]:hover,
+.chat-content a[href$=".yml"]:hover {
+  background-color: var(--sl-brand-alpha-15);
+  border-color: var(--sl-brand-alpha-30);
 }
 
 .chat-content blockquote {

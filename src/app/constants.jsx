@@ -38,7 +38,7 @@ if (typeof window !== 'undefined' && window.electronAPI?.onBootstrapProgress) {
 
     // Dispatch download progress for the progress bar
     window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-      detail: { downloading: progress.downloading, model: progress.model, percent: progress.percent, status: progress.status }
+      detail: { downloading: progress.downloading, model: progress.model, percent: progress.percent, status: progress.status, stage: progress.stage }
     }));
   });
 }

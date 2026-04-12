@@ -75,8 +75,8 @@ export default function Chat(props: {
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
   const [isServiceReady, setIsServiceReady] = useState(false);
-  const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
-  const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string } | null>(null);
+  const [, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
+  const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
 
   // Load last tok/s value from storage
   useEffect(() => {
@@ -936,10 +936,33 @@ export default function Chat(props: {
                     </div>
                   </div>
 
+                  {/* Stage indicators */}
+                  <div className="flex items-center gap-2 mb-3">
+                    {['checking', 'downloading', 'building'].map((s) => {
+                      const stageLabels: Record<string, string> = { checking: 'Checking', downloading: 'Downloading', building: 'Building' };
+                      const currentStage = modelDownloadProgress.stage || 'initializing';
+                      const stageOrder = ['initializing', 'checking', 'downloading', 'extracting', 'verifying', 'building', 'preparing', 'complete'];
+                      const currentIdx = stageOrder.indexOf(currentStage);
+                      const thisIdx = stageOrder.indexOf(s);
+                      const isActive = currentStage === s || (s === 'downloading' && (currentStage === 'extracting' || currentStage === 'verifying'));
+                      const isDone = currentIdx > thisIdx && !isActive;
+                      return (
+                        <div key={s} className="flex items-center gap-1.5">
+                          <div
+                            className={`w-2 h-2 rounded-full ${isDone ? 'bg-green-500' : isActive ? 'bg-pink-500 animate-pulse' : 'bg-gray-600'}`}
+                          />
+                          <span className={`text-[10px] ${isActive ? 'text-white' : isDone ? 'text-green-400' : 'text-gray-600'}`}>
+                            {stageLabels[s]}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs text-gray-400">
                       <span>{modelDownloadProgress.status}</span>
-                      <span>{modelDownloadProgress.percent}%</span>
+                      <span>{modelDownloadProgress.percent > 0 ? `${modelDownloadProgress.percent}%` : ''}</span>
                     </div>
                     <Box
                       sx={{
@@ -1202,14 +1225,14 @@ export default function Chat(props: {
                   <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-pink-500 flex-shrink-0"></span>
                   <span>ready</span>
                 </span>
-                {statusInfo.model && (
-                  <span className="flex items-center gap-1">
+                {props.project && (
+                  <span className="flex items-center gap-1 font-mono">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                      <path d="M8 1.5C5.5 1.5 3.5 3.5 3.5 6c0 1.5.7 2.8 1.8 3.6V12a.5.5 0 00.5.5h4.4a.5.5 0 00.5-.5V9.6c1.1-.8 1.8-2.1 1.8-3.6 0-2.5-2-4.5-4.5-4.5z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
-                      <line x1="5.5" y1="13.5" x2="10.5" y2="13.5" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
-                      <line x1="5.5" y1="14.5" x2="10.5" y2="14.5" stroke="var(--sl-text-faint)" strokeWidth="0.75" />
+                      <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
+                      <path d="M8 6.5v8" stroke="var(--sl-text-faint)" strokeWidth="0.5" />
+                      <path d="M2 4l6 2.5L14 4" stroke="var(--sl-text-faint)" strokeWidth="0.5" fill="none" />
                     </svg>
-                    <span>{statusInfo.model.replace(/-/g, ' ')}</span>
+                    <span>~/smartloop/{props.project.name || props.project.title || 'project'}</span>
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">

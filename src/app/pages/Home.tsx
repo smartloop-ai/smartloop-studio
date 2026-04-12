@@ -45,7 +45,7 @@ export default function Home() {
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
-  const [projectSkills, setProjectSkills] = useState<Array<{ name: string; content: string }>>([]);
+  const [projectSkills, setProjectSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
@@ -111,7 +111,7 @@ export default function Home() {
 
                       console.log(`[Home] Model download progress: ${progress.percent}% — ${progress.status}`);
                       window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status }
+                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status, stage: progress.stage }
                       }));
                     } catch {
                       // Non-JSON line, log raw
@@ -443,9 +443,22 @@ export default function Home() {
 
           prevProjectIdRef.current = selectedProject.id;
 
-          // Extract skills from project data
-          const skills = (selectedProject.skills || []).map((s: any) => ({ name: s.name || '', content: s.content || '' }));
-          setProjectSkills(skills);
+          // Load skills from dedicated endpoint
+          try {
+            const localBase = await getLocalApiEndpoint();
+            const skillsRes = await fetch(`${localBase}/v1/projects/${selectedProject.id}/skills`);
+            if (skillsRes.ok) {
+              const skillsData = await skillsRes.json();
+              const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+              setProjectSkills(skills);
+            } else {
+              const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+              setProjectSkills(skills);
+            }
+          } catch {
+            const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+            setProjectSkills(skills);
+          }
         } catch {
           setProjectSkills([]);
         }
@@ -678,42 +691,82 @@ export default function Home() {
   }, []);
 
 
-  const saveProjectSkills = async (skills: Array<{ name: string; content: string }>) => {
+  const saveProjectSkills = async (skills: Array<{ id?: string; name: string; content: string }>) => {
     if (!selectedProject) return;
 
     setIsSavingSkills(true);
 
     try {
       const localBase = await getLocalApiEndpoint();
-      const url = `${localBase}/v1/projects/${selectedProject.id}`;
+      const projectId = selectedProject.id;
+      const oldSkills = projectSkills;
 
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skills }),
+      // Detect added skills (no id or new entries beyond old length)
+      const added = skills.filter(s => !s.id && !oldSkills.find(o => o.content === s.content));
+      // Detect deleted skills
+      const deletedSkills = oldSkills.filter(o => (o as any).id && !skills.find(s => (s as any).id === (o as any).id));
+      // Detect updated skills
+      const updated = skills.filter(s => {
+        if (!(s as any).id) return false;
+        const old = oldSkills.find(o => (o as any).id === (s as any).id);
+        return old && old.content !== s.content;
       });
 
-      if (response.ok) {
-        setProjectSkills(skills);
-        // Update any open skill tabs with new data/titles
+      // Add new skills
+      for (const skill of added) {
+        const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          skill.id = data.id;
+          skill.name = data.name || skill.name;
+        }
+      }
+
+      // Update modified skills
+      for (const skill of updated) {
+        await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
+      }
+
+      // Delete removed skills
+      for (const skill of deletedSkills) {
+        if ((skill as any).id) {
+          await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+            method: 'DELETE',
+          });
+        }
+      }
+
+      // Refresh skills from server
+      const listRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+      if (listRes.ok) {
+        const data = await listRes.json();
+        const refreshed = (data.skills || data || []).map((s: any) => ({ id: s.id, name: s.name, content: s.content, description: s.description || '' }));
+        setProjectSkills(refreshed);
         setOpenTabs((prev) =>
           prev.map((t) => {
             if (t.type !== 'skill') return t;
             if (t.id === 'skill-new') {
-              // New skill was just saved - update to reflect its actual index/name
-              const newIndex = skills.length - 1;
-              const saved = skills[newIndex];
+              const newIndex = refreshed.length - 1;
+              const saved = refreshed[newIndex];
               return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
             }
             const idx = t.data?.index;
-            if (idx !== undefined && skills[idx]) {
-              return { ...t, title: skills[idx].name || 'Untitled Skill', data: { ...t.data, skill: skills[idx] } };
+            if (idx !== undefined && refreshed[idx]) {
+              return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
             }
             return t;
           })
         );
       } else {
-        console.error('Failed to save project skills. Status:', response.status);
+        setProjectSkills(skills);
       }
     } catch (ex: any) {
       console.error('Error saving project skills:', ex);
