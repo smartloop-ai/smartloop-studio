@@ -19,22 +19,9 @@ interface SkillEditorProps {
   isNew?: boolean;
 }
 
-const DEFAULT_SKILL_TEMPLATE = `---
-name: my-skill-name
-description: A clear description of what this skill does and when to use it
----
+const DEFAULT_SKILL_TEMPLATE = `# My Skill Name
 
-# My Skill Name
-
-[Add your instructions here that Claude will follow when this skill is active]
-
-## Examples
-- Example usage 1
-- Example usage 2
-
-## Guidelines
-- Guideline 1
-- Guideline 2
+[Add your instructions here]
 `;
 
 export default function SkillEditor({
@@ -97,8 +84,7 @@ export default function SkillEditor({
 
   const handleSave = () => {
     if (isNew) {
-      // Extract name from frontmatter
-      const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/);
+      const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
       const name = nameMatch?.[1]?.trim() || 'Untitled Skill';
       onSaveSkills([...projectSkills, { name, content }]);
     } else {
