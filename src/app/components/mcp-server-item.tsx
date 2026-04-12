@@ -55,12 +55,10 @@ export default function McpServerItem({
         sx={{
           padding: '8px 12px',
           borderRadius: '6px',
-          bgcolor: 'var(--sl-white-alpha-2)',
-          border: '1px solid var(--sl-white-alpha-5)',
+          border: '1px solid var(--sl-white-alpha-8)',
           transition: 'all 0.15s ease',
           '&:hover': {
-            bgcolor: 'var(--sl-white-alpha-5)',
-            borderColor: 'var(--sl-white-alpha-8)',
+            bgcolor: 'var(--sl-brand-alpha-10)',
           },
         }}
       >
@@ -102,7 +100,7 @@ export default function McpServerItem({
                 {displayName}
               </span>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', opacity: isHovered ? 1 : 0, transition: 'opacity 0.15s ease' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 {/* Info Icon - opens tools modal */}
                 <IconButton
                   size="small"

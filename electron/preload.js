@@ -148,6 +148,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMcpServersByProject: (projectId) => ipcRenderer.invoke('db-get-mcp-servers-by-project', projectId),
     deleteMcpServer: (id) => ipcRenderer.invoke('db-delete-mcp-server', id),
     deleteMcpServersByProject: (projectId) => ipcRenderer.invoke('db-delete-mcp-servers-by-project', projectId),
+    // Folders
+    createFolder: (folder) => ipcRenderer.invoke('db-create-folder', folder),
+    listFoldersByProject: (projectId) => ipcRenderer.invoke('db-list-folders-by-project', projectId),
+    renameFolder: (id, name) => ipcRenderer.invoke('db-rename-folder', id, name),
+    deleteFolder: (id) => ipcRenderer.invoke('db-delete-folder', id),
+    setDocumentFolder: (mapping) => ipcRenderer.invoke('db-set-document-folder', mapping),
+    clearDocumentFolder: (documentId) => ipcRenderer.invoke('db-clear-document-folder', documentId),
+    getDocumentFoldersByProject: (projectId) => ipcRenderer.invoke('db-get-document-folders-by-project', projectId),
+    // Document Status
+    setDocumentProcessed: (documentId, projectId) => ipcRenderer.invoke('db-set-document-processed', documentId, projectId),
+    getDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-get-document-status-by-project', projectId),
+    deleteDocumentStatus: (documentId) => ipcRenderer.invoke('db-delete-document-status', documentId),
   },
   // Check if running in Electron
   isElectron: true,

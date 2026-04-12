@@ -841,38 +841,50 @@ export default function Chat(props: {
     };
   }, []);
 
-  // Handle link clicks to open in system browser
+  // Handle link clicks: web links -> system browser; local file paths -> system default app
   useEffect(() => {
     const handleLinkClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
 
       // Check if the clicked element is an anchor tag or inside one
       const anchor = target.closest('a');
+      if (!anchor) return;
 
-      if (anchor && anchor.href) {
-        const href = anchor.href;
+      // Use raw href attribute to avoid browser-resolved absolute URLs for local paths
+      const rawHref = anchor.getAttribute('href') || '';
+      const resolvedHref = anchor.href || '';
+      if (!rawHref && !resolvedHref) return;
 
-        // Check if it's an external link (http/https)
-        if (href.startsWith('http://') || href.startsWith('https://')) {
-          e.preventDefault();
+      const electronAPI = (window as any).electronAPI;
 
-          // If Electron API is available, use it to open in system browser
-          if ((window as any).electronAPI?.openExternal) {
-            (window as any).electronAPI.openExternal(href);
-          } else {
-            // Fallback for non-Electron environments
-            window.open(href, '_blank', 'noopener,noreferrer');
-          }
+      // Web links — open in system browser
+      if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
+        e.preventDefault();
+        if (electronAPI?.openExternal) {
+          electronAPI.openExternal(rawHref);
+        } else {
+          window.open(rawHref, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
+
+      // Local file — open with system default app
+      const isFileScheme = rawHref.startsWith('file://');
+      const isAbsolutePath = rawHref.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(rawHref);
+      const isHomePath = rawHref.startsWith('~');
+      if (isFileScheme || isAbsolutePath || isHomePath) {
+        e.preventDefault();
+        const path = isFileScheme ? decodeURIComponent(rawHref.replace(/^file:\/\//, '')) : rawHref;
+        if (electronAPI?.openInFinder) {
+          electronAPI.openInFinder(path);
         }
       }
     };
 
-    // Add click listener to the document
-    document.addEventListener('click', handleLinkClick);
-
-    // Cleanup
+    // Capture phase so we intercept before any library-level handlers
+    document.addEventListener('click', handleLinkClick, true);
     return () => {
-      document.removeEventListener('click', handleLinkClick);
+      document.removeEventListener('click', handleLinkClick, true);
     };
   }, []);
 
@@ -1081,6 +1093,7 @@ export default function Chat(props: {
                                   animated
                                   caret="block"
                                   controls={false}
+                                  linkSafety={{ enabled: false }}
                                   plugins={{ code, mermaid, math, cjk }}>
                                   {msg.content || ''}
                                 </Streamdown>

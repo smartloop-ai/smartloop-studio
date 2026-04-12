@@ -171,6 +171,20 @@ ipcMain.handle('db-get-mcp-servers-by-project', (event, projectId) => database.g
 ipcMain.handle('db-delete-mcp-server', (event, id) => database.deleteMcpServer(id));
 ipcMain.handle('db-delete-mcp-servers-by-project', (event, projectId) => database.deleteMcpServersByProject(projectId));
 
+// Folders
+ipcMain.handle('db-create-folder', (event, folder) => database.createFolder(folder));
+ipcMain.handle('db-list-folders-by-project', (event, projectId) => database.listFoldersByProject(projectId));
+ipcMain.handle('db-rename-folder', (event, id, name) => database.renameFolder(id, name));
+ipcMain.handle('db-delete-folder', (event, id) => database.deleteFolder(id));
+ipcMain.handle('db-set-document-folder', (event, mapping) => database.setDocumentFolder(mapping));
+ipcMain.handle('db-clear-document-folder', (event, documentId) => database.clearDocumentFolder(documentId));
+ipcMain.handle('db-get-document-folders-by-project', (event, projectId) => database.getDocumentFoldersByProject(projectId));
+
+// Document Status
+ipcMain.handle('db-set-document-processed', (event, documentId, projectId) => database.setDocumentProcessed(documentId, projectId));
+ipcMain.handle('db-get-document-status-by-project', (event, projectId) => database.getDocumentStatusByProject(projectId));
+ipcMain.handle('db-delete-document-status', (event, documentId) => database.deleteDocumentStatus(documentId));
+
 // --- Local SLP service helpers ---
 
 

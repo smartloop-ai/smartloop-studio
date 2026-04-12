@@ -8,6 +8,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
 import SkillCreateDialog from './skill-create-dialog';
 import SimpleMDE from 'react-simplemde-editor';
@@ -44,11 +46,12 @@ export default function RightSidebar({
   onColorChange,
   onRenameProject,
   activeTab,
+  onTabChange,
   projectSkills = [],
   onSaveSkills,
 }: RightSidebarProps) {
   const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
-  const [hoveredDocId, setHoveredDocId] = useState<string | null>(null);
+  const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
@@ -60,7 +63,7 @@ export default function RightSidebar({
   const [localProjectName, setLocalProjectName] = useState('');
 
   // Inline skill editing
-  const [hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
+  const [_hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
   const [editingSkillIndex, setEditingSkillIndex] = useState<number | null>(null);
   const [editingSkillIsNew, setEditingSkillIsNew] = useState(false);
   const [skillContent, setSkillContent] = useState('');
@@ -255,6 +258,24 @@ export default function RightSidebar({
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
+  const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
+
+  // Load processed dates when project changes, backfill for existing processed docs
+  useEffect(() => {
+    if (!selectedProject?.id) { setProcessedDates({}); return; }
+    const load = async () => {
+      const dates = await storageService.getDocumentStatusByProject(selectedProject.id);
+      const docs = currentProjectData?.documents || [];
+      for (const doc of docs) {
+        if ((doc.markdown || doc.summary) && !dates[doc.id]) {
+          await storageService.setDocumentProcessed(doc.id, selectedProject.id);
+          dates[doc.id] = new Date().toISOString();
+        }
+      }
+      setProcessedDates(dates);
+    };
+    load();
+  }, [selectedProject?.id, currentProjectData?.documents]);
 
   // Clear uploading docs when project changes
   useEffect(() => {
@@ -575,6 +596,10 @@ export default function RightSidebar({
         });
         setUploadingDocs(prev => prev.filter(d => d.id !== docId));
 
+        // Mark as processed in SQLite
+        storageService.setDocumentProcessed(docId, projectId);
+        setProcessedDates(prev => ({ ...prev, [docId]: new Date().toISOString() }));
+
         // Notify parent to refresh document list
         window.dispatchEvent(new CustomEvent('documentProcessingComplete', {
           detail: { projectId }
@@ -657,9 +682,9 @@ export default function RightSidebar({
             transition: 'opacity 0.3s ease',
           }}
         >
-          {/* Section Title and Actions */}
-          <Box className="flex items-center justify-between py-4 mb-4 border-b border-gray-800">
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+          {/* Section Title */}
+          <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-white-alpha-8)' }}>
+            <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
@@ -673,7 +698,7 @@ export default function RightSidebar({
               onDrop={handleDrop}
             >
               {selectedProject ? (
-                <div className="space-y-1">
+                <div className="space-y-3">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -686,60 +711,44 @@ export default function RightSidebar({
                     <Box className="text-red-400 text-xs px-2 py-1">{uploadError}</Box>
                   )}
 
-                  {/* Drop zone — fixed at top, matches skills textarea style */}
+                  {/* Drop zone */}
                   <Box
                     onClick={() => fileInputRef.current?.click()}
                     sx={{
-                      borderRadius: '6px',
-                      border: isDragging
-                        ? '1px dashed var(--sl-brand-primary)'
-                        : '1px solid var(--sl-white-alpha-10)',
-                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                      overflow: 'hidden',
+                      borderRadius: '8px',
+                      border: `1px dashed ${isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-15)'}`,
+                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-2)',
                       transition: 'border-color 0.15s ease, background 0.15s ease',
                       cursor: 'pointer',
-                      '&:hover': { borderColor: 'var(--sl-brand-primary)' },
-                    }}
-                  >
-                    <Box sx={{
-                      minHeight: '60px',
-                      padding: '12px 10px',
                       display: 'flex',
+                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
                       textAlign: 'center',
-                    }}>
-                      <span className="text-[12px] text-gray-500" style={{ fontFamily: 'monospace' }}>
-                        {isDragging ? 'Drop file here' : 'Drop files or click to upload'}
-                      </span>
-                    </Box>
-                    <Box className="flex items-center justify-between px-2 py-1.5" sx={{ borderTop: '1px solid var(--sl-white-alpha-5)' }}>
-                      <span className="text-[9px] text-gray-600">pdf · docx · txt · csv</span>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded text-gray-500 hover:text-pink-400 transition-colors">
-                        Browse
-                      </span>
-                    </Box>
+                      gap: 0.75,
+                      py: 4,
+                      px: 3,
+                      '&:hover': {
+                        borderColor: 'var(--sl-brand-primary)',
+                        bgcolor: 'var(--sl-brand-alpha-5)',
+                      },
+                    }}
+                  >
+                    <CloudUploadOutlinedIcon sx={{
+                      fontSize: 24,
+                      color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                    }} />
+                    <span className="text-[12px] text-gray-400 font-medium">
+                      {isDragging ? 'Drop file here' : 'Drop files or click to upload'}
+                    </span>
+                    <span className="text-[10px] text-gray-600">
+                      pdf · docx · txt · csv
+                    </span>
                   </Box>
 
-                  {/* Document List */}
+                  {/* Document List — file-tree style with summary */}
                   {effectiveDocuments.length > 0 && (
-                    <Box sx={{ mt: 3 }}>
-                    <Box sx={{
-                      fontSize: '9px',
-                      fontWeight: 500,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      color: 'var(--sl-text-faint)',
-                      mb: 1,
-                      px: 0.25,
-                    }}>
-                      Uploaded
-                    </Box>
-                    <Box sx={{
-                      border: '1px solid var(--sl-white-alpha-8)',
-                      borderRadius: '6px',
-                      overflow: 'hidden',
-                    }}>
+                    <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column' }}>
                     {effectiveDocuments
                       .filter((doc: any) => {
                         if (!searchQuery) return true;
@@ -747,61 +756,82 @@ export default function RightSidebar({
                         const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
                         return filename.includes(query);
                       })
-                      .map((doc: any, i: number) => (
-                        <Box
-                          key={doc.id || `doc-${i}`}
-                          onMouseEnter={() => setHoveredDocId(doc.id || `doc-${i}`)}
-                          onMouseLeave={() => setHoveredDocId(null)}
-                          sx={{
-                            padding: '6px 8px',
-                            cursor: 'default',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 0.75,
-                            transition: 'background 0.1s ease, color 0.1s ease',
-                            borderBottom: '1px solid var(--sl-white-alpha-5)',
-                            '&:last-child': { borderBottom: 'none' },
-                            '&:hover': {
-                              bgcolor: 'var(--sl-brand-alpha-10)',
-                            },
-                          }}
-                        >
-                          {processingDocs.has(doc.id)
-                            ? <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0, mt: '2px' }} />
-                            : <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
-                          }
-                          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                            <span className="text-[11px] text-gray-300 truncate">
-                              {processingDocs.has(doc.id)
-                                ? (processingDocs.get(doc.id) || 'Processing...')
-                                : ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop()?.replace(/\.[^/.]+$/, '') || 'Untitled') : (doc.filename || doc.name || 'Untitled'))
+                      .map((doc: any, i: number) => {
+                        const rowId = doc.id || `doc-${i}`;
+                        const rawName = (doc.path || doc.source)
+                          ? ((doc.path || doc.source).split('/').pop() || '')
+                          : (doc.filename || doc.name || '');
+                        const filename = rawName ? (rawName.replace(/\.[^/.]+$/, '') || 'Untitled') : 'Untitled';
+                        const isProcessing = processingDocs.has(doc.id);
+                        const rawSummary = !isProcessing && (doc.summary || doc.markdown)
+                          ? (doc.summary ? doc.summary : String(doc.markdown).replace(/\n/g, ' ').trim())
+                          : null;
+                        const summary = rawSummary
+                          ? rawSummary.replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
+                          : null;
+                        return (
+                          <Box
+                            key={rowId}
+                            onMouseEnter={() => setHoveredDocId(rowId)}
+                            onMouseLeave={() => setHoveredDocId(null)}
+                            onClick={() => {
+                              if (!onTabChange || isProcessing) return;
+                              onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: filename, data: doc });
+                            }}
+                            sx={{
+                              px: 1,
+                              py: '6px',
+                              cursor: onTabChange ? 'pointer' : 'default',
+                              display: 'flex',
+                              gap: 0.75,
+                              transition: 'background 0.1s ease',
+                              border: '1px solid var(--sl-white-alpha-8)',
+                              borderRadius: '6px',
+                              mb: 0.75,
+                              '&:hover': {
+                                bgcolor: 'var(--sl-brand-alpha-10)',
+                              },
+                            }}
+                          >
+                            <Box sx={{ width: 14, flexShrink: 0, pt: '2px' }}>
+                              {isProcessing
+                                ? <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                : <InsertDriveFileIcon sx={{ fontSize: 14, color: 'var(--sl-text-faint)' }} />
                               }
-                            </span>
-                            {!processingDocs.has(doc.id) && (doc.summary || doc.markdown) && (
-                              <span className="text-[10px] text-gray-500 truncate">
-                                {(doc.summary ? doc.summary : String(doc.markdown).replace(/\n/g, ' ').trim()).slice(0, 80)}
+                            </Box>
+                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <span className="text-[11px] text-gray-300 truncate flex-1">
+                                  {filename}
+                                </span>
+                                <IconButton
+                                  size="small"
+                                  onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
+                                  sx={{
+                                    color: 'var(--sl-text-faint)',
+                                    padding: '2px',
+                                    '&:hover': { color: 'var(--sl-status-error)' },
+                                  }}
+                                >
+                                  <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+                                </IconButton>
+                              </Box>
+                              {!isProcessing && summary && (
+                                <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                                  {summary}
+                                </span>
+                              )}
+                              <span className="text-[9px]">
+                                {isProcessing
+                                  ? <span style={{ color: 'var(--sl-brand-primary)' }}>{processingDocs.get(doc.id) || 'Processing…'}</span>
+                                  : (doc.markdown || doc.summary)
+                                    ? <><span style={{ color: 'var(--sl-text-faint)' }}>Last updated</span>{processedDates[doc.id] && <span style={{ color: 'var(--sl-text-faint)' }}> on {new Date(processedDates[doc.id]).toLocaleDateString()}</span>}</>
+                                    : <span style={{ color: 'var(--sl-text-faint)' }}>Pending</span>}
                               </span>
-                            )}
+                            </Box>
                           </Box>
-                          {!processingDocs.has(doc.id) && (
-                            <IconButton
-                              size="small"
-                              onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
-                              sx={{
-                                opacity: hoveredDocId === (doc.id || `doc-${i}`) ? 1 : 0,
-                                transition: 'opacity 0.1s',
-                                color: 'var(--sl-text-faint)',
-                                padding: '2px',
-                                mt: '-2px',
-                                '&:hover': { color: 'var(--sl-status-error)' },
-                              }}
-                            >
-                              <DeleteOutlineIcon sx={{ fontSize: 12 }} />
-                            </IconButton>
-                          )}
-                        </Box>
-                      ))}
-                    </Box>
+                        );
+                      })}
                     </Box>
                   )}
                 </div>
@@ -1083,10 +1113,14 @@ export default function RightSidebar({
                           onMouseEnter={() => setHoveredSkillIndex(index)}
                           onMouseLeave={() => setHoveredSkillIndex(null)}
                           onClick={() => {
-                            setEditingSkillIndex(index);
-                            setEditingSkillIsNew(false);
-                            setSkillContent(skill.content || '');
-                            setSkillHasUnsavedChanges(false);
+                            if (onTabChange) {
+                              onTabChange({ id: `skill-${skill.id || index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { index } });
+                            } else {
+                              setEditingSkillIndex(index);
+                              setEditingSkillIsNew(false);
+                              setSkillContent(skill.content || '');
+                              setSkillHasUnsavedChanges(false);
+                            }
                           }}
                           sx={{
                             padding: '6px 8px',
@@ -1122,8 +1156,6 @@ export default function RightSidebar({
                               }
                             }}
                             sx={{
-                              opacity: hoveredSkillIndex === index ? 1 : 0,
-                              transition: 'opacity 0.1s',
                               color: 'var(--sl-text-faint)',
                               padding: '2px',
                               mt: '-2px',
@@ -1282,8 +1314,7 @@ export default function RightSidebar({
           flexDirection: 'column',
           alignItems: 'center',
           py: 2,
-          gap: 1,
-          bgcolor: 'var(--sl-black-alpha-20)',
+          gap: 0.5,
         }}
       >
         <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
@@ -1296,17 +1327,14 @@ export default function RightSidebar({
               disabled={selectedProject?.system}
               sx={{
                 color: (activeSection === 'documents' || activeTab === 'document') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
                   color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
-                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
@@ -1328,17 +1356,14 @@ export default function RightSidebar({
               disabled={selectedProject?.system}
               sx={{
                 color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
                   color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
-                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
@@ -1359,17 +1384,14 @@ export default function RightSidebar({
               }}
               sx={{
                 color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 '&:hover': {
                   color: 'var(--sl-brand-primary)',
-                  bgcolor: 'var(--sl-brand-alpha-10)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
                   opacity: 0.5,
                   cursor: 'not-allowed',
                   pointerEvents: 'auto',
@@ -1393,13 +1415,11 @@ export default function RightSidebar({
               disabled={selectedProject?.system}
               sx={{
                 color: activeSection === 'settings' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                bgcolor: 'var(--sl-white-alpha-5)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
                   color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
-                  bgcolor: selectedProject?.system ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
                 },
               }}
               size="small"
