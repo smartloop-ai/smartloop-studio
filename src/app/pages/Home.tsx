@@ -1699,6 +1699,7 @@ export default function Home() {
                       if (currentTab?.type === 'skill' && selectedProject) {
                         return (
                           <SkillEditor
+                            key={currentTab.id}
                             selectedProject={selectedProject}
                             projectSkills={projectSkills}
                             skillIndex={currentTab.data?.index ?? 0}

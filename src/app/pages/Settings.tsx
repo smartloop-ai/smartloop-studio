@@ -456,8 +456,9 @@ export default function SettingsPage() {
             await storageService.setSetting('default_memory', newSettings.default_memory);
             await storageService.setSetting('analytics_enabled', newSettings.analytics_enabled);
 
-            // Also sync to remote API
-            const updatedUser = await userService.updateSettings(newSettings);
+            // Also sync API-relevant settings to remote (analytics is local-only)
+            const { analytics_enabled: _local, ...apiSettings } = newSettings;
+            const updatedUser = await userService.updateSettings(apiSettings);
             if (updatedUser) {
                 setUser(updatedUser);
             }
