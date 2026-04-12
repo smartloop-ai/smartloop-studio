@@ -375,6 +375,105 @@ class StorageService {
       console.error('Error deleting MCP servers by project:', error);
     }
   }
+
+  // --- Folders (SQLite, UI-only grouping) ---
+
+  async createFolder(projectId: string, name: string): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.createFolder({ project_id: projectId, name });
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      return null;
+    }
+  }
+
+  async listFoldersByProject(projectId: string): Promise<any[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.listFoldersByProject(projectId);
+    } catch (error) {
+      console.error('Error listing folders:', error);
+      return [];
+    }
+  }
+
+  async renameFolder(id: string, name: string): Promise<any> {
+    if (!this.db) return null;
+    try {
+      return await this.db.renameFolder(id, name);
+    } catch (error) {
+      console.error('Error renaming folder:', error);
+      return null;
+    }
+  }
+
+  async deleteFolder(id: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteFolder(id);
+    } catch (error) {
+      console.error('Error deleting folder:', error);
+    }
+  }
+
+  async setDocumentFolder(documentId: string, projectId: string, folderId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.setDocumentFolder({ document_id: documentId, project_id: projectId, folder_id: folderId });
+    } catch (error) {
+      console.error('Error setting document folder:', error);
+    }
+  }
+
+  async clearDocumentFolder(documentId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.clearDocumentFolder(documentId);
+    } catch (error) {
+      console.error('Error clearing document folder:', error);
+    }
+  }
+
+  async getDocumentFoldersByProject(projectId: string): Promise<Record<string, string>> {
+    if (!this.db) return {};
+    try {
+      return await this.db.getDocumentFoldersByProject(projectId);
+    } catch (error) {
+      console.error('Error getting document folders:', error);
+      return {};
+    }
+  }
+
+  // --- Document Status (SQLite) ---
+
+  async setDocumentProcessed(documentId: string, projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.setDocumentProcessed(documentId, projectId);
+    } catch (error) {
+      console.error('Error setting document processed:', error);
+    }
+  }
+
+  async getDocumentStatusByProject(projectId: string): Promise<Record<string, string>> {
+    if (!this.db) return {};
+    try {
+      return await this.db.getDocumentStatusByProject(projectId);
+    } catch (error) {
+      console.error('Error getting document status:', error);
+      return {};
+    }
+  }
+
+  async deleteDocumentStatus(documentId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteDocumentStatus(documentId);
+    } catch (error) {
+      console.error('Error deleting document status:', error);
+    }
+  }
 }
 
 export const storageService = new StorageService();

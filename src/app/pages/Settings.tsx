@@ -4,7 +4,6 @@ import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { API_ENDPOINT } from '@/app/constants';
-import MemoryIcon from '@mui/icons-material/Memory';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -126,11 +125,13 @@ function TpsLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; timest
 interface GlobalSettings {
     default_memory: boolean;
     default_temperature: number;
+    analytics_enabled: boolean;
 }
 
 const DEFAULT_SETTINGS: GlobalSettings = {
     default_memory: true,
     default_temperature: 0.3,
+    analytics_enabled: true,
 };
 
 export default function SettingsPage() {
@@ -431,7 +432,8 @@ export default function SettingsPage() {
             const saved = await storageService.getAllSettings();
             const temp = saved.default_temperature ?? user?.default_temperature ?? DEFAULT_SETTINGS.default_temperature;
             const memory = saved.default_memory ?? user?.default_memory ?? DEFAULT_SETTINGS.default_memory;
-            setSettings({ default_temperature: temp, default_memory: memory });
+            const analytics = saved.analytics_enabled ?? DEFAULT_SETTINGS.analytics_enabled;
+            setSettings({ default_temperature: temp, default_memory: memory, analytics_enabled: analytics });
 
             // Restore selected model from SQLite settings
             if (saved.selected_model && !selectedModel) {
@@ -452,6 +454,7 @@ export default function SettingsPage() {
             // Persist to SQLite
             await storageService.setSetting('default_temperature', newSettings.default_temperature);
             await storageService.setSetting('default_memory', newSettings.default_memory);
+            await storageService.setSetting('analytics_enabled', newSettings.analytics_enabled);
 
             // Also sync to remote API
             const updatedUser = await userService.updateSettings(newSettings);
@@ -1074,29 +1077,32 @@ export default function SettingsPage() {
                         </Box>
                     </Box>
 
-                    {/* Memory Settings */}
+                    {/* Analytics */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
-                            <MemoryIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold text-white">Memory Settings</h2>
+                            <SpeedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold text-white">Analytics</h2>
                         </Box>
 
                         <Box className="flex items-center justify-between p-4 bg-black/50 rounded-lg">
                             <Box>
-                                <h3 className="text-sm font-medium text-white mb-1">Enable Memory by Default</h3>
+                                <h3 className="text-sm font-medium text-white mb-1">Enable Analytics</h3>
                                 <p className="text-xs text-gray-500">
-                                    AI will remember context from previous conversations in new projects
+                                    Collect usage data anonymously when logged in to render dashboards in the console
                                 </p>
                             </Box>
                             <Switch
-                                checked={settings.default_memory}
-                                onChange={(e) => handleChange('default_memory', e.target.checked)}
+                                checked={settings.analytics_enabled}
+                                onChange={(e) => handleChange('analytics_enabled', e.target.checked)}
                                 sx={{
                                     '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
                                     '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
                                 }}
                             />
                         </Box>
+                        <p className="text-xs text-gray-600 mt-3 px-1 leading-relaxed">
+                            Includes token usage, model performance metrics, and session activity. No conversation content or personal data is collected.
+                        </p>
                     </Box>
 
                 </Box>

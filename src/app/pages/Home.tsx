@@ -1047,6 +1047,33 @@ export default function Home() {
 
   const getActiveTab = () => openTabs.find((t) => t.id === activeTabId) || null;
 
+  // Cmd/Ctrl + 1..9 jumps to the nth open tab; Cmd/Ctrl + Tab / Shift+Tab cycles tabs
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.altKey) return;
+
+      if (e.key >= '1' && e.key <= '9') {
+        const index = parseInt(e.key, 10) - 1;
+        if (index < openTabs.length) {
+          e.preventDefault();
+          handleTabSelect(openTabs[index].id);
+        }
+        return;
+      }
+
+      if (e.key === 'Tab' && openTabs.length > 1) {
+        e.preventDefault();
+        const currentIdx = openTabs.findIndex((t) => t.id === activeTabId);
+        const delta = e.shiftKey ? -1 : 1;
+        const nextIdx = (currentIdx + delta + openTabs.length) % openTabs.length;
+        handleTabSelect(openTabs[nextIdx].id);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [openTabs, activeTabId]);
+
   const handleStartNewConversation = () => {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
     setConversation(null);
@@ -1264,6 +1291,18 @@ export default function Home() {
       const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
 
       if (deleteResult.success) {
+        // Close the tab if this document is open
+        const docTabId = `doc-${documentToDelete.id}`;
+        setOpenTabs((prev) => {
+          const filtered = prev.filter((t) => t.id !== docTabId);
+          if (activeTabId === docTabId && filtered.length > 0) {
+            setActiveTabId(filtered[filtered.length - 1].id);
+          } else if (activeTabId === docTabId) {
+            setActiveTabId(null);
+          }
+          return filtered;
+        });
+
         // Update user state incrementally - remove the deleted document from the specific project
         if (user && selectedProject) {
           const updatedProjects = user.projects.map((p: any) => {
