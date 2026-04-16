@@ -1,11 +1,12 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { INSTALL_DIR, getInstalledBinaryPath } = require('./slp-setup');
 
 let localServicePort = null;
 let serviceProcess = null;
+let logStream = null;
 
 function getSlpDir() {
   return path.join(os.homedir(), '.smartloop');
@@ -17,6 +18,10 @@ function getSlpBinaryPath() {
 
 function ensureSlpDir() {
   fs.mkdirSync(getSlpDir(), { recursive: true });
+}
+
+function getLogPath() {
+  return path.join(getSlpDir(), 'server.log');
 }
 
 function readLocalServicePort() {
@@ -98,19 +103,30 @@ async function startService() {
 
   console.log('[SLP] Starting service from:', slpBinary);
 
-  // Start as a child process — capture stderr to detect early crashes
+  // Open log file for stdout/stderr — append mode so logs persist across restarts
+  const logFile = getLogPath();
+  if (logStream) {
+    logStream.end();
+  }
+  logStream = fs.createWriteStream(logFile, { flags: 'a' });
+  logStream.write(`\n--- Service starting at ${new Date().toISOString()} ---\n`);
+  console.log('[SLP] Server logs writing to:', logFile);
+
+  // Start as a child process — use pipe and manually redirect output to log file
   const proc = spawn(slpBinary, ['server', 'start'], {
     env: { ...process.env },
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  proc.stdout.on('data', (data) => {
+    logStream.write(data);
+  });
+  proc.stderr.on('data', (data) => {
+    logStream.write(data);
   });
 
   serviceProcess = proc;
-  let stderrOutput = '';
   let procExited = false;
-
-  proc.stderr.on('data', (data) => {
-    stderrOutput += data.toString();
-  });
 
   proc.on('error', (err) => {
     console.error('[SLP] Process error:', err.message);
@@ -122,9 +138,10 @@ async function startService() {
     if (serviceProcess === proc) serviceProcess = null;
     if (code !== 0) {
       console.error(`[SLP] Process exited with code ${code}`);
-      if (stderrOutput) {
-        console.error('[SLP] stderr:', stderrOutput.slice(-500));
-      }
+    }
+    if (logStream) {
+      logStream.write(`--- Service exited with code ${code} at ${new Date().toISOString()} ---\n`);
+      logStream.flush();
     }
   });
 
@@ -140,9 +157,7 @@ async function startService() {
       if (procExited) {
         clearInterval(pollInterval);
         console.error('[SLP] Service process exited before becoming healthy');
-        if (stderrOutput) {
-          console.error('[SLP] Last stderr:', stderrOutput.slice(-500));
-        }
+        console.error('[SLP] Check logs at:', getLogPath());
         resolve(false);
         return;
       }
@@ -173,33 +188,60 @@ async function startService() {
 
 /**
  * Stop the SLP server.
- * Kills the child process directly if we own it, falls back to CLI command.
+ * Always uses the CLI `server stop` command to ensure the actual server
+ * process exits cleanly, even if it was forked as a daemon.
+ * Also kills the tracked child process if we still hold a reference.
  */
-function stopService() {
+async function stopService() {
   console.log('[SLP] Stopping service...');
 
+  // Always use CLI command to stop the server — this ensures the actual
+  // daemon/server process is told to shut down properly.
+  const slpBinary = getSlpBinaryPath();
+  if (fs.existsSync(slpBinary)) {
+    try {
+      await new Promise((resolve, reject) => {
+        execFile(slpBinary, ['server', 'stop'], {
+          env: { ...process.env },
+          timeout: 10000,
+        }, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      console.log('[SLP] Service stopped via CLI');
+    } catch (error) {
+      console.warn('[SLP] Error stopping service via CLI:', error.message);
+    }
+  }
+
+  // Also kill the tracked child process if it's still alive
   if (serviceProcess && !serviceProcess.killed) {
     try {
       serviceProcess.kill('SIGTERM');
-      console.log('[SLP] Service process terminated');
+      console.log('[SLP] Child process terminated');
     } catch (error) {
-      console.warn('[SLP] Error killing service process:', error.message);
+      console.warn('[SLP] Error killing child process:', error.message);
     }
     serviceProcess = null;
-  } else {
-    // Fallback: service was started externally or process ref lost
-    const slpBinary = getSlpBinaryPath();
-    if (fs.existsSync(slpBinary)) {
-      try {
-        execFileSync(slpBinary, ['server', 'stop'], {
-          env: { ...process.env },
-          timeout: 10000,
-        });
-        console.log('[SLP] Service stopped via CLI');
-      } catch (error) {
-        console.warn('[SLP] Error stopping service via CLI:', error.message);
-      }
+  }
+
+  // Clean up stale port file
+  try {
+    const portFile = path.join(getSlpDir(), 'server.port');
+    if (fs.existsSync(portFile)) {
+      fs.unlinkSync(portFile);
+      console.log('[SLP] Removed port file');
     }
+  } catch (error) {
+    console.warn('[SLP] Error removing port file:', error.message);
+  }
+
+  // Close log stream
+  if (logStream) {
+    logStream.write(`--- Service stopped at ${new Date().toISOString()} ---\n`);
+    logStream.end();
+    logStream = null;
   }
 
   localServicePort = null;
@@ -253,6 +295,7 @@ module.exports = {
   ensureSlpDir,
   readLocalServicePort,
   getLocalBaseUrl,
+  getLogPath,
   getPort,
   checkHealth,
   startService,
