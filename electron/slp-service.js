@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { INSTALL_DIR, getInstalledBinaryPath } = require('./slp-setup');
 
 let localServicePort = null;
@@ -192,7 +192,7 @@ async function startService() {
  * process exits cleanly, even if it was forked as a daemon.
  * Also kills the tracked child process if we still hold a reference.
  */
-function stopService() {
+async function stopService() {
   console.log('[SLP] Stopping service...');
 
   // Always use CLI command to stop the server — this ensures the actual
@@ -200,9 +200,14 @@ function stopService() {
   const slpBinary = getSlpBinaryPath();
   if (fs.existsSync(slpBinary)) {
     try {
-      execFileSync(slpBinary, ['server', 'stop'], {
-        env: { ...process.env },
-        timeout: 10000,
+      await new Promise((resolve, reject) => {
+        execFile(slpBinary, ['server', 'stop'], {
+          env: { ...process.env },
+          timeout: 10000,
+        }, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
       });
       console.log('[SLP] Service stopped via CLI');
     } catch (error) {

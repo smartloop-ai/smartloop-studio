@@ -339,13 +339,13 @@ ipcMain.handle('slp-service-start', async () => {
 });
 
 ipcMain.handle('slp-service-stop', async () => {
-  slpService.stopService();
+  await slpService.stopService();
   refreshTray();
   return { success: true };
 });
 
 ipcMain.handle('slp-service-restart', async () => {
-  slpService.stopService();
+  await slpService.stopService();
   await new Promise(r => setTimeout(r, 1000));
   const result = await slpService.startService();
   refreshTray();
@@ -353,7 +353,7 @@ ipcMain.handle('slp-service-restart', async () => {
 });
 
 ipcMain.handle('slp-service-uninstall', async () => {
-  slpService.stopService();
+  await slpService.stopService();
   uninstallSlpService();
   refreshTray();
   return { success: true };
