@@ -112,10 +112,17 @@ async function startService() {
   logStream.write(`\n--- Service starting at ${new Date().toISOString()} ---\n`);
   console.log('[SLP] Server logs writing to:', logFile);
 
-  // Start as a child process — redirect stdout and stderr to log file
+  // Start as a child process — use pipe and manually redirect output to log file
   const proc = spawn(slpBinary, ['server', 'start'], {
     env: { ...process.env },
-    stdio: ['ignore', logStream, logStream],
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  proc.stdout.on('data', (data) => {
+    logStream.write(data);
+  });
+  proc.stderr.on('data', (data) => {
+    logStream.write(data);
   });
 
   serviceProcess = proc;
@@ -134,6 +141,7 @@ async function startService() {
     }
     if (logStream) {
       logStream.write(`--- Service exited with code ${code} at ${new Date().toISOString()} ---\n`);
+      logStream.flush();
     }
   });
 
