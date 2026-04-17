@@ -807,7 +807,7 @@ export default function SettingsPage() {
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
                                     {serverHealth?.details && Object.entries(serverHealth.details)
-                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name'].includes(key))
+                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing'].includes(key))
                                         .map(([key, value]) => {
                                             // Format value for display
                                             let displayValue: React.ReactNode;

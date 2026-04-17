@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
 import SearchIcon from '@mui/icons-material/Search';
@@ -429,6 +429,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!user?.email) {
+      setCreateProjectError('Please sign in to create a project');
+      return;
+    }
+
     if (!newProjectTitle.trim()) {
       setCreateProjectError('Project title is required');
       return;
@@ -743,31 +748,36 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         })()}
 
         {/* New Project button */}
-        <Box
-          onClick={handleOpenCreateProjectDialog}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            padding: '9px 11px',
-            borderRadius: '7px',
-            cursor: 'pointer',
-            bgcolor: 'transparent',
-            color: 'var(--sl-white-alpha-40)',
-            fontWeight: 500,
-            fontSize: '13.5px',
-            transition: 'all 0.12s ease',
-            border: '1px solid transparent',
-            '&:hover': {
-              bgcolor: 'var(--sl-white-alpha-5)',
-              color: 'white',
-            },
-            mb: 0.5,
-          }}
-        >
-          <AddIcon sx={{ fontSize: 18 }} />
-          <span style={{ flex: 1 }}>New Project</span>
-        </Box>
+        <Tooltip title={!user?.email ? "Login to create a new project" : ""} placement="right">
+          <Box
+            onClick={!user?.email ? undefined : handleOpenCreateProjectDialog}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              padding: '9px 11px',
+              borderRadius: '7px',
+              cursor: !user?.email ? 'not-allowed' : 'pointer',
+              bgcolor: 'transparent',
+              color: 'var(--sl-white-alpha-40)',
+              opacity: !user?.email ? 0.5 : 1,
+              fontWeight: 500,
+              fontSize: '13.5px',
+              transition: 'all 0.12s ease',
+              border: '1px solid transparent',
+              ...(user?.email && {
+                '&:hover': {
+                  bgcolor: 'var(--sl-white-alpha-5)',
+                  color: 'white',
+                },
+              }),
+              mb: 0.5,
+            }}
+          >
+            <AddIcon sx={{ fontSize: 18 }} />
+            <span style={{ flex: 1 }}>New Project</span>
+          </Box>
+        </Tooltip>
       </Box>
 
       {/* Recent Conversations Section */}
