@@ -43,6 +43,7 @@ function openDatabase() {
       conversation_id TEXT NOT NULL,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      citations TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
@@ -134,6 +135,13 @@ function openDatabase() {
   if (!cols.find(c => c.name === 'is_selected')) {
     db.exec("ALTER TABLE conversations ADD COLUMN is_selected INTEGER DEFAULT 0");
     console.log('[DB] Added is_selected column to conversations');
+  }
+
+  // Migration: add citations column to messages
+  const msgCols = db.prepare("PRAGMA table_info(messages)").all();
+  if (!msgCols.find(c => c.name === 'citations')) {
+    db.exec("ALTER TABLE messages ADD COLUMN citations TEXT");
+    console.log('[DB] Added citations column to messages');
   }
 
   // Migration: add folder_path column to projects
@@ -367,13 +375,14 @@ function addMessages(conversation_id, messages) {
   const d = openDatabase();
   const now = new Date().toISOString();
   const insert = d.prepare(`
-    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, citations, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   const tx = d.transaction((msgs) => {
     for (const msg of msgs) {
-      insert.run(msg.id, conversation_id, msg.role, msg.content, msg.created_at || now);
+      const citations = msg.citations ? JSON.stringify(msg.citations) : null;
+      insert.run(msg.id, conversation_id, msg.role, msg.content, citations, msg.created_at || now);
     }
     d.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(now, conversation_id);
   });
@@ -393,13 +402,17 @@ function deleteMessages(conversation_id) {
 }
 
 function formatMessage(row) {
-  return {
+  const msg = {
     id: row.id,
     conversation_id: row.conversation_id,
     role: row.role,
     content: row.content,
     created_at: row.created_at,
   };
+  if (row.citations) {
+    try { msg.citations = JSON.parse(row.citations); } catch {}
+  }
+  return msg;
 }
 
 // --- Memory Usage ---

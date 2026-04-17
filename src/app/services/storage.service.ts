@@ -180,6 +180,7 @@ class StorageService {
         id: m.id || crypto.randomUUID(),
         role: m.role,
         content: m.content,
+        citations: m.citations || null,
         created_at: m.created_at || m.timestamp,
       }));
       await this.db.addMessages(conversationId, msgsWithIds);
