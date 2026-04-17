@@ -515,7 +515,13 @@ export default function Home() {
       let activeId: string;
 
       if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-        tabs = saved.tabs;
+        // Deduplicate tabs by id
+        const seen = new Set<string>();
+        tabs = saved.tabs.filter((t: OpenTab) => {
+          if (seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        });
         activeId = saved.activeTabId || tabs[0]?.id || '';
       } else {
         // Default: open a new conversation tab
@@ -1005,11 +1011,15 @@ export default function Home() {
 
     setOpenTabs((prev) => {
       const existing = prev.find((t) => t.id === tab.id);
-      if (!existing) {
-        return [...prev, tab];
+      if (existing) {
+        return prev.map((t) => t.id === tab.id ? { ...t, ...tab } : t);
       }
-      // Update data if tab already exists
-      return prev.map((t) => t.id === tab.id ? { ...t, ...tab } : t);
+      // For conversation tabs, remove conv-new if opening a real conversation
+      let updated = prev;
+      if (tab.type === 'conversation' && tab.id !== 'conv-new') {
+        updated = prev.filter((t) => t.id !== 'conv-new');
+      }
+      return [...updated, tab];
     });
     setActiveTabId(tab.id);
   };
@@ -1035,15 +1045,47 @@ export default function Home() {
 
   const handleCloseTab = (tabId: string) => {
     const idx = openTabs.findIndex((t) => t.id === tabId);
+    const closedTab = openTabs[idx];
     const newTabs = openTabs.filter((t) => t.id !== tabId);
     setOpenTabs(newTabs);
+
+    // If it's a real conversation tab, remove from SQLite and recent conversations list
+    if (closedTab?.type === 'conversation') {
+      const convId = tabId.replace('conv-', '');
+      if (convId && convId !== 'new') {
+        storageService.deleteConversation(convId).catch(() => {});
+        setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+        window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { conversationId: convId } }));
+      }
+    }
+
     if (activeTabId === tabId) {
       // Switch to adjacent tab or null
       if (newTabs.length > 0) {
         const newIdx = Math.min(idx, newTabs.length - 1);
-        setActiveTabId(newTabs[newIdx].id);
+        const nextTab = newTabs[newIdx];
+        setActiveTabId(nextTab.id);
+
+        // Update URL to reflect the new active tab so closed tabs don't reappear on reload
+        if (nextTab.type === 'conversation') {
+          const convId = nextTab.id.replace('conv-', '');
+          if (convId === 'new') {
+            if (selectedProject) {
+              navigate(`/?project=${selectedProject.id}&new=1`, { replace: true });
+            }
+          } else if (selectedProject) {
+            navigate(`/?conversation=${convId}&project=${selectedProject.id}`, { replace: true });
+          } else {
+            navigate(`/?conversation=${convId}`, { replace: true });
+          }
+        } else if (selectedProject) {
+          navigate(`/?project=${selectedProject.id}`, { replace: true });
+        }
       } else {
         setActiveTabId(null);
+        if (selectedProject) {
+          navigate(`/?project=${selectedProject.id}`, { replace: true });
+        }
       }
     }
   };
@@ -1291,14 +1333,22 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      // Delete from API if the document has a real (non-filesystem) ID
-      const isFsOnly = documentToDelete.id?.startsWith('fs-');
+      const docId = documentToDelete.id;
+      const isFsOnly = docId?.startsWith('fs-');
+
+      // Always call the API to delete the document from the backend
       if (!isFsOnly) {
-        const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
+        const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, docId);
         if (!deleteResult.success) {
           setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
           return;
         }
+      }
+
+      // Clean up all SQLite records for this document
+      if (!isFsOnly) {
+        await storageService.deleteDocumentStatus(docId);
+        await storageService.clearDocumentFolder(docId);
       }
 
       // Delete the file from disk
