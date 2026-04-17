@@ -39,7 +39,7 @@ export default function ContentTabs({
 }: ContentTabsProps) {
   return (
     <Box className="flex-none border-b border-gray-800 px-4 overflow-hidden">
-      <Box className="flex items-end gap-[2px]">
+      <Box className="flex items-end gap-[2px] min-w-0">
         {tabs.map((tab) => {
           const isActive = activeTabId === tab.id;
 
@@ -50,7 +50,7 @@ export default function ContentTabs({
               className={`
                 group px-4 py-2 pb-[10px] cursor-pointer text-[13px]
                 flex items-center gap-1.5 relative -mb-px
-                transition-all duration-200 max-w-[200px]
+                transition-all duration-200 min-w-0 max-w-[200px] flex-1
                 ${isActive ? 'font-medium text-white bg-pink-500/10' : 'font-normal text-white/60 bg-transparent'}
                 ${isActive ? 'border-l border-r border-b border-t border-pink-500/30' : 'border-l border-r border-b border-t border-white/10'}
                 ${isActive ? 'border-b-pink-500/10' : ''}
@@ -76,7 +76,7 @@ export default function ContentTabs({
         {/* New Conversation Button (+) */}
         <button
           onClick={onNewConversation}
-          className="px-2 py-1.5 mb-1 ml-1 transition-colors text-gray-400 hover:text-pink-500 cursor-pointer"
+          className="flex-shrink-0 px-2 py-1.5 mb-1 ml-1 transition-colors text-gray-400 hover:text-pink-500 cursor-pointer"
           title="New conversation"
         >
           <AddBoxIcon className="text-[20px]" />
