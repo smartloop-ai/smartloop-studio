@@ -51,7 +51,8 @@ const getLocalDocuments = async (projectId: string): Promise<DocumentServiceResp
 const addLocalDocument = async (
   projectId: string,
   filePath: string,
-  onProgress?: (progress: { percent: number; status: string }) => void
+  onProgress?: (progress: { percent: number; status: string }) => void,
+  cwd?: string
 ): Promise<DocumentServiceResponse> => {
   try {
     const api = (window as any).electronAPI;
@@ -66,7 +67,7 @@ const addLocalDocument = async (
         });
       }
 
-      const result = await api.slpAddDocument(filePath, projectId);
+      const result = await api.slpAddDocument(filePath, projectId, cwd);
 
       // Clean up listener
       api.removeSlpDocumentProgressListener?.();
@@ -78,10 +79,12 @@ const addLocalDocument = async (
     // Fallback: direct fetch with SSE streaming support (non-Electron)
     const localBase = await getLocalApiEndpoint();
     const url = `${localBase}/v1/projects/${projectId}/documents`;
+    const body: Record<string, string> = { source: filePath };
+    if (cwd) body.cwd = cwd;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: filePath })
+      body: JSON.stringify(body)
     });
 
     if (response.status === 200 || response.status === 201) {

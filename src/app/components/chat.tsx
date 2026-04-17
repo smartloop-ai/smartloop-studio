@@ -118,6 +118,23 @@ export default function Chat(props: {
             if (res.ok) {
               const health = await res.json();
               memPct = health?.memory_percent ?? health?.memory ?? null;
+
+              // Sync indexing status to SQLite and broadcast to sidebar
+              const indexingDocs = health?.indexing?.documents;
+              if (Array.isArray(indexingDocs) && props.project?.id) {
+                const projectId = props.project.id;
+                const indexingMap: Record<string, string> = {};
+                for (const d of indexingDocs) {
+                  if (!d.id) continue;
+                  indexingMap[d.id] = d.status || 'unknown';
+                  if (d.status === 'indexed') {
+                    storageService.setDocumentProcessed(d.id, projectId);
+                  }
+                }
+                window.dispatchEvent(new CustomEvent('indexingStatusUpdate', {
+                  detail: { projectId, documents: indexingMap },
+                }));
+              }
             }
           } catch { }
         }

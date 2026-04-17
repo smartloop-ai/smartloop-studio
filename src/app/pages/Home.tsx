@@ -1000,6 +1000,9 @@ export default function Home() {
 
 
   const handleOpenTab = (tab: OpenTab) => {
+    // Block document tabs for system projects
+    if (tab.type === 'document' && selectedProject?.system) return;
+
     setOpenTabs((prev) => {
       const existing = prev.find((t) => t.id === tab.id);
       if (!existing) {
@@ -1288,46 +1291,61 @@ export default function Home() {
     setDeleteDocError('');
 
     try {
-      const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
+      // Delete from API if the document has a real (non-filesystem) ID
+      const isFsOnly = documentToDelete.id?.startsWith('fs-');
+      if (!isFsOnly) {
+        const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, documentToDelete.id);
+        if (!deleteResult.success) {
+          setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
+          return;
+        }
+      }
 
-      if (deleteResult.success) {
-        // Close the tab if this document is open
-        const docTabId = `doc-${documentToDelete.id}`;
-        setOpenTabs((prev) => {
-          const filtered = prev.filter((t) => t.id !== docTabId);
-          if (activeTabId === docTabId && filtered.length > 0) {
-            setActiveTabId(filtered[filtered.length - 1].id);
-          } else if (activeTabId === docTabId) {
-            setActiveTabId(null);
+      // Delete the file from disk
+      const filePath = documentToDelete._fsFile?.path || documentToDelete.source || documentToDelete.path;
+      if (filePath && window.electronAPI?.deleteFile) {
+        await window.electronAPI.deleteFile(filePath);
+      }
+
+      // Close the tab if this document is open
+      const docTabId = `doc-${documentToDelete.id}`;
+      setOpenTabs((prev) => {
+        const filtered = prev.filter((t) => t.id !== docTabId);
+        if (activeTabId === docTabId && filtered.length > 0) {
+          setActiveTabId(filtered[filtered.length - 1].id);
+        } else if (activeTabId === docTabId) {
+          setActiveTabId(null);
+        }
+        return filtered;
+      });
+
+      // Update user state incrementally - remove the deleted document from the specific project
+      if (user && selectedProject) {
+        const updatedProjects = user.projects.map((p: any) => {
+          if (p.id === selectedProject.id) {
+            const filteredDocs = (p.documents || []).filter((doc: any) => doc.id !== documentToDelete.id);
+            return { ...p, documents: filteredDocs };
           }
-          return filtered;
+          return p;
         });
 
-        // Update user state incrementally - remove the deleted document from the specific project
-        if (user && selectedProject) {
-          const updatedProjects = user.projects.map((p: any) => {
-            if (p.id === selectedProject.id) {
-              const filteredDocs = (p.documents || []).filter((doc: any) => doc.id !== documentToDelete.id);
-              return { ...p, documents: filteredDocs };
-            }
-            return p;
-          });
+        const updatedUser = { ...user, projects: updatedProjects };
+        setUser(updatedUser);
 
-          const updatedUser = { ...user, projects: updatedProjects };
-          setUser(updatedUser);
-
-          // Update current project data - keep project selected even with no documents
-          const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
-          if (updatedProject) {
-            setCurrentProjectData(updatedProject);
-            setSelectedProject(updatedProject);
-          }
+        // Update current project data - keep project selected even with no documents
+        const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
+        if (updatedProject) {
+          setCurrentProjectData(updatedProject);
+          setSelectedProject(updatedProject);
         }
-
-        handleCloseDeleteDocDialog();
-      } else {
-        setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
       }
+
+      // Trigger directory re-scan so the sidebar updates
+      window.dispatchEvent(new CustomEvent('documentProcessingComplete', {
+        detail: { projectId: selectedProject.id },
+      }));
+
+      handleCloseDeleteDocDialog();
     } catch (error: any) {
       console.error('Error deleting document:', error);
       setDeleteDocError(error.message || 'An error occurred while deleting the document.');

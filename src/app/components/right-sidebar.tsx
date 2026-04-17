@@ -258,7 +258,8 @@ export default function RightSidebar({
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
-  const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
+  const [_processedDates, setProcessedDates] = useState<Record<string, string>>({});
+  const [directoryFiles, setDirectoryFiles] = useState<any[]>([]);
 
   // Load processed dates when project changes, backfill for existing processed docs
   useEffect(() => {
@@ -282,14 +283,123 @@ export default function RightSidebar({
     setUploadingDocs([]);
   }, [selectedProject?.id]);
 
-  // Merge server documents with local uploading placeholders
+  // Local copy of API documents, refreshed periodically
+  const [apiDocuments, setApiDocuments] = useState<any[]>([]);
+  // Per-document indexing status: doc id → status string
+  // Populated from SQLite (persisted) + live indexing events from chat.tsx health poll
+  const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
+
+  // Periodically scan directory and refresh API documents
+  useEffect(() => {
+    const folderPath = currentProjectData?.folder_path;
+    const projectId = selectedProject?.id;
+    if (!projectId) { setApiDocuments([]); setDirectoryFiles([]); setIndexingStatus({}); return; }
+
+    let cancelled = false;
+
+    const scanDir = () => {
+      if (!folderPath || !window.electronAPI?.listDirectory) return;
+      window.electronAPI.listDirectory(folderPath).then((result) => {
+        if (!cancelled && result.success) setDirectoryFiles(result.files);
+      });
+    };
+
+    const refreshApi = () => {
+      documentService.getLocalDocuments(projectId).then((result) => {
+        if (!cancelled && result.success && result.data) {
+          const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
+          setApiDocuments(docs);
+        }
+      });
+    };
+
+    // Load indexed status from SQLite
+    const loadIndexedFromDb = async () => {
+      const dates = await storageService.getDocumentStatusByProject(projectId);
+      if (!cancelled) {
+        // Docs in SQLite are confirmed indexed
+        const statusMap: Record<string, string> = {};
+        for (const docId of Object.keys(dates)) {
+          statusMap[docId] = 'indexed';
+        }
+        setIndexingStatus((prev) => ({ ...statusMap, ...prev }));
+      }
+    };
+
+    // Initial load
+    scanDir();
+    refreshApi();
+    loadIndexedFromDb();
+
+    // Listen for live indexing status updates from chat.tsx health poll
+    const onIndexingUpdate = (e: any) => {
+      const detail = e.detail;
+      if (detail?.projectId !== projectId) return;
+      const docs: Record<string, string> = detail.documents || {};
+      if (!cancelled) {
+        setIndexingStatus((prev) => ({ ...prev, ...docs }));
+      }
+    };
+    window.addEventListener('indexingStatusUpdate', onIndexingUpdate);
+
+    // Refresh on explicit events (upload, delete, processing complete)
+    const handler = () => { scanDir(); refreshApi(); loadIndexedFromDb(); };
+    window.addEventListener('documentProcessingComplete', handler);
+    window.addEventListener('documentUploaded', handler);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('indexingStatusUpdate', onIndexingUpdate);
+      window.removeEventListener('documentProcessingComplete', handler);
+      window.removeEventListener('documentUploaded', handler);
+    };
+  }, [currentProjectData?.folder_path, selectedProject?.id]);
+
+  // Merge directory files with converted API documents and uploading placeholders
   const effectiveDocuments = useMemo(() => {
-    const serverDocs = currentProjectData?.documents || [];
-    // Filter out uploading docs whose real ID now exists in server docs
+    const serverDocs: any[] = apiDocuments;
     const serverIds = new Set(serverDocs.map((d: any) => d.id));
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
-    return [...serverDocs, ...pending];
-  }, [currentProjectData?.documents, uploadingDocs]);
+
+    // If no directory files, fall back to API docs + pending uploads
+    if (directoryFiles.length === 0) {
+      return [...serverDocs, ...pending];
+    }
+
+    // Build lookup: base name (without extension) → converted doc
+    const baseName = (name: string) => name.replace(/\.[^/.]+$/, '').toLowerCase();
+    const convertedByBase = new Map<string, any>();
+    for (const doc of serverDocs) {
+      const docFileName = (doc.path || doc.source || '').split('/').pop() || '';
+      const base = baseName(docFileName);
+      if (base) convertedByBase.set(base, doc);
+    }
+
+    // Merge: for each directory file, attach converted doc metadata if available
+    const matchedBases = new Set<string>();
+    const merged = directoryFiles.map((file: any) => {
+      const base = baseName(file.name);
+      const converted = convertedByBase.get(base);
+      if (converted) {
+        matchedBases.add(base);
+        return { ...converted, _fsFile: file };
+      }
+      // Unconverted filesystem file
+      return { id: `fs-${file.path}`, name: file.name, source: file.path, _fsFile: file };
+    });
+
+    // Add any server docs not matched by directory files (e.g. uploaded from elsewhere)
+    for (const doc of serverDocs) {
+      const docFileName = (doc.path || doc.source || '').split('/').pop() || '';
+      const base = baseName(docFileName);
+      if (!matchedBases.has(base)) {
+        merged.push(doc);
+      }
+    }
+
+    // Append pending uploads
+    return [...merged, ...pending];
+  }, [apiDocuments, uploadingDocs, directoryFiles]);
 
   // Load MCP servers from project data
   useEffect(() => {
@@ -567,7 +677,7 @@ export default function RightSidebar({
           next.set(placeholderId, progress.status || `Processing... ${progress.percent}%`);
           return next;
         });
-      });
+      }, currentProjectData?.folder_path);
       if (!localResult.success) {
         // Remove placeholder on failure
         setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
@@ -753,18 +863,26 @@ export default function RightSidebar({
                       .filter((doc: any) => {
                         if (!searchQuery) return true;
                         const query = searchQuery.toLowerCase();
-                        const filename = ((doc.path || doc.source) ? ((doc.path || doc.source).split('/').pop() || '') : (doc.filename || doc.name || '')).toLowerCase();
+                        const filename = (doc._fsFile?.name || (doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
                         return filename.includes(query);
                       })
                       .map((doc: any, i: number) => {
                         const rowId = doc.id || `doc-${i}`;
-                        const rawName = (doc.path || doc.source)
-                          ? ((doc.path || doc.source).split('/').pop() || '')
-                          : (doc.filename || doc.name || '');
+                        const rawName = doc._fsFile?.name
+                          || (doc.source || doc.path || '').split('/').pop()
+                          || doc.filename || doc.name || '';
                         const filename = rawName ? (rawName.replace(/\.[^/.]+$/, '') || 'Untitled') : 'Untitled';
+                        const ext = rawName.match(/\.([^/.]+)$/)?.[1]?.toUpperCase() || '';
+                        const fileSize = doc._fsFile?.size;
+                        const fileSizeLabel = fileSize != null
+                          ? fileSize >= 1024 * 1024 ? `${(fileSize / 1024 / 1024).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(0)} KB`
+                          : null;
                         const isProcessing = processingDocs.has(doc.id);
-                        const rawSummary = !isProcessing && (doc.summary || doc.markdown)
-                          ? (doc.summary ? doc.summary : String(doc.markdown).replace(/\n/g, ' ').trim())
+                        const docIndexStatus = doc.id ? indexingStatus[doc.id] : undefined;
+                        const isIndexed = docIndexStatus === 'indexed' || !!(doc.markdown || doc.summary);
+                        const isIndexing = !isIndexed && (docIndexStatus === 'pending' || docIndexStatus === 'indexing' || docIndexStatus === 'processing');
+                        const rawSummary = !isProcessing && isIndexed
+                          ? (doc.summary ? doc.summary : doc.markdown ? String(doc.markdown).replace(/\n/g, ' ').trim() : null)
                           : null;
                         const summary = rawSummary
                           ? rawSummary.replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
@@ -774,29 +892,22 @@ export default function RightSidebar({
                             key={rowId}
                             onMouseEnter={() => setHoveredDocId(rowId)}
                             onMouseLeave={() => setHoveredDocId(null)}
-                            onClick={() => {
-                              if (!onTabChange || isProcessing) return;
-                              onTabChange({ id: `doc-${doc.id || i}`, type: 'document', title: filename, data: doc });
-                            }}
                             sx={{
                               px: 1,
                               py: '6px',
-                              cursor: onTabChange ? 'pointer' : 'default',
+                              cursor: 'default',
                               display: 'flex',
                               gap: 0.75,
                               transition: 'background 0.1s ease',
                               border: '1px solid var(--sl-white-alpha-8)',
                               borderRadius: '6px',
                               mb: 0.75,
-                              '&:hover': {
-                                bgcolor: 'var(--sl-brand-alpha-10)',
-                              },
                             }}
                           >
                             <Box sx={{ width: 14, flexShrink: 0, pt: '2px' }}>
-                              {isProcessing
-                                ? <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                : <InsertDriveFileIcon sx={{ fontSize: 14, color: 'var(--sl-text-faint)' }} />
+                              {isProcessing || isIndexing
+                                ? <CircularProgress size={12} sx={{ color: isIndexing ? '#facc15' : 'var(--sl-brand-primary)' }} />
+                                : <InsertDriveFileIcon sx={{ fontSize: 14, color: isIndexed ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
                               }
                             </Box>
                             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -821,13 +932,23 @@ export default function RightSidebar({
                                   {summary}
                                 </span>
                               )}
-                              <span className="text-[9px]">
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                {ext && (
+                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                    {ext}
+                                  </span>
+                                )}
+                                {fileSizeLabel && (
+                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
+                                )}
                                 {isProcessing
-                                  ? <span style={{ color: 'var(--sl-text-faint)' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
-                                  : (doc.markdown || doc.summary)
-                                    ? <><span style={{ color: 'var(--sl-text-faint)' }}>Last updated</span>{processedDates[doc.id] && <span style={{ color: 'var(--sl-text-faint)' }}> on {new Date(processedDates[doc.id]).toLocaleDateString()}</span>}</>
-                                    : <span style={{ color: 'var(--sl-text-faint)' }}>Pending</span>}
-                              </span>
+                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-brand-primary)' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
+                                  : isIndexed
+                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-status-success, #4ade80)' }}>Indexed</span>
+                                    : isIndexing
+                                      ? <span style={{ fontSize: '9px', color: '#facc15' }}>Indexing</span>
+                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>Not indexed</span>}
+                              </Box>
                             </Box>
                           </Box>
                         );
