@@ -19,12 +19,16 @@ export interface ElectronAPI {
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
   // Read a text file from disk
   readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  // List supported document files in a directory
+  listDirectory: (dirPath: string) => Promise<{ success: boolean; files: Array<{ name: string; path: string; size: number; modified: string }>; error?: string }>;
+  // Delete a file from disk
+  deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   // Select a folder using native file dialog
   selectFolder: () => Promise<string | null>;
   // Get the OS home directory
   getHomeDir: () => Promise<string>;
   // SLP document upload (proxied through main process)
-  slpAddDocument: (filePath: string, projectId?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+  slpAddDocument: (filePath: string, projectId?: string, cwd?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   onSlpDocumentProgress: (callback: (data: { percent: number; status: string }) => void) => void;
   removeSlpDocumentProgressListener: () => void;
   // SLP service

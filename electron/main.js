@@ -114,6 +114,44 @@ ipcMain.handle('read-text-file', async (event, filePath) => {
   }
 });
 
+// IPC: delete a file from disk
+ipcMain.handle('delete-file', async (event, filePath) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+    fs.unlinkSync(resolved);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: list supported document files from a directory
+ipcMain.handle('list-directory', async (event, dirPath) => {
+  try {
+    const resolved = dirPath.startsWith('~')
+      ? path.join(os.homedir(), dirPath.replace(/^~[/\\]?/, ''))
+      : dirPath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'Directory not found', files: [] };
+    const supportedExts = ['.pdf', '.docx', '.txt', '.csv'];
+    const entries = fs.readdirSync(resolved, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!supportedExts.includes(ext)) continue;
+      const fullPath = path.join(resolved, entry.name);
+      const stat = fs.statSync(fullPath);
+      files.push({ name: entry.name, path: fullPath, size: stat.size, modified: stat.mtime.toISOString() });
+    }
+    return { success: true, files };
+  } catch (err) {
+    return { success: false, error: err.message, files: [] };
+  }
+});
+
 // IPC: select a folder using native dialog
 ipcMain.handle('select-folder', async () => {
   const result = await dialog.showOpenDialog({
@@ -194,14 +232,16 @@ ipcMain.handle('get-local-api-url', async () => {
 });
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
-ipcMain.handle('slp-add-document', async (event, filePath, projectId) => {
+ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
   const http = require('http');
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
 
   const docPath = projectId ? `/v1/projects/${projectId}/documents` : '/v1/documents';
   const url = new URL(`${baseUrl}${docPath}`);
-  const body = JSON.stringify({ source: filePath });
+  const bodyObj = { source: filePath };
+  if (cwd) bodyObj.cwd = cwd;
+  const body = JSON.stringify(bodyObj);
 
   return new Promise((resolve) => {
     const req = http.request({
