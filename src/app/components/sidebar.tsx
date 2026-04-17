@@ -112,6 +112,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           }
 
           window.dispatchEvent(new CustomEvent('userUpdated', { detail: validation.user }));
+          window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: validation.user } }));
         }
         setIsLoggingIn(false);
       }
@@ -136,6 +137,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     await userService.logout();
     setAuthUser(null);
     setAnchorEl(null);
+    window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: false } }));
   };
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
