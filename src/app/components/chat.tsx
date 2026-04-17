@@ -571,6 +571,16 @@ export default function Chat(props: {
           throw new Error('AbortError');
         }
 
+        // Capture citations from SLP server
+        if (chunk.object === 'chat.citations' && chunk.citations) {
+          setMessages((prevMessages: any) =>
+            prevMessages.map((msg: any) =>
+              msg.id === responseId ? { ...msg, citations: chunk.citations } : msg
+            )
+          );
+          continue;
+        }
+
         // Skip status/non-standard chunks from local SLP server
         if (!chunk.choices || !chunk.choices[0]) continue;
 
@@ -1099,6 +1109,23 @@ export default function Chat(props: {
                                 </Streamdown>
                               )}
                             </div>
+                            {msg.citations && msg.citations.length > 0 && !msg.is_new && (
+                              <div className="mt-3 pt-3 border-t border-gray-700/50">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Sources</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {msg.citations.map((citation: any, idx: number) => (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/50 text-gray-400"
+                                      title={citation.document_id}
+                                    >
+                                      <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)' }} />
+                                      {citation.document_name || citation.document_id}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                           {msg.content && !msg.is_new && (
                             <div className="flex items-center gap-2 mt-2 px-1">
