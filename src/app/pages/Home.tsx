@@ -666,21 +666,23 @@ export default function Home() {
   // Ctrl+Tab / Ctrl+Shift+Tab to switch conversation tabs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'Tab' && projectConversations.length > 1) {
+      if (e.ctrlKey && e.key === 'Tab') {
         e.preventDefault();
-        const currentIndex = projectConversations.findIndex(
-          (c: any) => c.id === conversation?.id
-        );
-        const len = projectConversations.length;
-        const nextIndex = e.shiftKey
-          ? (currentIndex - 1 + len) % len
-          : (currentIndex + 1) % len;
-        const nextConv = projectConversations[nextIndex];
-        if (nextConv) {
-          const newUrl = selectedProject
-            ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
-            : `/?conversation=${nextConv.id}`;
-          navigate(newUrl);
+        if (projectConversations.length > 1) {
+          const currentIndex = projectConversations.findIndex(
+            (c: any) => c.id === conversation?.id
+          );
+          const len = projectConversations.length;
+          const nextIndex = e.shiftKey
+            ? (currentIndex - 1 + len) % len
+            : (currentIndex + 1) % len;
+          const nextConv = projectConversations[nextIndex];
+          if (nextConv) {
+            const newUrl = selectedProject
+              ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
+              : `/?conversation=${nextConv.id}`;
+            navigate(newUrl);
+          }
         }
       }
     };
@@ -1107,12 +1109,14 @@ export default function Home() {
         return;
       }
 
-      if (e.key === 'Tab' && openTabs.length > 1) {
+      if (e.key === 'Tab') {
         e.preventDefault();
-        const currentIdx = openTabs.findIndex((t) => t.id === activeTabId);
-        const delta = e.shiftKey ? -1 : 1;
-        const nextIdx = (currentIdx + delta + openTabs.length) % openTabs.length;
-        handleTabSelect(openTabs[nextIdx].id);
+        if (openTabs.length > 1) {
+          const currentIdx = openTabs.findIndex((t) => t.id === activeTabId);
+          const delta = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + delta + openTabs.length) % openTabs.length;
+          handleTabSelect(openTabs[nextIdx].id);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
