@@ -48,7 +48,17 @@ export function useAuth(): [any, (user: any) => void, boolean] {
       }
     };
 
+    const handleAuthStateChanged = (event: CustomEvent) => {
+      const { loggedIn, user: authUser } = event.detail || {};
+      if (loggedIn && authUser) {
+        setUser((prev: any) => prev ? { ...prev, ...authUser, guest: false } : { ...authUser, guest: false, projects: [], conversations: [] });
+      } else {
+        setUser((prev: any) => prev ? { ...prev, email: undefined, guest: true } : prev);
+      }
+    };
+
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
+    window.addEventListener('authStateChanged', handleAuthStateChanged as EventListener);
 
     // When SLP service comes online, sync auth token and refresh projects
     const handleSlpReady = async () => {
@@ -89,6 +99,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
     return () => {
       window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
+      window.removeEventListener('authStateChanged', handleAuthStateChanged as EventListener);
       window.removeEventListener('slpServiceReady', handleSlpReady);
     };
   }, []);
