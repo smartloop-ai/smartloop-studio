@@ -1195,7 +1195,7 @@ export default function RightSidebar({
                       value={skillSearchQuery}
                       onChange={(e) => setSkillSearchQuery(e.target.value)}
                       onKeyDown={(e) => {
-                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && skillSearchQuery.trim()) {
+                        if (e.key === 'Enter' && !e.shiftKey && skillSearchQuery.trim()) {
                           e.preventDefault();
                           if (onSaveSkills) {
                             const content = skillSearchQuery.trim();
