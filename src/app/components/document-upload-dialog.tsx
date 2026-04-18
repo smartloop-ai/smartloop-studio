@@ -134,7 +134,7 @@ export default function DocumentUploadDialog({
       window.electronAPI?.onSlpDocumentProgress?.(progressHandler);
 
       try {
-        await documentService.addLocalDocument(targetProject.id, tempPath);
+        await documentService.addLocalDocument(targetProject.id, tempPath, undefined, targetProject.folder_path);
         setUploadProgress({ percent: 100, status: 'Complete' });
       } catch (_err) {
         // best-effort

@@ -49,123 +49,95 @@ export default function McpServerItem({
   return (
     <>
       <Box
+        onClick={() => setModalOpen(true)}
         sx={{
-          padding: '8px 12px',
+          px: 1,
+          py: '6px',
           borderRadius: '6px',
           border: '1px solid var(--sl-white-alpha-8)',
-          transition: 'all 0.15s ease',
+          display: 'flex',
+          gap: 0.75,
+          transition: 'background 0.1s ease',
+          mb: 0.75,
+          cursor: 'pointer',
           '&:hover': {
             bgcolor: 'var(--sl-brand-alpha-10)',
           },
         }}
       >
-        <Box className="flex items-center gap-3">
-          {/* Server Icon */}
-          <Box
-            sx={{
-              width: 28,
-              height: 28,
-              borderRadius: '6px',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: 'var(--sl-white-alpha-5)',
-              overflow: 'hidden',
-            }}
-          >
-            {iconUrl ? (
-              <img
-                src={iconUrl}
-                alt={displayName}
-                className="w-full h-full object-cover rounded-md"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : isLocal ? (
-              <TerminalIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-            ) : (
-              <PowerOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-            )}
+        {/* Leading icon */}
+        {isLocal ? (
+          <TerminalIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+        ) : (
+          <PowerOutlinedIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+        )}
+
+        {/* Server Info */}
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <span className="text-[11px] text-gray-300 truncate flex-1">
+              {displayName}
+            </span>
+
+            {/* Info Icon - opens tools modal */}
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                setModalOpen(true);
+              }}
+              sx={{
+                color: 'var(--sl-text-faint)',
+                padding: '2px',
+                '&:hover': { color: 'var(--sl-brand-primary)' },
+              }}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 12 }} />
+            </IconButton>
+
+            {/* Delete Icon */}
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(server);
+              }}
+              sx={{
+                color: 'var(--sl-text-faint)',
+                padding: '2px',
+                '&:hover': { color: 'var(--sl-status-error)' },
+              }}
+            >
+              <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+            </IconButton>
           </Box>
 
-          {/* Server Info */}
-          <Box className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-white font-medium truncate">
-                {displayName}
+          {/* Description */}
+          {server.description && (
+            <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4 }} title={server.description}>
+              {server.description}
+            </span>
+          )}
+
+          {/* Metadata row: URL + tool count */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+            {displayUrl && (
+              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }} title={displayUrl}>
+                {displayUrl}
               </span>
-
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {/* Info Icon - opens tools modal */}
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setModalOpen(true);
-                  }}
-                  sx={{
-                    color: 'var(--sl-text-muted)',
-                    padding: '4px',
-                    '&:hover': {
-                      color: 'var(--sl-brand-primary)',
-                      bgcolor: 'var(--sl-white-alpha-5)',
-                    },
-                  }}
-                >
-                  <InfoOutlinedIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-
-                {/* Delete Icon */}
-                <IconButton
-                  size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(server);
-                  }}
-                  sx={{
-                    color: 'var(--sl-text-muted)',
-                    padding: '4px',
-                    '&:hover': {
-                      color: 'var(--sl-status-error)',
-                      bgcolor: 'var(--sl-danger-alpha-10)',
-                    },
-                  }}
-                >
-                  <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              </Box>
-            </div>
-
-            {/* Description */}
-            {server.description && (
-              <div className="text-[10px] text-gray-400 leading-snug" title={server.description}>
-                {server.description}
-              </div>
             )}
-
-            {/* URL */}
-            <div
-              className="text-[10px] text-gray-500 leading-relaxed truncate"
-              title={displayUrl}
-            >
-              {displayUrl}
-            </div>
-
+            {discovering ? (
+              <>
+                <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
+                <span style={{ fontSize: '9px', color: 'var(--sl-brand-primary)' }}>Discovering…</span>
+              </>
+            ) : allTools.length > 0 ? (
+              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                {allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}
+              </span>
+            ) : null}
           </Box>
         </Box>
-
-        <div className="text-[10px] text-gray-500 mt-1 pl-[40px] flex items-center gap-1.5">
-          {discovering ? (
-            <>
-              <CircularProgress size={8} sx={{ color: 'var(--sl-brand-primary)' }} />
-              <span className="text-gray-400">Discovering tools...</span>
-            </>
-          ) : allTools.length > 0 ? (
-            <span>{allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}</span>
-          ) : null}
-        </div>
       </Box>
 
       {/* Tools Detail Modal */}

@@ -74,9 +74,11 @@ export default function Chat(props: {
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
+  const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
+  const [indexingProgress, setIndexingProgress] = useState<{ total: number; indexed: number; pending: number } | null>(null);
 
   // Load last tok/s value from storage
   useEffect(() => {
@@ -118,6 +120,35 @@ export default function Chat(props: {
             if (res.ok) {
               const health = await res.json();
               memPct = health?.memory_percent ?? health?.memory ?? null;
+
+              // Sync indexing status to SQLite and broadcast to sidebar
+              const indexingDocs = health?.indexing?.documents;
+              if (Array.isArray(indexingDocs) && props.project?.id) {
+                const projectId = props.project.id;
+                const indexingMap: Record<string, string> = {};
+                let indexedCount = 0;
+                let pendingCount = 0;
+                for (const d of indexingDocs) {
+                  if (!d.id) continue;
+                  indexingMap[d.id] = d.status || 'unknown';
+                  if (d.status === 'indexed') {
+                    indexedCount++;
+                    storageService.setDocumentProcessed(d.id, projectId);
+                  } else {
+                    pendingCount++;
+                  }
+                }
+                if (pendingCount > 0) {
+                  setIndexingProgress({ total: indexingDocs.length, indexed: indexedCount, pending: pendingCount });
+                } else {
+                  setIndexingProgress(null);
+                }
+                window.dispatchEvent(new CustomEvent('indexingStatusUpdate', {
+                  detail: { projectId, documents: indexingMap },
+                }));
+              } else {
+                setIndexingProgress(null);
+              }
             }
           } catch { }
         }
@@ -571,6 +602,16 @@ export default function Chat(props: {
           throw new Error('AbortError');
         }
 
+        // Capture citations from SLP server
+        if (chunk.object === 'chat.citations' && chunk.citations) {
+          setMessages((prevMessages: any) =>
+            prevMessages.map((msg: any) =>
+              msg.id === responseId ? { ...msg, citations: chunk.citations } : msg
+            )
+          );
+          continue;
+        }
+
         // Skip status/non-standard chunks from local SLP server
         if (!chunk.choices || !chunk.choices[0]) continue;
 
@@ -639,16 +680,15 @@ export default function Chat(props: {
           } : msg
         );
 
-        // Notify parent with updated conversation (including new messages)
+        // Store pending update — calling onConversationUpdate here would trigger setState
+        // during render (inside the state updater). Instead, fire it via useEffect.
         if (conversationId && props.onConversationUpdate) {
-          const updatedConversation = {
+          pendingConversationUpdateRef.current = {
             ...props.conversation,
             id: conversationId,
             messages: finalMessages,
             updated_at: new Date().toISOString()
           };
-          console.log('[Chat] Calling onConversationUpdate with messages:', finalMessages.length);
-          props.onConversationUpdate(updatedConversation);
         }
 
         return finalMessages;
@@ -675,14 +715,15 @@ export default function Chat(props: {
             return msg;
           }).filter(Boolean);
 
-          // Notify parent with updated conversation
+          // Store pending update — calling onConversationUpdate here would trigger setState
+          // during render (inside the state updater). Instead, fire it via useEffect.
           if (conversationId && props.onConversationUpdate) {
-            props.onConversationUpdate({
+            pendingConversationUpdateRef.current = {
               ...props.conversation,
               id: conversationId,
               messages: finalMessages,
               updated_at: new Date().toISOString()
-            });
+            };
           }
 
           return finalMessages;
@@ -831,6 +872,16 @@ export default function Chat(props: {
     currentConversationIdRef.current = props.conversation?.id || null;
 
   }, [props.conversation, isLoading]);
+
+  // Fire any pending onConversationUpdate after messages state has committed to DOM
+  // (calling it inside a setMessages updater triggers "setState during render" warning)
+  useEffect(() => {
+    if (pendingConversationUpdateRef.current && props.onConversationUpdate) {
+      const update = pendingConversationUpdateRef.current;
+      pendingConversationUpdateRef.current = null;
+      props.onConversationUpdate(update);
+    }
+  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup: abort any ongoing requests when component unmounts
   useEffect(() => {
@@ -1099,6 +1150,23 @@ export default function Chat(props: {
                                 </Streamdown>
                               )}
                             </div>
+                            {msg.citations && msg.citations.length > 0 && !msg.is_new && (
+                              <div className="mt-3 pt-3 border-t border-gray-700/50">
+                                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Sources</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {msg.citations.map((citation: any, idx: number) => (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/50 text-gray-400"
+                                      title={citation.document_id}
+                                    >
+                                      <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)' }} />
+                                      {citation.document_name || citation.document_id}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                           {msg.content && !msg.is_new && (
                             <div className="flex items-center gap-2 mt-2 px-1">
@@ -1234,10 +1302,17 @@ export default function Chat(props: {
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-gray-600 leading-none">
             {isServiceReady ? (
               <>
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-pink-500 flex-shrink-0"></span>
-                  <span>ready</span>
-                </span>
+                {indexingProgress ? (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-yellow-500 animate-pulse flex-shrink-0"></span>
+                    <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-pink-500 flex-shrink-0"></span>
+                    <span>ready</span>
+                  </span>
+                )}
                 {props.project && (
                   <span className="flex items-center gap-1 font-mono">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">

@@ -32,10 +32,8 @@ export default function DocumentPolling({
         const newDocs: any[] = result.data.documents || result.data;
         const oldDocs: any[] = selectedProject.documents || [];
 
-        // Check for changes in processing status
         const oldDocIds = new Set(oldDocs.map((d: any) => d.id));
         let hasChanges = newDocs.some((newDoc: any) => !oldDocIds.has(newDoc.id));
-        let hasProcessing = false;
 
         if (!hasChanges) {
           hasChanges = oldDocs.some((oldDoc: any) => {
@@ -44,10 +42,13 @@ export default function DocumentPolling({
           });
         }
 
-        // Always sync when uploading placeholders are present (cleans them up on success or failure)
         if (!hasChanges && oldDocs.some((d: any) => d.isUploading)) {
           hasChanges = true;
         }
+
+        // Check if any documents are still being indexed
+        const hasProcessing = newDocs.some((d: any) => d.status && d.status !== 'indexed') ||
+          oldDocs.some((d: any) => d.isUploading);
 
         if (hasChanges && user) {
           const updatedProject = { ...selectedProject, documents: newDocs };
@@ -67,7 +68,7 @@ export default function DocumentPolling({
       } catch (error) {
         console.error('Error polling for document status:', error);
       }
-    }, 100);
+    }, 2000);
 
     pollingIntervalRef.current = interval;
     setPollingInterval(interval);

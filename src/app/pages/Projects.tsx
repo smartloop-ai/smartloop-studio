@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, IconButton, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Chip } from '@mui/material';
+import { Box, IconButton, Dialog, TextField, Typography, CircularProgress, Menu, MenuItem, Chip, Tooltip } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FolderIcon from '@mui/icons-material/Folder';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
@@ -190,6 +190,11 @@ export default function ProjectsList() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!user?.email) {
+      setErrorMessage('Please sign in to create a project');
+      return;
+    }
+
     if (!newProjectTitle.trim()) {
       setErrorMessage('Project title is required');
       return;
@@ -279,13 +284,18 @@ export default function ProjectsList() {
                       </IconButton>
                     </Box>
 
-                    <button
-                      onClick={handleOpenCreateDialog}
-                      className="flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg border border-pink-500/30 transition-all shadow-lg shadow-pink-500/20"
-                    >
-                      <AddIcon sx={{ fontSize: { xs: 18, md: 20 } }} />
-                      <span className="text-xs md:text-sm font-medium">New Project</span>
-                    </button>
+                    <Tooltip title={!user?.email ? "Login to create a new project" : ""} placement="bottom">
+                      <span>
+                        <button
+                          onClick={handleOpenCreateDialog}
+                          disabled={!user?.email}
+                          className="flex items-center gap-2 px-3 md:px-5 py-2 md:py-2.5 bg-gradient-to-r from-pink-600 to-pink-500 hover:from-pink-500 hover:to-pink-400 text-white rounded-lg border border-pink-500/30 transition-all shadow-lg shadow-pink-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-gray-600 disabled:to-gray-500 disabled:shadow-none disabled:border-gray-500/30"
+                        >
+                          <AddIcon sx={{ fontSize: { xs: 18, md: 20 } }} />
+                          <span className="text-xs md:text-sm font-medium">New Project</span>
+                        </button>
+                      </span>
+                    </Tooltip>
 
                     <button
                       onClick={(e) => setSortMenuAnchor(e.currentTarget)}
