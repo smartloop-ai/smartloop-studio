@@ -27,7 +27,23 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         }
 
         console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
-        setUser({ name: 'Local', guest: true, projects, conversations: [] });
+
+        let storedUser: any = null;
+        try {
+          const token = await storageService.getItem('token');
+          if (token) {
+            const userData = await storageService.getItem('u');
+            if (userData) {
+              storedUser = typeof userData === 'string' ? JSON.parse(userData) : userData;
+            }
+          }
+        } catch {}
+
+        if (storedUser) {
+          setUser({ ...storedUser, guest: false, projects, conversations: [] });
+        } else {
+          setUser({ name: 'Local', guest: true, projects, conversations: [] });
+        }
       } catch (error) {
         console.error('useAuth: Error during init:', error);
         setUser({ name: 'Local', guest: true, projects: [], conversations: [] });

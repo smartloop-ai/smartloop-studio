@@ -55,9 +55,6 @@ export function bootstrapProgress(data: Record<string, any>): BootstrapProgress 
         } else if (rawStatus === 'starting' || rawStatus === 'preparing') {
             status = data.message || 'Starting service...';
             stage = 'preparing';
-        } else if (rawStatus === 'building' || rawStatus === 'loading') {
-            status = data.message || 'Building model...';
-            stage = 'building';
         } else if (rawStatus === 'extracting') {
             status = data.message || 'Extracting...';
             stage = 'extracting';

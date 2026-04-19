@@ -72,7 +72,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         if (token) {
           const userData = await storageService.getItem('u');
           if (userData) {
-            setAuthUser(typeof userData === 'string' ? JSON.parse(userData) : userData);
+            const parsed = typeof userData === 'string' ? JSON.parse(userData) : userData;
+            setAuthUser(parsed);
+            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: parsed } }));
           }
         } else {
           setAuthUser(null);

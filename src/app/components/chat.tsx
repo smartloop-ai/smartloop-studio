@@ -1001,10 +1001,10 @@ export default function Chat(props: {
 
                   {/* Stage indicators */}
                   <div className="flex items-center gap-2 mb-3">
-                    {['checking', 'downloading', 'building'].map((s) => {
-                      const stageLabels: Record<string, string> = { checking: 'Checking', downloading: 'Downloading', building: 'Building' };
+                    {['checking', 'downloading'].map((s) => {
+                      const stageLabels: Record<string, string> = { checking: 'Checking', downloading: 'Downloading' };
                       const currentStage = modelDownloadProgress.stage || 'initializing';
-                      const stageOrder = ['initializing', 'checking', 'downloading', 'extracting', 'verifying', 'building', 'preparing', 'complete'];
+                      const stageOrder = ['initializing', 'checking', 'downloading', 'extracting', 'verifying', 'preparing', 'complete'];
                       const currentIdx = stageOrder.indexOf(currentStage);
                       const thisIdx = stageOrder.indexOf(s);
                       const isActive = currentStage === s || (s === 'downloading' && (currentStage === 'extracting' || currentStage === 'verifying'));
