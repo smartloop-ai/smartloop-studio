@@ -252,7 +252,7 @@ export default function RightSidebar({
 
   // Ensure sidebar is collapsed for system projects or when no project is selected
   useEffect(() => {
-    if ((!selectedProject || selectedProject?.system) && (activeSection === 'documents' || activeSection === 'skills')) {
+    if ((!selectedProject || selectedProject?.system) && (activeSection === 'documents')) {
       setActiveSection(null);
     }
   }, [selectedProject, activeSection]);
@@ -1510,21 +1510,19 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={(!selectedProject || selectedProject?.system) ? "Skills (Disabled)" : "Skills"} placement="left">
-          <span className={(!selectedProject || selectedProject?.system) ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={"Skills"} placement="left">
+          <span className={'cursor-default'}>
             <IconButton
               onClick={() => {
-                if (!selectedProject || selectedProject?.system) return;
                 setActiveSection(activeSection === 'skills' ? null : 'skills');
               }}
-              disabled={!selectedProject || selectedProject?.system}
               sx={{
                 color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: (!selectedProject || selectedProject?.system) ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 '&:hover': {
-                  color: (!selectedProject || selectedProject?.system) ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  color: 'var(--sl-brand-primary)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
