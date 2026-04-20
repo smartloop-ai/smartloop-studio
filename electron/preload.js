@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SLP auth and model management
   slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
+  slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
   slpListModels: () => ipcRenderer.invoke('slp-list-models'),
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
   onModelDownloadProgress: (callback) => {

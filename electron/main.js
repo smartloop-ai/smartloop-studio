@@ -612,6 +612,22 @@ ipcMain.handle('slp-auth-status', async () => {
   }
 });
 
+// IPC: Logout from local SLP service (clear access token)
+ipcMain.handle('slp-auth-logout', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth/token?type=access_token`, { method: 'DELETE' });
+    if (res.ok) {
+      return { success: true };
+    } else {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: Fetch available models from local SLP service
 ipcMain.handle('slp-list-models', async () => {
   const baseUrl = slpService.getLocalBaseUrl();
@@ -895,19 +911,25 @@ function createWindow() {
   return mainWindow;
 }
 
-// Handle OAuth login - open in system browser
+// Handle OAuth login - open in system browser with local service port
 ipcMain.handle('oauth-login', async (event) => {
   console.log('[OAuth] oauth-login called');
 
-  const authUrl = `${APP_URL}/login?mode=native`;
+  const port = slpService.getPort() || slpService.readLocalServicePort();
+  if (!port) {
+    console.error('[OAuth] No local service port available');
+    return { status: 'error', error: 'Local service not running' };
+  }
+
+  const authUrl = `${APP_URL}/login/?mode=desktop&port=${port}`;
   console.log('[OAuth] Opening URL:', authUrl);
 
   // Open in system's default browser
   await shell.openExternal(authUrl);
   console.log('[OAuth] Browser opened successfully');
 
-  // Return immediately - we'll get the callback via protocol handler
-  return { status: 'browser_opened' };
+  // Return immediately - webapp will POST tokens directly to local service
+  return { status: 'browser_opened', port };
 });
 
 // Handle token validation

@@ -40,7 +40,9 @@ function readLocalServicePort() {
 }
 
 function getLocalBaseUrl() {
-  return localServicePort ? `http://localhost:${localServicePort}` : null;
+  const port = localServicePort || readLocalServicePort();
+  if (port) localServicePort = port;
+  return port ? `http://localhost:${port}` : null;
 }
 
 function getPort() {
