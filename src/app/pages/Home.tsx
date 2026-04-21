@@ -758,8 +758,20 @@ export default function Home() {
         const data = await listRes.json();
         const refreshed = (data.skills || data || []).map((s: any) => ({ id: s.id, name: s.name, content: s.content, description: s.description || '' }));
         setProjectSkills(refreshed);
-        setOpenTabs((prev) =>
-          prev.map((t) => {
+        const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
+        const deletedTabIds = new Set(deletedSkills.map((s: any) => {
+          const idx = oldSkills.indexOf(s);
+          return `skill-${s.id || idx}`;
+        }));
+        setOpenTabs((prev) => {
+          const filtered = prev.filter((t) => {
+            if (t.type !== 'skill') return true;
+            if (deletedTabIds.has(t.id)) return false;
+            const idx = t.data?.index;
+            if (idx !== undefined && deletedIndices.has(idx)) return false;
+            return true;
+          });
+          return filtered.map((t) => {
             if (t.type !== 'skill') return t;
             if (t.id === 'skill-new') {
               const newIndex = refreshed.length - 1;
@@ -771,8 +783,21 @@ export default function Home() {
               return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
             }
             return t;
-          })
-        );
+          });
+        });
+        setActiveTabId((prevId) => {
+          if (!prevId) return prevId;
+          const activeTab = openTabs.find((t) => t.id === prevId);
+          if (!activeTab) return prevId;
+          const isDeleted = deletedTabIds.has(prevId) ||
+            (activeTab.type === 'skill' && activeTab.data?.index !== undefined && deletedIndices.has(activeTab.data.index));
+          if (!isDeleted) return prevId;
+          const remaining = openTabs.filter((t) =>
+            !deletedTabIds.has(t.id) &&
+            !(t.type === 'skill' && t.data?.index !== undefined && deletedIndices.has(t.data.index))
+          );
+          return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+        });
       } else {
         setProjectSkills(skills);
       }
