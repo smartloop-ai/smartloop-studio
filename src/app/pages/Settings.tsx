@@ -710,16 +710,13 @@ export default function SettingsPage() {
                                     <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                                     <h2 className="text-lg md:text-xl font-semibold text-white">Service</h2>
                                     {/* Status badge next to title */}
-                                    <Box sx={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: 0.75,
-                                        px: 1.5,
-                                        py: 0.5,
-                                        borderRadius: '20px',
-                                        bgcolor: isRestarting ? 'rgba(245, 158, 11, 0.1)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
-                                        border: `1px solid ${isRestarting ? 'rgba(245, 158, 11, 0.2)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)'}`,
-                                    }}>
+                                    <div
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border"
+                                        style={{
+                                            backgroundColor: isRestarting ? 'rgba(245, 158, 11, 0.1)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
+                                            borderColor: isRestarting ? 'rgba(245, 158, 11, 0.2)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)',
+                                        }}
+                                    >
                                         {isRestarting ? (
                                             <CircularProgress size={8} sx={{ color: '#f59e0b' }} />
                                         ) : (
@@ -740,7 +737,7 @@ export default function SettingsPage() {
                                         }}>
                                             {isRestarting ? 'Restarting...' : serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
                                         </span>
-                                    </Box>
+                                    </div>
                                 </Box>
                                 <IconButton
                                     onClick={handleRestartService}

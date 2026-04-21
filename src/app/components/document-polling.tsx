@@ -38,7 +38,8 @@ export default function DocumentPolling({
         if (!hasChanges) {
           hasChanges = oldDocs.some((oldDoc: any) => {
             const newDoc = newDocs.find((d: any) => d.id === oldDoc.id);
-            return newDoc && oldDoc.status !== newDoc.status;
+            if (!newDoc) return false;
+            return oldDoc.status !== newDoc.status || (!oldDoc.summary && newDoc.summary);
           });
         }
 
@@ -47,8 +48,10 @@ export default function DocumentPolling({
         }
 
         // Check if any documents are still being indexed
-        const hasProcessing = newDocs.some((d: any) => d.status && d.status !== 'indexed') ||
-          oldDocs.some((d: any) => d.isUploading);
+        // Backend may not return a status field; treat docs without a summary as still processing
+        const hasProcessing = newDocs.some((d: any) =>
+          (d.status && d.status !== 'indexed') || (!d.summary && !d.isUploading)
+        ) || oldDocs.some((d: any) => d.isUploading);
 
         if (hasChanges && user) {
           const updatedProject = { ...selectedProject, documents: newDocs };
