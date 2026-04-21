@@ -22,10 +22,6 @@ if (process.env.NODE_ENV === 'development') {
 
 let mainWindow;
 let splashWindow;
-let tokenRefreshInterval = null;
-
-// Token refresh configuration
-const TOKEN_REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes (before 15-min expiry)
 
 const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
@@ -932,160 +928,10 @@ ipcMain.handle('oauth-login', async (event) => {
   return { status: 'browser_opened', port };
 });
 
-// Handle token validation
-ipcMain.handle('validate-token', async (event, token) => {
-  console.log('[OAuth] Validating token:', token ? '***' + token.slice(-10) : 'none');
 
-  try {
-    // Make a request to validate the token using the /users/me endpoint
-    const validateUrl = `${BASE_URL}/v1/users/me`;
-    console.log('[OAuth] Validation URL:', validateUrl);
-
-    const response = await fetch(validateUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      }
-    });
-
-    console.log('[OAuth] Validation response status:', response.status, response.statusText);
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('[OAuth] Token validation successful, user:', data?.email || data?.id || 'unknown');
-      return { valid: true, user: data };
-    } else {
-      const errorText = await response.text();
-      console.error('[OAuth] Token validation failed:', response.status, errorText);
-      return { valid: false, error: errorText };
-    }
-  } catch (error) {
-    console.error('[OAuth] Token validation error:', error);
-    return { valid: false, error: error.message };
-  }
-});
-
-// Handle token refresh
-ipcMain.handle('refresh-token', async (event, token) => {
-  console.log('[TokenRefresh] Refreshing token...');
-
-  try {
-    const refreshUrl = `${BASE_URL}/v1/auth/jwt/refresh`;
-    const response = await fetch(refreshUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      }
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      console.log('[TokenRefresh] Token refreshed successfully');
-      return { success: true, token: data.access_token };
-    } else {
-      const errorText = await response.text();
-      console.error('[TokenRefresh] Failed to refresh token:', response.status, errorText);
-      return { success: false, error: errorText, status: response.status };
-    }
-  } catch (error) {
-    console.error('[TokenRefresh] Error refreshing token:', error);
-    return { success: false, error: error.message };
-  }
-});
 
 // Note: Default project ("general_chat") is created by the SLP framework during bootstrap
 
-// Start periodic token refresh
-ipcMain.handle('start-token-refresh', async (event, token) => {
-  console.log('[TokenRefresh] Starting periodic token refresh');
-
-  // Clear any existing interval
-  if (tokenRefreshInterval) {
-    clearInterval(tokenRefreshInterval);
-    tokenRefreshInterval = null;
-  }
-
-  // Function to perform token refresh
-  const performRefresh = async (tokenToUse = null) => {
-    if (!mainWindow) {
-      console.log('[TokenRefresh] No main window, skipping refresh');
-      return;
-    }
-
-    try {
-      const refreshUrl = `${BASE_URL}/v1/auth/jwt/refresh`;
-      const currentToken = tokenToUse || store.get('token', null);
-
-      if (!currentToken) {
-        console.log('[TokenRefresh] No token found, stopping refresh');
-        stopTokenRefresh();
-        return;
-      }
-
-      const response = await fetch(refreshUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${currentToken}`,
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[TokenRefresh] Token refreshed successfully (periodic)');
-
-        // Send the new token to the renderer
-        if (mainWindow) {
-          mainWindow.webContents.send('token-refreshed', {
-            success: true,
-            token: data.access_token
-          });
-        }
-      } else {
-        console.error('[TokenRefresh] Failed to refresh token (periodic):', response.status);
-
-        // If 401, token is invalid - notify renderer to re-authenticate
-        if (response.status === 401) {
-          stopTokenRefresh();
-          if (mainWindow) {
-            mainWindow.webContents.send('token-refreshed', {
-              success: false,
-              error: 'Token expired',
-              requiresReauth: true
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[TokenRefresh] Error during periodic refresh:', error);
-    }
-  };
-
-  // Perform initial refresh with the provided token
-  await performRefresh(token);
-
-  // Set up periodic refresh (will read from storage)
-  tokenRefreshInterval = setInterval(performRefresh, TOKEN_REFRESH_INTERVAL);
-  console.log('[TokenRefresh] Refresh interval set to', TOKEN_REFRESH_INTERVAL / 1000 / 60, 'minutes');
-
-  return { success: true };
-});
-
-// Stop token refresh
-function stopTokenRefresh() {
-  if (tokenRefreshInterval) {
-    clearInterval(tokenRefreshInterval);
-    tokenRefreshInterval = null;
-    console.log('[TokenRefresh] Stopped periodic token refresh');
-  }
-}
-
-ipcMain.handle('stop-token-refresh', async () => {
-  stopTokenRefresh();
-  return { success: true };
-});
 
 // Handle deep linking for OAuth callback
 if (process.defaultApp) {
@@ -1417,28 +1263,13 @@ function handleOAuthCallback(url) {
       return;
     }
 
-    // Handle regular OAuth login callback
-    const accessToken = urlObj.searchParams.get('token');
-    const error = urlObj.searchParams.get('error');
-
-    console.log('[OAuth] Parsed callback - token:', accessToken ? '***' + accessToken.slice(-4) : 'none', 'error:', error || 'none');
-
+    // Handle all other deep links (including "open", "oauth/callback") - just focus the window
+    // Tokens are delivered via localhost POST, no need to handle them via URL scheme
+    console.log('[Deep Link] Focusing window for:', pathname);
     if (mainWindow) {
-      if (error) {
-        console.log('[OAuth] Sending error to renderer:', error);
-        mainWindow.webContents.send('oauth-callback', { error });
-      } else if (accessToken) {
-        console.log('[OAuth] Sending access token to renderer');
-        mainWindow.webContents.send('oauth-callback', { accessToken });
-      } else {
-        console.log('[OAuth] No token or error received');
-        mainWindow.webContents.send('oauth-callback', { error: 'No access token received' });
-      }
-
-      // Focus the main window
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
-      console.log('[OAuth] Main window focused');
     }
   } catch (err) {
     console.error('[OAuth] Error parsing callback URL:', err);
