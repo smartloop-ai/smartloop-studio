@@ -1,10 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { projectService } from '@/app/services/project.service';
-import { storageService } from '@/app/services/storage.service';
 
 /**
  * Custom hook for local-only authentication
- * Loads projects from local SLP service — no remote login required
+ * Checks auth status from local SLP service and loads projects
  * @returns [user, setUser, authReady] tuple
  */
 export function useAuth(): [any, (user: any) => void, boolean] {
@@ -28,19 +27,19 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
         console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
 
-        let storedUser: any = null;
+        // Check auth status from local service
+        let authUser: any = null;
         try {
-          const token = await storageService.getItem('token');
-          if (token) {
-            const userData = await storageService.getItem('u');
-            if (userData) {
-              storedUser = typeof userData === 'string' ? JSON.parse(userData) : userData;
+          if (window.electronAPI?.slpAuthStatus) {
+            const status = await window.electronAPI.slpAuthStatus();
+            if (status?.success && status?.has_access_token && status?.user) {
+              authUser = status.user;
             }
           }
         } catch {}
 
-        if (storedUser) {
-          setUser({ ...storedUser, guest: false, projects, conversations: [] });
+        if (authUser) {
+          setUser({ ...authUser, guest: false, projects, conversations: [] });
         } else {
           setUser({ name: 'Local', guest: true, projects, conversations: [] });
         }
@@ -76,21 +75,8 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
     window.addEventListener('authStateChanged', handleAuthStateChanged as EventListener);
 
-    // When SLP service comes online, sync auth token and refresh projects
+    // When SLP service comes online, refresh projects
     const handleSlpReady = async () => {
-      // Sync access token to local SLP service and verify
-      try {
-        const token = await storageService.getItem('token');
-        if (token && window.electronAPI?.slpSetAuth) {
-          const result = await window.electronAPI.slpSetAuth({ type: 'access_token', token });
-          if (result?.success && window.electronAPI?.slpAuthStatus) {
-            const status = await window.electronAPI.slpAuthStatus();
-            console.log('useAuth: Auth token synced, status:', status?.has_access_token ? 'verified' : 'not verified');
-          }
-        }
-      } catch (err) {
-        console.warn('useAuth: Failed to sync auth token to SLP service:', err);
-      }
       try {
         let projects = await projectService.getProjects();
 

@@ -2,10 +2,7 @@ export interface ElectronAPI {
   sendMessage: (channel: string, data: any) => void;
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
   // OAuth methods
-  oauthLogin: () => Promise<{ status: string }>;
-  validateToken: (token: string) => Promise<{ valid: boolean; user?: any; error?: string }>;
-  onOAuthCallback: (callback: (data: { accessToken?: string; error?: string }) => void) => void;
-  removeOAuthCallbackListener: () => void;
+  oauthLogin: () => Promise<{ status: string; port?: number; error?: string }>;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;
@@ -49,7 +46,8 @@ export interface ElectronAPI {
   loadModel: () => Promise<any>;
   // SLP auth and model management
   slpSetAuth: (params: { type: string; token: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
-  slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; error?: string }>;
+  slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; user?: any; error?: string }>;
+  slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
   slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
   slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
   onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
