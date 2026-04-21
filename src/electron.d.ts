@@ -3,9 +3,6 @@ export interface ElectronAPI {
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
   // OAuth methods
   oauthLogin: () => Promise<{ status: string; port?: number; error?: string }>;
-  validateToken: (token: string) => Promise<{ valid: boolean; user?: any; error?: string }>;
-  onOAuthCallback: (callback: (data: { accessToken?: string; error?: string }) => void) => void;
-  removeOAuthCallbackListener: () => void;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;
