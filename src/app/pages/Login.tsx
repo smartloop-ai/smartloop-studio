@@ -1,137 +1,69 @@
 import '../styles/login.css';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Box, CircularProgress, IconButton } from '@mui/material';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
-import { APP_URL, API_BASE_URL } from '@/app/constants';
-import { storageService } from '@/app/services/storage.service';
+import { APP_URL } from '@/app/constants';
 
 export default function Login() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-  // Listen for OAuth callback in Electron
+  // Check if already authenticated via local service
   useEffect(() => {
-    if (isElectron && window.electronAPI) {
-      // Remove any existing listeners first to prevent duplicates
-      window.electronAPI.removeOAuthCallbackListener?.();
-
-      window.electronAPI.onOAuthCallback(async ({ accessToken, error }) => {
-        console.log('OAuth callback received:', { accessToken: accessToken ? 'present' : 'missing', error });
-
-        if (error) {
-          setErrorMessage(error);
-          setIsLoading(false);
-          setStatusMessage("");
-          return;
-        }
-
-        if (accessToken) {
-          setStatusMessage("Validating token...");
-
-          // Validate the token
-          if (window.electronAPI) {
-            const validation = await window.electronAPI.validateToken(accessToken);
-
-            if (validation.valid) {
-              await storageService.setItem('token', accessToken);
-
-              // Store user data if provided
-              if (validation.user) {
-                const userData = JSON.stringify(validation.user);
-                await storageService.setItem('u', userData);
-              }
-
-              // Set auth token on local SLP service and verify
-              setStatusMessage("Setting up local service...");
-              try {
-                console.log('[Login] Setting auth token on local SLP service...');
-                const authResult = await window.electronAPI.slpSetAuth({ type: 'access_token', token: accessToken });
-                console.log('[Login] SLP auth result:', authResult);
-
-                if (!authResult?.success) {
-                  setErrorMessage('Failed to set auth token on local service. Please try again.');
-                  setIsLoading(false);
-                  setStatusMessage("");
-                  return;
-                }
-
-                // Verify the token was stored
-                if (window.electronAPI.slpAuthStatus) {
-                  const status = await window.electronAPI.slpAuthStatus();
-                  console.log('[Login] SLP auth status after setting token:', status);
-                  if (!status?.success || !status?.has_access_token) {
-                    setErrorMessage('Token verification failed. Please try again.');
-                    setIsLoading(false);
-                    setStatusMessage("");
-                    return;
-                  }
-                }
-              } catch (err) {
-                console.warn('[Login] Failed to set auth on local SLP service:', err);
-                setErrorMessage('Could not connect to local service. Please try again.');
-                setIsLoading(false);
-                setStatusMessage("");
-                return;
-              }
-
-              setStatusMessage("Success! Redirecting...");
-
-              // Navigate to home - use replace to avoid back button issues
-              setTimeout(() => {
-                navigate('/', { replace: true });
-              }, 500);
-            } else {
-              setErrorMessage(validation.error || 'Token validation failed. Please try again.');
-              setIsLoading(false);
-              setStatusMessage("");
-            }
-          }
-        }
-      });
-
-      // Cleanup listener on unmount
-      return () => {
-        window.electronAPI?.removeOAuthCallbackListener?.();
-      };
-    }
-  }, [isElectron, navigate]);
-
-  // Check if already logged in
-  useEffect(() => {
-    const checkExistingToken = async () => {
-      const token = await storageService.getItem('token');
-
-      if (token) {
-        // Optionally validate the token before redirecting
-        if (isElectron && window.electronAPI) {
-          const validation = await window.electronAPI.validateToken(token);
-          if (validation.valid) {
-            // Set auth token on local SLP service
-            if (window.electronAPI?.slpSetAuth) {
-              try {
-                await window.electronAPI.slpSetAuth({ type: 'access_token', token });
-              } catch (err) {
-                console.warn('Failed to set auth on local SLP service:', err);
-              }
-            }
+    const checkAuthStatus = async () => {
+      if (isElectron && window.electronAPI?.slpAuthStatus) {
+        try {
+          const status = await window.electronAPI.slpAuthStatus();
+          if (status?.success && status?.has_access_token) {
             navigate('/', { replace: true });
-          } else {
-            await storageService.removeItem('token');
-            await storageService.removeItem('u');
           }
-        } else {
-          navigate('/', { replace: true });
+        } catch {
+          // Not authenticated, stay on login page
         }
       }
     };
-    checkExistingToken();
+    checkAuthStatus();
   }, [navigate, isElectron]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
+
+  const startPollingAuthStatus = () => {
+    // Poll auth/status every 2 seconds until authenticated
+    pollRef.current = setInterval(async () => {
+      try {
+        if (!window.electronAPI?.slpAuthStatus) return;
+        const status = await window.electronAPI.slpAuthStatus();
+        if (status?.success && status?.has_access_token) {
+          // Authenticated! Stop polling and navigate home
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+          setStatusMessage("Success! Redirecting...");
+          setTimeout(() => {
+            navigate('/', { replace: true });
+          }, 500);
+        }
+      } catch {
+        // Keep polling
+      }
+    }, 2000);
+  };
 
   const handleLogin = async () => {
     setErrorMessage("");
@@ -140,17 +72,21 @@ export default function Login() {
 
     try {
       if (isElectron && window.electronAPI) {
-        // Electron OAuth flow - opens system browser
         setStatusMessage("Opening browser for authentication...");
-        await window.electronAPI.oauthLogin();
-        setStatusMessage("Waiting for authentication...");
+        const result = await window.electronAPI.oauthLogin();
 
-        // The callback will be handled by the onOAuthCallback listener
-        // Keep loading state until we get the callback
+        if (result?.status === 'error') {
+          setErrorMessage(result.error || 'Local service not running. Please try again.');
+          setIsLoading(false);
+          setStatusMessage("");
+          return;
+        }
+
+        setStatusMessage("Waiting for authentication...");
+        startPollingAuthStatus();
       } else {
         setStatusMessage("Redirecting to authentication...");
-        const apiUrl = encodeURIComponent(API_BASE_URL);
-        window.location.href = `${APP_URL}/login?mode=native&app_url=${apiUrl}`;
+        window.location.href = `${APP_URL}/login/?mode=desktop`;
       }
     } catch (error: any) {
       console.error('Login error:', error);

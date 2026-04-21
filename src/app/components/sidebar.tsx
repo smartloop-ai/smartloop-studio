@@ -13,7 +13,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
@@ -64,70 +63,68 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [authUser, setAuthUser] = useState<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Check auth status on mount and listen for changes
   useEffect(() => {
     const checkAuth = async () => {
+      // Skip if a login flow is actively polling
+      if (loginPollRef.current) return;
       try {
-        const token = await storageService.getItem('token');
-        if (token) {
-          const userData = await storageService.getItem('u');
-          if (userData) {
-            const parsed = typeof userData === 'string' ? JSON.parse(userData) : userData;
-            setAuthUser(parsed);
-            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: parsed } }));
+        if (window.electronAPI?.slpAuthStatus) {
+          const status = await window.electronAPI.slpAuthStatus();
+          if (status?.success && status?.has_access_token && status?.user) {
+            setAuthUser(status.user);
+            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+          } else {
+            setAuthUser(null);
           }
-        } else {
-          setAuthUser(null);
         }
       } catch { setAuthUser(null); }
     };
     checkAuth();
 
+    // Re-check auth when window regains focus (single check, not polling)
+    const handleFocus = () => checkAuth();
+    window.addEventListener('focus', handleFocus);
+
     const handleUserUpdated = () => checkAuth();
     window.addEventListener('userUpdated', handleUserUpdated);
     return () => {
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('userUpdated', handleUserUpdated);
+      if (loginPollRef.current) {
+        clearInterval(loginPollRef.current);
+        loginPollRef.current = null;
+      }
     };
-  }, []);
-
-  // Listen for OAuth callback (browser-based login flow)
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI) return;
-
-    window.electronAPI.removeOAuthCallbackListener?.();
-    window.electronAPI.onOAuthCallback(async ({ accessToken, error }: any) => {
-      if (error) {
-        console.error('OAuth error:', error);
-        setIsLoggingIn(false);
-        return;
-      }
-      if (accessToken) {
-        const validation = await window.electronAPI!.validateToken(accessToken);
-        if (validation.valid) {
-          await storageService.setItem('token', accessToken);
-          if (validation.user) {
-            await storageService.setItem('u', JSON.stringify(validation.user));
-            setAuthUser(validation.user);
-          } else {
-            const userData = await userService.fetchAndStoreUser(accessToken);
-            if (userData) setAuthUser(userData);
-          }
-
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: validation.user }));
-          window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: validation.user } }));
-        }
-        setIsLoggingIn(false);
-      }
-    });
-
-    return () => { window.electronAPI?.removeOAuthCallbackListener?.(); };
   }, []);
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
     try {
       if (isElectron && window.electronAPI) {
-        await window.electronAPI.oauthLogin();
+        const result = await window.electronAPI.oauthLogin() as any;
+        if (result?.status === 'error') {
+          console.error('Login error:', result.error);
+          setIsLoggingIn(false);
+          return;
+        }
+        // Poll auth/status until authenticated
+        loginPollRef.current = setInterval(async () => {
+          try {
+            const status = await window.electronAPI!.slpAuthStatus();
+            if (status?.success && status?.has_access_token && status?.user) {
+              if (loginPollRef.current) {
+                clearInterval(loginPollRef.current);
+                loginPollRef.current = null;
+              }
+              setAuthUser(status.user);
+              setIsLoggingIn(false);
+              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+            }
+          } catch {}
+        }, 2000);
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -136,7 +133,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleLogout = async () => {
-    await userService.logout();
+    // Stop any active login polling
+    if (loginPollRef.current) {
+      clearInterval(loginPollRef.current);
+      loginPollRef.current = null;
+    }
+    setIsLoggingIn(false);
+    if (window.electronAPI?.slpAuthLogout) {
+      await window.electronAPI.slpAuthLogout();
+    }
     setAuthUser(null);
     setAnchorEl(null);
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: false } }));

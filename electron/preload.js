@@ -20,30 +20,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
   // OAuth methods
-  oauthLogin: (provider) => ipcRenderer.invoke('oauth-login', provider),
-  validateToken: (token) => ipcRenderer.invoke('validate-token', token),
-  onOAuthCallback: (callback) => {
-    ipcRenderer.on('oauth-callback', (event, data) => callback(data));
-  },
-  removeOAuthCallbackListener: () => {
-    ipcRenderer.removeAllListeners('oauth-callback');
-  },
+  oauthLogin: () => ipcRenderer.invoke('oauth-login'),
   // MCP authorization callback
   onMcpAuthCallback: (callback) => {
     ipcRenderer.on('mcp-auth-callback', (event, data) => callback(data));
   },
   removeMcpAuthCallbackListener: () => {
     ipcRenderer.removeAllListeners('mcp-auth-callback');
-  },
-  // Token refresh methods
-  refreshToken: (token) => ipcRenderer.invoke('refresh-token', token),
-  startTokenRefresh: () => ipcRenderer.invoke('start-token-refresh'),
-  stopTokenRefresh: () => ipcRenderer.invoke('stop-token-refresh'),
-  onTokenRefreshed: (callback) => {
-    ipcRenderer.on('token-refreshed', (event, data) => callback(data));
-  },
-  removeTokenRefreshListener: () => {
-    ipcRenderer.removeAllListeners('token-refreshed');
   },
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
@@ -74,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SLP auth and model management
   slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
+  slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
   slpListModels: () => ipcRenderer.invoke('slp-list-models'),
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
   onModelDownloadProgress: (callback) => {
