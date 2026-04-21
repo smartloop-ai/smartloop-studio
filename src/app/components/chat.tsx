@@ -1154,16 +1154,22 @@ export default function Chat(props: {
                               <div className="mt-3 pt-3 border-t border-gray-700/50">
                                 <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Sources</p>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {msg.citations.map((citation: any, idx: number) => (
-                                    <span
-                                      key={idx}
-                                      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/50 text-gray-400"
-                                      title={citation.document_id}
-                                    >
-                                      <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)' }} />
-                                      {citation.document_name || citation.document_id}
-                                    </span>
-                                  ))}
+                                  {msg.citations.map((citation: any, idx: number) => {
+                                    const label = citation.document_name || citation.document_id;
+                                    const filePath = citation.source || citation.path || citation.filepath || '';
+                                    const isPath = filePath && (filePath.startsWith('/') || filePath.startsWith('~') || /^[A-Z]:\\/.test(filePath));
+                                    return (
+                                      <span
+                                        key={idx}
+                                        className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/50 text-gray-400${isPath ? ' cursor-pointer hover:text-gray-200 hover:border-gray-600 transition-colors' : ''}`}
+                                        title={filePath || citation.document_id}
+                                        onClick={isPath ? () => window.electronAPI?.openInFinder?.(filePath) : undefined}
+                                      >
+                                        <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)' }} />
+                                        {label}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             )}

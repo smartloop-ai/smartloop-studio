@@ -311,12 +311,11 @@ export default function RightSidebar({
     const loadIndexedFromDb = async () => {
       const dates = await storageService.getDocumentStatusByProject(projectId);
       if (!cancelled) {
-        // Docs in SQLite are confirmed indexed
         const statusMap: Record<string, string> = {};
         for (const docId of Object.keys(dates)) {
           statusMap[docId] = 'indexed';
         }
-        setIndexingStatus((prev) => ({ ...statusMap, ...prev }));
+        setIndexingStatus(statusMap);
       }
     };
 
@@ -782,6 +781,7 @@ export default function RightSidebar({
     if (e.target.files && e.target.files.length > 0) {
       validateAndUploadFile(e.target.files[0]);
     }
+    e.target.value = '';
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -996,7 +996,7 @@ export default function RightSidebar({
                                     ? <span style={{ fontSize: '9px', color: 'var(--sl-status-success, #4ade80)' }}>Indexed</span>
                                     : isIndexing
                                       ? <span style={{ fontSize: '9px', color: '#facc15' }}>Indexing</span>
-                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>Not indexed</span>}
+                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Pending <span className="loading-dots" style={{ display: 'inline-flex', gap: '2px' }}><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0s' }} /><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.2s' }} /><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.4s' }} /></span></span>}
                               </Box>
                             </Box>
                           </Box>

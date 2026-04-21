@@ -8,7 +8,6 @@ import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
-// import DocumentsTab from '@/app/components/documents-tab';
 import SkillEditor from '@/app/components/skill-editor';
 import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
