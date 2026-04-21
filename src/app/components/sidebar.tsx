@@ -63,9 +63,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [authUser, setAuthUser] = useState<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Check auth status on mount and listen for changes
   useEffect(() => {
     const checkAuth = async () => {
+      // Skip if a login flow is actively polling
+      if (loginPollRef.current) return;
       try {
         if (window.electronAPI?.slpAuthStatus) {
           const status = await window.electronAPI.slpAuthStatus();
@@ -80,7 +84,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
     checkAuth();
 
-    // Re-check auth when window regains focus (picks up user info changes)
+    // Re-check auth when window regains focus (single check, not polling)
     const handleFocus = () => checkAuth();
     window.addEventListener('focus', handleFocus);
 
@@ -89,10 +93,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('userUpdated', handleUserUpdated);
+      if (loginPollRef.current) {
+        clearInterval(loginPollRef.current);
+        loginPollRef.current = null;
+      }
     };
   }, []);
-
-  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
@@ -127,6 +133,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleLogout = async () => {
+    // Stop any active login polling
+    if (loginPollRef.current) {
+      clearInterval(loginPollRef.current);
+      loginPollRef.current = null;
+    }
+    setIsLoggingIn(false);
     if (window.electronAPI?.slpAuthLogout) {
       await window.electronAPI.slpAuthLogout();
     }
