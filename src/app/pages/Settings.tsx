@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
@@ -10,7 +10,6 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DnsIcon from '@mui/icons-material/Dns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
@@ -154,11 +153,9 @@ export default function SettingsPage() {
     const [isRestarting, setIsRestarting] = useState(false);
 
     // Available models (from SLP auth + remote listing)
-    const [availableModels, setAvailableModels] = useState<any[]>([]);
-    const [availableModelsLoading, setAvailableModelsLoading] = useState(false);
-    const [availableModelsError, setAvailableModelsError] = useState('');
-    const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
-    const [downloadProgress, setDownloadProgress] = useState<{ percent: number; status: string } | null>(null);
+    const [, setAvailableModels] = useState<any[]>([]);
+    const [, setAvailableModelsLoading] = useState(false);
+    const [, setAvailableModelsError] = useState('');
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
@@ -280,46 +277,6 @@ export default function SettingsPage() {
         }
     }, []);
 
-    // Download a model and set it as current
-    const handleDownloadModel = useCallback(async (modelName: string) => {
-        const api = (window as any).electronAPI;
-        if (!api?.slpDownloadModel) return;
-
-        setDownloadingModel(modelName);
-        setDownloadProgress({ percent: 0, status: 'Starting download...' });
-
-        // Listen for progress events
-        api.onModelDownloadProgress?.((data: any) => {
-            if (data.model === modelName) {
-                setDownloadProgress({ percent: data.percent, status: data.status });
-                if (!data.downloading && data.percent >= 100) {
-                    setDownloadingModel(null);
-                    setDownloadProgress(null);
-                }
-            }
-        });
-
-        try {
-            const result = await api.slpDownloadModel(modelName);
-            if (result.success) {
-                // Save downloaded model as current selected model
-                setSelectedModel(modelName);
-                await storageService.setItem('selected_model', modelName);
-                await storageService.setSetting('selected_model', modelName);
-
-                // Refresh local models list
-                await fetchLocalModels();
-            } else {
-                console.error('Model download failed:', result.error);
-            }
-        } catch (err: any) {
-            console.error('Model download error:', err);
-        } finally {
-            setDownloadingModel(null);
-            setDownloadProgress(null);
-            api.removeModelDownloadProgressListener?.();
-        }
-    }, [fetchLocalModels]);
 
     // Restart the SLP service and refresh all panels
     const handleRestartService = useCallback(async () => {

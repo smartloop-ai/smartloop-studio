@@ -67,6 +67,7 @@ export interface ElectronAPI {
   // Native clipboard (bypasses web clipboard restrictions in Electron)
   writeClipboard: (text: string) => void;
   readClipboard: () => string;
+  openInFinder: (filePath: string) => void;
   platform: string;
   versions: {
     node: string;
