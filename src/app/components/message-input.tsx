@@ -49,6 +49,15 @@ export default function MessageInput({
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Refocus input when response generation completes
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    if (wasLoadingRef.current && !isLoading && !disabled) {
+      inputRef.current?.focus();
+    }
+    wasLoadingRef.current = isLoading;
+  }, [isLoading, disabled]);
+
   // Global Escape key listener to stop generation (input is disabled during loading)
   const onStopRef = useRef(onStop);
   onStopRef.current = onStop;
