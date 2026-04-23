@@ -1,16 +1,5 @@
-import { API_ENDPOINT } from "@/app/constants";
+import { getLocalApiEndpoint } from "@/app/constants";
 import { storageService } from "./storage.service";
-
-const getToken = async () => {
-  if (typeof window !== 'undefined') {
-    const token = await storageService.getItem("token");
-
-    if (token && token?.length > 0) {
-      return token;
-    }
-  }
-  return null;
-};
 
 const logout = async () => {
   await storageService.removeItem("token");
@@ -50,10 +39,10 @@ const checkTokenExpiration = (response) => {
 }
 
 const getUser = async () => {
-  const token = await getToken();
+  const localApi = await getLocalApiEndpoint();
 
-  if (token == null) {
-    console.error('UserService: No token found');
+  if (!localApi) {
+    console.error('UserService: Local API not available');
     return null;
   }
 
@@ -61,12 +50,11 @@ const getUser = async () => {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
     },
   }
 
   try {
-    let resp = await fetch(`${API_ENDPOINT}/users/me`, options);
+    let resp = await fetch(`${localApi}/v1/users/me`, options);
 
     if (checkTokenExpiration(resp)) {
       return null;
@@ -137,23 +125,8 @@ const getUser = async () => {
 };
 
 const makeAuthenticatedRequest = async (url, options = {}) => {
-  const token = await getToken();
-
-  if (!token) {
-    redirectToLogin();
-    return;
-  }
-
-  const requestOptions = {
-    ...options,
-    headers: {
-      ...options.headers,
-      'Authorization': `Bearer ${token}`
-    }
-  };
-
   try {
-    const response = await fetch(url, requestOptions);
+    const response = await fetch(url, options);
 
     if (checkTokenExpiration(response)) {
       return;
@@ -165,19 +138,20 @@ const makeAuthenticatedRequest = async (url, options = {}) => {
   }
 };
 
-// Fetch and store user data using a provided token (useful for OAuth callbacks)
-const fetchAndStoreUser = async (token) => {
-  if (!token) {
-    console.error('No token provided to fetchAndStoreUser');
+// Fetch and store user data via local API proxy
+const fetchAndStoreUser = async () => {
+  const localApi = await getLocalApiEndpoint();
+
+  if (!localApi) {
+    console.error('UserService: Local API not available for fetchAndStoreUser');
     return null;
   }
 
   try {
-    const userResponse = await fetch(`${API_ENDPOINT}/users/me`, {
+    const userResponse = await fetch(`${localApi}/v1/users/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
       },
     });
 
@@ -225,10 +199,10 @@ const fetchAndStoreUser = async (token) => {
 
 // Update user settings
 const updateSettings = async (settings) => {
-  const token = await getToken();
+  const localApi = await getLocalApiEndpoint();
 
-  if (!token) {
-    console.error('UserService: No token found');
+  if (!localApi) {
+    console.error('UserService: Local API not available');
     return null;
   }
 
@@ -236,13 +210,12 @@ const updateSettings = async (settings) => {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify(settings)
   };
 
   try {
-    let resp = await fetch(`${API_ENDPOINT}/users/me`, options);
+    let resp = await fetch(`${localApi}/v1/users/me`, options);
 
     if (checkTokenExpiration(resp)) {
       return null;
@@ -264,7 +237,6 @@ const updateSettings = async (settings) => {
 export const userService = {
   get: getUser,
   logout: logout,
-  token: getToken,
   checkTokenExpiration: checkTokenExpiration,
   makeAuthenticatedRequest: makeAuthenticatedRequest,
   redirectToLogin: redirectToLogin,

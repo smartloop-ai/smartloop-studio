@@ -22,7 +22,7 @@ import { Chip, CircularProgress, IconButton, InputAdornment, TextField, Typograp
 
 import { Dialog, DialogContent, DialogTitle } from "@mui/material";
 
-import { API_ENDPOINT, getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 import { storageService } from '@/app/services/storage.service';
 import DocumentUploadDialog from '@/app/components/document-upload-dialog';
 import { documentService } from '@/app/services/document.service';
@@ -148,17 +148,14 @@ export default function Project() {
       }
 
       const id = current.id;
-      const url = `${API_ENDPOINT}/projects/${id}`;
-
       setIsLoading(true);
 
-      const options = {
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
+
+      await fetch(`${localApi}/v1/projects/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${userService.token()}`
-        }
-      }
-      await fetch(url, options);
+      });
 
       const updatedUser = await userService.get();
       setUser(updatedUser);
@@ -186,22 +183,15 @@ export default function Project() {
     if (titleToSave.length <= 1) {
       setTitle(current.title);
     } else {
-      const url = `${API_ENDPOINT}/projects/${current.id}`;
-
-      const options = {
-        // Just updating "title" only so patching the object
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userService.token()}`
-        },
-        body: JSON.stringify({
-          title: titleToSave,
-        })
-      }
-
       try {
-        await fetch(url, options);
+        const localApi = await getLocalApiEndpoint();
+        if (!localApi) throw new Error('Local API not available');
+
+        await fetch(`${localApi}/v1/projects/${current.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: titleToSave }),
+        });
       } catch (ex: any) {
         console.error(ex);
       }
