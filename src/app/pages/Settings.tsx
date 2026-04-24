@@ -3,7 +3,7 @@ import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { userService } from '@/app/services/user.service';
 import { storageService } from '@/app/services/storage.service';
-import { API_ENDPOINT } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -145,133 +145,50 @@ export default function SettingsPage() {
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [lastTps, setLastTps] = useState<number | null>(null);
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
-    const [localModels, setLocalModels] = useState<any[]>([]);
-    const [remoteModels, setRemoteModels] = useState<any[]>([]);
+    const [_localModels, setLocalModels] = useState<any[]>([]);
+    const [_localModelsLoading, setLocalModelsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
-
-    // Available models (from SLP auth + remote listing)
-    const [, setAvailableModels] = useState<any[]>([]);
-    const [, setAvailableModelsLoading] = useState(false);
-    const [, setAvailableModelsError] = useState('');
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
         try {
-            const api = (window as any).electronAPI;
-            if (api?.getLocalApiUrl) {
-                const baseUrl = await api.getLocalApiUrl();
-                if (baseUrl) {
-                    try {
-                        const res = await fetch(`${baseUrl}/health`);
-                        if (res.ok) {
-                            const data = await res.json();
-                            const health = { url: baseUrl, status: 'running', details: data };
-                            setServerHealth(health);
-                            await storageService.setSetting('service_health', health);
-                        } else {
-                            setServerHealth({ url: baseUrl, status: 'error', error: `HTTP ${res.status}` });
-                        }
-                    } catch (err: any) {
-                        setServerHealth({ url: baseUrl, status: 'unreachable', error: err.message });
-                    }
+            const baseUrl = await getLocalApiEndpoint();
+            if (!baseUrl) { setServerHealth(null); return; }
+            try {
+                const res = await fetch(`${baseUrl}/health`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const health = { url: baseUrl, status: 'running', details: data };
+                    setServerHealth(health);
+                    await storageService.setSetting('service_health', health);
                 } else {
-                    setServerHealth(null);
+                    setServerHealth({ url: baseUrl, status: 'error', error: `HTTP ${res.status}` });
                 }
+            } catch (err: any) {
+                setServerHealth({ url: baseUrl, status: 'unreachable', error: err.message });
             }
         } catch {
             setServerHealth(null);
         }
     }, []);
 
-    // Fetch local models from framework /v1/models
+    // Fetch models from local service /v1/models
     const fetchLocalModels = useCallback(async () => {
+        setLocalModelsLoading(true);
         try {
-            const api = (window as any).electronAPI;
-            if (api?.getLocalApiUrl) {
-                const baseUrl = await api.getLocalApiUrl();
-                if (baseUrl) {
-                    const res = await fetch(`${baseUrl}/v1/models`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        const models = Array.isArray(data) ? data : (data.data || []);
-                        setLocalModels(models);
-                    }
-                }
+            const baseUrl = await getLocalApiEndpoint();
+            if (!baseUrl) return;
+            const res = await fetch(`${baseUrl}/v1/models`);
+            if (res.ok) {
+                const data = await res.json();
+                const models = Array.isArray(data) ? data : (data.data || []);
+                setLocalModels(models);
             }
         } catch (err) {
             console.warn('Failed to fetch local models:', err);
-        }
-    }, []);
-
-    // Fetch remote models from API if logged in
-    const fetchRemoteModels = useCallback(async () => {
-        try {
-            const token = await storageService.getItem('token');
-            if (token) {
-                const res = await fetch(`${API_ENDPOINT}/models`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    const models = Array.isArray(data) ? data : (data.data || []);
-                    setRemoteModels(models);
-                    // Cache to SQLite for offline access
-                    await storageService.setItem('cached_remote_models', JSON.stringify(models));
-                    return;
-                }
-            }
-            // Token missing or request failed — only use cache if token exists
-            if (token) {
-                const cached = await storageService.getItem('cached_remote_models');
-                if (cached) {
-                    const models = JSON.parse(cached);
-                    if (Array.isArray(models) && models.length > 0) {
-                        setRemoteModels(models);
-                    }
-                }
-            }
-        } catch (err) {
-            console.warn('Failed to fetch remote models:', err);
-            // Try cache on error only if token exists
-            try {
-                const token = await storageService.getItem('token');
-                if (token) {
-                    const cached = await storageService.getItem('cached_remote_models');
-                    if (cached) {
-                        const models = JSON.parse(cached);
-                        if (Array.isArray(models) && models.length > 0) {
-                            setRemoteModels(models);
-                        }
-                    }
-                }
-            } catch {}
-        } finally {}
-    }, []);
-
-    // Fetch available models via SLP auth status check
-    const fetchAvailableModels = useCallback(async () => {
-        const api = (window as any).electronAPI;
-        if (!api?.slpAuthStatus || !api?.slpListModels) return;
-
-        setAvailableModelsLoading(true);
-        setAvailableModelsError('');
-        try {
-            const authStatus = await api.slpAuthStatus();
-            if (!authStatus.success || !authStatus.has_access_token) {
-                setAvailableModelsError('Please login to see available models.');
-                return;
-            }
-            const result = await api.slpListModels();
-            if (result.success && result.models) {
-                setAvailableModels(result.models);
-            } else {
-                setAvailableModelsError(result.error || 'Failed to fetch models');
-            }
-        } catch (err: any) {
-            setAvailableModelsError(err.message || 'Failed to fetch available models');
         } finally {
-            setAvailableModelsLoading(false);
+            setLocalModelsLoading(false);
         }
     }, []);
 
@@ -279,9 +196,7 @@ export default function SettingsPage() {
 
     useEffect(() => {
         fetchLocalModels();
-        fetchRemoteModels();
         fetchServerHealth();
-        fetchAvailableModels();
     }, []);
 
     // Set selected model: load from storage first, fallback to local config
@@ -477,29 +392,6 @@ export default function SettingsPage() {
                         const ctxSize = serverHealth?.details?.ctx_size ?? displayModel.config?.ctx_size;
                         const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
                         const ramTotal = systemInfo?.totalMemGb;
-
-                        // Build model options: compare local vs remote
-                        const localModelName = activeModel.model_name || '';
-                        const localModelNames = new Set(localModels.map((m: any) => m.name || m.id || m.model).filter(Boolean));
-                        localModelNames.add(localModelName);
-                        const isPaidUser = user?.is_paid || user?.is_premium;
-                        const allModelEntries: { name: string; description?: string; isLocal: boolean; details?: any }[] = [
-                            { name: localModelName, isLocal: true },
-                        ];
-                        remoteModels.forEach((m: any) => {
-                            const name = m.name || m.id || m.model;
-                            const accessLevel = m.access_level || 'free';
-                            if (name && !allModelEntries.find(e => e.name === name)) {
-                                if (accessLevel === 'free' || isPaidUser) {
-                                    allModelEntries.push({
-                                        name,
-                                        description: m.description || '',
-                                        isLocal: localModelNames.has(name),
-                                        details: m,
-                                    });
-                                }
-                            }
-                        });
 
                         return (
                             <Box
