@@ -93,6 +93,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
   // Delete a file from disk
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
+  // Recursively delete a folder from disk
+  deleteFolder: (folderPath) => ipcRenderer.invoke('delete-folder', folderPath),
   // Select a folder using native file dialog
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   // Get the OS home directory
@@ -149,6 +151,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-get-document-status-by-project', projectId),
     deleteDocumentStatus: (documentId) => ipcRenderer.invoke('db-delete-document-status', documentId),
   },
+  // Save content to a user-chosen location via native dialog
+  saveFileDialog: (defaultName, content) => ipcRenderer.invoke('save-file-dialog', defaultName, content),
   // Check if running in Electron
   isElectron: true,
   // Native clipboard (bypasses web clipboard restrictions in Electron)

@@ -20,6 +20,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
 
 import { getLocalApiEndpoint } from '@/app/constants';
@@ -40,6 +41,13 @@ interface Attachment {
   type?: string;
 }
 
+interface OpenTabRequest {
+  id: string;
+  type: 'conversation' | 'document' | 'skill' | 'mcp';
+  title: string;
+  data?: any;
+}
+
 export default function Chat(props: {
   project?: any,
   initialMessage?: string | null,
@@ -49,7 +57,8 @@ export default function Chat(props: {
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
   onConversationCreated?: (conversation: any) => void,
-  onConversationUpdate?: (conversation: any) => void
+  onConversationUpdate?: (conversation: any) => void,
+  onOpenTab?: (tab: OpenTabRequest) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -919,13 +928,26 @@ export default function Chat(props: {
         return;
       }
 
-      // Local file — open with system default app
+      // Local file — open markdown in tab, others with system default app
       const isFileScheme = rawHref.startsWith('file://');
       const isAbsolutePath = rawHref.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(rawHref);
       const isHomePath = rawHref.startsWith('~');
       if (isFileScheme || isAbsolutePath || isHomePath) {
         e.preventDefault();
         const path = isFileScheme ? decodeURIComponent(rawHref.replace(/^file:\/\//, '')) : rawHref;
+
+        // Open .md files in a document tab instead of native viewer
+        if (path.endsWith('.md') && props.onOpenTab) {
+          const fileName = path.split('/').pop() || 'Document';
+          props.onOpenTab({
+            id: `doc-${path}`,
+            type: 'document',
+            title: fileName,
+            data: { path, name: fileName },
+          });
+          return;
+        }
+
         if (electronAPI?.openInFinder) {
           electronAPI.openInFinder(path);
         }
@@ -937,7 +959,7 @@ export default function Chat(props: {
     return () => {
       document.removeEventListener('click', handleLinkClick, true);
     };
-  }, []);
+  }, [props.onOpenTab]);
 
   // Messages are now managed via conversation service state
   // No need for backup saves - messages are synced to server after each exchange
@@ -1095,21 +1117,21 @@ export default function Chat(props: {
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Ask specific questions:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
+                        <span className="font-semibold text-white">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Customize with project skills:</span> Visit the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium">Settings</span> tab to define project skills that refine how the AI responds to your specific needs
+                        <span className="font-semibold text-white">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple sources
+                        <span className="font-semibold text-white">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
                       </p>
                     </div>
                   </div>
@@ -1163,7 +1185,19 @@ export default function Chat(props: {
                                         key={idx}
                                         className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/50 text-gray-400${isPath ? ' cursor-pointer hover:text-gray-200 hover:border-gray-600 transition-colors' : ''}`}
                                         title={filePath || citation.document_id}
-                                        onClick={isPath ? () => window.electronAPI?.openInFinder?.(filePath) : undefined}
+                                        onClick={isPath ? () => {
+                                          if (filePath.endsWith('.md') && props.onOpenTab) {
+                                            const fileName = filePath.split('/').pop() || 'Document';
+                                            props.onOpenTab({
+                                              id: `doc-${filePath}`,
+                                              type: 'document',
+                                              title: fileName,
+                                              data: { path: filePath, name: fileName },
+                                            });
+                                          } else {
+                                            window.electronAPI?.openInFinder?.(filePath);
+                                          }
+                                        } : undefined}
                                       >
                                         <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)' }} />
                                         {label}
