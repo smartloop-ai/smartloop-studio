@@ -110,6 +110,22 @@ ipcMain.handle('read-text-file', async (event, filePath) => {
   }
 });
 
+// IPC: save file via native save dialog
+ipcMain.handle('save-file-dialog', async (event, defaultName, content) => {
+  try {
+    const { dialog } = require('electron');
+    const result = await dialog.showSaveDialog({
+      defaultPath: defaultName,
+      filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All Files', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+    fs.writeFileSync(result.filePath, content, 'utf-8');
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: delete a file from disk
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
@@ -118,6 +134,20 @@ ipcMain.handle('delete-file', async (event, filePath) => {
       : filePath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
     fs.unlinkSync(resolved);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: recursively delete a folder from disk
+ipcMain.handle('delete-folder', async (event, folderPath) => {
+  try {
+    const resolved = folderPath.startsWith('~')
+      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      : folderPath;
+    if (!fs.existsSync(resolved)) return { success: true };
+    fs.rmSync(resolved, { recursive: true, force: true });
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1059,25 +1089,40 @@ if (!gotTheLock) {
         needsBootstrap = true;
       }
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-      }
-
       if (needsBootstrap) {
-        console.log('[SLP] No projects — running bootstrap in background');
+        console.log('[SLP] No projects — running bootstrap on splash');
+        createStartingSplash();
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.webContents.executeJavaScript(`
+            document.querySelector('.status-text').textContent = 'Downloading model...';
+          `);
+        }
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
             refreshTray();
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
             if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             }
           } catch (error) {
             console.error('[SLP] Bootstrap failed:', error.message);
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.close();
+              splashWindow = null;
+            }
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
+            }
           }
         })();
       } else {
         if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
           mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
         }
       }
@@ -1135,26 +1180,23 @@ if (!gotTheLock) {
             needsBootstrap = true;
           }
 
-          // Show main window (with bootstrap progress if needed)
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            if (needsBootstrap) {
-              mainWindow.webContents.send('bootstrap-progress', {
-                percent: 0, status: 'Initializing...', model: '', downloading: true
-              });
+          if (needsBootstrap) {
+            console.log('[SLP] No projects — running bootstrap on splash');
+            if (splashWindow && !splashWindow.isDestroyed()) {
+              splashWindow.webContents.executeJavaScript(`
+                document.querySelector('.status-text').textContent = 'Downloading model...';
+              `);
             }
-            mainWindow.show();
+            await bootstrapSlpService(baseUrl);
           }
+
+          // Bootstrap done (or not needed) — dismiss splash, show main window
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
           }
-
-          if (needsBootstrap) {
-            console.log('[SLP] No projects — running bootstrap');
-            await bootstrapSlpService(baseUrl);
-          }
-
           if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
         } catch (error) {
@@ -1190,24 +1232,16 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Service is healthy — dismiss splash, show app immediately
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            // Send initial bootstrap progress so the UI shows the loader right away
-            mainWindow.webContents.send('bootstrap-progress', {
-              percent: 0, status: 'Initializing...', model: '', downloading: true
-            });
-            mainWindow.show();
-          }
+          // Run bootstrap on splash screen before showing main window
+          await bootstrapSlpService(baseUrl);
+
+          // Bootstrap done — dismiss splash, show main window ready
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
           }
-
-          // Bootstrap (workspace, model download, project setup) runs in the background
-          // The in-app progress UI will show download progress via IPC
-          await bootstrapSlpService(baseUrl);
-
           if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
         } catch (error) {

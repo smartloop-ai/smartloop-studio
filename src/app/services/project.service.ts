@@ -93,6 +93,12 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
       await storageService.deleteConversationsByProject(projectId);
       await storageService.deleteMcpServersByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
+
+      // Delete the project folder from disk (~/.smartloop/{projectId}/)
+      if (window.electronAPI?.deleteFolder) {
+        await window.electronAPI.deleteFolder(`~/.smartloop/${projectId}`);
+      }
+
       return { success: true, data: { projectId } };
     }
 

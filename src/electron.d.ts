@@ -20,6 +20,8 @@ export interface ElectronAPI {
   listDirectory: (dirPath: string) => Promise<{ success: boolean; files: Array<{ name: string; path: string; size: number; modified: string }>; error?: string }>;
   // Delete a file from disk
   deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  // Recursively delete a folder from disk
+  deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
   // Select a folder using native file dialog
   selectFolder: () => Promise<string | null>;
   // Get the OS home directory
@@ -62,6 +64,8 @@ export interface ElectronAPI {
     freeMemGb: number;
     gpu: string | null;
   }>;
+  // Save file via native save dialog
+  saveFileDialog: (defaultName: string, content: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // System info
   isElectron: boolean;
   // Native clipboard (bypasses web clipboard restrictions in Electron)
