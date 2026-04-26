@@ -1,6 +1,6 @@
 import { Box, IconButton, Tooltip } from '@mui/material';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { marked } from 'marked';
 import { useState, useEffect, useRef } from 'react';
 import { getMarkdownStyles } from './document-viewer-themes';
@@ -133,13 +133,13 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
           <span>{readingTimeMin} min read</span>
           <span className="ml-auto flex items-center gap-2.5">
             <span>{filename}</span>
-            <Tooltip title="Download" arrow>
+            <Tooltip title="Save" arrow>
               <IconButton
                 size="small"
                 onClick={handleDownload}
                 sx={{ color: 'var(--sl-text-disabled)', p: 0, '&:hover': { color: 'var(--sl-text-muted)' } }}
               >
-                <FileDownloadOutlinedIcon sx={{ fontSize: 14 }} />
+                <SaveOutlinedIcon sx={{ fontSize: 14 }} />
               </IconButton>
             </Tooltip>
           </span>

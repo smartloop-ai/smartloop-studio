@@ -903,7 +903,7 @@ export default function RightSidebar({
                       color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                     }} />
                     <span className="text-[12px] text-gray-400 font-medium">
-                      {isDragging ? 'Drop file here' : 'Drop files or click to upload'}
+                      {isDragging ? 'Drop file here' : 'Drop files or click to add'}
                     </span>
                     <span className="text-[10px] text-gray-600">
                       pdf · docx · txt · csv

@@ -17,7 +17,7 @@ import { cjk } from "@streamdown/cjk";
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
@@ -1248,7 +1248,7 @@ export default function Chat(props: {
                                   URL.revokeObjectURL(url);
                                 }}
                               >
-                                <FileDownloadIcon sx={{ fontSize: 12 }} /> Download
+                                <SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to disk
                               </button>
                             </div>
                           )}
