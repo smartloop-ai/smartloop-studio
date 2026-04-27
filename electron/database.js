@@ -183,19 +183,16 @@ function closeDatabase() {
 // --- Projects ---
 
 /**
- * Expand ~ to home directory and create the folder if it does not exist.
+ * Expand ~ to home directory.
  * Returns the resolved absolute path, or the original value on error.
  */
 function ensureFolderPath(folderPath) {
   if (!folderPath) return folderPath;
   try {
-    const resolved = folderPath.startsWith('~')
+    return folderPath.startsWith('~')
       ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
       : folderPath;
-    fs.mkdirSync(resolved, { recursive: true });
-    return resolved;
   } catch (err) {
-    console.warn('[DB] Could not create project folder:', folderPath, err.message);
     return folderPath;
   }
 }
