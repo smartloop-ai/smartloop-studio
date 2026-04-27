@@ -673,6 +673,16 @@ function deleteDocumentStatus(documentId) {
   d.prepare('DELETE FROM document_status WHERE document_id = ?').run(documentId);
 }
 
+function deleteDocumentStatusByProject(projectId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM document_status WHERE project_id = ?').run(projectId);
+}
+
+function deleteFoldersByProject(projectId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM folders WHERE project_id = ?').run(projectId);
+}
+
 function formatFolder(row) {
   return {
     id: row.id,
@@ -742,4 +752,6 @@ module.exports = {
   setDocumentProcessed,
   getDocumentStatusByProject,
   deleteDocumentStatus,
+  deleteDocumentStatusByProject,
+  deleteFoldersByProject,
 };
