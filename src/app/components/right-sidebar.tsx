@@ -1001,6 +1001,9 @@ export default function RightSidebar({
                                     {ext}
                                   </span>
                                 )}
+                                {fileSizeLabel && (
+                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
+                                )}
                                 {isProcessing
                                   ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
                                   : isIndexed
@@ -1008,9 +1011,6 @@ export default function RightSidebar({
                                     : isIndexing
                                       ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexing</span>
                                       : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Pending <span className="loading-dots" style={{ display: 'inline-flex', gap: '2px' }}><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.2s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.4s' }} /></span></span>}
-                                {fileSizeLabel && (
-                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
-                                )}
                               </Box>
                             </Box>
                           </Box>
