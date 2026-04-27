@@ -303,6 +303,20 @@ export default function RightSidebar({
         if (!cancelled && result.success && result.data) {
           const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
           setApiDocuments(docs);
+          const apiStatus: Record<string, string> = {};
+          for (const doc of docs) {
+            if (!doc.id) continue;
+            const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
+            if (status === 'indexed' || !!doc.summary) {
+              apiStatus[doc.id] = 'indexed';
+              storageService.setDocumentProcessed(doc.id, projectId);
+            } else if (status) {
+              apiStatus[doc.id] = status;
+            }
+          }
+          if (Object.keys(apiStatus).length > 0) {
+            setIndexingStatus(prev => ({ ...prev, ...apiStatus }));
+          }
         }
       });
     };
@@ -991,12 +1005,12 @@ export default function RightSidebar({
                                   <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                 )}
                                 {isProcessing
-                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-brand-primary)' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
+                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
                                   : isIndexed
-                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-status-success, #4ade80)' }}>Indexed</span>
+                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexed</span>
                                     : isIndexing
-                                      ? <span style={{ fontSize: '9px', color: '#facc15' }}>Indexing</span>
-                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Pending <span className="loading-dots" style={{ display: 'inline-flex', gap: '2px' }}><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0s' }} /><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.2s' }} /><span style={{ width: 4, height: 4, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.4s' }} /></span></span>}
+                                      ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexing</span>
+                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Pending <span className="loading-dots" style={{ display: 'inline-flex', gap: '2px' }}><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.2s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.4s' }} /></span></span>}
                               </Box>
                             </Box>
                           </Box>

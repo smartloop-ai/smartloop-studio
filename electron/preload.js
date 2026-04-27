@@ -150,6 +150,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setDocumentProcessed: (documentId, projectId) => ipcRenderer.invoke('db-set-document-processed', documentId, projectId),
     getDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-get-document-status-by-project', projectId),
     deleteDocumentStatus: (documentId) => ipcRenderer.invoke('db-delete-document-status', documentId),
+    deleteDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-delete-document-status-by-project', projectId),
+    deleteFoldersByProject: (projectId) => ipcRenderer.invoke('db-delete-folders-by-project', projectId),
   },
   // Save content to a user-chosen location via native dialog
   saveFileDialog: (defaultName, content) => ipcRenderer.invoke('save-file-dialog', defaultName, content),
