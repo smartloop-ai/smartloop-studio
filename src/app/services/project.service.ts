@@ -1,5 +1,6 @@
 import { getLocalApiEndpoint } from "@/app/constants";
 import { storageService } from "./storage.service";
+import { documentService } from "./document.service";
 
 /**
  * Project Service
@@ -86,17 +87,40 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     const localBase = await getLocalApiEndpoint();
     if (!localBase) return { success: false, error: 'Local API service is not ready' };
 
+    // Get the project's folder_path before deletion so we can clean it up
+    const projectMeta = await storageService.getProjectMeta(projectId);
+    const folderPath = projectMeta?.folder_path;
+
+    // Delete documents from the local API before deleting the project
+    try {
+      const docsResult = await documentService.getLocalDocuments(projectId);
+      if (docsResult.success && Array.isArray(docsResult.data)) {
+        for (const doc of docsResult.data) {
+          if (doc.id) {
+            await documentService.deleteLocalDocument(projectId, doc.id);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error cleaning up documents during project deletion:', e);
+    }
+
     const response = await fetch(`${localBase}/v1/projects/${projectId}`, { method: 'DELETE' });
 
     if (response.status === 200 || response.status === 204) {
-      // Delete all local conversations (and their messages via cascade) for this project
+      // Delete all local SQLite data for this project
       await storageService.deleteConversationsByProject(projectId);
       await storageService.deleteMcpServersByProject(projectId);
+      await storageService.deleteDocumentStatusByProject(projectId);
+      await storageService.deleteFoldersByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
 
-      // Delete the project folder from disk (~/.smartloop/{projectId}/)
+      // Delete the project folders from disk
       if (window.electronAPI?.deleteFolder) {
         await window.electronAPI.deleteFolder(`~/.smartloop/${projectId}`);
+        if (folderPath) {
+          await window.electronAPI.deleteFolder(folderPath);
+        }
       }
 
       return { success: true, data: { projectId } };

@@ -475,6 +475,24 @@ class StorageService {
       console.error('Error deleting document status:', error);
     }
   }
+
+  async deleteDocumentStatusByProject(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteDocumentStatusByProject(projectId);
+    } catch (error) {
+      console.error('Error deleting document status by project:', error);
+    }
+  }
+
+  async deleteFoldersByProject(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteFoldersByProject(projectId);
+    } catch (error) {
+      console.error('Error deleting folders by project:', error);
+    }
+  }
 }
 
 export const storageService = new StorageService();
