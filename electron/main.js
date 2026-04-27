@@ -248,6 +248,8 @@ ipcMain.handle('db-get-document-folders-by-project', (event, projectId) => datab
 ipcMain.handle('db-set-document-processed', (event, documentId, projectId) => database.setDocumentProcessed(documentId, projectId));
 ipcMain.handle('db-get-document-status-by-project', (event, projectId) => database.getDocumentStatusByProject(projectId));
 ipcMain.handle('db-delete-document-status', (event, documentId) => database.deleteDocumentStatus(documentId));
+ipcMain.handle('db-delete-document-status-by-project', (event, projectId) => database.deleteDocumentStatusByProject(projectId));
+ipcMain.handle('db-delete-folders-by-project', (event, projectId) => database.deleteFoldersByProject(projectId));
 
 // --- Local SLP service helpers ---
 
