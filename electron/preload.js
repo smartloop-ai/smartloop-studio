@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   // Open a folder in Finder / file manager
   openInFinder: (path) => ipcRenderer.invoke('open-in-finder', path),
+  // Open a document reference (citation) with the system's native viewer
+  openDocumentReference: (filePath, documentId, projectId) => ipcRenderer.invoke('open-document-reference', filePath, documentId, projectId),
   // Storage methods - native Electron storage using electron-store
   storageGet: (key) => ipcRenderer.invoke('storage-get', key),
   storageSet: (key, value) => ipcRenderer.invoke('storage-set', key, value),
@@ -77,6 +79,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeSlpServiceReadyListener: () => {
     ipcRenderer.removeAllListeners('slp-service-ready');
+  },
+  onNavigateToProject: (callback) => {
+    ipcRenderer.on('navigate-to-project', (event, projectId) => callback(projectId));
+  },
+  removeNavigateToProjectListener: () => {
+    ipcRenderer.removeAllListeners('navigate-to-project');
   },
   // Bootstrap progress
   onBootstrapProgress: (callback) => {

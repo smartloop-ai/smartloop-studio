@@ -521,7 +521,21 @@ export default function Home() {
           seen.add(t.id);
           return true;
         });
-        activeId = saved.activeTabId || tabs[0]?.id || '';
+
+        // Validate conversation tabs belong to this project
+        const convos = await storageService.getConversations(projectId);
+        const convoIds = new Set(convos.map((c: any) => c.id));
+        tabs = tabs.filter((t: OpenTab) => {
+          if (t.type !== 'conversation') return true;
+          const convId = t.id.replace('conv-', '');
+          return convId === 'new' || convoIds.has(convId);
+        });
+
+        if (tabs.length === 0) {
+          const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
+          tabs = [defaultTab];
+        }
+        activeId = (saved.activeTabId && tabs.some((t: OpenTab) => t.id === saved.activeTabId)) ? saved.activeTabId : tabs[0]?.id || '';
       } else {
         // Default: open a new conversation tab
         const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
