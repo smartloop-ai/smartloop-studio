@@ -7,7 +7,7 @@ const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
 const VERSION = '1.0.1';
-const BASE_URL = `https://github.com/smartloop-ai/smartloop/releases/download/v${VERSION}`;
+const BASE_URL = `https://dl.smartloop.ai/${VERSION}`;
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const VERSION_DIR = path.join(INSTALL_DIR, VERSION);
 const CACHE_DIR = path.join(INSTALL_DIR, 'cache');
@@ -284,9 +284,9 @@ async function installService(onProgress) {
   fs.chmodSync(slpBinary, 0o755);
 
   try {
-    await runAsync(slpBinary, ['--help']);
+    await runAsync(slpBinary, ['--version']);
   } catch (err) {
-    throw new Error(`Installation verification failed: 'slp --help' did not succeed: ${err.message}`);
+    throw new Error(`Installation verification failed: 'slp --version' did not succeed: ${err.message}`);
   }
 
   // ── Step 5: Set up symlinks ───────────────────────────────────────────────
