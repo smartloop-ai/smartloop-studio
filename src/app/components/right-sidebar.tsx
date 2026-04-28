@@ -240,14 +240,19 @@ export default function RightSidebar({
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
 
-  // Collapse sidebar only when switching to a different project
-  const prevProjectIdRef = useRef<string | null>(selectedProject?.id ?? null);
+  // Reset transient editing/form state when switching projects
   useEffect(() => {
-    const newId = selectedProject?.id ?? null;
-    if (prevProjectIdRef.current !== null && newId !== prevProjectIdRef.current) {
-      setActiveSection(null);
-    }
-    prevProjectIdRef.current = newId;
+    setEditingSkillIndex(null);
+    setEditingSkillIsNew(false);
+    setSkillContent('');
+    setSkillHasUnsavedChanges(false);
+    setSkillSearchQuery('');
+    setNewMcpName('');
+    setNewMcpUrl('');
+    setNewMcpEnv('');
+    setIsAddingMcp(false);
+    setMcpError('');
+    setUploadError('');
   }, [selectedProject?.id]);
 
   // Ensure sidebar is collapsed for system projects or when no project is selected
@@ -260,7 +265,6 @@ export default function RightSidebar({
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
   const [_processedDates, setProcessedDates] = useState<Record<string, string>>({});
-  const [directoryFiles, setDirectoryFiles] = useState<any[]>([]);
 
   // Load processed dates when project changes
   useEffect(() => {
@@ -283,20 +287,11 @@ export default function RightSidebar({
   // Populated from SQLite (persisted) + live indexing events from chat.tsx health poll
   const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
 
-  // Periodically scan directory and refresh API documents
   useEffect(() => {
-    const folderPath = currentProjectData?.folder_path;
     const projectId = selectedProject?.id;
-    if (!projectId) { setApiDocuments([]); setDirectoryFiles([]); setIndexingStatus({}); return; }
+    if (!projectId) { setApiDocuments([]); setIndexingStatus({}); return; }
 
     let cancelled = false;
-
-    const scanDir = () => {
-      if (!folderPath || !window.electronAPI?.listDirectory) return;
-      window.electronAPI.listDirectory(folderPath).then((result) => {
-        if (!cancelled && result.success) setDirectoryFiles(result.files);
-      });
-    };
 
     const refreshApi = () => {
       documentService.getLocalDocuments(projectId).then((result) => {
@@ -334,7 +329,6 @@ export default function RightSidebar({
     };
 
     // Initial load
-    scanDir();
     refreshApi();
     loadIndexedFromDb();
 
@@ -361,7 +355,7 @@ export default function RightSidebar({
     window.addEventListener('indexingStatusUpdate', onIndexingUpdate);
 
     // Refresh on explicit events (upload, delete, processing complete)
-    const handler = () => { scanDir(); refreshApi(); loadIndexedFromDb(); };
+    const handler = () => { refreshApi(); loadIndexedFromDb(); };
     window.addEventListener('documentProcessingComplete', handler);
     window.addEventListener('documentUploaded', handler);
 
@@ -371,53 +365,13 @@ export default function RightSidebar({
       window.removeEventListener('documentProcessingComplete', handler);
       window.removeEventListener('documentUploaded', handler);
     };
-  }, [currentProjectData?.folder_path, selectedProject?.id]);
+  }, [selectedProject?.id]);
 
-  // Merge directory files with converted API documents and uploading placeholders
   const effectiveDocuments = useMemo(() => {
-    const serverDocs: any[] = apiDocuments;
-    const serverIds = new Set(serverDocs.map((d: any) => d.id));
+    const serverIds = new Set(apiDocuments.map((d: any) => d.id));
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
-
-    // If no directory files, fall back to API docs + pending uploads
-    if (directoryFiles.length === 0) {
-      return [...serverDocs, ...pending];
-    }
-
-    // Build lookup: base name (without extension) → converted doc
-    const baseName = (name: string) => name.replace(/\.[^/.]+$/, '').toLowerCase();
-    const convertedByBase = new Map<string, any>();
-    for (const doc of serverDocs) {
-      const docFileName = (doc.path || doc.source || '').split('/').pop() || '';
-      const base = baseName(docFileName);
-      if (base) convertedByBase.set(base, doc);
-    }
-
-    // Merge: for each directory file, attach converted doc metadata if available
-    const matchedBases = new Set<string>();
-    const merged = directoryFiles.map((file: any) => {
-      const base = baseName(file.name);
-      const converted = convertedByBase.get(base);
-      if (converted) {
-        matchedBases.add(base);
-        return { ...converted, _fsFile: file };
-      }
-      // Unconverted filesystem file
-      return { id: `fs-${file.path}`, name: file.name, source: file.path, _fsFile: file };
-    });
-
-    // Add any server docs not matched by directory files (e.g. uploaded from elsewhere)
-    for (const doc of serverDocs) {
-      const docFileName = (doc.path || doc.source || '').split('/').pop() || '';
-      const base = baseName(docFileName);
-      if (!matchedBases.has(base)) {
-        merged.push(doc);
-      }
-    }
-
-    // Append pending uploads
-    return [...merged, ...pending];
-  }, [apiDocuments, uploadingDocs, directoryFiles]);
+    return [...apiDocuments, ...pending];
+  }, [apiDocuments, uploadingDocs]);
 
   // Load MCP servers from project data
   useEffect(() => {
@@ -931,17 +885,16 @@ export default function RightSidebar({
                       .filter((doc: any) => {
                         if (!searchQuery) return true;
                         const query = searchQuery.toLowerCase();
-                        const filename = (doc._fsFile?.name || (doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
+                        const filename = ((doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
                         return filename.includes(query);
                       })
                       .map((doc: any, i: number) => {
                         const rowId = doc.id || `doc-${i}`;
-                        const rawName = doc._fsFile?.name
-                          || (doc.source || doc.path || '').split('/').pop()
+                        const rawName = (doc.source || doc.path || '').split('/').pop()
                           || doc.filename || doc.name || '';
                         const filename = rawName ? (rawName.replace(/\.[^/.]+$/, '') || 'Untitled') : 'Untitled';
                         const ext = rawName.match(/\.([^/.]+)$/)?.[1]?.toUpperCase() || '';
-                        const fileSize = doc._fsFile?.size;
+                        const fileSize = doc.size;
                         const fileSizeLabel = fileSize != null
                           ? fileSize >= 1024 * 1024 ? `${(fileSize / 1024 / 1024).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(0)} KB`
                           : null;

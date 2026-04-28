@@ -33,8 +33,11 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
       return { success: false, error: 'Project name is required' };
     }
 
+    const trimmedName = name.trim();
+    const slug = trimmedName.toLowerCase().replace(/\s+/g, '_');
+
     const localBase = await getLocalApiEndpoint();
-    const body: any = { name: name.trim(), description: '', system };
+    const body: any = { name: slug, description: '', system };
     if (model_name) body.model_name = model_name;
 
     const response = await fetch(`${localBase}/v1/projects`, {
@@ -46,10 +49,10 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
     if (response.status === 200 || response.status === 201) {
       const project = await response.json();
 
-      // Save UI metadata to local SQLite
+      // Save UI metadata to local SQLite (preserve display name)
       await storageService.upsertProject({
         id: project.id,
-        name: project.name,
+        name: trimmedName,
         color,
         system,
         folder_path: params.folder_path,
@@ -59,12 +62,12 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
       await storageService.addMcpServer({
         id: `mcp_local_${project.id}`,
         project_id: project.id,
-        name: name.trim(),
+        name: slug,
         server_type: 'local',
-        config: { name: name.trim() },
+        config: { name: slug },
       });
 
-      return { success: true, data: { ...project, color, folder_path: params.folder_path } };
+      return { success: true, data: { ...project, name: trimmedName, color, folder_path: params.folder_path } };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -178,25 +181,31 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
     const localBase = await getLocalApiEndpoint();
     if (!localBase) return { success: false, error: 'Local API service is not ready' };
 
+    const trimmedName = updates.name?.trim();
+    const apiUpdates = { ...updates };
+    if (trimmedName) {
+      apiUpdates.name = trimmedName.toLowerCase().replace(/\s+/g, '_');
+    }
+
     const response = await fetch(`${localBase}/v1/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
+      body: JSON.stringify(apiUpdates)
     });
 
     if (response.status === 200) {
       const project = await response.json();
 
-      // Update local UI metadata
+      // Update local UI metadata (preserve display name)
       const metaUpdates: any = {};
-      if (updates.name) metaUpdates.name = updates.name;
+      if (trimmedName) metaUpdates.name = trimmedName;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
       if (updates.folder_path !== undefined) metaUpdates.folder_path = updates.folder_path;
       if (Object.keys(metaUpdates).length > 0) {
         await storageService.updateProjectMeta(projectId, metaUpdates);
       }
 
-      return { success: true, data: { ...project, color: updates.color ?? project.color } };
+      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color } };
     }
 
     const errorData = await response.json().catch(() => ({}));

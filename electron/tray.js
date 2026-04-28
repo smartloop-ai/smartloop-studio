@@ -5,6 +5,7 @@ const slpService = require('./slp-service');
 let tray = null;
 let mainWindow = null;
 let createWindowFn = null;
+let appReady = false;
 
 /**
  * Create the system tray.
@@ -25,6 +26,13 @@ function setMainWindow(win) {
 }
 
 /**
+ * Mark the app as ready (splash done, main window visible).
+ * Until this is called, "Show Window" in the tray does nothing.
+ */
+function setAppReady(ready) {
+  appReady = ready;  if (ready) refreshTray();}
+
+/**
  * Register the createWindow function so the tray can recreate the window.
  */
 function setCreateWindow(fn) {
@@ -33,8 +41,10 @@ function setCreateWindow(fn) {
 
 /**
  * Show the main window, recreating it if it was destroyed.
+ * Does nothing while the splash screen is still active.
  */
 function showOrCreateWindow() {
+  if (!appReady) return;
   if (!mainWindow || mainWindow.isDestroyed()) {
     if (createWindowFn) {
       mainWindow = createWindowFn();
@@ -104,6 +114,7 @@ function refreshTray() {
     { type: 'separator' },
     {
       label: 'Show Window',
+      enabled: appReady,
       click: () => {
         showOrCreateWindow();
       },
@@ -118,4 +129,4 @@ function refreshTray() {
   tray.setContextMenu(contextMenu);
 }
 
-module.exports = { createTray, setMainWindow, setCreateWindow, refreshTray };
+module.exports = { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray };

@@ -115,7 +115,7 @@ async function startService() {
   console.log('[SLP] Server logs writing to:', logFile);
 
   // Start as a child process — use pipe and manually redirect output to log file
-  const proc = spawn(slpBinary, ['server', 'start'], {
+  const proc = spawn(slpBinary, ['start'], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -203,7 +203,7 @@ async function stopService() {
   if (fs.existsSync(slpBinary)) {
     try {
       await new Promise((resolve, reject) => {
-        execFile(slpBinary, ['server', 'stop'], {
+        execFile(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
         }, (error) => {
