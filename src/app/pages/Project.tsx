@@ -291,7 +291,7 @@ export default function Project() {
     if (!current?.id) return;
     setIsSavingFolderPath(true);
     try {
-      const slug = (current.name || current.title || 'project').toLowerCase().replace(/\s+/g, '_');
+      const slug = (current.name || current.title || 'project').trim().toLowerCase().replace(/\s+/g, '_');
       const pathToSave = folderPath.trim() || `~/smartloop/${slug}`;
       await storageService.updateProjectMeta(current.id, { folder_path: pathToSave });
       setFolderPath(pathToSave);

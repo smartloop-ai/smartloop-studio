@@ -7,11 +7,12 @@ const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
 const VERSION = '1.0.1';
-const BASE_URL = `https://dl.smartloop.ai/${VERSION}`;
+const BASE_URL = `https://dl.smartloop.ai/slp/${VERSION}`;
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
-const VERSION_DIR = path.join(INSTALL_DIR, VERSION);
+const VERSION_DIR = path.join(INSTALL_DIR, VERSION, 'bin');
 const CACHE_DIR = path.join(INSTALL_DIR, 'cache');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
+const HASH_FILE = path.join(INSTALL_DIR, '.binary-hash');
 
 function getInstalledBinaryPath() {
   return path.join(VERSION_DIR, 'slp');
@@ -24,6 +25,11 @@ function needsInstall() {
     if (installed !== VERSION) return true;
     const installedBinary = getInstalledBinaryPath();
     if (!fs.existsSync(installedBinary)) return true;
+    if (fs.existsSync(HASH_FILE)) {
+      const storedHash = fs.readFileSync(HASH_FILE, 'utf-8').trim();
+      const currentHash = crypto.createHash('sha256').update(fs.readFileSync(installedBinary)).digest('hex');
+      if (storedHash !== currentHash) return true;
+    }
     return false;
   } catch {
     return true;
@@ -142,28 +148,6 @@ function downloadFile(url, destPath, onProgress, maxRedirects = 10) {
 }
 
 /**
- * Fetch a small text file from a URL and return its contents.
- */
-function fetchText(url, maxRedirects = 10) {
-  return new Promise((resolve, reject) => {
-    function doRequest(currentUrl, redirectsLeft) {
-      const mod = currentUrl.startsWith('https') ? https : require('http');
-      mod.get(currentUrl, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          if (redirectsLeft <= 0) return reject(new Error('Too many redirects'));
-          return doRequest(res.headers.location, redirectsLeft - 1);
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => resolve(data.trim()));
-      }).on('error', reject);
-    }
-    doRequest(url, maxRedirects);
-  });
-}
-
-/**
  * Compute SHA-256 hash of a local file.
  */
 function fileSha256(filePath) {
@@ -174,21 +158,6 @@ function fileSha256(filePath) {
     stream.on('end', () => resolve(hash.digest('hex')));
     stream.on('error', reject);
   });
-}
-
-/**
- * Parse the checksums file into a Map of filename → sha256.
- */
-function parseChecksums(text) {
-  const map = new Map();
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    // Format: "sha256  filename"
-    const match = trimmed.match(/^([a-f0-9]{64})\s+(.+)$/);
-    if (match) map.set(match[2], match[1]);
-  }
-  return map;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,40 +179,15 @@ async function installService(onProgress) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // ── Step 1: Fetch checksums ───────────────────────────────────────────────
-  console.log('[SLP Setup] Fetching checksums...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Verifying release...' });
-
-  let checksums = new Map();
-  try {
-    const checksumText = await fetchText(`${BASE_URL}/checksums-sha256.txt`);
-    checksums = parseChecksums(checksumText);
-  } catch (err) {
-    console.warn('[SLP Setup] Could not fetch checksums:', err.message);
-  }
+  // ── Step 1: Determine archive name & URL ─────────────────────────────────
+  const isWindows = plat === 'windows';
+  const ext = isWindows ? 'zip' : 'tar.gz';
+  const archiveName = `${plat}-${arch}-slp.${ext}`;
+  const archiveUrl = `${BASE_URL}/${archiveName}`;
+  const cachedArchive = path.join(CACHE_DIR, `slp-${VERSION}-${plat}-${arch}.${ext}`);
 
   // ── Step 2: Download archive ──────────────────────────────────────────────
-  const cachedArchive = path.join(CACHE_DIR, `slp-${VERSION}-${plat}-${arch}.tar.gz`);
-
-  if (plat === 'darwin') {
-    const archiveName = `darwin-${arch}-slp.tar.gz`;
-    const expectedSha = checksums.get(archiveName) || '';
-
-    // Check cache
-    if (expectedSha && fs.existsSync(cachedArchive)) {
-      const localSha = await fileSha256(cachedArchive);
-      if (localSha === expectedSha) {
-        console.log('[SLP Setup] Using cached archive');
-        if (onProgress) onProgress({ status: 'installing', message: 'Using cached download...' });
-      } else {
-        await doDownload(`${BASE_URL}/${archiveName}`, cachedArchive, expectedSha, onProgress);
-      }
-    } else {
-      await doDownload(`${BASE_URL}/${archiveName}`, cachedArchive, expectedSha, onProgress);
-    }
-  } else if (plat === 'linux') {
-    await downloadLinuxParts(arch, checksums, cachedArchive, onProgress);
-  }
+  await doDownload(archiveUrl, cachedArchive, onProgress);
 
   // ── Step 3: Extract ───────────────────────────────────────────────────────
   console.log('[SLP Setup] Extracting...');
@@ -251,11 +195,15 @@ async function installService(onProgress) {
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-extract-'));
   try {
-    await runAsync('tar', ['-xzf', cachedArchive, '-C', tmpDir]);
+    if (isWindows) {
+      await runAsync('powershell', ['-NoProfile', '-Command',
+        `Expand-Archive -LiteralPath "${cachedArchive}" -DestinationPath "${tmpDir}" -Force`]);
+    } else {
+      await runAsync('tar', ['-xzf', cachedArchive, '-C', tmpDir]);
+    }
 
     // Copy extracted contents to version dir
     fs.mkdirSync(VERSION_DIR, { recursive: true });
-    // Clear existing contents
     const existing = fs.readdirSync(VERSION_DIR);
     for (const f of existing) {
       fs.rmSync(path.join(VERSION_DIR, f), { recursive: true, force: true });
@@ -265,14 +213,13 @@ async function installService(onProgress) {
     if (fs.existsSync(extractedSlpDir)) {
       copyDirRecursive(extractedSlpDir, VERSION_DIR);
     } else {
-      // Files may be directly in tmpDir
       copyDirRecursive(tmpDir, VERSION_DIR);
     }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 
-  // ── Step 4: Verify binary ────────────────────────────────────────────────
+  // ── Step 4: Verify binary ─────────────────────────────────────────────────
   console.log('[SLP Setup] Verifying installation...');
   if (onProgress) onProgress({ status: 'installing', message: 'Verifying installation...' });
 
@@ -280,8 +227,9 @@ async function installService(onProgress) {
     throw new Error(`Binary not found at ${slpBinary} after extraction`);
   }
 
-  // Make binary executable
-  fs.chmodSync(slpBinary, 0o755);
+  if (!isWindows) {
+    fs.chmodSync(slpBinary, 0o755);
+  }
 
   try {
     await runAsync(slpBinary, ['--version']);
@@ -289,21 +237,12 @@ async function installService(onProgress) {
     throw new Error(`Installation verification failed: 'slp --version' did not succeed: ${err.message}`);
   }
 
-  // ── Step 5: Set up symlinks ───────────────────────────────────────────────
+  // Store binary hash for integrity tracking on future launches
+  const binaryHash = await fileSha256(slpBinary);
+  fs.writeFileSync(HASH_FILE, binaryHash);
+
+  // ── Step 5: Write version tracking files ─────────────────────────────────
   if (onProgress) onProgress({ status: 'installing', message: 'Configuring...' });
-
-  // Symlink into base dir for PATH consistency
-  const baseSlpLink = path.join(INSTALL_DIR, 'slp');
-  try { fs.unlinkSync(baseSlpLink); } catch {}
-  fs.symlinkSync(slpBinary, baseSlpLink);
-
-  // Symlink into ~/.local/bin if it exists
-  const localBin = path.join(os.homedir(), '.local', 'bin');
-  if (fs.existsSync(localBin)) {
-    const localBinLink = path.join(localBin, 'slp');
-    try { fs.unlinkSync(localBinLink); } catch {}
-    try { fs.symlinkSync(baseSlpLink, localBinLink); } catch {}
-  }
 
   // Write version tracking files
   fs.writeFileSync(path.join(INSTALL_DIR, 'version'), VERSION);
@@ -365,9 +304,9 @@ function throttleProgress(onProgress, intervalMs = 200) {
 }
 
 /**
- * Download a single file with progress and checksum verification.
+ * Download a single file with progress reporting.
  */
-async function doDownload(url, destPath, expectedSha, onProgress) {
+async function doDownload(url, destPath, onProgress) {
   console.log('[SLP Setup] Downloading from', url);
   if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading Framework... ' });
 
@@ -376,138 +315,6 @@ async function doDownload(url, destPath, expectedSha, onProgress) {
     throttled.fire({ status: 'downloading', ...p, message: 'Downloading Framework... ' });
   });
   throttled.dispose();
-
-  if (expectedSha) {
-    if (onProgress) onProgress({ status: 'installing', message: 'Verifying checksum...' });
-    const actualSha = await fileSha256(destPath);
-    if (actualSha !== expectedSha) {
-      try { fs.unlinkSync(destPath); } catch {}
-      throw new Error(`Checksum mismatch: expected ${expectedSha}, got ${actualSha}`);
-    }
-    console.log('[SLP Setup] Checksum verified');
-  }
-}
-
-/**
- * Get content-length of a URL via HEAD request (follows redirects).
- */
-function getContentLength(url, maxRedirects = 10) {
-  return new Promise((resolve) => {
-    function doHead(currentUrl, redirectsLeft) {
-      const mod = currentUrl.startsWith('https') ? https : require('http');
-      const req = mod.request(currentUrl, { method: 'HEAD' }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          if (redirectsLeft <= 0) return resolve(0);
-          return doHead(res.headers.location, redirectsLeft - 1);
-        }
-        resolve(parseInt(res.headers['content-length'], 10) || 0);
-      });
-      req.on('error', () => resolve(0));
-      req.end();
-    }
-    doHead(url, maxRedirects);
-  });
-}
-
-/**
- * Download Linux split parts and concatenate them.
- * Linux archives are split due to GitHub's 2GB release asset limit.
- * Shows a single combined progress bar across all parts.
- */
-async function downloadLinuxParts(arch, checksums, destPath, onProgress) {
-  const partPrefix = `linux-${arch}-slp.tar.gz.part-`;
-  const suffixes = ['aa', 'ab', 'ac', 'ad', 'ae', 'af', 'ag', 'ah'];
-
-  // Discover available parts by checking which checksums exist
-  const availableParts = [];
-  for (const suffix of suffixes) {
-    const partName = `${partPrefix}${suffix}`;
-    if (checksums.has(partName)) {
-      availableParts.push(suffix);
-    } else {
-      // Also try HEAD request as fallback
-      try {
-        await fetchText(`${BASE_URL}/${partName}`);
-        availableParts.push(suffix);
-      } catch {
-        break;
-      }
-    }
-  }
-
-  if (availableParts.length === 0) {
-    throw new Error('No download parts found for Linux');
-  }
-
-  // Get content-length of each part so we can show combined progress
-  const partSizes = [];
-  for (const suffix of availableParts) {
-    const partName = `${partPrefix}${suffix}`;
-    const size = await getContentLength(`${BASE_URL}/${partName}`);
-    partSizes.push(size);
-  }
-  const combinedTotal = partSizes.reduce((a, b) => a + b, 0);
-
-  const tmpPartsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-parts-'));
-  const partFiles = [];
-  let downloadedSoFar = 0;
-  const throttled = throttleProgress(onProgress);
-
-  try {
-    for (let i = 0; i < availableParts.length; i++) {
-      const suffix = availableParts[i];
-      const partName = `${partPrefix}${suffix}`;
-      const partFile = path.join(tmpPartsDir, partName);
-      const expectedSha = checksums.get(partName) || '';
-      const baseOffset = downloadedSoFar;
-
-      console.log(`[SLP Setup] Downloading part ${i + 1}/${availableParts.length}`);
-
-      await downloadFile(`${BASE_URL}/${partName}`, partFile, (p) => {
-        throttled.fire({
-          status: 'downloading',
-          downloaded: baseOffset + p.downloaded,
-          total: combinedTotal,
-          message: 'Downloading Framework...',
-        });
-      });
-
-      // Update cumulative offset with actual file size
-      try {
-        downloadedSoFar += fs.statSync(partFile).size;
-      } catch {
-        downloadedSoFar += partSizes[i];
-      }
-
-      if (expectedSha) {
-        const actualSha = await fileSha256(partFile);
-        if (actualSha !== expectedSha) {
-          throw new Error(`Checksum mismatch for ${partName}`);
-        }
-      }
-
-      partFiles.push(partFile);
-    }
-
-    // Flush any remaining throttled progress update
-    throttled.dispose();
-
-    // Concatenate parts
-    if (onProgress) onProgress({ status: 'installing', message: 'Processing download...' });
-    const writeStream = fs.createWriteStream(destPath);
-    for (const partFile of partFiles) {
-      await new Promise((resolve, reject) => {
-        const readStream = fs.createReadStream(partFile);
-        readStream.pipe(writeStream, { end: false });
-        readStream.on('end', resolve);
-        readStream.on('error', reject);
-      });
-    }
-    writeStream.end();
-    await new Promise((resolve) => writeStream.on('finish', resolve));
-  } finally {
-    fs.rmSync(tmpPartsDir, { recursive: true, force: true });
-  }
 }
 
 /**
@@ -588,10 +395,6 @@ function uninstallSlpService() {
       fs.unlinkSync(plistPath);
     } catch {}
   }
-
-  // Remove symlinks
-  try { fs.unlinkSync(path.join(os.homedir(), '.local', 'bin', 'slp')); } catch {}
-  try { fs.unlinkSync(path.join(INSTALL_DIR, 'slp')); } catch {}
 
   // Remove install directory
   if (fs.existsSync(INSTALL_DIR)) {
