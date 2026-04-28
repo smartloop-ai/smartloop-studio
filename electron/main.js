@@ -7,7 +7,7 @@ const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService } = require('./slp-setup');
 const database = require('./database');
-const { createTray, setMainWindow, setCreateWindow, refreshTray } = require('./tray');
+const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray } = require('./tray');
 const slpService = require('./slp-service');
 
 // Load environment variables from .env files (development only)
@@ -548,13 +548,22 @@ function updateSplashProgress(data) {
   if (data.status === 'downloading') {
     const downloaded = data.downloaded || 0;
     const total = data.total || 0;
-    const pct = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
-    const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
-    const totalMB = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
-    const label = data.message || 'Downloading...';
-    const statusText = total > 0
-      ? `${label} ${dlMB} / ${totalMB} MB`
-      : `${label} ${dlMB} MB`;
+    // Also handle percent/progress fields from bootstrap SSE
+    const explicitPct = data.percent ?? data.progress ?? data.percentage;
+    const pct = total > 0
+      ? Math.min(100, Math.round((downloaded / total) * 100))
+      : explicitPct !== undefined ? Math.min(100, Math.round(Number(explicitPct))) : 0;
+    const label = data.message || 'Downloading model...';
+    let statusText;
+    if (total > 0) {
+      const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
+      const totalMB = (total / (1024 * 1024)).toFixed(1);
+      statusText = `${label} ${dlMB} / ${totalMB} MB`;
+    } else if (pct > 0) {
+      statusText = `${label} ${pct}%`;
+    } else {
+      statusText = label;
+    }
 
     splashWindow.webContents.executeJavaScript(`
       document.getElementById('status-text').textContent = ${JSON.stringify(statusText)};
@@ -1108,6 +1117,7 @@ if (!gotTheLock) {
               splashWindow = null;
             }
             if (mainWindow && !mainWindow.isDestroyed()) {
+              setAppReady(true);
               mainWindow.show();
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             }
@@ -1118,12 +1128,14 @@ if (!gotTheLock) {
               splashWindow = null;
             }
             if (mainWindow && !mainWindow.isDestroyed()) {
+              setAppReady(true);
               mainWindow.show();
             }
           }
         })();
       } else {
         if (mainWindow && !mainWindow.isDestroyed()) {
+          setAppReady(true);
           mainWindow.show();
           mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
         }
@@ -1198,6 +1210,7 @@ if (!gotTheLock) {
             splashWindow = null;
           }
           if (mainWindow && !mainWindow.isDestroyed()) {
+            setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
@@ -1243,6 +1256,7 @@ if (!gotTheLock) {
             splashWindow = null;
           }
           if (mainWindow && !mainWindow.isDestroyed()) {
+            setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }

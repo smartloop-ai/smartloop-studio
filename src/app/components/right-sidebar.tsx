@@ -240,14 +240,19 @@ export default function RightSidebar({
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
 
-  // Collapse sidebar only when switching to a different project
-  const prevProjectIdRef = useRef<string | null>(selectedProject?.id ?? null);
+  // Reset transient editing/form state when switching projects
   useEffect(() => {
-    const newId = selectedProject?.id ?? null;
-    if (prevProjectIdRef.current !== null && newId !== prevProjectIdRef.current) {
-      setActiveSection(null);
-    }
-    prevProjectIdRef.current = newId;
+    setEditingSkillIndex(null);
+    setEditingSkillIsNew(false);
+    setSkillContent('');
+    setSkillHasUnsavedChanges(false);
+    setSkillSearchQuery('');
+    setNewMcpName('');
+    setNewMcpUrl('');
+    setNewMcpEnv('');
+    setIsAddingMcp(false);
+    setMcpError('');
+    setUploadError('');
   }, [selectedProject?.id]);
 
   // Ensure sidebar is collapsed for system projects or when no project is selected
