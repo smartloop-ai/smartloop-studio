@@ -7,7 +7,7 @@ const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService } = require('./slp-setup');
 const database = require('./database');
-const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray } = require('./tray');
+const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
 
 // Load environment variables from .env files (development only)
@@ -58,6 +58,24 @@ ipcMain.handle('open-in-finder', async (event, folderPath) => {
     return true;
   }
   return false;
+});
+
+// Open a document reference (citation) with the system's native viewer
+ipcMain.handle('open-document-reference', async (event, filePath, documentId, projectId) => {
+  console.log('[Document Reference] Opening:', { filePath, documentId, projectId });
+  if (filePath) {
+    const resolved = filePath.startsWith('~')
+      ? filePath.replace('~', require('os').homedir())
+      : filePath;
+    const result = await shell.openPath(resolved);
+    if (result) {
+      console.warn('[Document Reference] Failed to open:', result);
+      return { success: false, error: result };
+    }
+    return { success: true, path: resolved };
+  }
+  console.warn('[Document Reference] No file path provided for document:', documentId);
+  return { success: false, error: 'No file path' };
 });
 
 // Initialize electron-store
@@ -304,6 +322,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('slp-document-progress', { percent: pct, status: data.status || 'Processing...' });
               }
+              setTrayProgress(pct, data.status);
             }
             // Track last document-like object
             if (data.id || data.source || data.document_id) {
@@ -323,6 +342,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
           } catch { }
         }
 
+        setTrayProgress(null, 'done');
         if (res.statusCode === 200 || res.statusCode === 201) {
           resolve({ success: true, data: lastDocument || {} });
         } else {
@@ -331,6 +351,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
       });
 
       res.on('error', (err) => {
+        setTrayProgress(null, 'error');
         resolve({ success: false, error: err.message });
       });
     });
@@ -1338,9 +1359,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   app.isQuitting = true;
   database.closeDatabase();
-  if (slpService.getLocalBaseUrl()) {
-    slpService.stopService();
-  }
+  slpService.stopService();
 });
 
 // Handle certificate errors in development

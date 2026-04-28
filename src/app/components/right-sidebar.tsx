@@ -640,13 +640,13 @@ export default function RightSidebar({
       const placeholderDoc = { id: placeholderId, name: file.name, source: file.name };
       const projectId = selectedProject.id;
 
-      setProcessingDocs(prev => new Map(prev).set(placeholderId, 'Uploading...'));
+      setProcessingDocs(prev => new Map(prev).set(placeholderId, 'pending'));
       setUploadingDocs(prev => [...prev, placeholderDoc]);
 
-      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, (progress) => {
+      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, () => {
         setProcessingDocs(prev => {
           const next = new Map(prev);
-          next.set(placeholderId, progress.status || `Processing... ${progress.percent}%`);
+          next.set(placeholderId, 'pending');
           return next;
         });
       }, currentProjectData?.folder_path);
@@ -674,7 +674,7 @@ export default function RightSidebar({
       setProcessingDocs(prev => {
         const next = new Map(prev);
         next.delete(placeholderId);
-        next.set(docId, 'Processing');
+        next.set(docId, 'pending');
         return next;
       });
       setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { name: d.name, source: d.source, ...uploadedDocument } : d));
@@ -958,7 +958,7 @@ export default function RightSidebar({
                                   <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                 )}
                                 {isProcessing
-                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'Extracting...'}</span>
+                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'pending'}</span>
                                   : isIndexed
                                     ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexed</span>
                                     : isIndexing
