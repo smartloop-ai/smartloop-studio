@@ -10,6 +10,7 @@ import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import SyncIcon from '@mui/icons-material/Sync';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
 import SkillCreateDialog from './skill-create-dialog';
@@ -19,7 +20,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS } from '@/app/constants';
+import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -265,6 +266,7 @@ export default function RightSidebar({
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
   const [_processedDates, setProcessedDates] = useState<Record<string, string>>({});
+  const [directoryFiles, setDirectoryFiles] = useState<any[]>([]);
 
   // Load processed dates when project changes
   useEffect(() => {
@@ -283,15 +285,28 @@ export default function RightSidebar({
 
   // Local copy of API documents, refreshed periodically
   const [apiDocuments, setApiDocuments] = useState<any[]>([]);
+  // Tracks fs file path → API doc ID for files submitted for processing
+  const [fsToApiMap, setFsToApiMap] = useState<Map<string, string>>(new Map());
   // Per-document indexing status: doc id → status string
   // Populated from SQLite (persisted) + live indexing events from chat.tsx health poll
   const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
 
+  // Scan project directory and refresh API documents
   useEffect(() => {
+    const folderPath = currentProjectData?.folder_path;
     const projectId = selectedProject?.id;
-    if (!projectId) { setApiDocuments([]); setIndexingStatus({}); return; }
+    if (!projectId) { setApiDocuments([]); setDirectoryFiles([]); setIndexingStatus({}); setFsToApiMap(new Map()); return; }
+    setIndexingStatus({});
+    setFsToApiMap(new Map());
 
     let cancelled = false;
+
+    const scanDir = () => {
+      if (!folderPath || !window.electronAPI?.listDirectory) return;
+      window.electronAPI.listDirectory(folderPath).then((result: any) => {
+        if (!cancelled && result.success) setDirectoryFiles(result.files);
+      });
+    };
 
     const refreshApi = () => {
       documentService.getLocalDocuments(projectId).then((result) => {
@@ -302,7 +317,7 @@ export default function RightSidebar({
           for (const doc of docs) {
             if (!doc.id) continue;
             const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-            if (status === 'indexed' || !!doc.summary) {
+            if (status === 'indexed') {
               apiStatus[doc.id] = 'indexed';
               storageService.setDocumentProcessed(doc.id, projectId);
             } else if (status) {
@@ -329,6 +344,7 @@ export default function RightSidebar({
     };
 
     // Initial load
+    scanDir();
     refreshApi();
     loadIndexedFromDb();
 
@@ -339,7 +355,6 @@ export default function RightSidebar({
       const docs: Record<string, string> = detail.documents || {};
       if (!cancelled) {
         setIndexingStatus((prev) => {
-          // Check if any doc just transitioned to 'indexed' — refresh API to get summaries
           let newlyIndexed = false;
           for (const [id, status] of Object.entries(docs)) {
             if (status === 'indexed' && prev[id] !== 'indexed') {
@@ -355,7 +370,7 @@ export default function RightSidebar({
     window.addEventListener('indexingStatusUpdate', onIndexingUpdate);
 
     // Refresh on explicit events (upload, delete, processing complete)
-    const handler = () => { refreshApi(); loadIndexedFromDb(); };
+    const handler = () => { scanDir(); refreshApi(); loadIndexedFromDb(); };
     window.addEventListener('documentProcessingComplete', handler);
     window.addEventListener('documentUploaded', handler);
 
@@ -365,13 +380,62 @@ export default function RightSidebar({
       window.removeEventListener('documentProcessingComplete', handler);
       window.removeEventListener('documentUploaded', handler);
     };
-  }, [selectedProject?.id]);
+  }, [currentProjectData?.folder_path, selectedProject?.id]);
 
+  // Directory files are the primary list; API data enriches them with status/summary
   const effectiveDocuments = useMemo(() => {
-    const serverIds = new Set(apiDocuments.map((d: any) => d.id));
+    const serverDocs: any[] = apiDocuments;
+    const serverIds = new Set(serverDocs.map((d: any) => d.id));
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
-    return [...apiDocuments, ...pending];
-  }, [apiDocuments, uploadingDocs]);
+
+    // If no directory files, fall back to API docs + pending uploads
+    if (directoryFiles.length === 0) {
+      return [...serverDocs, ...pending];
+    }
+
+    // Build multiple lookups from API docs for robust matching
+    const baseName = (name: string) => name.replace(/\.[^/.]+$/, '').toLowerCase();
+    const apiById = new Map<string, any>();
+    const apiByBase = new Map<string, any>();
+    const apiByPath = new Map<string, any>();
+    for (const doc of serverDocs) {
+      if (doc.id) apiById.set(doc.id, doc);
+      // Match by base name from any available name field
+      const docFileName = (doc.path || doc.source || '').split('/').pop()
+        || doc.filename || doc.name || '';
+      const base = baseName(docFileName);
+      if (base) apiByBase.set(base, doc);
+      // Match by full source/path
+      if (doc.source) apiByPath.set(doc.source, doc);
+      if (doc.path) apiByPath.set(doc.path, doc);
+    }
+
+    // For each directory file, find matching API doc
+    const matchedApiIds = new Set<string>();
+    const merged = directoryFiles.map((file: any) => {
+      const base = baseName(file.name);
+      // Try matching: explicit mapping → full path → base name
+      const mappedId = fsToApiMap.get(file.path);
+      const match = (mappedId ? apiById.get(mappedId) : null)
+        || apiByPath.get(file.path)
+        || apiByBase.get(base);
+      if (match) {
+        matchedApiIds.add(match.id);
+        return { ...match, _fsFile: file };
+      }
+      // Filesystem file with no API match yet
+      return { id: `fs-${file.path}`, name: file.name, source: file.path, _fsFile: file };
+    });
+
+    // Add API docs not matched to any directory file (e.g. uploaded from elsewhere)
+    for (const doc of serverDocs) {
+      if (!matchedApiIds.has(doc.id)) {
+        merged.push(doc);
+      }
+    }
+
+    return [...merged, ...pending];
+  }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
   // Load MCP servers from project data
   useEffect(() => {
@@ -710,7 +774,7 @@ export default function RightSidebar({
                 });
               if (doc) {
                 const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-                const isIndexed = status === 'indexed' || !!doc.summary;
+                const isIndexed = status === 'indexed';
                 if (isIndexed) {
                   applyDoc(doc);
                   return;
@@ -881,94 +945,158 @@ export default function RightSidebar({
                   {/* Document List — file-tree style with summary */}
                   {effectiveDocuments.length > 0 && (
                     <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column' }}>
-                    {effectiveDocuments
-                      .filter((doc: any) => {
-                        if (!searchQuery) return true;
-                        const query = searchQuery.toLowerCase();
-                        const filename = ((doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
-                        return filename.includes(query);
-                      })
-                      .map((doc: any, i: number) => {
-                        const rowId = doc.id || `doc-${i}`;
-                        const rawName = (doc.source || doc.path || '').split('/').pop()
-                          || doc.filename || doc.name || '';
-                        const filename = rawName ? (rawName.replace(/\.[^/.]+$/, '') || 'Untitled') : 'Untitled';
-                        const ext = rawName.match(/\.([^/.]+)$/)?.[1]?.toUpperCase() || '';
-                        const fileSize = doc.size;
-                        const fileSizeLabel = fileSize != null
-                          ? fileSize >= 1024 * 1024 ? `${(fileSize / 1024 / 1024).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(0)} KB`
-                          : null;
-                        const isProcessing = processingDocs.has(doc.id);
-                        const docIndexStatus = indexingStatus[doc.id];
-                        const isIndexed = docIndexStatus === 'indexed';
-                        const isIndexing = docIndexStatus === 'indexing';
-                        const rawSummary = !isProcessing
-                          ? (doc.summary ? doc.summary : null)
-                          : "document is being processed";
-                        const summary = rawSummary
-                          ? rawSummary.replace(/^#+\s*/g, '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
-                          : null;
-                        return (
-                          <Box
-                            key={rowId}
-                            onMouseEnter={() => setHoveredDocId(rowId)}
-                            onMouseLeave={() => setHoveredDocId(null)}
-                            sx={{
-                              px: 1,
-                              py: '6px',
-                              cursor: 'default',
-                              display: 'flex',
-                              gap: 0.75,
-                              transition: 'background 0.1s ease',
-                              border: '1px solid var(--sl-white-alpha-8)',
-                              borderRadius: '6px',
-                              mb: 0.75,
-                            }}
-                          >
-                            <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
-                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <span className="text-[11px] text-gray-300 truncate flex-1">
-                                  {filename}
-                                </span>
-                                <IconButton
-                                  size="small"
-                                  onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
-                                  sx={{
-                                    color: 'var(--sl-text-faint)',
-                                    padding: '2px',
-                                    '&:hover': { color: 'var(--sl-status-error)' },
-                                  }}
-                                >
-                                  <DeleteOutlineIcon sx={{ fontSize: 12 }} />
-                                </IconButton>
-                              </Box>
-                              {!isProcessing && summary && (
-                                <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
-                                  {summary}
-                                </span>
-                              )}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                                {ext && (
-                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
-                                    {ext}
+                      {effectiveDocuments
+                        .filter((doc: any) => {
+                          if (!searchQuery) return true;
+                          const query = searchQuery.toLowerCase();
+                          const filename = ((doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
+                          return filename.includes(query);
+                        })
+                        .map((doc: any, i: number) => {
+                          const rowId = doc.id || `doc-${i}`;
+                          // Use filesystem file info when available for original name/size
+                          const fsFile = doc._fsFile;
+                          const rawName = fsFile?.name
+                            || doc.filename || doc.name
+                            || (doc.source || doc.path || '').split('/').pop()
+                            || '';
+                          const filename = rawName ? (rawName.replace(/\.[^/.]+$/, '') || 'Untitled') : 'Untitled';
+                          const ext = rawName.match(/\.([^/.]+)$/)?.[1]?.toUpperCase() || '';
+                          const fileSize = fsFile?.size || doc.size || doc.file_size;
+                          const fileSizeLabel = fileSize != null
+                            ? fileSize >= 1024 * 1024 ? `${(fileSize / 1024 / 1024).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(0)} KB`
+                            : null;
+                          const isFsOnly = typeof doc.id === 'string' && doc.id.startsWith('fs-');
+                          const isProcessing = processingDocs.has(doc.id);
+                          const docIndexStatus = indexingStatus[doc.id];
+                          const isIndexed = docIndexStatus === 'indexed';
+                          const isIndexing = docIndexStatus === 'indexing';
+                          const rawSummary = !isProcessing
+                            ? (doc.markdown
+                              ? (() => {
+                                // Extract first non-empty paragraph from markdown
+                                const para = doc.markdown
+                                  .replace(/^---[\s\S]*?---\n?/, '')
+                                  .split(/\n{2,}/)
+                                  .map((p: string) => p.replace(/^#{1,6}\s+/gm, '').replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/(\*|_)(.*?)\1/g, '$2').replace(/`[^`]*`/g, '').replace(/!\[.*?\]\(.*?\)/g, '').replace(/\[([^\]]+)\]\(.*?\)/g, '$1').replace(/^\s*[-*+>]\s*/gm, '').replace(/\s+/g, ' ').trim())
+                                  .find((p: string) => p.length > 20);
+                                return para || null;
+                              })()
+                              : null)
+                            : "document is being processed";
+                          const summary = rawSummary
+                            ? rawSummary.trim().slice(0, 120)
+                            : null;
+                          return (
+                            <Box
+                              key={rowId}
+                              onMouseEnter={() => setHoveredDocId(rowId)}
+                              onMouseLeave={() => setHoveredDocId(null)}
+                              sx={{
+                                px: 1,
+                                py: '6px',
+                                cursor: 'default',
+                                display: 'flex',
+                                gap: 0.75,
+                                transition: 'background 0.1s ease',
+                                border: '1px solid var(--sl-white-alpha-8)',
+                                borderRadius: '6px',
+                                mb: 0.75,
+                              }}
+                            >
+                              <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <span className="text-[11px] text-gray-300 truncate flex-1">
+                                    {filename}
+                                  </span>
+                                  {isFsOnly && (
+                                    <Tooltip title={isProcessing ? "Processing..." : "Process this document"} placement="top">
+                                      <span>
+                                        <IconButton
+                                          size="small"
+                                          disabled={isProcessing}
+                                          onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const filePath = fsFile?.path || doc.source;
+                                            if (!filePath || !selectedProject?.id) return;
+                                            const projectId = selectedProject.id;
+                                            setProcessingDocs(prev => new Map(prev).set(doc.id, 'processing'));
+                                            try {
+                                              const localBase = await getLocalApiEndpoint();
+                                              const body: Record<string, string> = { source: filePath };
+                                              if (currentProjectData?.folder_path) body.cwd = currentProjectData.folder_path;
+                                              const res = await fetch(`${localBase}/v1/projects/${projectId}/documents`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify(body),
+                                              });
+                                              if (res.ok) {
+                                                const data = await res.json().catch(() => ({}));
+                                                const apiDocId = data.id || data.document_id;
+                                                if (apiDocId) {
+                                                  // Track this fs path → API doc ID so the merge can link them
+                                                  setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
+                                                }
+                                              }
+                                            } catch { /* ignore */ }
+                                          }}
+                                          sx={{
+                                            color: isProcessing ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                                            padding: '2px',
+                                            '&:hover': { color: 'var(--sl-brand-primary)' },
+                                            ...(isProcessing && {
+                                              animation: 'spin 1s linear infinite',
+                                              '@keyframes spin': {
+                                                '0%': { transform: 'rotate(0deg)' },
+                                                '100%': { transform: 'rotate(360deg)' },
+                                              },
+                                            }),
+                                          }}
+                                        >
+                                          <SyncIcon sx={{ fontSize: 12 }} />
+                                        </IconButton>
+                                      </span>
+                                    </Tooltip>
+                                  )}
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
+                                    sx={{
+                                      color: 'var(--sl-text-faint)',
+                                      padding: '2px',
+                                      '&:hover': { color: 'var(--sl-status-error)' },
+                                    }}
+                                  >
+                                    <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+                                  </IconButton>
+                                </Box>
+                                {!isProcessing && summary && (
+                                  <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                                    {summary}
                                   </span>
                                 )}
-                                {fileSizeLabel && (
-                                  <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
-                                )}
-                                {isProcessing
-                                  ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'pending'}</span>
-                                  : isIndexed
-                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexed</span>
-                                    : isIndexing
-                                      ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexing</span>
-                                      : <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>Pending <span className="loading-dots" style={{ display: 'inline-flex', gap: '2px' }}><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.2s' }} /><span style={{ width: 3, height: 3, borderRadius: 1, backgroundColor: 'var(--sl-text-faint)', animation: 'dotPulse 1.2s infinite', animationDelay: '0.4s' }} /></span></span>}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                  {ext && (
+                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                      {ext}
+                                    </span>
+                                  )}
+                                  {fileSizeLabel && (
+                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
+                                  )}
+                                  {isProcessing
+                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'Indexing'}</span>
+                                    : isIndexed
+                                      ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Processed</span>
+                                      : isIndexing
+                                        ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexing</span>
+                                        : null}
+                                </Box>
                               </Box>
                             </Box>
-                          </Box>
-                        );
-                      })}
+                          );
+                        })}
                     </Box>
                   )}
                 </div>
@@ -1075,17 +1203,17 @@ export default function RightSidebar({
                       onDelete={handleDeleteMcpServer}
                       discovering={discoveringServerId === server.id}
                       onServerUpdate={(updatedServer) => {
-                          setMcpServers(prev => {
-                            const newServers = prev.map(s =>
-                              s.id === updatedServer.id ? updatedServer : s
-                            );
-                            if (selectedProject?.id) {
-                              mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
-                            }
-                            return newServers;
-                          });
-                        }}
-                      />
+                        setMcpServers(prev => {
+                          const newServers = prev.map(s =>
+                            s.id === updatedServer.id ? updatedServer : s
+                          );
+                          if (selectedProject?.id) {
+                            mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                          }
+                          return newServers;
+                        });
+                      }}
+                    />
                   ))}
                 </Box>
               ) : (
@@ -1158,43 +1286,43 @@ export default function RightSidebar({
                     '&:focus-within': { borderColor: 'var(--sl-brand-primary)' },
                   }}>
                     <Box sx={{ position: 'relative' }}>
-                    <textarea
-                      value={skillSearchQuery}
-                      onChange={(e) => setSkillSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey && skillSearchQuery.trim()) {
-                          e.preventDefault();
-                          if (onSaveSkills) {
-                            const content = skillSearchQuery.trim();
-                            const heading = content.match(/^#\s+(.+)$/m);
-                            const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
-                            setPendingSkill({ baselineCount: projectSkills.length, content });
-                            onSaveSkills([...projectSkills, { name, content }]);
-                            setSkillSearchQuery('');
+                      <textarea
+                        value={skillSearchQuery}
+                        onChange={(e) => setSkillSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey && skillSearchQuery.trim()) {
+                            e.preventDefault();
+                            if (onSaveSkills) {
+                              const content = skillSearchQuery.trim();
+                              const heading = content.match(/^#\s+(.+)$/m);
+                              const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
+                              setPendingSkill({ baselineCount: projectSkills.length, content });
+                              onSaveSkills([...projectSkills, { name, content }]);
+                              setSkillSearchQuery('');
+                            }
                           }
-                        }
-                      }}
-                      rows={5}
-                      style={{
-                        width: '100%',
-                        background: 'transparent',
-                        border: 'none',
-                        outline: 'none',
-                        color: 'var(--sl-text-primary)',
-                        fontSize: '12px',
-                        fontFamily: 'monospace',
-                        padding: '8px 10px',
-                        resize: 'vertical',
-                        minHeight: '60px',
-                      }}
-                    />
-                    {!skillSearchQuery && (
-                      <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-30 text-gray-400">
-                        Write a new skill in Markdown and press{' '}
-                        <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle' }} />{' '}
-                        to add. Skills are snippets of content that are injected into the assistant's context
-                      </div>
-                    )}
+                        }}
+                        rows={5}
+                        style={{
+                          width: '100%',
+                          background: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: 'var(--sl-text-primary)',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          padding: '8px 10px',
+                          resize: 'vertical',
+                          minHeight: '60px',
+                        }}
+                      />
+                      {!skillSearchQuery && (
+                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-30 text-gray-400">
+                          Write a new skill in Markdown and press{' '}
+                          <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle' }} />{' '}
+                          to add. Skills are snippets of content that are injected into the assistant's context
+                        </div>
+                      )}
                     </Box>
                     <Box className="flex items-center justify-between px-2 py-1.5" sx={{ borderTop: '1px solid var(--sl-white-alpha-5)' }}>
                       <span className="text-[9px] text-gray-600">Markdown</span>
@@ -1220,84 +1348,84 @@ export default function RightSidebar({
                   {/* Skill List */}
                   {(projectSkills.length > 0 || savingSkill) && (
                     <Box sx={{ mt: 3 }}>
-                    <Box sx={{
-                      border: '1px solid var(--sl-white-alpha-8)',
-                      borderRadius: '6px',
-                      overflow: 'hidden',
-                    }}>
-                      {savingSkill && (
-                        <Box sx={{
-                          padding: '4px 8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 0.75,
-                          borderBottom: projectSkills.length > 0 ? '1px solid var(--sl-white-alpha-5)' : 'none',
-                          bgcolor: 'var(--sl-brand-alpha-10)',
-                        }}>
-                          <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
-                          <span className="text-[11px] text-gray-400">Adding skill…</span>
-                        </Box>
-                      )}
-                      {projectSkills.map((skill, index) => (
-                        <Box
-                          key={`skill-${index}`}
-                          onMouseEnter={() => setHoveredSkillIndex(index)}
-                          onMouseLeave={() => setHoveredSkillIndex(null)}
-                          onClick={() => {
-                            if (onTabChange) {
-                              onTabChange({ id: `skill-${skill.id || index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { index } });
-                            } else {
-                              setEditingSkillIndex(index);
-                              setEditingSkillIsNew(false);
-                              setSkillContent(skill.content || '');
-                              setSkillHasUnsavedChanges(false);
-                            }
-                          }}
-                          sx={{
-                            padding: '6px 8px',
-                            cursor: 'pointer',
+                      <Box sx={{
+                        border: '1px solid var(--sl-white-alpha-8)',
+                        borderRadius: '6px',
+                        overflow: 'hidden',
+                      }}>
+                        {savingSkill && (
+                          <Box sx={{
+                            padding: '4px 8px',
                             display: 'flex',
-                            alignItems: 'flex-start',
+                            alignItems: 'center',
                             gap: 0.75,
-                            transition: 'background 0.1s ease, color 0.1s ease',
-                            borderBottom: '1px solid var(--sl-white-alpha-5)',
-                            '&:last-child': { borderBottom: 'none' },
-                            '&:hover': {
-                              bgcolor: 'var(--sl-brand-alpha-10)',
-                            },
-                          }}
-                        >
-                          <ConstructionIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
-                          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                            <span className="text-[11px] text-gray-300 truncate">
-                              {skill.name || 'Untitled'}
-                            </span>
-                            {skill.description && (
-                              <span className="text-[10px] text-gray-500" style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                {skill.description}
-                              </span>
-                            )}
+                            borderBottom: projectSkills.length > 0 ? '1px solid var(--sl-white-alpha-5)' : 'none',
+                            bgcolor: 'var(--sl-brand-alpha-10)',
+                          }}>
+                            <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
+                            <span className="text-[11px] text-gray-400">Adding skill…</span>
                           </Box>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onSaveSkills) {
-                                onSaveSkills(projectSkills.filter((_, i) => i !== index));
+                        )}
+                        {projectSkills.map((skill, index) => (
+                          <Box
+                            key={`skill-${index}`}
+                            onMouseEnter={() => setHoveredSkillIndex(index)}
+                            onMouseLeave={() => setHoveredSkillIndex(null)}
+                            onClick={() => {
+                              if (onTabChange) {
+                                onTabChange({ id: `skill-${skill.id || index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { index } });
+                              } else {
+                                setEditingSkillIndex(index);
+                                setEditingSkillIsNew(false);
+                                setSkillContent(skill.content || '');
+                                setSkillHasUnsavedChanges(false);
                               }
                             }}
                             sx={{
-                              color: 'var(--sl-text-faint)',
-                              padding: '2px',
-                              mt: '-2px',
-                              '&:hover': { color: 'var(--sl-status-error)' },
+                              padding: '6px 8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              gap: 0.75,
+                              transition: 'background 0.1s ease, color 0.1s ease',
+                              borderBottom: '1px solid var(--sl-white-alpha-5)',
+                              '&:last-child': { borderBottom: 'none' },
+                              '&:hover': {
+                                bgcolor: 'var(--sl-brand-alpha-10)',
+                              },
                             }}
                           >
-                            <DeleteOutlineIcon sx={{ fontSize: 12 }} />
-                          </IconButton>
-                        </Box>
-                      ))}
-                    </Box>
+                            <ConstructionIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <span className="text-[11px] text-gray-300 truncate">
+                                {skill.name || 'Untitled'}
+                              </span>
+                              {skill.description && (
+                                <span className="text-[10px] text-gray-500" style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
+                                  {skill.description}
+                                </span>
+                              )}
+                            </Box>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onSaveSkills) {
+                                  onSaveSkills(projectSkills.filter((_, i) => i !== index));
+                                }
+                              }}
+                              sx={{
+                                color: 'var(--sl-text-faint)',
+                                padding: '2px',
+                                mt: '-2px',
+                                '&:hover': { color: 'var(--sl-status-error)' },
+                              }}
+                            >
+                              <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+                            </IconButton>
+                          </Box>
+                        ))}
+                      </Box>
                     </Box>
                   )}
 
