@@ -7,6 +7,7 @@ const { INSTALL_DIR, getInstalledBinaryPath } = require('./slp-setup');
 let localServicePort = null;
 let serviceProcess = null;
 let logStream = null;
+let startedByApp = false;
 
 function getSlpDir() {
   return path.join(os.homedir(), '.smartloop');
@@ -92,6 +93,7 @@ async function startService() {
       if (res.ok) {
         console.log('[SLP] Service already running on port', existingPort);
         localServicePort = existingPort;
+        startedByApp = true;
         return true;
       }
     } catch {
@@ -115,7 +117,7 @@ async function startService() {
   console.log('[SLP] Server logs writing to:', logFile);
 
   // Start as a child process — use pipe and manually redirect output to log file
-  const proc = spawn(slpBinary, ['server', 'start'], {
+  const proc = spawn(slpBinary, ['start'], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -171,6 +173,7 @@ async function startService() {
           if (res.ok) {
             clearInterval(pollInterval);
             localServicePort = port;
+            startedByApp = true;
             console.log('[SLP] Service started on port', port);
             resolve(true);
             return;
@@ -203,7 +206,7 @@ async function stopService() {
   if (fs.existsSync(slpBinary)) {
     try {
       await new Promise((resolve, reject) => {
-        execFile(slpBinary, ['server', 'stop'], {
+        execFile(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
         }, (error) => {
@@ -247,6 +250,14 @@ async function stopService() {
   }
 
   localServicePort = null;
+  startedByApp = false;
+}
+
+/**
+ * Returns true if this app instance owns/started the service.
+ */
+function isOwnedByApp() {
+  return startedByApp;
 }
 
 /**
@@ -302,6 +313,7 @@ module.exports = {
   checkHealth,
   startService,
   stopService,
+  isOwnedByApp,
   loadModel,
   unloadModel,
 };

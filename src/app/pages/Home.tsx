@@ -521,7 +521,21 @@ export default function Home() {
           seen.add(t.id);
           return true;
         });
-        activeId = saved.activeTabId || tabs[0]?.id || '';
+
+        // Validate conversation tabs belong to this project
+        const convos = await storageService.getConversations(projectId);
+        const convoIds = new Set(convos.map((c: any) => c.id));
+        tabs = tabs.filter((t: OpenTab) => {
+          if (t.type !== 'conversation') return true;
+          const convId = t.id.replace('conv-', '');
+          return convId === 'new' || convoIds.has(convId);
+        });
+
+        if (tabs.length === 0) {
+          const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
+          tabs = [defaultTab];
+        }
+        activeId = (saved.activeTabId && tabs.some((t: OpenTab) => t.id === saved.activeTabId)) ? saved.activeTabId : tabs[0]?.id || '';
       } else {
         // Default: open a new conversation tab
         const defaultTab: OpenTab = { id: 'conv-new', type: 'conversation', title: 'New Conversation' };
@@ -825,26 +839,28 @@ export default function Home() {
 
   const handleRenameProject = async (name: string) => {
     if (!selectedProject?.id) return;
-    const result = await projectService.updateProject(selectedProject.id, { name });
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    const result = await projectService.updateProject(selectedProject.id, { name: trimmedName });
     if (result.success) {
       // Update folder_path if it matches the old project name pattern
       const oldName = selectedProject.name;
       const currentPath = currentProjectData?.folder_path || '';
       if (oldName && currentPath) {
-        const oldSlug = oldName.toLowerCase().replace(/\s+/g, '_');
-        const newSlug = name.toLowerCase().replace(/\s+/g, '_');
+        const oldSlug = oldName.trim().toLowerCase().replace(/\s+/g, '_');
+        const newSlug = trimmedName.toLowerCase().replace(/\s+/g, '_');
         if (currentPath.endsWith(`/${oldSlug}`) || currentPath === oldSlug) {
           const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
-          await storageService.updateProjectMeta(selectedProject.id, { name, folder_path: newPath });
-          setCurrentProjectData((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
-          setSelectedProject((prev: any) => prev ? { ...prev, name, folder_path: newPath } : prev);
+          await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName, folder_path: newPath });
+          setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
+          setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
           window.dispatchEvent(new CustomEvent('projectUpdated'));
           return;
         }
       }
-      await storageService.updateProjectMeta(selectedProject.id, { name });
-      setSelectedProject((prev: any) => prev ? { ...prev, name } : prev);
-      setCurrentProjectData((prev: any) => prev ? { ...prev, name } : prev);
+      await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName });
+      setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName } : prev);
+      setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName } : prev);
       window.dispatchEvent(new CustomEvent('projectUpdated'));
     }
   };

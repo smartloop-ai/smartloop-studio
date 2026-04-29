@@ -7,7 +7,6 @@ import { API_ENDPOINT } from '@/app/constants';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import DnsIcon from '@mui/icons-material/Dns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
@@ -150,7 +149,6 @@ export default function SettingsPage() {
     const [remoteModels, setRemoteModels] = useState<any[]>([]);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
-    const [isRestarting, setIsRestarting] = useState(false);
 
     // Available models (from SLP auth + remote listing)
     const [, setAvailableModels] = useState<any[]>([]);
@@ -278,43 +276,6 @@ export default function SettingsPage() {
     }, []);
 
 
-    // Restart the SLP service and refresh all panels
-    const handleRestartService = useCallback(async () => {
-        const api = (window as any).electronAPI;
-        if (!api?.slpServiceStop && !api?.slpServiceRestart) return;
-
-        setIsRestarting(true);
-        setServerHealth(null);
-        try {
-            // Use dedicated restart if available, otherwise stop + start
-            if (api.slpServiceRestart) {
-                await api.slpServiceRestart();
-            } else {
-                await api.slpServiceStop();
-                await new Promise(r => setTimeout(r, 1500));
-                await api.slpServiceStart();
-            }
-            // Re-fetch everything after restart
-            await fetchServerHealth();
-            await fetchLocalModels();
-            // Reload SLP config
-            if (api?.getSlpConfig) {
-                const cfg = await api.getSlpConfig();
-                setSlpConfig(cfg);
-            }
-            if (api?.getSystemInfo) {
-                try {
-                    const info = await api.getSystemInfo();
-                    setSystemInfo(info);
-                } catch {}
-            }
-        } catch (err: any) {
-            console.error('Failed to restart service:', err);
-            setServerHealth({ url: '', status: 'error', error: err?.message || 'Failed to restart service' });
-        } finally {
-            setIsRestarting(false);
-        }
-    }, [fetchServerHealth, fetchLocalModels]);
 
     useEffect(() => {
         fetchLocalModels();
@@ -640,44 +601,28 @@ export default function SettingsPage() {
                                     <div
                                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border"
                                         style={{
-                                            backgroundColor: isRestarting ? 'rgba(245, 158, 11, 0.1)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
-                                            borderColor: isRestarting ? 'rgba(245, 158, 11, 0.2)' : serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)',
+                                            backgroundColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
+                                            borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)',
                                         }}
                                     >
-                                        {isRestarting ? (
-                                            <CircularProgress size={8} sx={{ color: '#f59e0b' }} />
-                                        ) : (
-                                            <Box sx={{
-                                                width: 6,
-                                                height: 6,
-                                                borderRadius: '50%',
-                                                bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
-                                                ...(serverHealth?.status === 'running' && {
-                                                    boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
-                                                }),
-                                            }} />
-                                        )}
+                                        <Box sx={{
+                                            width: 6,
+                                            height: 6,
+                                            borderRadius: '50%',
+                                            bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
+                                            ...(serverHealth?.status === 'running' && {
+                                                boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
+                                            }),
+                                        }} />
                                         <span style={{
                                             fontSize: '11px',
                                             fontWeight: 600,
-                                            color: isRestarting ? '#f59e0b' : serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
+                                            color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
                                         }}>
-                                            {isRestarting ? 'Restarting...' : serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
+                                            {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
                                         </span>
                                     </div>
                                 </Box>
-                                <IconButton
-                                    onClick={handleRestartService}
-                                    disabled={isRestarting}
-                                    size="small"
-                                    title="Restart service"
-                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
-                                >
-                                    {isRestarting
-                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        : <RefreshIcon sx={{ fontSize: 20 }} />
-                                    }
-                                </IconButton>
                             </Box>
 
                             {/* Table */}
