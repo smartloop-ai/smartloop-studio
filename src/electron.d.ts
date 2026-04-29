@@ -72,6 +72,7 @@ export interface ElectronAPI {
   writeClipboard: (text: string) => void;
   readClipboard: () => string;
   openInFinder: (filePath: string) => void;
+  openDocumentReference: (filePath: string, documentId?: string, projectId?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   platform: string;
   versions: {
     node: string;

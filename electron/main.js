@@ -7,7 +7,7 @@ const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService } = require('./slp-setup');
 const database = require('./database');
-const { createTray, setMainWindow, setCreateWindow, refreshTray } = require('./tray');
+const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
 
 // Load environment variables from .env files (development only)
@@ -58,6 +58,24 @@ ipcMain.handle('open-in-finder', async (event, folderPath) => {
     return true;
   }
   return false;
+});
+
+// Open a document reference (citation) with the system's native viewer
+ipcMain.handle('open-document-reference', async (event, filePath, documentId, projectId) => {
+  console.log('[Document Reference] Opening:', { filePath, documentId, projectId });
+  if (filePath) {
+    const resolved = filePath.startsWith('~')
+      ? filePath.replace('~', require('os').homedir())
+      : filePath;
+    const result = await shell.openPath(resolved);
+    if (result) {
+      console.warn('[Document Reference] Failed to open:', result);
+      return { success: false, error: result };
+    }
+    return { success: true, path: resolved };
+  }
+  console.warn('[Document Reference] No file path provided for document:', documentId);
+  return { success: false, error: 'No file path' };
 });
 
 // Initialize electron-store
@@ -304,6 +322,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('slp-document-progress', { percent: pct, status: data.status || 'Processing...' });
               }
+              setTrayProgress(pct, data.status);
             }
             // Track last document-like object
             if (data.id || data.source || data.document_id) {
@@ -323,6 +342,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
           } catch { }
         }
 
+        setTrayProgress(null, 'done');
         if (res.statusCode === 200 || res.statusCode === 201) {
           resolve({ success: true, data: lastDocument || {} });
         } else {
@@ -331,6 +351,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
       });
 
       res.on('error', (err) => {
+        setTrayProgress(null, 'error');
         resolve({ success: false, error: err.message });
       });
     });
@@ -548,13 +569,22 @@ function updateSplashProgress(data) {
   if (data.status === 'downloading') {
     const downloaded = data.downloaded || 0;
     const total = data.total || 0;
-    const pct = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
-    const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
-    const totalMB = total > 0 ? (total / (1024 * 1024)).toFixed(1) : '?';
-    const label = data.message || 'Downloading...';
-    const statusText = total > 0
-      ? `${label} ${dlMB} / ${totalMB} MB`
-      : `${label} ${dlMB} MB`;
+    // Also handle percent/progress fields from bootstrap SSE
+    const explicitPct = data.percent ?? data.progress ?? data.percentage;
+    const pct = total > 0
+      ? Math.min(100, Math.round((downloaded / total) * 100))
+      : explicitPct !== undefined ? Math.min(100, Math.round(Number(explicitPct))) : 0;
+    const label = data.message || 'Downloading model...';
+    let statusText;
+    if (total > 0) {
+      const dlMB = (downloaded / (1024 * 1024)).toFixed(1);
+      const totalMB = (total / (1024 * 1024)).toFixed(1);
+      statusText = `${label} ${dlMB} / ${totalMB} MB`;
+    } else if (pct > 0) {
+      statusText = `${label} ${pct}%`;
+    } else {
+      statusText = label;
+    }
 
     splashWindow.webContents.executeJavaScript(`
       document.getElementById('status-text').textContent = ${JSON.stringify(statusText)};
@@ -1108,6 +1138,7 @@ if (!gotTheLock) {
               splashWindow = null;
             }
             if (mainWindow && !mainWindow.isDestroyed()) {
+              setAppReady(true);
               mainWindow.show();
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             }
@@ -1118,12 +1149,14 @@ if (!gotTheLock) {
               splashWindow = null;
             }
             if (mainWindow && !mainWindow.isDestroyed()) {
+              setAppReady(true);
               mainWindow.show();
             }
           }
         })();
       } else {
         if (mainWindow && !mainWindow.isDestroyed()) {
+          setAppReady(true);
           mainWindow.show();
           mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
         }
@@ -1198,6 +1231,7 @@ if (!gotTheLock) {
             splashWindow = null;
           }
           if (mainWindow && !mainWindow.isDestroyed()) {
+            setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
@@ -1243,6 +1277,7 @@ if (!gotTheLock) {
             splashWindow = null;
           }
           if (mainWindow && !mainWindow.isDestroyed()) {
+            setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
@@ -1324,9 +1359,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   app.isQuitting = true;
   database.closeDatabase();
-  if (slpService.getLocalBaseUrl()) {
-    slpService.stopService();
-  }
+  slpService.stopService();
 });
 
 // Handle certificate errors in development
