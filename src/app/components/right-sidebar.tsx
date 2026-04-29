@@ -423,8 +423,8 @@ export default function RightSidebar({
         matchedApiIds.add(match.id);
         return { ...match, _fsFile: file };
       }
-      // Filesystem file with no API match yet
-      return { id: `fs-${file.path}`, name: file.name, source: file.path, _fsFile: file };
+      // Filesystem file with no API match — not uploaded via UI, skip it
+      return null;
     });
 
     // Add API docs not matched to any directory file (e.g. uploaded from elsewhere)
@@ -434,7 +434,7 @@ export default function RightSidebar({
       }
     }
 
-    return [...merged, ...pending];
+    return [...merged.filter(Boolean), ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
   // Load MCP servers from project data
@@ -967,10 +967,11 @@ export default function RightSidebar({
                             ? fileSize >= 1024 * 1024 ? `${(fileSize / 1024 / 1024).toFixed(1)} MB` : `${(fileSize / 1024).toFixed(0)} KB`
                             : null;
                           const isFsOnly = typeof doc.id === 'string' && doc.id.startsWith('fs-');
-                          const isProcessing = processingDocs.has(doc.id);
                           const docIndexStatus = indexingStatus[doc.id];
-                          const isIndexed = docIndexStatus === 'indexed';
                           const isIndexing = docIndexStatus === 'indexing';
+                          const converting = docIndexStatus === 'converting';
+                          const isProcessing = processingDocs.has(doc.id) || isIndexing || converting;
+
                           const rawSummary = !isProcessing
                             ? (doc.markdown
                               ? (() => {
@@ -1085,13 +1086,8 @@ export default function RightSidebar({
                                   {fileSizeLabel && (
                                     <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                   )}
-                                  {isProcessing
-                                    ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{processingDocs.get(doc.id) || 'Indexing'}</span>
-                                    : isIndexed
-                                      ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Processed</span>
-                                      : isIndexing
-                                        ? <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>Indexing</span>
-                                        : null}
+                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1): 'Pending'}</span>}
+
                                 </Box>
                               </Box>
                             </Box>
