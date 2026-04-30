@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { userService } from '@/app/services/user.service';
-import { OAuthUtils } from '@/app/shared/utils'; // Add this import
+import { OAuthUtils } from '@/app/shared/utils';
 
-import { API_ENDPOINT } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { CircularProgress, Box } from '@mui/material';
 import AddBoxIcon from '@mui/icons-material/AddBox';
@@ -30,10 +29,11 @@ export default function Developers() {
     setErrorMessage("");
     setIsLoading(true);
 
-    const url = `${API_ENDPOINT}/users/me/tokens`;
-
     try {
-      const response = await userService.makeAuthenticatedRequest(url, {
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
+
+      const response = await fetch(`${localApi}/v1/users/me/tokens`, {
         method: 'GET'
       });
 
@@ -66,18 +66,16 @@ export default function Developers() {
       return;
     }
 
-    const url = `${API_ENDPOINT}/users/me/tokens`;
     setIsLoading(true);
 
     try {
-      const response = await userService.makeAuthenticatedRequest(url, {
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
+
+      const response = await fetch(`${localApi}/v1/users/me/tokens`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: tokenName
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: tokenName })
       });
 
       if (response && response.ok) {
@@ -109,11 +107,7 @@ export default function Developers() {
     setIsLoading(true);
 
     try {
-      // Use the shared utility function
-      const success = await OAuthUtils.deleteToken(
-        tokenId,
-        `${userService.token()}`
-      );
+      const success = await OAuthUtils.deleteToken(tokenId);
 
       if (success) {
         // Remove the token from the state list on successful delete

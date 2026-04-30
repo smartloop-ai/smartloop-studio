@@ -1,5 +1,5 @@
 import { SHA256 } from 'crypto-js';
-import { API_ENDPOINT } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 
 export const isValidEmail = (email: string)=>{
 	if (!/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/i.test(email)){
@@ -22,10 +22,9 @@ interface OAuthUtilsType {
     token: string | null;
   };
   isOAuthFlow(params: ReturnType<typeof OAuthUtils.getOAuthParams>): boolean;
-  createToken(accessToken: string, name: string): Promise<string | null>;
-  deleteToken(tokenId: string, accessToken: string): Promise<boolean>;
-  getTokens(accessToken: string): Promise<any>;
-  createToken(accessToken: string, name: string): Promise<string | null>;
+  createToken(name: string): Promise<string | null>;
+  deleteToken(tokenId: string): Promise<boolean>;
+  getTokens(): Promise<any>;
 }
 
 export const OAuthUtils: OAuthUtilsType = {
@@ -53,15 +52,14 @@ export const OAuthUtils: OAuthUtilsType = {
   /**
    * Creates a token with the given name
    */
-  async createToken(accessToken: string, name: string) {
+  async createToken(name: string) {
     try {
-      const url = `${API_ENDPOINT}/users/me/tokens`;
-      const response = await fetch(url, {
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
+
+      const response = await fetch(`${localApi}/v1/users/me/tokens`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
       });
 
@@ -80,18 +78,16 @@ export const OAuthUtils: OAuthUtilsType = {
   /**
    * Deletes a token by ID
    */
-  async deleteToken(tokenId: string, accessToken: string) {
+  async deleteToken(tokenId: string) {
     try {
-      const url = `${API_ENDPOINT}/users/me/tokens/${tokenId}`;
-      const options = {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        }
-      };
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
 
-      const response = await fetch(url, options);
+      const response = await fetch(`${localApi}/v1/users/me/tokens/${tokenId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
       if (!response.ok) {
         throw new Error(`Failed to delete token: ${response.status}`);
       }
@@ -106,17 +102,15 @@ export const OAuthUtils: OAuthUtilsType = {
   /**
    * Gets all tokens for a user
    */
-  async getTokens(accessToken: string) {
+  async getTokens() {
     try {
-      const url = `${API_ENDPOINT}/users/me/tokens`;
-      const options = {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      };
+      const localApi = await getLocalApiEndpoint();
+      if (!localApi) throw new Error('Local API not available');
 
-      const response = await fetch(url, options);
+      const response = await fetch(`${localApi}/v1/users/me/tokens`, {
+        method: 'GET',
+      });
+
       if (!response.ok) {
         throw new Error(`Failed to fetch tokens: ${response.status}`);
       }
