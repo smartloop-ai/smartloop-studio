@@ -508,6 +508,11 @@ export default function Home() {
     if (tabsLoadedForProjectRef.current === projectId) return;
     tabsLoadedForProjectRef.current = projectId;
 
+    // Clear tabs synchronously before async restore to prevent the save effect
+    // from persisting stale tabs from the previous project under the new project's key
+    setOpenTabs([]);
+    setActiveTabId(null);
+
     const restoreTabs = async () => {
       const saved = await storageService.getSetting(`openTabs_${projectId}`);
       let tabs: OpenTab[];
@@ -526,7 +531,7 @@ export default function Home() {
         const convos = await storageService.getConversations(projectId);
         const convoIds = new Set(convos.map((c: any) => c.id));
         tabs = tabs.filter((t: OpenTab) => {
-          if (t.type !== 'conversation') return true;
+          if (t.type !== 'conversation') return false; // drop document/skill/mcp tabs
           const convId = t.id.replace('conv-', '');
           return convId === 'new' || convoIds.has(convId);
         });
