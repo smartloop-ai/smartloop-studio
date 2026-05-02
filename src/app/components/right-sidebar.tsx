@@ -20,7 +20,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
+import { PROJECT_COLORS } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -699,7 +699,6 @@ export default function RightSidebar({
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
 
-      // Add a placeholder doc to the list immediately with the filename
       const placeholderId = `uploading-${Date.now()}`;
       const placeholderDoc = { id: placeholderId, name: file.name, source: file.name };
       const projectId = selectedProject.id;
@@ -707,99 +706,107 @@ export default function RightSidebar({
       setProcessingDocs(prev => new Map(prev).set(placeholderId, 'pending'));
       setUploadingDocs(prev => [...prev, placeholderDoc]);
 
-      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, () => {
+      let doneHandled = false;
+      let realDocId: string | null = null;
+
+      const localResult = await documentService.addLocalDocument(
+        selectedProject.id,
+        tempPath,
+        (progress) => {
+          const doc = progress.documents?.[0];
+          const apiDocId = doc?.id || doc?.document_id || null;
+
+          if (progress.event === 'done') {
+            doneHandled = true;
+            const finalDocId = apiDocId || realDocId;
+
+            setProcessingDocs(prev => {
+              const next = new Map(prev);
+              next.delete(placeholderId);
+              if (realDocId) next.delete(realDocId);
+              if (apiDocId) next.delete(apiDocId);
+              return next;
+            });
+            setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== apiDocId));
+
+            if (finalDocId && doc) {
+              const docStatus = doc.status || 'indexed';
+              setIndexingStatus(prev => ({ ...prev, [finalDocId]: docStatus }));
+              setApiDocuments(prev => {
+                const idx = prev.findIndex((d: any) => d.id === finalDocId);
+                if (idx >= 0) { const next = [...prev]; next[idx] = doc; return next; }
+                return [...prev, doc];
+              });
+              if (docStatus === 'indexed') {
+                storageService.setDocumentProcessed(finalDocId, projectId);
+              }
+            }
+            window.dispatchEvent(new Event('documentUploaded'));
+            return;
+          }
+
+          // Intermediate events — swap placeholder with real doc and show live status
+          if (apiDocId && doc) {
+            const docStatus = doc.status || 'processing';
+
+            if (!realDocId) {
+              realDocId = apiDocId;
+              setUploadingDocs(prev => prev.map(d =>
+                d.id === placeholderId ? { ...doc, name: file.name } : d
+              ));
+              setProcessingDocs(prev => {
+                const next = new Map(prev);
+                next.delete(placeholderId);
+                next.set(apiDocId, docStatus);
+                return next;
+              });
+            } else {
+              setProcessingDocs(prev => new Map(prev).set(apiDocId, docStatus));
+            }
+            setIndexingStatus(prev => ({ ...prev, [apiDocId]: docStatus }));
+          } else {
+            setProcessingDocs(prev => new Map(prev).set(realDocId || placeholderId, progress.status || 'Processing...'));
+          }
+        },
+        currentProjectData?.folder_path,
+      );
+
+      if (!localResult.success) {
         setProcessingDocs(prev => {
           const next = new Map(prev);
-          next.set(placeholderId, 'pending');
+          next.delete(placeholderId);
+          if (realDocId) next.delete(realDocId);
           return next;
         });
-      }, currentProjectData?.folder_path);
-      if (!localResult.success) {
-        // Remove placeholder on failure
-        setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
-        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId));
+        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId));
         throw new Error(localResult.error || 'Upload failed');
       }
 
-      const uploadedDocument = localResult.data;
-      const docId = uploadedDocument.id || uploadedDocument.document_id;
-      const fileName = file.name;
-
-      if (!docId) {
-        // No doc ID returned — refresh the full list to pick up the new doc
-        setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
-        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId));
-        window.dispatchEvent(new Event('documentUploaded'));
-        setUploadError('');
-        return;
-      }
-
-      // Replace placeholder with real document, keep tracking as processing
-      setProcessingDocs(prev => {
-        const next = new Map(prev);
-        next.delete(placeholderId);
-        next.set(docId, 'pending');
-        return next;
-      });
-      setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { name: d.name, source: d.source, ...uploadedDocument } : d));
-
-      // Poll the documents API until indexing is done
-      const pollDocumentApi = () => {
-        const maxAttempts = 40;
-        let attempts = 0;
-
-        const applyDoc = (updatedDoc: any) => {
-          setUploadingDocs(prev => prev.filter(d => d.id !== docId));
-          setProcessingDocs(prev => { const next = new Map(prev); next.delete(docId); return next; });
-          setIndexingStatus(prev => ({ ...prev, [docId]: 'indexed' }));
+      if (!doneHandled) {
+        const uploadedDocument = localResult.data;
+        const docId = uploadedDocument?.id || uploadedDocument?.document_id || realDocId;
+        setProcessingDocs(prev => {
+          const next = new Map(prev);
+          next.delete(placeholderId);
+          if (realDocId) next.delete(realDocId);
+          if (docId) next.delete(docId);
+          return next;
+        });
+        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== docId));
+        if (docId) {
+          const docStatus = uploadedDocument?.status || 'indexed';
+          setIndexingStatus(prev => ({ ...prev, [docId]: docStatus }));
           setApiDocuments(prev => {
             const idx = prev.findIndex((d: any) => d.id === docId);
-            if (idx >= 0) { const next = [...prev]; next[idx] = updatedDoc; return next; }
-            return [...prev, updatedDoc];
+            if (idx >= 0) { const next = [...prev]; next[idx] = uploadedDocument; return next; }
+            return [...prev, uploadedDocument];
           });
-          window.dispatchEvent(new Event('documentUploaded'));
-        };
-
-        const poll = async (): Promise<void> => {
-          attempts++;
-          try {
-            const result = await documentService.getLocalDocuments(projectId);
-            if (result.success && result.data) {
-              const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
-              // Match by ID or by filename as fallback
-              const doc = docs.find((d: any) => d.id === docId || d.document_id === docId) ||
-                docs.find((d: any) => {
-                  const src = (d.path || d.source || '').split('/').pop() || '';
-                  return src === fileName;
-                });
-              if (doc) {
-                const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-                const isIndexed = status === 'indexed';
-                if (isIndexed) {
-                  applyDoc(doc);
-                  return;
-                }
-                if (status) {
-                  setProcessingDocs(prev => { const next = new Map(prev); next.set(docId, status); return next; });
-                }
-              }
-            }
-          } catch { /* ignore */ }
-
-          if (attempts < maxAttempts) {
-            setTimeout(poll, 3000);
-          } else {
-            // Timed out — clear processing state, refresh list so doc still shows
-            setProcessingDocs(prev => { const next = new Map(prev); next.delete(docId); return next; });
-            setUploadingDocs(prev => prev.filter(d => d.id !== docId));
-            window.dispatchEvent(new Event('documentUploaded'));
+          if (docStatus === 'indexed') {
+            storageService.setDocumentProcessed(docId, projectId);
           }
-        };
-
-        setTimeout(poll, 2000);
-      };
-
-      pollDocumentApi();
+        }
+        window.dispatchEvent(new Event('documentUploaded'));
+      }
 
       setUploadError('');
     } catch (error: any) {
@@ -1024,19 +1031,32 @@ export default function RightSidebar({
                                             const projectId = selectedProject.id;
                                             setProcessingDocs(prev => new Map(prev).set(doc.id, 'processing'));
                                             try {
-                                              const localBase = await getLocalApiEndpoint();
-                                              const body: Record<string, string> = { source: filePath };
-                                              if (currentProjectData?.folder_path) body.cwd = currentProjectData.folder_path;
-                                              const res = await fetch(`${localBase}/v1/projects/${projectId}/documents`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify(body),
-                                              });
-                                              if (res.ok) {
-                                                const data = await res.json().catch(() => ({}));
-                                                const apiDocId = data.id || data.document_id;
+                                              const result = await documentService.addLocalDocument(
+                                                projectId,
+                                                filePath,
+                                                (progress) => {
+                                                  const apiDoc = progress.documents?.[0];
+                                                  const apiDocId = apiDoc?.id || apiDoc?.document_id;
+
+                                                  if (progress.event === 'done') {
+                                                    setProcessingDocs(prev => { const next = new Map(prev); next.delete(doc.id); return next; });
+                                                    if (apiDocId) {
+                                                      setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
+                                                      setIndexingStatus(prev => ({ ...prev, [apiDocId]: apiDoc.status || 'indexed', [doc.id]: apiDoc.status || 'indexed' }));
+                                                      if (apiDoc?.status === 'indexed') storageService.setDocumentProcessed(apiDocId, projectId);
+                                                    }
+                                                    window.dispatchEvent(new Event('documentUploaded'));
+                                                  } else {
+                                                    const docStatus = apiDoc?.status || 'processing';
+                                                    setProcessingDocs(prev => new Map(prev).set(doc.id, docStatus));
+                                                    setIndexingStatus(prev => ({ ...prev, [doc.id]: docStatus, ...(apiDocId ? { [apiDocId]: docStatus } : {}) }));
+                                                  }
+                                                },
+                                                currentProjectData?.folder_path,
+                                              );
+                                              if (result.success && result.data) {
+                                                const apiDocId = result.data.id || result.data.document_id;
                                                 if (apiDocId) {
-                                                  // Track this fs path → API doc ID so the merge can link them
                                                   setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
                                                 }
                                               }
@@ -1086,7 +1106,7 @@ export default function RightSidebar({
                                   {fileSizeLabel && (
                                     <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                   )}
-                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1): 'Pending'}</span>}
+                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? (docIndexStatus === 'failed' || docIndexStatus === 'error' ? 'Failed' : docIndexStatus === 'unknown' ? 'Pending' : docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1)) : 'Pending'}</span>}
 
                                 </Box>
                               </Box>
