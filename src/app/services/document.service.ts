@@ -51,7 +51,7 @@ const getLocalDocuments = async (projectId: string): Promise<DocumentServiceResp
 const addLocalDocument = async (
   projectId: string,
   filePath: string,
-  onProgress?: (progress: { percent: number; status: string }) => void,
+  onProgress?: (progress: { percent: number; status: string; event?: string; documents?: any[] }) => void,
   cwd?: string
 ): Promise<DocumentServiceResponse> => {
   try {
@@ -59,19 +59,17 @@ const addLocalDocument = async (
 
     // Use IPC proxy through main process to avoid CORS/Broken Pipe
     if (api?.slpAddDocument) {
-      // Listen for progress events from main process
       if (onProgress && api.onSlpDocumentProgress) {
         api.removeSlpDocumentProgressListener?.();
-        api.onSlpDocumentProgress((data: { percent: number; status: string }) => {
+        api.onSlpDocumentProgress((data: { percent: number; status: string; event?: string; documents?: any[] }) => {
           onProgress(data);
         });
       }
 
       const result = await api.slpAddDocument(filePath, projectId, cwd);
 
-      // Clean up listener
       api.removeSlpDocumentProgressListener?.();
-      if (onProgress) onProgress({ percent: 100, status: 'Complete' });
+      if (onProgress) onProgress({ percent: 100, status: 'Complete', event: 'done' });
 
       return result;
     }
@@ -90,11 +88,12 @@ const addLocalDocument = async (
     if (response.status === 200 || response.status === 201) {
       const contentType = response.headers.get('content-type') || '';
 
-      // Handle SSE streaming response
+      // Handle SSE streaming response (event types: queued, progress, done)
       if (contentType.includes('text/event-stream') && response.body) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent = '';
         let lastDocument: any = null;
 
         while (true) {
@@ -107,19 +106,45 @@ const addLocalDocument = async (
 
           for (const line of lines) {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('event:')) continue;
-            const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+            if (!trimmed) { currentEvent = ''; continue; }
+
+            if (trimmed.startsWith('event:')) {
+              currentEvent = trimmed.slice(6).trim();
+              continue;
+            }
+
+            const payload = trimmed.startsWith('data: ') ? trimmed.slice(6)
+              : trimmed.startsWith('data:') ? trimmed.slice(5).trim() : null;
+            if (payload === null) continue;
+
             try {
               const data = JSON.parse(payload);
-              // Report progress
-              if (onProgress && (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined || data.status)) {
-                const pct = data.progress !== undefined
-                  ? Math.round(data.progress * 100)
-                  : (data.percent ?? data.percentage ?? 0);
-                onProgress({ percent: pct, status: data.status || 'Processing...' });
+              const documents = data.documents || [];
+
+              if (documents.length > 0) lastDocument = documents[0];
+
+              if (onProgress) {
+                let pct = 0;
+                let status = 'Processing...';
+
+                if (currentEvent === 'queued') { pct = 10; status = 'Queued'; }
+                else if (currentEvent === 'progress') {
+                  const doc = documents[0];
+                  const docStatus = doc?.status || '';
+                  if (docStatus === 'converting') { pct = 30; status = 'Converting...'; }
+                  else if (docStatus === 'indexing') { pct = 60; status = 'Indexing...'; }
+                  else { pct = 40; status = docStatus || 'Processing...'; }
+                }
+                else if (currentEvent === 'done') { pct = 100; status = 'Complete'; }
+                else {
+                  pct = data.progress !== undefined ? Math.round(data.progress * 100) : (data.percent ?? data.percentage ?? 0);
+                  status = data.status || 'Processing...';
+                }
+
+                onProgress({ percent: pct, status, event: currentEvent, documents });
               }
-              // Track last document-like object
-              if (data.id || data.source || data.document_id) {
+
+              if (!lastDocument && (data.id || data.source || data.document_id)) {
                 lastDocument = data;
               }
             } catch { /* skip non-JSON */ }
@@ -129,13 +154,15 @@ const addLocalDocument = async (
         // Process remaining buffer
         if (buffer.trim()) {
           try {
-            const payload = buffer.trim().startsWith('data: ') ? buffer.trim().slice(6) : buffer.trim();
+            const raw = buffer.trim();
+            const payload = raw.startsWith('data: ') ? raw.slice(6) : raw.startsWith('data:') ? raw.slice(5).trim() : raw;
             const data = JSON.parse(payload);
-            if (data.id || data.source || data.document_id) lastDocument = data;
+            if (data.documents?.length) lastDocument = data.documents[0];
+            else if (data.id || data.source || data.document_id) lastDocument = data;
           } catch { /* skip */ }
         }
 
-        if (onProgress) onProgress({ percent: 100, status: 'Complete' });
+        if (onProgress) onProgress({ percent: 100, status: 'Complete', event: 'done' });
         return { success: true, data: lastDocument || {} };
       }
 
