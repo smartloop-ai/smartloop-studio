@@ -20,7 +20,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
+import { PROJECT_COLORS } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -196,14 +196,11 @@ export default function RightSidebar({
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
-  const [newMcpName, setNewMcpName] = useState('');
-  const [newMcpUrl, setNewMcpUrl] = useState('');
+  const [newMcpInput, setNewMcpInput] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
   const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
-  // Local MCP server state
-  const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
 
@@ -248,8 +245,7 @@ export default function RightSidebar({
     setSkillContent('');
     setSkillHasUnsavedChanges(false);
     setSkillSearchQuery('');
-    setNewMcpName('');
-    setNewMcpUrl('');
+    setNewMcpInput('');
     setNewMcpEnv('');
     setIsAddingMcp(false);
     setMcpError('');
@@ -540,110 +536,98 @@ export default function RightSidebar({
     return () => clearInterval(interval);
   }, [discoveringServerId, selectedProject?.id]);
 
+  const isRemoteMcpInput = (input: string): boolean => {
+    const trimmed = input.trim();
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  };
+
   const handleAddMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpUrl.trim()) return;
+    const input = newMcpInput.trim();
+    if (!selectedProject?.id || !input) return;
 
     setIsAddingMcp(true);
     setMcpError('');
 
     try {
-      const serverUrl = newMcpUrl.trim();
-      console.log('[MCP] Registering server:', serverUrl);
+      if (isRemoteMcpInput(input)) {
+        console.log('[MCP] Registering remote server:', input);
 
-      const result = await mcpServerService.registerMcpServer(
-        selectedProject.id,
-        {
-          server_type: 'remote',
-          server_url: serverUrl,
-          name: newMcpName.trim() || undefined,
-          return_url: 'smartloop://mcp-authorization',
+        const result = await mcpServerService.registerMcpServer(
+          selectedProject.id,
+          {
+            server_type: 'remote',
+            server_url: input,
+            return_url: 'smartloop://mcp-authorization',
+          }
+        );
+
+        if (!result.success || !result.data) {
+          setMcpError(result.error || 'Failed to register MCP server');
+          return;
         }
-      );
 
-      if (!result.success || !result.data) {
-        setMcpError(result.error || 'Failed to register MCP server');
-        return;
-      }
+        const data = result.data as Record<string, any>;
 
-      const data = result.data as Record<string, any>;
+        if (data.auth_type === 'oauth' && data.auth_url) {
+          setNewMcpInput('');
+          mcpServerCountRef.current = mcpServers.length;
+          setMcpPolling(true);
 
-      if (data.auth_type === 'oauth' && data.auth_url) {
-        // OAuth required - open auth URL (session stored server-side)
-        setNewMcpName('');
-        setNewMcpUrl('');
-        mcpServerCountRef.current = mcpServers.length;
-        setMcpPolling(true);
-
-        console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
-        const electronWindow = window as any;
-        if (electronWindow.electronAPI?.openExternal) {
-          electronWindow.electronAPI.openExternal(data.auth_url);
+          console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
+          const electronWindow = window as any;
+          if (electronWindow.electronAPI?.openExternal) {
+            electronWindow.electronAPI.openExternal(data.auth_url);
+          } else {
+            window.open(data.auth_url, '_blank');
+          }
         } else {
-          window.open(data.auth_url, '_blank');
+          console.log('[MCP] Server registered successfully');
+          const serverId = data.id || data.server_id;
+          setNewMcpInput('');
+          await loadMcpServers();
+          if (serverId) {
+            setDiscoveringServerId(serverId);
+          }
         }
       } else {
-        // Server registered directly
-        console.log('[MCP] Server registered successfully');
-        const serverId = data.id || data.server_id;
-        setNewMcpName('');
-        setNewMcpUrl('');
-        await loadMcpServers();
-        if (serverId) {
-          setDiscoveringServerId(serverId);
+        console.log('[MCP] Registering local server:', input);
+
+        const env: Record<string, string> = {};
+        if (newMcpEnv.trim()) {
+          for (const line of newMcpEnv.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIndex = trimmed.indexOf('=');
+            if (eqIndex > 0) {
+              env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
+            }
+          }
+        }
+
+        const result = await mcpServerService.registerMcpServer(
+          selectedProject.id,
+          {
+            server_type: 'local',
+            name: input,
+            env: Object.keys(env).length > 0 ? env : undefined,
+          }
+        );
+
+        if (result.success) {
+          const resData = result.data as Record<string, any>;
+          const serverId = resData?.id || resData?.server_id;
+          setNewMcpInput('');
+          setNewMcpEnv('');
+          await loadMcpServers();
+          if (serverId) {
+            setDiscoveringServerId(serverId);
+          }
+        } else {
+          setMcpError(result.error || 'Failed to add local MCP server');
         }
       }
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsAddingMcp(false);
-    }
-  };
-
-  const handleAddLocalMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpName.trim()) return;
-
-    setIsAddingMcp(true);
-    setMcpError('');
-
-    try {
-      // Parse env as KEY=VALUE lines
-      const env: Record<string, string> = {};
-      if (newMcpEnv.trim()) {
-        for (const line of newMcpEnv.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) continue;
-          const eqIndex = trimmed.indexOf('=');
-          if (eqIndex > 0) {
-            env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
-          }
-        }
-      }
-
-      const result = await mcpServerService.registerMcpServer(
-        selectedProject.id,
-        {
-          server_type: 'local',
-          name: newMcpName.trim(),
-          env: Object.keys(env).length > 0 ? env : undefined,
-        }
-      );
-
-      if (result.success) {
-        const resData = result.data as Record<string, any>;
-        const serverId = resData?.id || resData?.server_id;
-        setNewMcpName('');
-        setNewMcpEnv('');
-        setMcpServerType('remote');
-        await loadMcpServers();
-        if (serverId) {
-          setDiscoveringServerId(serverId);
-        }
-      } else {
-        setMcpError(result.error || 'Failed to add local MCP server');
-      }
-    } catch (error: any) {
-      console.error('[MCP] Error adding local server:', error);
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
@@ -699,7 +683,6 @@ export default function RightSidebar({
       const buffer = await file.arrayBuffer();
       const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
 
-      // Add a placeholder doc to the list immediately with the filename
       const placeholderId = `uploading-${Date.now()}`;
       const placeholderDoc = { id: placeholderId, name: file.name, source: file.name };
       const projectId = selectedProject.id;
@@ -707,99 +690,107 @@ export default function RightSidebar({
       setProcessingDocs(prev => new Map(prev).set(placeholderId, 'pending'));
       setUploadingDocs(prev => [...prev, placeholderDoc]);
 
-      const localResult = await documentService.addLocalDocument(selectedProject.id, tempPath, () => {
+      let doneHandled = false;
+      let realDocId: string | null = null;
+
+      const localResult = await documentService.addLocalDocument(
+        selectedProject.id,
+        tempPath,
+        (progress) => {
+          const doc = progress.documents?.[0];
+          const apiDocId = doc?.id || doc?.document_id || null;
+
+          if (progress.event === 'done') {
+            doneHandled = true;
+            const finalDocId = apiDocId || realDocId;
+
+            setProcessingDocs(prev => {
+              const next = new Map(prev);
+              next.delete(placeholderId);
+              if (realDocId) next.delete(realDocId);
+              if (apiDocId) next.delete(apiDocId);
+              return next;
+            });
+            setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== apiDocId));
+
+            if (finalDocId && doc) {
+              const docStatus = doc.status || 'indexed';
+              setIndexingStatus(prev => ({ ...prev, [finalDocId]: docStatus }));
+              setApiDocuments(prev => {
+                const idx = prev.findIndex((d: any) => d.id === finalDocId);
+                if (idx >= 0) { const next = [...prev]; next[idx] = doc; return next; }
+                return [...prev, doc];
+              });
+              if (docStatus === 'indexed') {
+                storageService.setDocumentProcessed(finalDocId, projectId);
+              }
+            }
+            window.dispatchEvent(new Event('documentUploaded'));
+            return;
+          }
+
+          // Intermediate events — swap placeholder with real doc and show live status
+          if (apiDocId && doc) {
+            const docStatus = doc.status || 'processing';
+
+            if (!realDocId) {
+              realDocId = apiDocId;
+              setUploadingDocs(prev => prev.map(d =>
+                d.id === placeholderId ? { ...doc, name: file.name } : d
+              ));
+              setProcessingDocs(prev => {
+                const next = new Map(prev);
+                next.delete(placeholderId);
+                next.set(apiDocId, docStatus);
+                return next;
+              });
+            } else {
+              setProcessingDocs(prev => new Map(prev).set(apiDocId, docStatus));
+            }
+            setIndexingStatus(prev => ({ ...prev, [apiDocId]: docStatus }));
+          } else {
+            setProcessingDocs(prev => new Map(prev).set(realDocId || placeholderId, progress.status || 'Processing...'));
+          }
+        },
+        currentProjectData?.folder_path,
+      );
+
+      if (!localResult.success) {
         setProcessingDocs(prev => {
           const next = new Map(prev);
-          next.set(placeholderId, 'pending');
+          next.delete(placeholderId);
+          if (realDocId) next.delete(realDocId);
           return next;
         });
-      }, currentProjectData?.folder_path);
-      if (!localResult.success) {
-        // Remove placeholder on failure
-        setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
-        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId));
+        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId));
         throw new Error(localResult.error || 'Upload failed');
       }
 
-      const uploadedDocument = localResult.data;
-      const docId = uploadedDocument.id || uploadedDocument.document_id;
-      const fileName = file.name;
-
-      if (!docId) {
-        // No doc ID returned — refresh the full list to pick up the new doc
-        setProcessingDocs(prev => { const next = new Map(prev); next.delete(placeholderId); return next; });
-        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId));
-        window.dispatchEvent(new Event('documentUploaded'));
-        setUploadError('');
-        return;
-      }
-
-      // Replace placeholder with real document, keep tracking as processing
-      setProcessingDocs(prev => {
-        const next = new Map(prev);
-        next.delete(placeholderId);
-        next.set(docId, 'pending');
-        return next;
-      });
-      setUploadingDocs(prev => prev.map(d => d.id === placeholderId ? { name: d.name, source: d.source, ...uploadedDocument } : d));
-
-      // Poll the documents API until indexing is done
-      const pollDocumentApi = () => {
-        const maxAttempts = 40;
-        let attempts = 0;
-
-        const applyDoc = (updatedDoc: any) => {
-          setUploadingDocs(prev => prev.filter(d => d.id !== docId));
-          setProcessingDocs(prev => { const next = new Map(prev); next.delete(docId); return next; });
-          setIndexingStatus(prev => ({ ...prev, [docId]: 'indexed' }));
+      if (!doneHandled) {
+        const uploadedDocument = localResult.data;
+        const docId = uploadedDocument?.id || uploadedDocument?.document_id || realDocId;
+        setProcessingDocs(prev => {
+          const next = new Map(prev);
+          next.delete(placeholderId);
+          if (realDocId) next.delete(realDocId);
+          if (docId) next.delete(docId);
+          return next;
+        });
+        setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== docId));
+        if (docId) {
+          const docStatus = uploadedDocument?.status || 'indexed';
+          setIndexingStatus(prev => ({ ...prev, [docId]: docStatus }));
           setApiDocuments(prev => {
             const idx = prev.findIndex((d: any) => d.id === docId);
-            if (idx >= 0) { const next = [...prev]; next[idx] = updatedDoc; return next; }
-            return [...prev, updatedDoc];
+            if (idx >= 0) { const next = [...prev]; next[idx] = uploadedDocument; return next; }
+            return [...prev, uploadedDocument];
           });
-          window.dispatchEvent(new Event('documentUploaded'));
-        };
-
-        const poll = async (): Promise<void> => {
-          attempts++;
-          try {
-            const result = await documentService.getLocalDocuments(projectId);
-            if (result.success && result.data) {
-              const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
-              // Match by ID or by filename as fallback
-              const doc = docs.find((d: any) => d.id === docId || d.document_id === docId) ||
-                docs.find((d: any) => {
-                  const src = (d.path || d.source || '').split('/').pop() || '';
-                  return src === fileName;
-                });
-              if (doc) {
-                const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-                const isIndexed = status === 'indexed';
-                if (isIndexed) {
-                  applyDoc(doc);
-                  return;
-                }
-                if (status) {
-                  setProcessingDocs(prev => { const next = new Map(prev); next.set(docId, status); return next; });
-                }
-              }
-            }
-          } catch { /* ignore */ }
-
-          if (attempts < maxAttempts) {
-            setTimeout(poll, 3000);
-          } else {
-            // Timed out — clear processing state, refresh list so doc still shows
-            setProcessingDocs(prev => { const next = new Map(prev); next.delete(docId); return next; });
-            setUploadingDocs(prev => prev.filter(d => d.id !== docId));
-            window.dispatchEvent(new Event('documentUploaded'));
+          if (docStatus === 'indexed') {
+            storageService.setDocumentProcessed(docId, projectId);
           }
-        };
-
-        setTimeout(poll, 2000);
-      };
-
-      pollDocumentApi();
+        }
+        window.dispatchEvent(new Event('documentUploaded'));
+      }
 
       setUploadError('');
     } catch (error: any) {
@@ -1024,19 +1015,32 @@ export default function RightSidebar({
                                             const projectId = selectedProject.id;
                                             setProcessingDocs(prev => new Map(prev).set(doc.id, 'processing'));
                                             try {
-                                              const localBase = await getLocalApiEndpoint();
-                                              const body: Record<string, string> = { source: filePath };
-                                              if (currentProjectData?.folder_path) body.cwd = currentProjectData.folder_path;
-                                              const res = await fetch(`${localBase}/v1/projects/${projectId}/documents`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify(body),
-                                              });
-                                              if (res.ok) {
-                                                const data = await res.json().catch(() => ({}));
-                                                const apiDocId = data.id || data.document_id;
+                                              const result = await documentService.addLocalDocument(
+                                                projectId,
+                                                filePath,
+                                                (progress) => {
+                                                  const apiDoc = progress.documents?.[0];
+                                                  const apiDocId = apiDoc?.id || apiDoc?.document_id;
+
+                                                  if (progress.event === 'done') {
+                                                    setProcessingDocs(prev => { const next = new Map(prev); next.delete(doc.id); return next; });
+                                                    if (apiDocId) {
+                                                      setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
+                                                      setIndexingStatus(prev => ({ ...prev, [apiDocId]: apiDoc.status || 'indexed', [doc.id]: apiDoc.status || 'indexed' }));
+                                                      if (apiDoc?.status === 'indexed') storageService.setDocumentProcessed(apiDocId, projectId);
+                                                    }
+                                                    window.dispatchEvent(new Event('documentUploaded'));
+                                                  } else {
+                                                    const docStatus = apiDoc?.status || 'processing';
+                                                    setProcessingDocs(prev => new Map(prev).set(doc.id, docStatus));
+                                                    setIndexingStatus(prev => ({ ...prev, [doc.id]: docStatus, ...(apiDocId ? { [apiDocId]: docStatus } : {}) }));
+                                                  }
+                                                },
+                                                currentProjectData?.folder_path,
+                                              );
+                                              if (result.success && result.data) {
+                                                const apiDocId = result.data.id || result.data.document_id;
                                                 if (apiDocId) {
-                                                  // Track this fs path → API doc ID so the merge can link them
                                                   setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
                                                 }
                                               }
@@ -1086,7 +1090,7 @@ export default function RightSidebar({
                                   {fileSizeLabel && (
                                     <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                   )}
-                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1): 'Pending'}</span>}
+                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? (docIndexStatus === 'failed' || docIndexStatus === 'error' ? 'Failed' : docIndexStatus === 'unknown' ? 'Pending' : docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1)) : 'Pending'}</span>}
 
                                 </Box>
                               </Box>
@@ -1116,40 +1120,14 @@ export default function RightSidebar({
                   border: '1px solid var(--sl-white-alpha-8)',
                 }}
               >
-                {/* Remote / Local toggle */}
-                <div className="flex mb-2">
-                  <div className="relative flex rounded bg-white/5 p-0.5">
-                    <span
-                      className={`absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] rounded bg-white/10 transition-transform duration-200 ${mcpServerType === 'local' ? 'translate-x-full' : 'translate-x-0'}`}
-                      style={{ left: '2px' }}
-                    />
-                    <button
-                      onClick={() => setMcpServerType('remote')}
-                      className={`relative z-10 text-[10px] px-6 py-0.5 transition-colors focus:outline-none ${mcpServerType === 'remote' ? 'text-gray-200' : 'text-gray-600'}`}
-                    >
-                      Remote
-                    </button>
-                    <button
-                      onClick={() => setMcpServerType('local')}
-                      className={`relative z-10 text-[10px] px-6 py-0.5 transition-colors focus:outline-none ${mcpServerType === 'local' ? 'text-gray-200' : 'text-gray-600'}`}
-                    >
-                      Local
-                    </button>
-                  </div>
-                </div>
-
                 <TextField
                   size="small"
-                  placeholder={mcpServerType === 'remote' ? 'Server URL (e.g., https://mcp.example.com)' : 'Server name'}
-                  value={mcpServerType === 'remote' ? newMcpUrl : newMcpName}
-                  onChange={(e) => mcpServerType === 'remote' ? setNewMcpUrl(e.target.value) : setNewMcpName(e.target.value)}
+                  placeholder="URL or package name"
+                  value={newMcpInput}
+                  onChange={(e) => setNewMcpInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isAddingMcp) {
-                      if (mcpServerType === 'remote' && newMcpUrl.trim()) {
-                        handleAddMcpServer();
-                      } else if (mcpServerType === 'local' && newMcpName.trim()) {
-                        handleAddLocalMcpServer();
-                      }
+                    if (e.key === 'Enter' && !isAddingMcp && newMcpInput.trim()) {
+                      handleAddMcpServer();
                     }
                   }}
                   disabled={isAddingMcp}
@@ -1176,8 +1154,8 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <Box className="text-gray-600 text-[10px] mt-1 px-1">
-                  Press Enter to add
+                <Box className="text-gray-500 text-[10px] mt-1 px-1">
+                  Enter the url of the MCP server <br/>(e.g., https://mcp.example.com) <br/>or package name (e.g., yahoo-finance-mcp) <br/>— Press Enter to add
                 </Box>
               </Box>
 
