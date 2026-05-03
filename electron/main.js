@@ -278,6 +278,7 @@ ipcMain.handle('get-local-api-url', async () => {
 });
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
+// The POST endpoint returns an SSE stream with event types: queued, progress, done
 ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
   const http = require('http');
   const baseUrl = slpService.getLocalBaseUrl();
@@ -301,50 +302,79 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
       },
     }, (res) => {
       let buffer = '';
-      let lastDocument = null;
+      let currentEvent = '';
+      let lastDocuments = null;
 
       res.on('data', (chunk) => {
         buffer += chunk.toString();
         const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete line
+        buffer = lines.pop();
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('event:')) continue;
-          const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+          if (!trimmed) { currentEvent = ''; continue; }
+
+          if (trimmed.startsWith('event:')) {
+            currentEvent = trimmed.slice(6).trim();
+            continue;
+          }
+
+          const payload = trimmed.startsWith('data: ') ? trimmed.slice(6)
+            : trimmed.startsWith('data:') ? trimmed.slice(5).trim() : null;
+          if (payload === null) continue;
+
           try {
             const data = JSON.parse(payload);
-            // Send progress to renderer for any event with progress or status info
-            if (data.progress !== undefined || data.percent !== undefined || data.percentage !== undefined || data.status) {
-              const pct = data.progress !== undefined
-                ? Math.round(data.progress * 100)
-                : (data.percent ?? data.percentage ?? 0);
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('slp-document-progress', { percent: pct, status: data.status || 'Processing...' });
-              }
-              setTrayProgress(pct, data.status);
+            const documents = data.documents || [];
+            if (documents.length > 0) lastDocuments = documents;
+
+            let pct = 0;
+            let status = 'Processing...';
+
+            if (currentEvent === 'queued') {
+              pct = 10;
+              status = 'Queued';
+            } else if (currentEvent === 'progress') {
+              const doc = documents[0];
+              const docStatus = doc?.status || '';
+              if (docStatus === 'converting') { pct = 30; status = 'Converting...'; }
+              else if (docStatus === 'indexing') { pct = 60; status = 'Indexing...'; }
+              else { pct = 40; status = docStatus || 'Processing...'; }
+            } else if (currentEvent === 'done') {
+              pct = 100;
+              status = 'Complete';
+            } else {
+              if (data.progress !== undefined) pct = Math.round(data.progress * 100);
+              else pct = data.percent ?? data.percentage ?? 0;
+              status = data.status || 'Processing...';
+              if (data.id || data.source || data.document_id) lastDocuments = [data];
             }
-            // Track last document-like object
-            if (data.id || data.source || data.document_id) {
-              lastDocument = data;
+
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('slp-document-progress', {
+                percent: pct, status, event: currentEvent, documents,
+              });
             }
+            setTrayProgress(pct, status);
           } catch { /* skip non-JSON */ }
         }
       });
 
       res.on('end', () => {
-        // Process any remaining buffer
         if (buffer.trim()) {
           try {
-            const payload = buffer.trim().startsWith('data: ') ? buffer.trim().slice(6) : buffer.trim();
+            const raw = buffer.trim();
+            const payload = raw.startsWith('data: ') ? raw.slice(6)
+              : raw.startsWith('data:') ? raw.slice(5).trim() : raw;
             const data = JSON.parse(payload);
-            if (data.id || data.source || data.document_id) lastDocument = data;
+            if (data.documents) lastDocuments = data.documents;
+            else if (data.id || data.source || data.document_id) lastDocuments = [data];
           } catch { }
         }
 
         setTrayProgress(null, 'done');
         if (res.statusCode === 200 || res.statusCode === 201) {
-          resolve({ success: true, data: lastDocument || {} });
+          resolve({ success: true, data: lastDocuments?.[0] || {} });
         } else {
           resolve({ success: false, error: `Server returned ${res.statusCode}` });
         }

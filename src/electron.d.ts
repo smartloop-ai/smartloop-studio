@@ -28,7 +28,7 @@ export interface ElectronAPI {
   getHomeDir: () => Promise<string>;
   // SLP document upload (proxied through main process)
   slpAddDocument: (filePath: string, projectId?: string, cwd?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
-  onSlpDocumentProgress: (callback: (data: { percent: number; status: string }) => void) => void;
+  onSlpDocumentProgress: (callback: (data: { percent: number; status: string; event?: string; documents?: any[] }) => void) => void;
   removeSlpDocumentProgressListener: () => void;
   // SLP service
   getSlpConfig: () => Promise<any>;
