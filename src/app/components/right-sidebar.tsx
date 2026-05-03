@@ -38,6 +38,7 @@ interface RightSidebarProps {
   onTabChange?: (tab: OpenTab) => void;
   projectSkills?: Array<{ id?: string; name: string; content: string; description?: string }>;
   onSaveSkills?: (skills: Array<{ id?: string; name: string; content: string; description?: string }>) => void;
+  onRefreshSkills?: () => void;
 }
 
 export default function RightSidebar({
@@ -51,6 +52,7 @@ export default function RightSidebar({
   onTabChange,
   projectSkills = [],
   onSaveSkills,
+  onRefreshSkills,
 }: RightSidebarProps) {
   const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
@@ -377,6 +379,24 @@ export default function RightSidebar({
       window.removeEventListener('documentUploaded', handler);
     };
   }, [currentProjectData?.folder_path, selectedProject?.id]);
+
+  // Standalone refresh for documents (called on tab switch)
+  const refreshDocuments = useCallback(() => {
+    const projectId = selectedProject?.id;
+    const folderPath = currentProjectData?.folder_path;
+    if (!projectId) return;
+    if (folderPath && window.electronAPI?.listDirectory) {
+      window.electronAPI.listDirectory(folderPath).then((result: any) => {
+        if (result.success) setDirectoryFiles(result.files);
+      });
+    }
+    documentService.getLocalDocuments(projectId).then((result) => {
+      if (result.success && result.data) {
+        const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
+        setApiDocuments(docs);
+      }
+    });
+  }, [selectedProject?.id, currentProjectData?.folder_path]);
 
   // Directory files are the primary list; API data enriches them with status/summary
   const effectiveDocuments = useMemo(() => {
@@ -1166,8 +1186,7 @@ export default function RightSidebar({
                 </Box>
               )}
 
-              {mcpServers.length > 0 ? (
-                /* Server List */
+              {mcpServers.length > 0 && (
                 <Box sx={{ mt: 0 }}>
                   {mcpServers.map((server, index) => (
                     <McpServerItem
@@ -1189,17 +1208,6 @@ export default function RightSidebar({
                       }}
                     />
                   ))}
-                </Box>
-              ) : (
-                /* Empty State */
-                <Box className="flex flex-col items-center justify-center py-8 text-center">
-                  <PowerOutlinedIcon sx={{ fontSize: 48, color: 'var(--sl-text-faint)', mb: 2 }} />
-                  <Box className="text-gray-400 text-xs mb-1">
-                    No MCP servers configured
-                  </Box>
-                  <Box className="text-gray-500 text-[10px]">
-                    Add an MCP server to extend capabilities
-                  </Box>
                 </Box>
               )}
 
@@ -1291,7 +1299,7 @@ export default function RightSidebar({
                         }}
                       />
                       {!skillSearchQuery && (
-                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-30 text-gray-400">
+                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-50 text-gray-400">
                           Write a new skill in Markdown and press{' '}
                           <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle' }} />{' '}
                           to add. Skills are snippets of content that are injected into the assistant's context
@@ -1555,7 +1563,9 @@ export default function RightSidebar({
             <IconButton
               onClick={() => {
                 if (!selectedProject || selectedProject?.system) return;
-                setActiveSection(activeSection === 'documents' ? null : 'documents');
+                const next = activeSection === 'documents' ? null : 'documents';
+                setActiveSection(next);
+                if (next === 'documents') refreshDocuments();
               }}
               disabled={!selectedProject || selectedProject?.system}
               sx={{
@@ -1583,7 +1593,9 @@ export default function RightSidebar({
           <span className={'cursor-default'}>
             <IconButton
               onClick={() => {
-                setActiveSection(activeSection === 'skills' ? null : 'skills');
+                const next = activeSection === 'skills' ? null : 'skills';
+                setActiveSection(next);
+                if (next === 'skills') onRefreshSkills?.();
               }}
               sx={{
                 color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
@@ -1611,7 +1623,9 @@ export default function RightSidebar({
             <IconButton
               onClick={() => {
                 setMcpError('');
-                setActiveSection(activeSection === 'mcp' ? null : 'mcp');
+                const next = activeSection === 'mcp' ? null : 'mcp';
+                setActiveSection(next);
+                if (next === 'mcp') loadMcpServers();
               }}
               sx={{
                 color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
