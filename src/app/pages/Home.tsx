@@ -2,7 +2,7 @@
 
 import '../styles/home.css';
 import '../styles/markdown-editor.css';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -825,6 +825,21 @@ export default function Home() {
       setIsSavingSkills(false);
     }
   };
+
+  const refreshSkills = useCallback(async () => {
+    if (!selectedProject?.id) return;
+    try {
+      const localBase = await getLocalApiEndpoint();
+      const skillsRes = await fetch(`${localBase}/v1/projects/${selectedProject.id}/skills`);
+      if (skillsRes.ok) {
+        const skillsData = await skillsRes.json();
+        const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+        setProjectSkills(skills);
+      }
+    } catch {
+      // silent – keep existing skills on failure
+    }
+  }, [selectedProject?.id]);
 
   const handleFolderPathChange = async (path: string) => {
     if (!selectedProject?.id) return;
@@ -1860,6 +1875,7 @@ export default function Home() {
                     onTabChange={handleOpenTab}
                     projectSkills={projectSkills}
                     onSaveSkills={saveProjectSkills}
+                    onRefreshSkills={refreshSkills}
                   />
                 </Box>
               </>
