@@ -196,14 +196,11 @@ export default function RightSidebar({
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
-  const [newMcpName, setNewMcpName] = useState('');
-  const [newMcpUrl, setNewMcpUrl] = useState('');
+  const [newMcpInput, setNewMcpInput] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
   const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
-  // Local MCP server state
-  const [mcpServerType, setMcpServerType] = useState<'remote' | 'local'>('remote');
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
 
@@ -248,8 +245,7 @@ export default function RightSidebar({
     setSkillContent('');
     setSkillHasUnsavedChanges(false);
     setSkillSearchQuery('');
-    setNewMcpName('');
-    setNewMcpUrl('');
+    setNewMcpInput('');
     setNewMcpEnv('');
     setIsAddingMcp(false);
     setMcpError('');
@@ -540,110 +536,98 @@ export default function RightSidebar({
     return () => clearInterval(interval);
   }, [discoveringServerId, selectedProject?.id]);
 
+  const isRemoteMcpInput = (input: string): boolean => {
+    const trimmed = input.trim();
+    return trimmed.startsWith('http://') || trimmed.startsWith('https://');
+  };
+
   const handleAddMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpUrl.trim()) return;
+    const input = newMcpInput.trim();
+    if (!selectedProject?.id || !input) return;
 
     setIsAddingMcp(true);
     setMcpError('');
 
     try {
-      const serverUrl = newMcpUrl.trim();
-      console.log('[MCP] Registering server:', serverUrl);
+      if (isRemoteMcpInput(input)) {
+        console.log('[MCP] Registering remote server:', input);
 
-      const result = await mcpServerService.registerMcpServer(
-        selectedProject.id,
-        {
-          server_type: 'remote',
-          server_url: serverUrl,
-          name: newMcpName.trim() || undefined,
-          return_url: 'smartloop://mcp-authorization',
+        const result = await mcpServerService.registerMcpServer(
+          selectedProject.id,
+          {
+            server_type: 'remote',
+            server_url: input,
+            return_url: 'smartloop://mcp-authorization',
+          }
+        );
+
+        if (!result.success || !result.data) {
+          setMcpError(result.error || 'Failed to register MCP server');
+          return;
         }
-      );
 
-      if (!result.success || !result.data) {
-        setMcpError(result.error || 'Failed to register MCP server');
-        return;
-      }
+        const data = result.data as Record<string, any>;
 
-      const data = result.data as Record<string, any>;
+        if (data.auth_type === 'oauth' && data.auth_url) {
+          setNewMcpInput('');
+          mcpServerCountRef.current = mcpServers.length;
+          setMcpPolling(true);
 
-      if (data.auth_type === 'oauth' && data.auth_url) {
-        // OAuth required - open auth URL (session stored server-side)
-        setNewMcpName('');
-        setNewMcpUrl('');
-        mcpServerCountRef.current = mcpServers.length;
-        setMcpPolling(true);
-
-        console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
-        const electronWindow = window as any;
-        if (electronWindow.electronAPI?.openExternal) {
-          electronWindow.electronAPI.openExternal(data.auth_url);
+          console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
+          const electronWindow = window as any;
+          if (electronWindow.electronAPI?.openExternal) {
+            electronWindow.electronAPI.openExternal(data.auth_url);
+          } else {
+            window.open(data.auth_url, '_blank');
+          }
         } else {
-          window.open(data.auth_url, '_blank');
+          console.log('[MCP] Server registered successfully');
+          const serverId = data.id || data.server_id;
+          setNewMcpInput('');
+          await loadMcpServers();
+          if (serverId) {
+            setDiscoveringServerId(serverId);
+          }
         }
       } else {
-        // Server registered directly
-        console.log('[MCP] Server registered successfully');
-        const serverId = data.id || data.server_id;
-        setNewMcpName('');
-        setNewMcpUrl('');
-        await loadMcpServers();
-        if (serverId) {
-          setDiscoveringServerId(serverId);
+        console.log('[MCP] Registering local server:', input);
+
+        const env: Record<string, string> = {};
+        if (newMcpEnv.trim()) {
+          for (const line of newMcpEnv.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIndex = trimmed.indexOf('=');
+            if (eqIndex > 0) {
+              env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
+            }
+          }
+        }
+
+        const result = await mcpServerService.registerMcpServer(
+          selectedProject.id,
+          {
+            server_type: 'local',
+            name: input,
+            env: Object.keys(env).length > 0 ? env : undefined,
+          }
+        );
+
+        if (result.success) {
+          const resData = result.data as Record<string, any>;
+          const serverId = resData?.id || resData?.server_id;
+          setNewMcpInput('');
+          setNewMcpEnv('');
+          await loadMcpServers();
+          if (serverId) {
+            setDiscoveringServerId(serverId);
+          }
+        } else {
+          setMcpError(result.error || 'Failed to add local MCP server');
         }
       }
     } catch (error: any) {
       console.error('[MCP] Error adding server:', error);
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsAddingMcp(false);
-    }
-  };
-
-  const handleAddLocalMcpServer = async () => {
-    if (!selectedProject?.id || !newMcpName.trim()) return;
-
-    setIsAddingMcp(true);
-    setMcpError('');
-
-    try {
-      // Parse env as KEY=VALUE lines
-      const env: Record<string, string> = {};
-      if (newMcpEnv.trim()) {
-        for (const line of newMcpEnv.split('\n')) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) continue;
-          const eqIndex = trimmed.indexOf('=');
-          if (eqIndex > 0) {
-            env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
-          }
-        }
-      }
-
-      const result = await mcpServerService.registerMcpServer(
-        selectedProject.id,
-        {
-          server_type: 'local',
-          name: newMcpName.trim(),
-          env: Object.keys(env).length > 0 ? env : undefined,
-        }
-      );
-
-      if (result.success) {
-        const resData = result.data as Record<string, any>;
-        const serverId = resData?.id || resData?.server_id;
-        setNewMcpName('');
-        setNewMcpEnv('');
-        setMcpServerType('remote');
-        await loadMcpServers();
-        if (serverId) {
-          setDiscoveringServerId(serverId);
-        }
-      } else {
-        setMcpError(result.error || 'Failed to add local MCP server');
-      }
-    } catch (error: any) {
-      console.error('[MCP] Error adding local server:', error);
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
@@ -1136,40 +1120,14 @@ export default function RightSidebar({
                   border: '1px solid var(--sl-white-alpha-8)',
                 }}
               >
-                {/* Remote / Local toggle */}
-                <div className="flex mb-2">
-                  <div className="relative flex rounded bg-white/5 p-0.5">
-                    <span
-                      className={`absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] rounded bg-white/10 transition-transform duration-200 ${mcpServerType === 'local' ? 'translate-x-full' : 'translate-x-0'}`}
-                      style={{ left: '2px' }}
-                    />
-                    <button
-                      onClick={() => setMcpServerType('remote')}
-                      className={`relative z-10 text-[10px] px-6 py-0.5 transition-colors focus:outline-none ${mcpServerType === 'remote' ? 'text-gray-200' : 'text-gray-600'}`}
-                    >
-                      Remote
-                    </button>
-                    <button
-                      onClick={() => setMcpServerType('local')}
-                      className={`relative z-10 text-[10px] px-6 py-0.5 transition-colors focus:outline-none ${mcpServerType === 'local' ? 'text-gray-200' : 'text-gray-600'}`}
-                    >
-                      Local
-                    </button>
-                  </div>
-                </div>
-
                 <TextField
                   size="small"
-                  placeholder={mcpServerType === 'remote' ? 'Server URL (e.g., https://mcp.example.com)' : 'Server name'}
-                  value={mcpServerType === 'remote' ? newMcpUrl : newMcpName}
-                  onChange={(e) => mcpServerType === 'remote' ? setNewMcpUrl(e.target.value) : setNewMcpName(e.target.value)}
+                  placeholder="URL or package name"
+                  value={newMcpInput}
+                  onChange={(e) => setNewMcpInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isAddingMcp) {
-                      if (mcpServerType === 'remote' && newMcpUrl.trim()) {
-                        handleAddMcpServer();
-                      } else if (mcpServerType === 'local' && newMcpName.trim()) {
-                        handleAddLocalMcpServer();
-                      }
+                    if (e.key === 'Enter' && !isAddingMcp && newMcpInput.trim()) {
+                      handleAddMcpServer();
                     }
                   }}
                   disabled={isAddingMcp}
@@ -1196,8 +1154,8 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <Box className="text-gray-600 text-[10px] mt-1 px-1">
-                  Press Enter to add
+                <Box className="text-gray-500 text-[10px] mt-1 px-1">
+                  Enter the url of the MCP server <br/>(e.g., https://mcp.example.com) <br/>or package name (e.g., yahoo-finance-mcp) <br/>— Press Enter to add
                 </Box>
               </Box>
 
