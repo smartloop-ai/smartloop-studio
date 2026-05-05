@@ -14,6 +14,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { storageService } from '@/app/services/storage.service';
+import { userService } from '@/app/services/user.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
@@ -67,6 +68,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Check auth status on mount and listen for changes
   useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const profile = await userService.get();
+        if (profile) {
+          setAuthUser((prev: any) => prev ? { ...prev, ...profile } : profile);
+        }
+      } catch (err) {
+        console.warn('Sidebar: Could not fetch user profile:', err);
+      }
+    };
+
     const checkAuth = async () => {
       // Skip if a login flow is actively polling
       if (loginPollRef.current) return;
@@ -76,6 +88,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           if (status?.success && status?.has_access_token && status?.user) {
             setAuthUser(status.user);
             window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+            // Fetch full user profile (includes is_paid) from /users/me
+            fetchUserProfile();
           } else {
             setAuthUser(null);
           }
@@ -122,6 +136,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               setAuthUser(status.user);
               setIsLoggingIn(false);
               window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+              // Fetch full user profile (includes is_paid) after login
+              userService.get().then((profile) => {
+                if (profile) {
+                  setAuthUser((prev: any) => prev ? { ...prev, ...profile } : profile);
+                }
+              }).catch(() => {});
             }
           } catch {}
         }, 2000);
