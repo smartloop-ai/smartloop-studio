@@ -54,7 +54,7 @@ export default function RightSidebar({
   onSaveSkills,
   onRefreshSkills,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(null);
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>('documents');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
@@ -254,12 +254,14 @@ export default function RightSidebar({
     setUploadError('');
   }, [selectedProject?.id]);
 
-  // Ensure sidebar is collapsed for system projects or when no project is selected
+  // Reset sidebar selection when switching projects
   useEffect(() => {
-    if ((!selectedProject || selectedProject?.system) && (activeSection === 'documents')) {
-      setActiveSection(null);
+    if (!selectedProject || selectedProject?.system) {
+      setActiveSection('mcp');
+    } else {
+      setActiveSection('documents');
     }
-  }, [selectedProject, activeSection]);
+  }, [selectedProject?.id]);
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
@@ -1589,35 +1591,6 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={"Skills"} placement="left">
-          <span className={'cursor-default'}>
-            <IconButton
-              onClick={() => {
-                const next = activeSection === 'skills' ? null : 'skills';
-                setActiveSection(next);
-                if (next === 'skills') onRefreshSkills?.();
-              }}
-              sx={{
-                color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                '&:hover': {
-                  color: 'var(--sl-brand-primary)',
-                },
-                '&.Mui-disabled': {
-                  color: 'var(--sl-text-disabled)',
-                  opacity: 0.5,
-                  cursor: 'not-allowed',
-                  pointerEvents: 'auto',
-                },
-              }}
-              size="small"
-            >
-              <ConstructionIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
         <Tooltip title="MCP Servers" placement="left">
           <span>
             <IconButton
@@ -1645,6 +1618,35 @@ export default function RightSidebar({
               size="small"
             >
               <PowerOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={"Skills"} placement="left">
+          <span className={'cursor-default'}>
+            <IconButton
+              onClick={() => {
+                const next = activeSection === 'skills' ? null : 'skills';
+                setActiveSection(next);
+                if (next === 'skills') onRefreshSkills?.();
+              }}
+              sx={{
+                color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: 'var(--sl-brand-primary)',
+                },
+                '&.Mui-disabled': {
+                  color: 'var(--sl-text-disabled)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+              }}
+              size="small"
+            >
+              <ConstructionIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
