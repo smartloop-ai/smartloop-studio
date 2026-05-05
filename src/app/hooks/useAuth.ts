@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { projectService } from '@/app/services/project.service';
+import { userService } from '@/app/services/user.service';
 
 /**
  * Custom hook for local-only authentication
@@ -40,6 +41,14 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
         if (authUser) {
           setUser({ ...authUser, guest: false, projects, conversations: [] });
+          // Fetch full user profile (includes is_paid) from /users/me
+          userService.get().then((profile) => {
+            if (profile) {
+              setUser((prev: any) => prev ? { ...prev, ...profile, guest: false } : prev);
+            }
+          }).catch((err) => {
+            console.warn('useAuth: Could not fetch user profile:', err);
+          });
         } else {
           setUser({ name: 'Local', guest: true, projects, conversations: [] });
         }
