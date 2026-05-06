@@ -458,7 +458,7 @@ export default function RightSidebar({
   // Load MCP servers from project data
   useEffect(() => {
     if (Array.isArray(currentProjectData?.mcp)) {
-      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id.includes('__system_tools__') && s.name !== '__system_mcp__' && !(s as any).system));
+      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__'));
     } else {
       setMcpServers([]);
     }
@@ -490,13 +490,18 @@ export default function RightSidebar({
     try {
       const result = await mcpServerService.getMcpServers(selectedProject.id);
       if (result.success && result.data) {
-        const servers = (result.data as McpServer[]).filter(s => s.name !== '__system_mcp__' && !(s as any).system);
-        setMcpServers(servers);
-        // Stop polling if a new server appeared
-        if (mcpPolling && servers.length > mcpServerCountRef.current) {
-          setMcpPolling(false);
-          setMcpError('');
-        }
+        const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
+        setMcpServers(prev => {
+          const systemServers = prev.filter(s => !!(s as any).system);
+          const apiIds = new Set(apiServers.map(s => s.id));
+          const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
+          const servers = [...apiServers, ...missingSystem];
+          if (mcpPolling && servers.length > mcpServerCountRef.current) {
+            setMcpPolling(false);
+            setMcpError('');
+          }
+          return servers;
+        });
       }
     } catch (error: any) {
       // silent during polling
@@ -537,9 +542,14 @@ export default function RightSidebar({
       try {
         const result = await mcpServerService.getMcpServers(selectedProject.id);
         if (result.success && result.data) {
-          const servers = (result.data as McpServer[]).filter(s => s.name !== '__system_mcp__' && !(s as any).system);
-          setMcpServers(servers);
-          const target = servers.find(s => s.id === discoveringServerId);
+          const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
+          setMcpServers(prev => {
+            const systemServers = prev.filter(s => !!(s as any).system);
+            const apiIds = new Set(apiServers.map(s => s.id));
+            const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
+            return [...apiServers, ...missingSystem];
+          });
+          const target = apiServers.find(s => s.id === discoveringServerId);
           const tools = target?.tools ?? target?.metadata?.tools ?? [];
           if (tools.length > 0 || attempts >= maxAttempts) {
             setDiscoveringServerId(null);
@@ -1190,26 +1200,30 @@ export default function RightSidebar({
 
               {mcpServers.length > 0 && (
                 <Box sx={{ mt: 0 }}>
-                  {mcpServers.map((server, index) => (
-                    <McpServerItem
-                      key={server.id || `mcp-${index}`}
-                      server={server}
-                      projectId={selectedProject?.id || ''}
-                      onDelete={handleDeleteMcpServer}
-                      discovering={discoveringServerId === server.id}
-                      onServerUpdate={(updatedServer) => {
-                        setMcpServers(prev => {
-                          const newServers = prev.map(s =>
-                            s.id === updatedServer.id ? updatedServer : s
-                          );
-                          if (selectedProject?.id) {
-                            mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
-                          }
-                          return newServers;
-                        });
-                      }}
-                    />
-                  ))}
+                  {mcpServers.map((server, index) => {
+                    const isSystem = !!(server as any).system;
+                    return (
+                      <McpServerItem
+                        key={server.id || `mcp-${index}`}
+                        server={server}
+                        projectId={selectedProject?.id || ''}
+                        onDelete={handleDeleteMcpServer}
+                        discovering={discoveringServerId === server.id}
+                        isSystem={isSystem}
+                        onServerUpdate={(updatedServer) => {
+                          setMcpServers(prev => {
+                            const newServers = prev.map(s =>
+                              s.id === updatedServer.id ? updatedServer : s
+                            );
+                            if (selectedProject?.id) {
+                              mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                            }
+                            return newServers;
+                          });
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               )}
 

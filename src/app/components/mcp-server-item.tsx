@@ -15,12 +15,14 @@ interface McpServerItemProps {
   onServerUpdate: (updatedServer: McpServer) => void;
   autoConnect?: boolean;
   discovering?: boolean;
+  isSystem?: boolean;
 }
 
 export default function McpServerItem({
   server,
   onDelete,
   discovering = false,
+  isSystem = false,
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -98,6 +100,7 @@ export default function McpServerItem({
             {/* Delete Icon */}
             <IconButton
               size="small"
+              disabled={isSystem}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(server);
@@ -105,7 +108,8 @@ export default function McpServerItem({
               sx={{
                 color: 'var(--sl-text-faint)',
                 padding: '2px',
-                '&:hover': { color: 'var(--sl-status-error)' },
+                '&:hover': { color: isSystem ? 'var(--sl-text-faint)' : 'var(--sl-status-error)' },
+                '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
               }}
             >
               <DeleteOutlineIcon sx={{ fontSize: 12 }} />
