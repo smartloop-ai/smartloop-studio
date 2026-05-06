@@ -65,30 +65,39 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loggingOutRef = useRef(false);
 
   // Check auth status on mount and listen for changes
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    let lastProfileFetchTime = 0;
+    const PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+    const fetchUserProfile = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastProfileFetchTime < PROFILE_CACHE_TTL) return;
+      lastProfileFetchTime = now;
       try {
-        const profile = await userService.get();
+        const profile = await userService.fetchAndStoreUser();
         if (profile) {
-          setAuthUser((prev: any) => prev ? { ...prev, ...profile } : profile);
+          // Only update if still logged in — don't re-set after logout
+          setAuthUser((prev: any) => prev ? { ...prev, ...profile } : prev);
         }
-      } catch (err) {
-        console.warn('Sidebar: Could not fetch user profile:', err);
+      } catch {
+        // Ignore errors — 401 after logout is expected
       }
     };
 
     const checkAuth = async () => {
-      // Skip if a login flow is actively polling
-      if (loginPollRef.current) return;
+      // Skip if a login flow is actively polling or logout is in progress
+      if (loginPollRef.current || loggingOutRef.current) return;
       try {
         if (window.electronAPI?.slpAuthStatus) {
           const status = await window.electronAPI.slpAuthStatus();
           if (status?.success && status?.has_access_token && status?.user) {
-            setAuthUser(status.user);
+            // Merge auth status into existing user — don't overwrite profile fields like is_paid
+            setAuthUser((prev: any) => prev ? { ...prev, ...status.user } : status.user);
             window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
-            // Fetch full user profile (includes is_paid) from /users/me
+            // Fetch full user profile (includes is_paid) — throttled to once per 5 min
             fetchUserProfile();
           } else {
             setAuthUser(null);
@@ -137,9 +146,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               setIsLoggingIn(false);
               window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
               // Fetch full user profile (includes is_paid) after login
-              userService.get().then((profile) => {
+              userService.fetchAndStoreUser().then((profile) => {
                 if (profile) {
-                  setAuthUser((prev: any) => prev ? { ...prev, ...profile } : profile);
+                  setAuthUser((prev: any) => prev ? { ...prev, ...profile } : prev);
                 }
               }).catch(() => {});
             }
@@ -159,11 +168,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       loginPollRef.current = null;
     }
     setIsLoggingIn(false);
+    loggingOutRef.current = true;
+    // Delete token first so no in-flight or subsequent checkAuth can re-read it
     if (window.electronAPI?.slpAuthLogout) {
       await window.electronAPI.slpAuthLogout();
     }
     setAuthUser(null);
     setAnchorEl(null);
+    loggingOutRef.current = false;
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: false } }));
   };
 
