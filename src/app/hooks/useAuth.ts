@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { projectService } from '@/app/services/project.service';
-import { userService } from '@/app/services/user.service';
 
 /**
  * Custom hook for local-only authentication
@@ -40,15 +39,19 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         } catch {}
 
         if (authUser) {
-          setUser({ ...authUser, guest: false, projects, conversations: [] });
-          // Fetch full user profile (includes is_paid) from /users/me
-          userService.fetchAndStoreUser().then((profile) => {
-            if (profile) {
-              setUser((prev: any) => prev ? { ...prev, ...profile, guest: false } : prev);
+          // Fetch full profile (includes is_paid) before setting user to avoid flash
+          let profile = authUser;
+          if (window.electronAPI?.slpFetchUser) {
+            try {
+              const result = await window.electronAPI.slpFetchUser({ force: true });
+              if (result?.success && result.user) {
+                profile = { ...authUser, ...result.user };
+              }
+            } catch (err) {
+              console.warn('useAuth: Could not fetch user profile:', err);
             }
-          }).catch((err) => {
-            console.warn('useAuth: Could not fetch user profile:', err);
-          });
+          }
+          setUser({ ...profile, guest: false, projects, conversations: [] });
         } else {
           setUser({ name: 'Local', guest: true, projects, conversations: [] });
         }
@@ -84,6 +87,14 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);
     window.addEventListener('authStateChanged', handleAuthStateChanged as EventListener);
 
+    // Listen for user profile updates broadcast from main process
+    const handleProfileUpdated = (event: CustomEvent) => {
+      if (event.detail) {
+        setUser((prev: any) => prev ? { ...prev, ...event.detail, guest: false } : prev);
+      }
+    };
+    window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
+
     // When SLP service comes online, refresh projects
     const handleSlpReady = async () => {
       try {
@@ -112,6 +123,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
       window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
       window.removeEventListener('authStateChanged', handleAuthStateChanged as EventListener);
       window.removeEventListener('slpServiceReady', handleSlpReady);
+      window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
     };
   }, []);
 
