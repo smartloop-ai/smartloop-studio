@@ -42,7 +42,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         if (authUser) {
           setUser({ ...authUser, guest: false, projects, conversations: [] });
           // Fetch full user profile (includes is_paid) from /users/me
-          userService.get().then((profile) => {
+          userService.fetchAndStoreUser().then((profile) => {
             if (profile) {
               setUser((prev: any) => prev ? { ...prev, ...profile, guest: false } : prev);
             }
