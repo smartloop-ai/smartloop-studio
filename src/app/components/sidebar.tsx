@@ -915,8 +915,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         )}
       </Box>
 
-      {/* Login / User Profile */}
-      {authUser ? (
+      {/* Login / User Profile — wait for is_paid to resolve before showing */}
+      {authUser && authUser.is_paid !== undefined ? (
         <>
           <Box sx={{
             p: 2,
