@@ -14,7 +14,6 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { storageService } from '@/app/services/storage.service';
-import { userService } from '@/app/services/user.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
@@ -69,36 +68,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Check auth status on mount and listen for changes
   useEffect(() => {
-    let lastProfileFetchTime = 0;
-    const PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-    const fetchUserProfile = async (force = false) => {
-      const now = Date.now();
-      if (!force && now - lastProfileFetchTime < PROFILE_CACHE_TTL) return;
-      lastProfileFetchTime = now;
-      try {
-        const profile = await userService.fetchAndStoreUser();
-        if (profile) {
-          // Only update if still logged in — don't re-set after logout
-          setAuthUser((prev: any) => prev ? { ...prev, ...profile } : prev);
-        }
-      } catch {
-        // Ignore errors — 401 after logout is expected
-      }
-    };
-
+    // Initial auth check — wait for full profile (includes is_paid) before showing user
     const checkAuth = async () => {
-      // Skip if a login flow is actively polling or logout is in progress
       if (loginPollRef.current || loggingOutRef.current) return;
       try {
         if (window.electronAPI?.slpAuthStatus) {
           const status = await window.electronAPI.slpAuthStatus();
           if (status?.success && status?.has_access_token && status?.user) {
-            // Merge auth status into existing user — don't overwrite profile fields like is_paid
-            setAuthUser((prev: any) => prev ? { ...prev, ...status.user } : status.user);
-            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
-            // Fetch full user profile (includes is_paid) — throttled to once per 5 min
-            fetchUserProfile();
+            // Fetch full profile so we have is_paid before rendering
+            const result = await window.electronAPI.slpFetchUser({ force: false });
+            const fullUser = result?.success && result.user
+              ? { ...status.user, ...result.user }
+              : status.user;
+            setAuthUser(fullUser);
+            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
           } else {
             setAuthUser(null);
           }
@@ -107,19 +90,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
     checkAuth();
 
-    // Re-check auth when window regains focus (single check, not polling)
-    const handleFocus = () => checkAuth();
-    window.addEventListener('focus', handleFocus);
+    // Listen for user profile updates broadcast from main process (handles focus refresh, login, etc.)
+    const handleProfileUpdated = (event: CustomEvent) => {
+      if (event.detail && !loggingOutRef.current) {
+        setAuthUser((prev: any) => prev ? { ...prev, ...event.detail } : event.detail);
+        window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: event.detail } }));
+      }
+    };
+    window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
 
-    const handleUserUpdated = () => checkAuth();
-    window.addEventListener('userUpdated', handleUserUpdated);
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('userUpdated', handleUserUpdated);
       if (loginPollRef.current) {
         clearInterval(loginPollRef.current);
         loginPollRef.current = null;
       }
+      window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
     };
   }, []);
 
@@ -142,15 +127,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 clearInterval(loginPollRef.current);
                 loginPollRef.current = null;
               }
-              setAuthUser(status.user);
+              // Fetch full profile before showing user to avoid "Free" flash
+              const profileResult = await window.electronAPI!.slpFetchUser({ force: true });
+              const fullUser = profileResult?.success && profileResult.user
+                ? { ...status.user, ...profileResult.user }
+                : status.user;
+              setAuthUser(fullUser);
               setIsLoggingIn(false);
-              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
-              // Fetch full user profile (includes is_paid) after login
-              userService.fetchAndStoreUser().then((profile) => {
-                if (profile) {
-                  setAuthUser((prev: any) => prev ? { ...prev, ...profile } : prev);
-                }
-              }).catch(() => {});
+              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
             }
           } catch {}
         }, 2000);

@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
   slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
+  slpFetchUser: (opts) => ipcRenderer.invoke('slp-fetch-user', opts),
+  slpUpdateUserSettings: (settings) => ipcRenderer.invoke('slp-update-user-settings', settings),
   slpListModels: () => ipcRenderer.invoke('slp-list-models'),
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
   onModelDownloadProgress: (callback) => {
@@ -178,4 +180,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chrome: process.versions.chrome,
     electron: process.versions.electron
   }
+});
+
+// Bridge main-process user profile updates to a DOM event
+ipcRenderer.on('user-profile-updated', (event, data) => {
+  window.dispatchEvent(new CustomEvent('userProfileUpdated', { detail: data }));
 });
