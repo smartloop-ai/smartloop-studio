@@ -75,6 +75,7 @@ export default function Chat(props: {
   const [isLoading, setIsLoading] = useState(false);
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
+  const [saved, setSaved]: any = useState("");
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1230,18 +1231,41 @@ export default function Chat(props: {
                                   borderColor: 'var(--sl-border-default, #374151)',
                                   background: 'transparent',
                                 }}
-                                title="Download as Markdown"
-                                onClick={() => {
-                                  const blob = new Blob([msg.content], { type: 'text/markdown' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'response.md';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
+                                title="Save response to project folder"
+                                onClick={async () => {
+                                  const folderPath = props.project?.folder_path;
+                                  if (!folderPath) {
+                                    alert('No project folder configured. Please set a folder path in project settings.');
+                                    return;
+                                  }
+                                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                                  const fileName = `response-${timestamp}.md`;
+                                  const filePath = `${folderPath}/${fileName}`;
+                                  if (window.electronAPI?.writeTextFile) {
+                                    const result = await window.electronAPI.writeTextFile(filePath, msg.content);
+                                    if (result.success) {
+                                      setSaved(msg.id);
+                                      setTimeout(() => setSaved(""), 1500);
+                                    } else {
+                                      alert(`Failed to save: ${result.error}`);
+                                    }
+                                  } else {
+                                    // Fallback for non-Electron environments
+                                    const blob = new Blob([msg.content], { type: 'text/markdown' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = fileName;
+                                    a.click();
+                                    URL.revokeObjectURL(url);
+                                    setSaved(msg.id);
+                                    setTimeout(() => setSaved(""), 1500);
+                                  }
                                 }}
                               >
-                                <SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to disk
+                                {saved === msg.id
+                                  ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
+                                  : <><SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to project</>}
                               </button>
                             </div>
                           )}

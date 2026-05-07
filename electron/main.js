@@ -128,6 +128,21 @@ ipcMain.handle('read-text-file', async (event, filePath) => {
   }
 });
 
+// IPC: write a text file to a specific path on disk
+ipcMain.handle('write-text-file', async (event, filePath, content) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    const dir = path.dirname(resolved);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(resolved, content, 'utf-8');
+    return { success: true, filePath: resolved };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: save file via native save dialog
 ipcMain.handle('save-file-dialog', async (event, defaultName, content) => {
   try {
