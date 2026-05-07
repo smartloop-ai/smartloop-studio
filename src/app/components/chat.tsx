@@ -1226,17 +1226,17 @@ export default function Chat(props: {
                                     : <><ContentCopyIcon sx={{ fontSize: 12 }} /> Copy</>}
                                 </button>
                               </CopyToClipboard>
-                              <button
+                              {!props.project?.system && <button
                                 className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
-                                disabled={!!props.project?.system || saving === msg.id}
+                                disabled={saving === msg.id}
                                 style={{
                                   color: 'var(--sl-text-muted)',
                                   borderColor: 'var(--sl-border-default, #374151)',
                                   background: 'transparent',
-                                  opacity: props.project?.system || saving === msg.id ? 0.4 : 1,
-                                  cursor: props.project?.system || saving === msg.id ? 'not-allowed' : 'pointer',
+                                  opacity: saving === msg.id ? 0.4 : 1,
+                                  cursor: saving === msg.id ? 'not-allowed' : 'pointer',
                                 }}
-                                title={props.project?.system ? "Not available for system projects" : "Save response to project"}
+                                title="Save response to project"
                                 onClick={async () => {
                                   const projectId = props.project?.id;
                                   const folderPath = props.project?.folder_path;
@@ -1276,7 +1276,7 @@ export default function Chat(props: {
                                   : saved === msg.id
                                     ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
                                     : <><SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to project</>}
-                              </button>
+                              </button>}
                             </div>
                           )}
                         </Box>
