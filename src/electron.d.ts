@@ -16,6 +16,8 @@ export interface ElectronAPI {
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
   // Read a text file from disk
   readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  // Write a text file to a specific path on disk
+  writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // List supported document files in a directory
   listDirectory: (dirPath: string) => Promise<{ success: boolean; files: Array<{ name: string; path: string; size: number; modified: string }>; error?: string }>;
   // Delete a file from disk

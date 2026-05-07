@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
   // Read a text file from disk
   readTextFile: (filePath) => ipcRenderer.invoke('read-text-file', filePath),
+  // Write a text file to a specific path on disk
+  writeTextFile: (filePath, content) => ipcRenderer.invoke('write-text-file', filePath, content),
   // List supported document files in a directory
   listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
   // Delete a file from disk
