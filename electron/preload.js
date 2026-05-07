@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  getFrameworkVersion: () => ipcRenderer.invoke('get-framework-version'),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
   // SLP auth and model management

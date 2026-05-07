@@ -1252,7 +1252,7 @@ export default function Chat(props: {
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                                   const fileName = `${timestamp}.txt`;
                                   const filePath = `${folderPath}/${fileName}`;
-                                  const result = await window.electronAPI.writeTextFile(filePath, msg.content);
+                                  const result = await window.electronAPI!.writeTextFile(filePath, msg.content);
                                   if (!result.success) {
                                     setSaving("");
                                     alert(`Failed to save: ${result.error}`);

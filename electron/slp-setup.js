@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 const BASE_URL = `https://dl.smartloop.ai/slp/${VERSION}`;
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const VERSION_DIR = path.join(INSTALL_DIR, VERSION, 'bin');
@@ -14,7 +14,31 @@ const CACHE_DIR = path.join(INSTALL_DIR, 'cache');
 const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
 const HASH_FILE = path.join(INSTALL_DIR, '.binary-hash');
 
+/**
+ * Compare two semver strings (major.minor.patch).
+ * Returns true if a >= b.
+ */
+function semverGte(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const va = pa[i] || 0;
+    const vb = pb[i] || 0;
+    if (va > vb) return true;
+    if (va < vb) return false;
+  }
+  return true; // equal
+}
+
 function getInstalledBinaryPath() {
+  try {
+    if (fs.existsSync(MARKER_FILE)) {
+      const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
+      if (semverGte(installed, VERSION)) {
+        return path.join(INSTALL_DIR, installed, 'bin', 'slp');
+      }
+    }
+  } catch {}
   return path.join(VERSION_DIR, 'slp');
 }
 
@@ -22,7 +46,7 @@ function needsInstall() {
   try {
     if (!fs.existsSync(MARKER_FILE)) return true;
     const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
-    if (installed !== VERSION) return true;
+    if (!semverGte(installed, VERSION)) return true;
     const installedBinary = getInstalledBinaryPath();
     if (!fs.existsSync(installedBinary)) return true;
     if (fs.existsSync(HASH_FILE)) {
