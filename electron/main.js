@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, VERSION } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -286,6 +286,9 @@ ipcMain.handle('db-delete-folders-by-project', (event, projectId) => database.de
 
 // --- Local SLP service helpers ---
 
+
+// IPC: get framework version
+ipcMain.handle('get-framework-version', () => VERSION);
 
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {

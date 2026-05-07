@@ -149,6 +149,7 @@ export default function SettingsPage() {
     const [_localModelsLoading, setLocalModelsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
+    const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
@@ -252,6 +253,12 @@ export default function SettingsPage() {
                 try {
                     const info = await api.getSystemInfo();
                     setSystemInfo(info);
+                } catch {}
+            }
+            if (api?.getFrameworkVersion) {
+                try {
+                    const ver = await api.getFrameworkVersion();
+                    setFrameworkVersion(ver);
                 } catch {}
             }
         };
@@ -544,13 +551,13 @@ export default function SettingsPage() {
                                 <tbody>
                                     <tr>
                                         <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
-                                            Server URL
+                                            Service URL
                                         </Box>
                                         <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                                             <Box className="flex items-center gap-1">
                                                 <span>{serverHealth?.url || 'Not available'}</span>
                                                 {serverHealth?.url && (
-                                                    <CopyToClipboard text={serverHealth.url}>
+                                                    <CopyToClipboard text={`${serverHealth.url}/docs`}>
                                                         <IconButton
                                                             size="small"
                                                             sx={{
@@ -566,6 +573,16 @@ export default function SettingsPage() {
                                             </Box>
                                         </Box>
                                     </tr>
+                                    {frameworkVersion && (
+                                        <tr>
+                                            <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                                Version
+                                            </Box>
+                                            <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                {frameworkVersion}
+                                            </Box>
+                                        </tr>
+                                    )}
                                     <tr>
                                         <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
                                             Model
