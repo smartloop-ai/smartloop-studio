@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Local SLP service
   getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
-  slpAddDocument: (filePath, projectId, cwd) => ipcRenderer.invoke('slp-add-document', filePath, projectId, cwd),
+  slpAddDocument: (filePath, projectId, cwd, generateFilename) => ipcRenderer.invoke('slp-add-document', filePath, projectId, cwd, generateFilename),
   onSlpDocumentProgress: (callback) => {
     ipcRenderer.on('slp-document-progress', (event, data) => callback(data));
   },
@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
   // Read a text file from disk
   readTextFile: (filePath) => ipcRenderer.invoke('read-text-file', filePath),
+  // Write a text file to a specific path on disk
+  writeTextFile: (filePath, content) => ipcRenderer.invoke('write-text-file', filePath, content),
   // List supported document files in a directory
   listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
   // Delete a file from disk

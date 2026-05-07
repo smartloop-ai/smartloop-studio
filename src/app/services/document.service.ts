@@ -52,7 +52,8 @@ const addLocalDocument = async (
   projectId: string,
   filePath: string,
   onProgress?: (progress: { percent: number; status: string; event?: string; documents?: any[] }) => void,
-  cwd?: string
+  cwd?: string,
+  generateFilename?: boolean
 ): Promise<DocumentServiceResponse> => {
   try {
     const api = (window as any).electronAPI;
@@ -66,7 +67,7 @@ const addLocalDocument = async (
         });
       }
 
-      const result = await api.slpAddDocument(filePath, projectId, cwd);
+      const result = await api.slpAddDocument(filePath, projectId, cwd, generateFilename);
 
       api.removeSlpDocumentProgressListener?.();
       if (onProgress) onProgress({ percent: 100, status: 'Complete', event: 'done' });
@@ -74,108 +75,7 @@ const addLocalDocument = async (
       return result;
     }
 
-    // Fallback: direct fetch with SSE streaming support (non-Electron)
-    const localBase = await getLocalApiEndpoint();
-    const url = `${localBase}/v1/projects/${projectId}/documents`;
-    const body: Record<string, string> = { source: filePath };
-    if (cwd) body.cwd = cwd;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    if (response.status === 200 || response.status === 201) {
-      const contentType = response.headers.get('content-type') || '';
-
-      // Handle SSE streaming response (event types: queued, progress, done)
-      if (contentType.includes('text/event-stream') && response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let currentEvent = '';
-        let lastDocument: any = null;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) { currentEvent = ''; continue; }
-
-            if (trimmed.startsWith('event:')) {
-              currentEvent = trimmed.slice(6).trim();
-              continue;
-            }
-
-            const payload = trimmed.startsWith('data: ') ? trimmed.slice(6)
-              : trimmed.startsWith('data:') ? trimmed.slice(5).trim() : null;
-            if (payload === null) continue;
-
-            try {
-              const data = JSON.parse(payload);
-              const documents = data.documents || [];
-
-              if (documents.length > 0) lastDocument = documents[0];
-
-              if (onProgress) {
-                let pct = 0;
-                let status = 'Processing...';
-
-                if (currentEvent === 'queued') { pct = 10; status = 'Queued'; }
-                else if (currentEvent === 'progress') {
-                  const doc = documents[0];
-                  const docStatus = doc?.status || '';
-                  if (docStatus === 'converting') { pct = 30; status = 'Converting...'; }
-                  else if (docStatus === 'indexing') { pct = 60; status = 'Indexing...'; }
-                  else { pct = 40; status = docStatus || 'Processing...'; }
-                }
-                else if (currentEvent === 'done') { pct = 100; status = 'Complete'; }
-                else {
-                  pct = data.progress !== undefined ? Math.round(data.progress * 100) : (data.percent ?? data.percentage ?? 0);
-                  status = data.status || 'Processing...';
-                }
-
-                onProgress({ percent: pct, status, event: currentEvent, documents });
-              }
-
-              if (!lastDocument && (data.id || data.source || data.document_id)) {
-                lastDocument = data;
-              }
-            } catch { /* skip non-JSON */ }
-          }
-        }
-
-        // Process remaining buffer
-        if (buffer.trim()) {
-          try {
-            const raw = buffer.trim();
-            const payload = raw.startsWith('data: ') ? raw.slice(6) : raw.startsWith('data:') ? raw.slice(5).trim() : raw;
-            const data = JSON.parse(payload);
-            if (data.documents?.length) lastDocument = data.documents[0];
-            else if (data.id || data.source || data.document_id) lastDocument = data;
-          } catch { /* skip */ }
-        }
-
-        if (onProgress) onProgress({ percent: 100, status: 'Complete', event: 'done' });
-        return { success: true, data: lastDocument || {} };
-      }
-
-      // Regular JSON response
-      const document = await response.json();
-      return { success: true, data: document };
-    }
-
-    const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to add document'
-    };
+    return { success: false, error: 'Electron API not available' };
   } catch (error: any) {
     console.error('Error adding local document:', error);
     return {

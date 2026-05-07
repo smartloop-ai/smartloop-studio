@@ -1,8 +1,9 @@
 
 import { conversationService } from '@/app/services/conversation.service';
+import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
-import { Box } from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
 import OpenAI from 'openai';
 
 import { Streamdown } from 'streamdown';
@@ -75,6 +76,8 @@ export default function Chat(props: {
   const [isLoading, setIsLoading] = useState(false);
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
+  const [saved, setSaved]: any = useState("");
+  const [saving, setSaving]: any = useState("");
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1223,26 +1226,57 @@ export default function Chat(props: {
                                     : <><ContentCopyIcon sx={{ fontSize: 12 }} /> Copy</>}
                                 </button>
                               </CopyToClipboard>
-                              <button
+                              {!props.project?.system && <button
                                 className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
+                                disabled={saving === msg.id}
                                 style={{
                                   color: 'var(--sl-text-muted)',
                                   borderColor: 'var(--sl-border-default, #374151)',
                                   background: 'transparent',
+                                  opacity: saving === msg.id ? 0.4 : 1,
+                                  cursor: saving === msg.id ? 'not-allowed' : 'pointer',
                                 }}
-                                title="Download as Markdown"
-                                onClick={() => {
-                                  const blob = new Blob([msg.content], { type: 'text/markdown' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = 'response.md';
-                                  a.click();
-                                  URL.revokeObjectURL(url);
+                                title="Save response to project"
+                                onClick={async () => {
+                                  const projectId = props.project?.id;
+                                  const folderPath = props.project?.folder_path;
+                                  if (!projectId) {
+                                    alert('No project selected.');
+                                    return;
+                                  }
+                                  if (!folderPath) {
+                                    alert('No project folder configured. Please set a folder path in project settings.');
+                                    return;
+                                  }
+                                  setSaving(msg.id);
+                                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                                  const fileName = `${timestamp}.txt`;
+                                  const filePath = `${folderPath}/${fileName}`;
+                                  const result = await window.electronAPI.writeTextFile(filePath, msg.content);
+                                  if (!result.success) {
+                                    setSaving("");
+                                    alert(`Failed to save: ${result.error}`);
+                                    return;
+                                  }
+                                  const docResult = await documentService.addLocalDocument(projectId, filePath, undefined, undefined, true);
+                                  setSaving("");
+                                  if (docResult.success) {
+                                    window.dispatchEvent(new CustomEvent('documentUploaded', {
+                                      detail: { projectId },
+                                    }));
+                                    setSaved(msg.id);
+                                    setTimeout(() => setSaved(""), 1500);
+                                  } else {
+                                    alert(`File saved but failed to index: ${docResult.error}`);
+                                  }
                                 }}
                               >
-                                <SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to disk
-                              </button>
+                                {saving === msg.id
+                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Saving...</>
+                                  : saved === msg.id
+                                    ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
+                                    : <><SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to project</>}
+                              </button>}
                             </div>
                           )}
                         </Box>
