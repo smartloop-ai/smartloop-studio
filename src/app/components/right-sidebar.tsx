@@ -256,7 +256,7 @@ export default function RightSidebar({
 
   // Reset sidebar selection when switching projects
   useEffect(() => {
-    if (!selectedProject || selectedProject?.system) {
+    if (selectedProject?.system) {
       setActiveSection('mcp');
     } else {
       setActiveSection('documents');
@@ -1574,23 +1574,23 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
-        <Tooltip title={(!selectedProject || selectedProject?.system) ? "Documents (Disabled)" : "Documents"} placement="left">
-          <span className={(!selectedProject || selectedProject?.system) ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
+          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
             <IconButton
               onClick={() => {
-                if (!selectedProject || selectedProject?.system) return;
+                if (selectedProject?.system) return;
                 const next = activeSection === 'documents' ? null : 'documents';
                 setActiveSection(next);
                 if (next === 'documents') refreshDocuments();
               }}
-              disabled={!selectedProject || selectedProject?.system}
+              disabled={!!selectedProject?.system}
               sx={{
                 color: (activeSection === 'documents' || activeTab === 'document') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: (!selectedProject || selectedProject?.system) ? 'not-allowed' : 'pointer',
+                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
                 '&:hover': {
-                  color: (!selectedProject || selectedProject?.system) ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
