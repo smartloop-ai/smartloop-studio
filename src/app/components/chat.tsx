@@ -1241,25 +1241,12 @@ export default function Chat(props: {
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                                   const fileName = `response-${timestamp}.md`;
                                   const filePath = `${folderPath}/${fileName}`;
-                                  if (window.electronAPI?.writeTextFile) {
-                                    const result = await window.electronAPI.writeTextFile(filePath, msg.content);
-                                    if (result.success) {
-                                      setSaved(msg.id);
-                                      setTimeout(() => setSaved(""), 1500);
-                                    } else {
-                                      alert(`Failed to save: ${result.error}`);
-                                    }
-                                  } else {
-                                    // Fallback for non-Electron environments
-                                    const blob = new Blob([msg.content], { type: 'text/markdown' });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = fileName;
-                                    a.click();
-                                    URL.revokeObjectURL(url);
+                                  const result = await window.electronAPI.writeTextFile(filePath, msg.content);
+                                  if (result.success) {
                                     setSaved(msg.id);
                                     setTimeout(() => setSaved(""), 1500);
+                                  } else {
+                                    alert(`Failed to save: ${result.error}`);
                                   }
                                 }}
                               >
