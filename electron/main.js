@@ -294,7 +294,7 @@ ipcMain.handle('get-local-api-url', async () => {
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
 // The POST endpoint returns an SSE stream with event types: queued, progress, done
-ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
+ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, generateFilename) => {
   const http = require('http');
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
@@ -303,6 +303,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
   const url = new URL(`${baseUrl}${docPath}`);
   const bodyObj = { source: filePath };
   if (cwd) bodyObj.cwd = cwd;
+  if (generateFilename) bodyObj.generate_filename = true;
   const body = JSON.stringify(bodyObj);
 
   return new Promise((resolve) => {
