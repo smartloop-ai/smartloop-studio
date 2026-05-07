@@ -128,6 +128,21 @@ ipcMain.handle('read-text-file', async (event, filePath) => {
   }
 });
 
+// IPC: write a text file to a specific path on disk
+ipcMain.handle('write-text-file', async (event, filePath, content) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    const dir = path.dirname(resolved);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(resolved, content, 'utf-8');
+    return { success: true, filePath: resolved };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: save file via native save dialog
 ipcMain.handle('save-file-dialog', async (event, defaultName, content) => {
   try {
@@ -279,7 +294,7 @@ ipcMain.handle('get-local-api-url', async () => {
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
 // The POST endpoint returns an SSE stream with event types: queued, progress, done
-ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
+ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, generateFilename) => {
   const http = require('http');
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
@@ -288,6 +303,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd) => {
   const url = new URL(`${baseUrl}${docPath}`);
   const bodyObj = { source: filePath };
   if (cwd) bodyObj.cwd = cwd;
+  if (generateFilename) bodyObj.generate_filename = true;
   const body = JSON.stringify(bodyObj);
 
   return new Promise((resolve) => {
