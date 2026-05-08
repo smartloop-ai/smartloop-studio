@@ -106,45 +106,58 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
         <Box
           ref={contentRef}
           sx={{
-            maxWidth: '900px',
-            mx: 'auto',
-            px: 5,
-            py: 4,
+            px: { xs: 1.5, md: 2 },
+            py: { xs: 1, md: 2 },
             position: 'relative',
           }}
         >
           <Box
-            className="document-markdown-viewer"
-            sx={markdownSx}
-            dangerouslySetInnerHTML={{
-              __html: marked.parse(content, { async: false }) as string,
+            sx={{
+              bgcolor: '#0a0a0f',
+              border: '1px solid rgba(236, 72, 153, 0.3)',
+              borderRadius: '8px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              overflow: 'hidden',
             }}
-          />
+          >
+            {/* Document info bar */}
+            <div className="flex items-center gap-2.5 px-3 md:px-5 py-2.5" style={{ borderBottom: '1px solid rgba(236, 72, 153, 0.3)', background: 'rgba(0, 0, 0, 0.3)' }}>
+              <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                <DescriptionOutlinedIcon sx={{ fontSize: 12, color: 'var(--sl-text-muted)' }} />
+                <span className="text-gray-300 font-medium">{filename}</span>
+                <span className="text-gray-600">·</span>
+                <span>{wordCount.toLocaleString()} words</span>
+                <span className="text-gray-600">·</span>
+                <span>{readingTimeMin} min read</span>
+              </div>
+              <div className="ml-auto">
+                <Tooltip title="Save" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={handleDownload}
+                    sx={{ color: 'var(--sl-text-disabled)', p: 0.5, '&:hover': { color: 'var(--sl-text-muted)' } }}
+                  >
+                    <SaveOutlinedIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Tooltip>
+              </div>
+            </div>
+
+            {/* Document content */}
+            <Box
+              className="document-markdown-viewer"
+              sx={{
+                ...markdownSx,
+                px: { xs: 1.5, md: 2.5 },
+                py: { xs: 1.5, md: 2.5 },
+              }}
+              dangerouslySetInnerHTML={{
+                __html: marked.parse(content, { async: false }) as string,
+              }}
+            />
+          </Box>
         </Box>
       </Box>
-
-      {/* Footer — matches chat.tsx footer style */}
-      <footer className="sticky bottom-0 z-10 flex-none px-3 md:px-4 py-4 md:py-6 bg-black border-t border-gray-900">
-        <div className="flex items-center gap-2.5 px-1 text-[10px] text-gray-600 leading-none">
-          <span className="flex items-center gap-1">
-            <DescriptionOutlinedIcon sx={{ fontSize: 10, color: 'var(--sl-text-faint)' }} />
-            <span>{wordCount.toLocaleString()} words</span>
-          </span>
-          <span>{readingTimeMin} min read</span>
-          <span className="ml-auto flex items-center gap-2.5">
-            <span>{filename}</span>
-            <Tooltip title="Save" arrow>
-              <IconButton
-                size="small"
-                onClick={handleDownload}
-                sx={{ color: 'var(--sl-text-disabled)', p: 0, '&:hover': { color: 'var(--sl-text-muted)' } }}
-              >
-                <SaveOutlinedIcon sx={{ fontSize: 14 }} />
-              </IconButton>
-            </Tooltip>
-          </span>
-        </div>
-      </footer>
     </Box>
   );
 }
