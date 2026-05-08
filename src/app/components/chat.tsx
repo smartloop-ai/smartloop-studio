@@ -18,7 +18,7 @@ import { cjk } from "@streamdown/cjk";
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
-import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import AddBoxIcon from '@mui/icons-material/AddBox';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
@@ -1159,7 +1159,7 @@ export default function Chat(props: {
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
                         <Box className="flex-1">
-                          <div className="bg-gray-900 border border-gray-900 rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
+                          <div className="chat-paper rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
                             <div className="prose prose-invert max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
                                 <span className="inline-block w-2 h-4 bg-white/80 rounded-sm animate-pulse" />
@@ -1272,10 +1272,10 @@ export default function Chat(props: {
                                 }}
                               >
                                 {saving === msg.id
-                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Saving...</>
+                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Adding...</>
                                   : saved === msg.id
                                     ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
-                                    : <><SaveOutlinedIcon sx={{ fontSize: 12 }} /> Save to project</>}
+                                    : <><AddBoxIcon sx={{ fontSize: 12 }} /> Add to project</>}
                               </button>}
                             </div>
                           )}

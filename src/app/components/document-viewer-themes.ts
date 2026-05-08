@@ -86,12 +86,21 @@ export function getMarkdownStyles(): SxProps<Theme> {
     },
 
     '& blockquote': {
-      borderLeft: '3px solid var(--sl-status-success)',
+      borderLeft: '4px solid var(--sl-brand-primary)',
+      bgcolor: 'rgba(17, 24, 39, 0.8)',
+      border: '1px solid rgba(75, 85, 99, 0.3)',
+      borderLeftWidth: '4px',
+      borderLeftStyle: 'solid',
+      borderLeftColor: 'var(--sl-brand-primary)',
+      borderRadius: '0 6px 6px 0',
       pl: 2,
+      pr: 2,
+      py: 1.5,
       ml: 0,
       mb: 2,
       color: 'var(--sl-text-muted)',
       fontStyle: 'italic',
+      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
     },
 
     '& ul, & ol': { color: 'var(--sl-text-secondary)', pl: 3, mb: 2 },
