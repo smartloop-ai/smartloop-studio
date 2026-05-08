@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
-import { userService } from '@/app/services/user.service';
+
 import { storageService } from '@/app/services/storage.service';
 import { getLocalApiEndpoint } from '@/app/constants';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -297,9 +297,11 @@ export default function SettingsPage() {
 
             // Also sync API-relevant settings to remote (analytics is local-only)
             const { analytics_enabled: _local, ...apiSettings } = newSettings;
-            const updatedUser = await userService.updateSettings(apiSettings);
-            if (updatedUser) {
-                setUser(updatedUser);
+            if (window.electronAPI?.slpUpdateUserSettings) {
+                const result = await window.electronAPI.slpUpdateUserSettings(apiSettings);
+                if (result?.success && result.user) {
+                    setUser(result.user);
+                }
             }
             setSaveMessage('Settings saved');
             setTimeout(() => setSaveMessage(''), 2000);
