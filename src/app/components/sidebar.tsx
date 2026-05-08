@@ -64,18 +64,24 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loggingOutRef = useRef(false);
 
   // Check auth status on mount and listen for changes
   useEffect(() => {
+    // Initial auth check — wait for full profile (includes is_paid) before showing user
     const checkAuth = async () => {
-      // Skip if a login flow is actively polling
-      if (loginPollRef.current) return;
+      if (loginPollRef.current || loggingOutRef.current) return;
       try {
         if (window.electronAPI?.slpAuthStatus) {
           const status = await window.electronAPI.slpAuthStatus();
           if (status?.success && status?.has_access_token && status?.user) {
-            setAuthUser(status.user);
-            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+            // Fetch full profile so we have is_paid before rendering
+            const result = await window.electronAPI.slpFetchUser({ force: false });
+            const fullUser = result?.success && result.user
+              ? { ...status.user, ...result.user }
+              : status.user;
+            setAuthUser(fullUser);
+            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
           } else {
             setAuthUser(null);
           }
@@ -84,19 +90,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
     checkAuth();
 
-    // Re-check auth when window regains focus (single check, not polling)
-    const handleFocus = () => checkAuth();
-    window.addEventListener('focus', handleFocus);
+    // Listen for user profile updates broadcast from main process (handles focus refresh, login, etc.)
+    const handleProfileUpdated = (event: CustomEvent) => {
+      if (event.detail && !loggingOutRef.current) {
+        setAuthUser((prev: any) => prev ? { ...prev, ...event.detail } : event.detail);
+        window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: event.detail } }));
+      }
+    };
+    window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
 
-    const handleUserUpdated = () => checkAuth();
-    window.addEventListener('userUpdated', handleUserUpdated);
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('userUpdated', handleUserUpdated);
       if (loginPollRef.current) {
         clearInterval(loginPollRef.current);
         loginPollRef.current = null;
       }
+      window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
     };
   }, []);
 
@@ -119,9 +127,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 clearInterval(loginPollRef.current);
                 loginPollRef.current = null;
               }
-              setAuthUser(status.user);
+              // Fetch full profile before showing user to avoid "Free" flash
+              const profileResult = await window.electronAPI!.slpFetchUser({ force: true });
+              const fullUser = profileResult?.success && profileResult.user
+                ? { ...status.user, ...profileResult.user }
+                : status.user;
+              setAuthUser(fullUser);
               setIsLoggingIn(false);
-              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: status.user } }));
+              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
             }
           } catch {}
         }, 2000);
@@ -139,11 +152,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       loginPollRef.current = null;
     }
     setIsLoggingIn(false);
+    loggingOutRef.current = true;
+    // Delete token first so no in-flight or subsequent checkAuth can re-read it
     if (window.electronAPI?.slpAuthLogout) {
       await window.electronAPI.slpAuthLogout();
     }
     setAuthUser(null);
     setAnchorEl(null);
+    loggingOutRef.current = false;
     window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: false } }));
   };
 

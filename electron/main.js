@@ -691,6 +691,8 @@ ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
     if (res.ok) {
       const data = await res.json();
       console.log('[SLP] Auth token set successfully');
+      // Fetch user profile now that we have a token
+      fetchUserProfile(true);
       return { success: true, data };
     } else {
       console.error('[SLP] Failed to set auth token:', res.status);
@@ -723,10 +725,90 @@ ipcMain.handle('slp-auth-status', async () => {
 ipcMain.handle('slp-auth-logout', async () => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
+  clearCachedUser();
   try {
     const res = await fetch(`${baseUrl}/v1/auth/token?type=access_token`, { method: 'DELETE' });
     if (res.ok) {
       return { success: true };
+    } else {
+      return { success: false, error: `HTTP ${res.status}` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// --- Centralized user profile management ---
+let cachedUserProfile = null;
+let lastUserFetchTime = 0;
+const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchUserProfile(force = false) {
+  const now = Date.now();
+  if (!force && cachedUserProfile && now - lastUserFetchTime < USER_CACHE_TTL) {
+    return cachedUserProfile;
+  }
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/v1/users/me`);
+    if (res.ok) {
+      const result = await res.json();
+      cachedUserProfile = {
+        email: result.email,
+        name: result.name,
+        verified: result.is_verified,
+        admin: result.is_superuser,
+        is_paid: result.is_paid || false,
+        premium: result.is_paid || false,
+        selected_model: result.selected_model || null,
+        tokens: result.tokens,
+        number_of_tokens_processed: result.number_of_tokens_processed || 0,
+        projects: result.projects,
+        conversations: result.conversations || [],
+        default_temperature: result.default_temperature !== undefined ? result.default_temperature : 0.3,
+        default_memory: result.default_memory !== undefined ? result.default_memory : true,
+        onboarded: result.onboarded !== undefined ? result.onboarded : false,
+      };
+      lastUserFetchTime = now;
+      // Broadcast to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('user-profile-updated', cachedUserProfile);
+      }
+      return cachedUserProfile;
+    }
+    return null;
+  } catch (err) {
+    console.error('[User] Error fetching profile:', err.message);
+    return null;
+  }
+}
+
+function clearCachedUser() {
+  cachedUserProfile = null;
+  lastUserFetchTime = 0;
+}
+
+// IPC: Renderer requests user profile (throttled)
+ipcMain.handle('slp-fetch-user', async (event, opts) => {
+  const force = opts?.force || false;
+  const profile = await fetchUserProfile(force);
+  return { success: !!profile, user: profile };
+});
+
+// IPC: Renderer requests settings update via PATCH /users/me
+ipcMain.handle('slp-update-user-settings', async (event, settings) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/users/me`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (res.ok) {
+      const profile = await fetchUserProfile(true);
+      return { success: true, user: profile };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
     }
@@ -1006,6 +1088,21 @@ function createWindow() {
   // Only null out on actual destroy (app quit)
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // On focus: check auth status and refresh user profile (throttled)
+  mainWindow.on('focus', async () => {
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return;
+    try {
+      const res = await fetch(`${baseUrl}/v1/auth/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.has_access_token) {
+          fetchUserProfile(); // throttled by TTL
+        }
+      }
+    } catch {}
   });
 
   // Open external links in default browser
