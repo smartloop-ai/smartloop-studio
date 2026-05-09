@@ -1166,7 +1166,7 @@ export default function Chat(props: {
               </div>
             }
             <div className="flex flex-col gap-6 w-full">
-              {displayMessages && displayMessages.map((msg: any, index: number) => {
+              {displayMessages && displayMessages.map((msg: any) => {
                 return (
                   <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
