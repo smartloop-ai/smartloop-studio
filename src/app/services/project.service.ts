@@ -160,8 +160,18 @@ const getProjects = async (): Promise<any[]> => {
 
     const enriched = projects.map((p: any) => {
       const meta = metaMap.get(p.id);
-      return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: meta?.folder_path || null };
+      const slug = (meta?.name || p.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
+      const folderPath = meta?.folder_path || (p.system ? `~/smartloop/${slug}` : null);
+      return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
     });
+
+    // Persist folder_path for system projects missing it in SQLite
+    for (const p of enriched) {
+      if (p.system && p.folder_path && !metaMap.get(p.id)?.folder_path) {
+        await storageService.updateProjectMeta(p.id, { folder_path: p.folder_path });
+      }
+    }
+
     return enriched;
   } catch (error: any) {
     console.error('Error fetching projects:', error);

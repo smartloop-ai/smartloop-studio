@@ -103,8 +103,9 @@ export function useAuth(): [any, (user: any) => void, boolean] {
         // Auto-create a system project if none exist
         if (projects.length === 0) {
           const result = await projectService.createProject({
-            name: 'General',
+            name: 'General Chat',
             system: true,
+            folder_path: '~/smartloop/general_chat',
           });
           if (result.success && result.data) {
             projects = [result.data];
