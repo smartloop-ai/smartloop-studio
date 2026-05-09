@@ -1,6 +1,5 @@
 
 import { conversationService } from '@/app/services/conversation.service';
-import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
 import { Box, CircularProgress } from "@mui/material";
@@ -18,7 +17,9 @@ import { cjk } from "@streamdown/cjk";
 
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
-import AddBoxIcon from '@mui/icons-material/AddBox';
+import ThumbUpIcon from '@mui/icons-material/ThumbUp';
+import ThumbDownIcon from '@mui/icons-material/ThumbDown';
+import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
@@ -78,6 +79,7 @@ export default function Chat(props: {
   const [copied, setCopied]: any = useState("");
   const [saved, setSaved]: any = useState("");
   const [saving, setSaving]: any = useState("");
+  const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -883,6 +885,29 @@ export default function Chat(props: {
     // Update conversation ref
     currentConversationIdRef.current = props.conversation?.id || null;
 
+    // Load feedback state for this conversation
+    const convId = props.conversation?.id;
+    if (convId) {
+      (async () => {
+        try {
+          const baseUrl = await getLocalApiEndpoint();
+          const res = await fetch(`${baseUrl}/v1/feedback?session_id=${encodeURIComponent(convId)}`);
+          if (res.ok) {
+            const data = await res.json();
+            console.log('[Chat] Feedback response:', JSON.stringify(data));
+            // Response is { [message_id]: rating } — use directly
+            const feedbackMap: Record<string, 'up' | 'down'> = Array.isArray(data)
+              ? Object.fromEntries(data.map((e: any) => [e.message_id, e.rating]))
+              : data;
+            console.log('[Chat] Feedback map:', feedbackMap);
+            setFeedback(feedbackMap);
+          }
+        } catch { }
+      })();
+    } else {
+      setFeedback({});
+    }
+
   }, [props.conversation, isLoading]);
 
   // Fire any pending onConversationUpdate after messages state has committed to DOM
@@ -938,18 +963,6 @@ export default function Chat(props: {
       if (isFileScheme || isAbsolutePath || isHomePath) {
         e.preventDefault();
         const path = isFileScheme ? decodeURIComponent(rawHref.replace(/^file:\/\//, '')) : rawHref;
-
-        // Open .md files in a document tab instead of native viewer
-        if (path.endsWith('.md') && props.onOpenTab) {
-          const fileName = path.split('/').pop() || 'Document';
-          props.onOpenTab({
-            id: `doc-${path}`,
-            type: 'document',
-            title: fileName,
-            data: { path, name: fileName },
-          });
-          return;
-        }
 
         if (electronAPI?.openInFinder) {
           electronAPI.openInFinder(path);
@@ -1153,7 +1166,7 @@ export default function Chat(props: {
               </div>
             }
             <div className="flex flex-col gap-6 w-full">
-              {displayMessages && displayMessages.map((msg: any) => {
+              {displayMessages && displayMessages.map((msg: any, index: number) => {
                 return (
                   <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
@@ -1226,57 +1239,90 @@ export default function Chat(props: {
                                     : <><ContentCopyIcon sx={{ fontSize: 12 }} /> Copy</>}
                                 </button>
                               </CopyToClipboard>
-                              {!props.project?.system && <button
+                              {/* Thumbs up */}
+                              <button
+                                className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                style={{
+                                  color: feedback[msg.id] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                  borderColor: feedback[msg.id] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                  background: 'transparent',
+                                }}
+                                title="Good response"
+                                onClick={async () => {
+                                  setFeedback(prev => ({ ...prev, [msg.id]: 'up' }));
+                                  try {
+                                    const baseUrl = await getLocalApiEndpoint();
+                                    await fetch(`${baseUrl}/v1/feedback`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        session_id: currentConversationIdRef.current,
+                                        message_id: msg.id,
+                                        rating: 'up',
+                                      }),
+                                    });
+                                  } catch { }
+                                }}
+                              >
+                                <ThumbUpIcon sx={{ fontSize: 12 }} />
+                              </button>
+                              {/* Thumbs down */}
+                              <button
+                                className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                style={{
+                                  color: feedback[msg.id] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                  borderColor: feedback[msg.id] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                  background: 'transparent',
+                                }}
+                                title="Bad response"
+                                onClick={async () => {
+                                  setFeedback(prev => ({ ...prev, [msg.id]: 'down' }));
+                                  try {
+                                    const baseUrl = await getLocalApiEndpoint();
+                                    await fetch(`${baseUrl}/v1/feedback`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        session_id: currentConversationIdRef.current,
+                                        message_id: msg.id,
+                                        rating: 'down',
+                                      }),
+                                    });
+                                  } catch { }
+                                }}
+                              >
+                                <ThumbDownIcon sx={{ fontSize: 12 }} />
+                              </button>
+                              {/* Save as markdown */}
+                              <button
                                 className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
                                 disabled={saving === msg.id}
                                 style={{
-                                  color: 'var(--sl-text-muted)',
-                                  borderColor: 'var(--sl-border-default, #374151)',
+                                  color: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
+                                  borderColor: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-border-default, #374151)',
                                   background: 'transparent',
                                   opacity: saving === msg.id ? 0.4 : 1,
                                   cursor: saving === msg.id ? 'not-allowed' : 'pointer',
                                 }}
-                                title="Save response to project"
+                                title="Save as markdown"
                                 onClick={async () => {
-                                  const projectId = props.project?.id;
-                                  const folderPath = props.project?.folder_path;
-                                  if (!projectId) {
-                                    alert('No project selected.');
-                                    return;
-                                  }
-                                  if (!folderPath) {
-                                    alert('No project folder configured. Please set a folder path in project settings.');
-                                    return;
-                                  }
+                                  if (!window.electronAPI?.saveFileDialog) return;
                                   setSaving(msg.id);
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                                  const fileName = `${timestamp}.txt`;
-                                  const filePath = `${folderPath}/${fileName}`;
-                                  const result = await window.electronAPI!.writeTextFile(filePath, msg.content);
-                                  if (!result.success) {
-                                    setSaving("");
-                                    alert(`Failed to save: ${result.error}`);
-                                    return;
-                                  }
-                                  const docResult = await documentService.addLocalDocument(projectId, filePath, undefined, undefined, true);
-                                  setSaving("");
-                                  if (docResult.success) {
-                                    window.dispatchEvent(new CustomEvent('documentUploaded', {
-                                      detail: { projectId },
-                                    }));
+                                  const result = await window.electronAPI.saveFileDialog(`${timestamp}.md`, msg.content);
+                                  setSaving('');
+                                  if (result.success) {
                                     setSaved(msg.id);
-                                    setTimeout(() => setSaved(""), 1500);
-                                  } else {
-                                    alert(`File saved but failed to index: ${docResult.error}`);
+                                    setTimeout(() => setSaved(''), 1500);
                                   }
                                 }}
                               >
                                 {saving === msg.id
-                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Adding...</>
+                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Saving...</>
                                   : saved === msg.id
                                     ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
-                                    : <><AddBoxIcon sx={{ fontSize: 12 }} /> Add to project</>}
-                              </button>}
+                                    : <><SaveAltIcon sx={{ fontSize: 12 }} /> Save</>}
+                              </button>
                             </div>
                           )}
                         </Box>

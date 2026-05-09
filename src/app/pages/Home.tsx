@@ -1068,7 +1068,6 @@ export default function Home() {
 
 
   const handleOpenTab = (tab: OpenTab) => {
-    // Block document tabs for system projects
     if (tab.type === 'document' && selectedProject?.system) return;
 
     setOpenTabs((prev) => {
