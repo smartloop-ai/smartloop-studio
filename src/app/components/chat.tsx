@@ -1367,8 +1367,8 @@ export default function Chat(props: {
                                   </>
                                 );
                               })()}
-                              {/* Keep to project folder */}
-                              <Tooltip title={saved === msg.id ? "Kept" : "Keep"} arrow placement="top">
+                              {/* Save to project folder */}
+                              <Tooltip title={saved === msg.id ? "Saved" : "Save"} arrow placement="top">
                               <span className="inline-flex">
                               <button
                                 className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
@@ -1381,13 +1381,14 @@ export default function Chat(props: {
                                   cursor: saving === msg.id ? 'not-allowed' : 'pointer',
                                 }}
                                 onClick={async () => {
-                                  if (!window.electronAPI?.writeTextFile) return;
+                                  if (!window.electronAPI?.saveFileDialog) return;
                                   setSaving(msg.id);
-                                  const folderPath = props.project?.folder_path;
+                                  const slug = (props.project?.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
+                                  const folderPath = props.project?.folder_path || `~/smartloop/${slug}`;
                                   if (!folderPath) { setSaving(''); return; }
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                                  const filePath = `${folderPath}/${timestamp}.md`;
-                                  const result = await window.electronAPI.writeTextFile(filePath, msg.content);
+                                  const defaultName = `${timestamp}.md`;
+                                  const result = await window.electronAPI.saveFileDialog(defaultName, msg.content, folderPath);
                                   setSaving('');
                                   if (result.success) {
                                     setSaved(msg.id);

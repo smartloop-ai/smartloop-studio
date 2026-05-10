@@ -70,7 +70,7 @@ export interface ElectronAPI {
     gpu: string | null;
   }>;
   // Save file via native save dialog
-  saveFileDialog: (defaultName: string, content: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  saveFileDialog: (defaultName: string, content: string, defaultDir?: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // System info
   isElectron: boolean;
   // Native clipboard (bypasses web clipboard restrictions in Electron)
