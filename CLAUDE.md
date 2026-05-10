@@ -103,3 +103,4 @@ In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).
 -  This is an electron desktop app therefore avoid using web fallbacks
 -  use main.js electron APIs instead of using `useeffect` react hook to keep things centralize
 -  Use consistent margin ,padding when possible, utilize flex at all times
+-  Use theme color, instead of random colors that does not go with overall look and feed
