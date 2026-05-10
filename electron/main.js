@@ -144,11 +144,19 @@ ipcMain.handle('write-text-file', async (event, filePath, content) => {
 });
 
 // IPC: save file via native save dialog
-ipcMain.handle('save-file-dialog', async (event, defaultName, content) => {
+ipcMain.handle('save-file-dialog', async (event, defaultName, content, defaultDir) => {
   try {
     const { dialog } = require('electron');
+    let resolvedDir = defaultDir;
+    if (resolvedDir && resolvedDir.startsWith('~')) {
+      resolvedDir = path.join(os.homedir(), resolvedDir.replace(/^~[/\\]?/, ''));
+    }
+    if (resolvedDir) {
+      fs.mkdirSync(resolvedDir, { recursive: true });
+    }
+    const defaultPath = resolvedDir ? path.join(resolvedDir, defaultName) : defaultName;
     const result = await dialog.showSaveDialog({
-      defaultPath: defaultName,
+      defaultPath,
       filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All Files', extensions: ['*'] }],
     });
     if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };

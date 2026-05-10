@@ -686,11 +686,11 @@ export default function RightSidebar({
 
 
   const validateAndUploadFile = async (file: File) => {
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
     const maxSize = 50 * 1024 * 1024; // 50MB
 
     if (!allowedTypes.includes(file.type)) {
-      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
+      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT');
       return;
     }
 
@@ -921,7 +921,7 @@ export default function RightSidebar({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.docx,.txt,.csv"
+                    accept=".pdf,.docx,.txt"
                     onChange={handleFileSelect}
                     className="hidden"
                   />
@@ -960,8 +960,20 @@ export default function RightSidebar({
                     <span className="text-[12px] text-gray-400 font-medium">
                       {isDragging ? 'Drop file here' : 'Drop files or click to add'}
                     </span>
-                    <span className="text-[10px] text-gray-600">
-                      pdf · docx · txt · csv
+                    <span className="flex items-center gap-1.5 mt-1">
+                      {['PDF', 'DOCX', 'TXT'].map((type) => (
+                        <span
+                          key={type}
+                          className="text-[9px] font-medium tracking-wide px-2 py-0.5 rounded"
+                          style={{
+                            color: 'var(--sl-text-muted)',
+                            backgroundColor: 'var(--sl-white-alpha-5)',
+                            border: '1px solid var(--sl-white-alpha-10)',
+                          }}
+                        >
+                          {type}
+                        </span>
+                      ))}
                     </span>
                   </Box>
 

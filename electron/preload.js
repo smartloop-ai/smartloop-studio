@@ -167,7 +167,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteFoldersByProject: (projectId) => ipcRenderer.invoke('db-delete-folders-by-project', projectId),
   },
   // Save content to a user-chosen location via native dialog
-  saveFileDialog: (defaultName, content) => ipcRenderer.invoke('save-file-dialog', defaultName, content),
+  saveFileDialog: (defaultName, content, defaultDir) => ipcRenderer.invoke('save-file-dialog', defaultName, content, defaultDir),
   // Check if running in Electron
   isElectron: true,
   // Native clipboard (bypasses web clipboard restrictions in Electron)
