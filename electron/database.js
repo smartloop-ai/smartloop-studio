@@ -144,6 +144,12 @@ function openDatabase() {
     console.log('[DB] Added citations column to messages');
   }
 
+  // Migration: add message_id column to messages (backend-assigned msg-* ID)
+  if (!msgCols.find(c => c.name === 'message_id')) {
+    db.exec("ALTER TABLE messages ADD COLUMN message_id TEXT");
+    console.log('[DB] Added message_id column to messages');
+  }
+
   // Migration: add folder_path column to projects
   const projectCols = db.prepare("PRAGMA table_info(projects)").all();
   if (!projectCols.find(c => c.name === 'folder_path')) {
@@ -372,14 +378,14 @@ function addMessages(conversation_id, messages) {
   const d = openDatabase();
   const now = new Date().toISOString();
   const insert = d.prepare(`
-    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, citations, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, citations, message_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
   const tx = d.transaction((msgs) => {
     for (const msg of msgs) {
       const citations = msg.citations ? JSON.stringify(msg.citations) : null;
-      insert.run(msg.id, conversation_id, msg.role, msg.content, citations, msg.created_at || now);
+      insert.run(msg.id, conversation_id, msg.role, msg.content, citations, msg.message_id || null, msg.created_at || now);
     }
     d.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(now, conversation_id);
   });
@@ -406,6 +412,9 @@ function formatMessage(row) {
     content: row.content,
     created_at: row.created_at,
   };
+  if (row.message_id) {
+    msg.message_id = row.message_id;
+  }
   if (row.citations) {
     try { msg.citations = JSON.parse(row.citations); } catch {}
   }
