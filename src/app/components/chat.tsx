@@ -1249,16 +1249,17 @@ export default function Chat(props: {
                                 }}
                                 title="Good response"
                                 onClick={async () => {
-                                  setFeedback(prev => ({ ...prev, [msg.id]: 'up' }));
+                                  const next = feedback[msg.id] === 'up' ? undefined : 'up';
+                                  setFeedback(prev => { const s = { ...prev }; if (next) s[msg.id] = next; else delete s[msg.id]; return s; });
                                   try {
                                     const baseUrl = await getLocalApiEndpoint();
                                     await fetch(`${baseUrl}/v1/feedback`, {
-                                      method: 'POST',
+                                      method: next ? 'POST' : 'DELETE',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({
                                         session_id: currentConversationIdRef.current,
                                         message_id: msg.id,
-                                        rating: 'up',
+                                        ...(next ? { rating: next } : {}),
                                       }),
                                     });
                                   } catch { }
@@ -1276,16 +1277,17 @@ export default function Chat(props: {
                                 }}
                                 title="Bad response"
                                 onClick={async () => {
-                                  setFeedback(prev => ({ ...prev, [msg.id]: 'down' }));
+                                  const next = feedback[msg.id] === 'down' ? undefined : 'down';
+                                  setFeedback(prev => { const s = { ...prev }; if (next) s[msg.id] = next; else delete s[msg.id]; return s; });
                                   try {
                                     const baseUrl = await getLocalApiEndpoint();
                                     await fetch(`${baseUrl}/v1/feedback`, {
-                                      method: 'POST',
+                                      method: next ? 'POST' : 'DELETE',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({
                                         session_id: currentConversationIdRef.current,
                                         message_id: msg.id,
-                                        rating: 'down',
+                                        ...(next ? { rating: next } : {}),
                                       }),
                                     });
                                   } catch { }
