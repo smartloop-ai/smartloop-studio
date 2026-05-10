@@ -178,6 +178,7 @@ class StorageService {
       // Ensure each message has an id
       const msgsWithIds = messages.map(m => ({
         id: m.id || crypto.randomUUID(),
+        message_id: m.message_id || null,
         role: m.role,
         content: m.content,
         citations: m.citations || null,

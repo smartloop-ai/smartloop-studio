@@ -325,7 +325,7 @@ export default function Chat(props: {
     sendingMessageRef.current = true;
 
     const messageId = `msg-${Date.now()}`;
-    const responseId = `response-${Date.now()}`;
+    const responseId = `temp-${Date.now()}`;
 
     const effectiveProjectId = props.project?.id;
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
@@ -465,6 +465,7 @@ export default function Chat(props: {
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
+    let message_id: string | null = null;
     try {
       // Initialize OpenAI client pointing to local SLP service
       const localBaseUrl = await getLocalApiEndpoint();
@@ -610,10 +611,29 @@ export default function Chat(props: {
       // Process the stream
       streamStartRef.current = Date.now();
       streamTokenCountRef.current = 0;
+      let chunkLogCount = 0;
       for await (const chunk of stream) {
         // Check if aborted
         if (abortControllerRef.current?.signal.aborted) {
           throw new Error('AbortError');
+        }
+
+        // Log first 3 chunks to find where backend message_id lives
+        if (chunkLogCount < 3) {
+          console.log('[Chat] chunk #' + chunkLogCount, JSON.stringify(chunk));
+          chunkLogCount++;
+        }
+
+        // Capture the backend-assigned message ID from the first chunk
+        const chunkMsgId = chunk.message_id || (chunk.id?.startsWith('msg-') ? chunk.id : null) || (chunk.choices?.[0]?.message_id) || null;
+        if (!message_id && chunkMsgId) {
+          message_id = chunkMsgId;
+          console.log('[Chat] Captured backend message_id:', message_id);
+          setMessages((prevMessages: any) =>
+            prevMessages.map((msg: any) =>
+              msg.id === responseId ? { ...msg, message_id } : msg
+            )
+          );
         }
 
         // Capture citations from SLP server
@@ -891,14 +911,26 @@ export default function Chat(props: {
       (async () => {
         try {
           const baseUrl = await getLocalApiEndpoint();
-          const res = await fetch(`${baseUrl}/v1/feedback?session_id=${encodeURIComponent(convId)}`);
+          const projectId = props.project?.id ? `&project_id=${encodeURIComponent(props.project.id)}` : '';
+          const res = await fetch(`${baseUrl}/v1/feedback?session_id=${encodeURIComponent(convId)}${projectId}`);
           if (res.ok) {
             const data = await res.json();
             console.log('[Chat] Feedback response:', JSON.stringify(data));
-            // Response is { [message_id]: rating } — use directly
-            const feedbackMap: Record<string, 'up' | 'down'> = Array.isArray(data)
-              ? Object.fromEntries(data.map((e: any) => [e.message_id, e.rating]))
-              : data;
+            console.log('[Chat] Message IDs in conversation:', conversationMessages.map((m: any) => ({ id: m.id, message_id: m.message_id, role: m.role })));
+            const feedbackMap: Record<string, 'up' | 'down'> = {};
+            const entries: Array<{ message_id: string; rating: 'up' | 'down' }> = Array.isArray(data) ? data : Object.entries(data).map(([k, v]) => ({ message_id: k, rating: v as 'up' | 'down' }));
+            for (const entry of entries) {
+              const backendMsgId = entry.message_id;
+              feedbackMap[backendMsgId] = entry.rating;
+              // For messages where local id differs from backend message_id,
+              // also key by local id so UI lookup works
+              const localMsg = conversationMessages.find((m: any) =>
+                (m.message_id === backendMsgId || m.id === backendMsgId) && m.role === 'assistant'
+              );
+              if (localMsg) {
+                feedbackMap[localMsg.message_id || localMsg.id] = entry.rating;
+              }
+            }
             console.log('[Chat] Feedback map:', feedbackMap);
             setFeedback(feedbackMap);
           }
@@ -908,7 +940,7 @@ export default function Chat(props: {
       setFeedback({});
     }
 
-  }, [props.conversation, isLoading]);
+  }, [props.conversation, props.project, isLoading]);
 
   // Fire any pending onConversationUpdate after messages state has committed to DOM
   // (calling it inside a setMessages updater triggers "setState during render" warning)
@@ -1240,61 +1272,98 @@ export default function Chat(props: {
                                 </button>
                               </CopyToClipboard>
                               {/* Thumbs up */}
-                              <button
-                                className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
-                                style={{
-                                  color: feedback[msg.id] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                                  borderColor: feedback[msg.id] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
-                                  background: 'transparent',
-                                }}
-                                title="Good response"
-                                onClick={async () => {
-                                  const next = feedback[msg.id] === 'up' ? undefined : 'up';
-                                  setFeedback(prev => { const s = { ...prev }; if (next) s[msg.id] = next; else delete s[msg.id]; return s; });
-                                  try {
-                                    const baseUrl = await getLocalApiEndpoint();
-                                    await fetch(`${baseUrl}/v1/feedback`, {
-                                      method: next ? 'POST' : 'DELETE',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        session_id: currentConversationIdRef.current,
-                                        message_id: msg.id,
-                                        ...(next ? { rating: next } : {}),
-                                      }),
-                                    });
-                                  } catch { }
-                                }}
-                              >
-                                <ThumbUpIcon sx={{ fontSize: 12 }} />
-                              </button>
-                              {/* Thumbs down */}
-                              <button
-                                className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
-                                style={{
-                                  color: feedback[msg.id] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                                  borderColor: feedback[msg.id] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
-                                  background: 'transparent',
-                                }}
-                                title="Bad response"
-                                onClick={async () => {
-                                  const next = feedback[msg.id] === 'down' ? undefined : 'down';
-                                  setFeedback(prev => { const s = { ...prev }; if (next) s[msg.id] = next; else delete s[msg.id]; return s; });
-                                  try {
-                                    const baseUrl = await getLocalApiEndpoint();
-                                    await fetch(`${baseUrl}/v1/feedback`, {
-                                      method: next ? 'POST' : 'DELETE',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        session_id: currentConversationIdRef.current,
-                                        message_id: msg.id,
-                                        ...(next ? { rating: next } : {}),
-                                      }),
-                                    });
-                                  } catch { }
-                                }}
-                              >
-                                <ThumbDownIcon sx={{ fontSize: 12 }} />
-                              </button>
+                              {(() => {
+                                const feedbackId = msg.message_id || msg.id;
+                                return (
+                                  <>
+                                  {/* Thumbs up */}
+                                  <button
+                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                    style={{
+                                      color: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                      borderColor: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                      background: 'transparent',
+                                    }}
+                                    title="Good response"
+                                    onClick={async () => {
+                                      const isActive = feedback[feedbackId] === 'up';
+                                      if (isActive) {
+                                        setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
+                                        try {
+                                          const baseUrl = await getLocalApiEndpoint();
+                                          const params = new URLSearchParams({
+                                            session_id: currentConversationIdRef.current || '',
+                                            message_id: feedbackId,
+                                          });
+                                          if (props.project?.id) params.set('project_id', props.project.id);
+                                          await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
+                                        } catch { }
+                                      } else {
+                                        setFeedback(prev => ({ ...prev, [feedbackId]: 'up' }));
+                                        try {
+                                          const baseUrl = await getLocalApiEndpoint();
+                                          await fetch(`${baseUrl}/v1/feedback`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              session_id: currentConversationIdRef.current,
+                                              message_id: feedbackId,
+                                              ...(props.project?.id ? { project_id: props.project.id } : {}),
+                                              rating: 'up',
+                                            }),
+                                          });
+                                        } catch { }
+                                      }
+                                    }}
+                                  >
+                                    <ThumbUpIcon sx={{ fontSize: 12 }} />
+                                  </button>
+                                  {/* Thumbs down */}
+                                  <button
+                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                    style={{
+                                      color: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                      borderColor: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                      background: 'transparent',
+                                    }}
+                                    title="Bad response"
+                                    onClick={async () => {
+                                      console.log('[Chat] Thumbs down clicked, feedbackId:', feedbackId, 'current feedback:', feedback[feedbackId]);
+                                      const isActive = feedback[feedbackId] === 'down';
+                                      if (isActive) {
+                                        setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
+                                        try {
+                                          const baseUrl = await getLocalApiEndpoint();
+                                          const params = new URLSearchParams({
+                                            session_id: currentConversationIdRef.current || '',
+                                            message_id: feedbackId,
+                                          });
+                                          if (props.project?.id) params.set('project_id', props.project.id);
+                                          await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
+                                        } catch { }
+                                      } else {
+                                        setFeedback(prev => ({ ...prev, [feedbackId]: 'down' }));
+                                        try {
+                                          const baseUrl = await getLocalApiEndpoint();
+                                          await fetch(`${baseUrl}/v1/feedback`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                              session_id: currentConversationIdRef.current,
+                                              message_id: feedbackId,
+                                              ...(props.project?.id ? { project_id: props.project.id } : {}),
+                                              rating: 'down',
+                                            }),
+                                          });
+                                        } catch { }
+                                      }
+                                    }}
+                                  >
+                                    <ThumbDownIcon sx={{ fontSize: 12 }} />
+                                  </button>
+                                  </>
+                                );
+                              })()}
                               {/* Save as markdown */}
                               <button
                                 className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
