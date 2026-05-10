@@ -2,7 +2,7 @@
 import { conversationService } from '@/app/services/conversation.service';
 import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useRef, useState } from "react";
-import { Box, CircularProgress } from "@mui/material";
+import { Box, CircularProgress, Tooltip } from "@mui/material";
 import OpenAI from 'openai';
 
 import { Streamdown } from 'streamdown';
@@ -1250,26 +1250,27 @@ export default function Chat(props: {
                             )}
                           </div>
                           {msg.content && !msg.is_new && (
-                            <div className="flex items-center gap-2 mt-2 px-1">
+                            <div className="flex items-center gap-1 mt-2 px-1">
                               <CopyToClipboard
                                 text={msg.content}
                                 onCopy={() => {
                                   setCopied(msg.id);
                                   setTimeout(() => setCopied(""), 1500);
                                 }}>
-                                <button
-                                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
-                                  style={{
-                                    color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
-                                    borderColor: 'var(--sl-border-default, #374151)',
-                                    background: 'transparent',
-                                  }}
-                                  title="Copy response"
-                                >
-                                  {copied === msg.id
-                                    ? <><CheckIcon sx={{ fontSize: 12 }} /> Copied</>
-                                    : <><ContentCopyIcon sx={{ fontSize: 12 }} /> Copy</>}
-                                </button>
+                                <Tooltip title={copied === msg.id ? "Copied" : "Copy"} arrow placement="top">
+                                  <button
+                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
+                                    style={{
+                                      color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
+                                      borderColor: 'var(--sl-border-default, #374151)',
+                                      background: 'transparent',
+                                    }}
+                                  >
+                                    {copied === msg.id
+                                      ? <CheckIcon sx={{ fontSize: 14 }} />
+                                      : <ContentCopyIcon sx={{ fontSize: 14 }} />}
+                                  </button>
+                                </Tooltip>
                               </CopyToClipboard>
                               {/* Thumbs up */}
                               {(() => {
@@ -1277,14 +1278,14 @@ export default function Chat(props: {
                                 return (
                                   <>
                                   {/* Thumbs up */}
+                                  <Tooltip title="Good response" arrow placement="top">
                                   <button
-                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
                                     style={{
                                       color: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                                       borderColor: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
                                       background: 'transparent',
                                     }}
-                                    title="Good response"
                                     onClick={async () => {
                                       const isActive = feedback[feedbackId] === 'up';
                                       if (isActive) {
@@ -1316,17 +1317,18 @@ export default function Chat(props: {
                                       }
                                     }}
                                   >
-                                    <ThumbUpIcon sx={{ fontSize: 12 }} />
+                                    <ThumbUpIcon sx={{ fontSize: 14 }} />
                                   </button>
+                                  </Tooltip>
                                   {/* Thumbs down */}
+                                  <Tooltip title="Bad response" arrow placement="top">
                                   <button
-                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors"
+                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
                                     style={{
                                       color: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                                       borderColor: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
                                       background: 'transparent',
                                     }}
-                                    title="Bad response"
                                     onClick={async () => {
                                       console.log('[Chat] Thumbs down clicked, feedbackId:', feedbackId, 'current feedback:', feedback[feedbackId]);
                                       const isActive = feedback[feedbackId] === 'down';
@@ -1359,14 +1361,17 @@ export default function Chat(props: {
                                       }
                                     }}
                                   >
-                                    <ThumbDownIcon sx={{ fontSize: 12 }} />
+                                    <ThumbDownIcon sx={{ fontSize: 14 }} />
                                   </button>
+                                  </Tooltip>
                                   </>
                                 );
                               })()}
-                              {/* Save as markdown */}
+                              {/* Keep to project folder */}
+                              <Tooltip title={saved === msg.id ? "Kept" : "Keep"} arrow placement="top">
+                              <span className="inline-flex">
                               <button
-                                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-colors"
+                                className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
                                 disabled={saving === msg.id}
                                 style={{
                                   color: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
@@ -1375,12 +1380,14 @@ export default function Chat(props: {
                                   opacity: saving === msg.id ? 0.4 : 1,
                                   cursor: saving === msg.id ? 'not-allowed' : 'pointer',
                                 }}
-                                title="Save as markdown"
                                 onClick={async () => {
-                                  if (!window.electronAPI?.saveFileDialog) return;
+                                  if (!window.electronAPI?.writeTextFile) return;
                                   setSaving(msg.id);
+                                  const folderPath = props.project?.folder_path;
+                                  if (!folderPath) { setSaving(''); return; }
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                                  const result = await window.electronAPI.saveFileDialog(`${timestamp}.md`, msg.content);
+                                  const filePath = `${folderPath}/${timestamp}.md`;
+                                  const result = await window.electronAPI.writeTextFile(filePath, msg.content);
                                   setSaving('');
                                   if (result.success) {
                                     setSaved(msg.id);
@@ -1389,11 +1396,13 @@ export default function Chat(props: {
                                 }}
                               >
                                 {saving === msg.id
-                                  ? <><CircularProgress size={12} sx={{ color: 'var(--sl-text-muted)' }} /> Saving...</>
+                                  ? <CircularProgress size={14} sx={{ color: 'var(--sl-text-muted)' }} />
                                   : saved === msg.id
-                                    ? <><CheckIcon sx={{ fontSize: 12 }} /> Saved</>
-                                    : <><SaveAltIcon sx={{ fontSize: 12 }} /> Save</>}
+                                    ? <CheckIcon sx={{ fontSize: 14 }} />
+                                    : <SaveAltIcon sx={{ fontSize: 14 }} />}
                               </button>
+                              </span>
+                              </Tooltip>
                             </div>
                           )}
                         </Box>
