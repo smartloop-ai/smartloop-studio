@@ -174,17 +174,16 @@ export default function SettingsPage() {
         }
     }, []);
 
-    // Fetch models from local service /v1/models
+    // Fetch models from local SLP service via IPC
     const fetchLocalModels = useCallback(async () => {
         setLocalModelsLoading(true);
         try {
-            const baseUrl = await getLocalApiEndpoint();
-            if (!baseUrl) return;
-            const res = await fetch(`${baseUrl}/v1/models`);
-            if (res.ok) {
-                const data = await res.json();
-                const models = Array.isArray(data) ? data : (data.data || []);
-                setLocalModels(models);
+            const api = (window as any).electronAPI;
+            if (api?.slpListModels) {
+                const result = await api.slpListModels();
+                if (result?.success && result.models) {
+                    setLocalModels(result.models);
+                }
             }
         } catch (err) {
             console.warn('Failed to fetch local models:', err);
