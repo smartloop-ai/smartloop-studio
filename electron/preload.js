@@ -108,6 +108,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   // Recursively delete a folder from disk
   deleteFolder: (folderPath) => ipcRenderer.invoke('delete-folder', folderPath),
+  // Extract conversations from a zip file (conversations/*.jsonl)
+  extractConversationsFromZip: (zipPath) => ipcRenderer.invoke('extract-conversations-from-zip', zipPath),
+  // Export a project to a zip file (fully local)
+  exportProject: (projectId) => ipcRenderer.invoke('export-project', projectId),
+  // Import a project from a zip file (fully local)
+  importProject: (zipPath, overrides) => ipcRenderer.invoke('import-project', zipPath, overrides),
+  // Select a file using native file dialog (with optional filters)
+  selectFile: (filters) => ipcRenderer.invoke('select-file', filters),
+  // Read a binary file from disk (returns { success, buffer } or { success, error })
+  readBinaryFile: (filePath) => ipcRenderer.invoke('read-binary-file', filePath),
   // Select a folder using native file dialog
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   // Get the OS home directory
@@ -168,6 +178,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Save content to a user-chosen location via native dialog
   saveFileDialog: (defaultName, content, defaultDir) => ipcRenderer.invoke('save-file-dialog', defaultName, content, defaultDir),
+  saveBinaryFile: (fileName, buffer) => ipcRenderer.invoke('save-binary-file', fileName, buffer),
   // Check if running in Electron
   isElectron: true,
   // Native clipboard (bypasses web clipboard restrictions in Electron)

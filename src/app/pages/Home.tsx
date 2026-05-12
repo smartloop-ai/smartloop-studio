@@ -1434,7 +1434,7 @@ export default function Home() {
 
       // Update user state incrementally - remove the deleted document from the specific project
       if (user && selectedProject) {
-        const updatedProjects = user.projects.map((p: any) => {
+        const updatedProjects = (user.projects || []).map((p: any) => {
           if (p.id === selectedProject.id) {
             const filteredDocs = (p.documents || []).filter((doc: any) => doc.id !== documentToDelete.id);
             return { ...p, documents: filteredDocs };

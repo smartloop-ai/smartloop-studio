@@ -10,7 +10,8 @@ import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
-import SyncIcon from '@mui/icons-material/Sync';
+import IosShareIcon from '@mui/icons-material/IosShare';
+import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
 import SkillCreateDialog from './skill-create-dialog';
@@ -76,6 +77,8 @@ export default function RightSidebar({
   const [skillDragOver, setSkillDragOver] = useState(false);
   const [pendingSkill, setPendingSkill] = useState<{ baselineCount: number; content: string } | null>(null);
   const savingSkill = pendingSkill !== null;
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
 
   useEffect(() => {
     if (!pendingSkill) return;
@@ -400,16 +403,11 @@ export default function RightSidebar({
     });
   }, [selectedProject?.id, currentProjectData?.folder_path]);
 
-  // Directory files are the primary list; API data enriches them with status/summary
+  // Project folder is the source of truth; API data enriches with status/summary
   const effectiveDocuments = useMemo(() => {
     const serverDocs: any[] = apiDocuments;
     const serverIds = new Set(serverDocs.map((d: any) => d.id));
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
-
-    // If no directory files, fall back to API docs + pending uploads
-    if (directoryFiles.length === 0) {
-      return [...serverDocs, ...pending];
-    }
 
     // Build multiple lookups from API docs for robust matching
     const baseName = (name: string) => name.replace(/\.[^/.]+$/, '').toLowerCase();
@@ -418,21 +416,23 @@ export default function RightSidebar({
     const apiByPath = new Map<string, any>();
     for (const doc of serverDocs) {
       if (doc.id) apiById.set(doc.id, doc);
-      // Match by base name from any available name field
       const docFileName = (doc.path || doc.source || '').split('/').pop()
         || doc.filename || doc.name || '';
       const base = baseName(docFileName);
       if (base) apiByBase.set(base, doc);
-      // Match by full source/path
       if (doc.source) apiByPath.set(doc.source, doc);
       if (doc.path) apiByPath.set(doc.path, doc);
     }
 
-    // For each directory file, find matching API doc
+    // If no directory files, filter API docs to only those that still exist or are processing
+    if (directoryFiles.length === 0) {
+      return [...serverDocs, ...pending];
+    }
+
+    // For each directory file, find matching API doc or show as unindexed
     const matchedApiIds = new Set<string>();
     const merged = directoryFiles.map((file: any) => {
       const base = baseName(file.name);
-      // Try matching: explicit mapping → full path → base name
       const mappedId = fsToApiMap.get(file.path);
       const match = (mappedId ? apiById.get(mappedId) : null)
         || apiByPath.get(file.path)
@@ -441,18 +441,18 @@ export default function RightSidebar({
         matchedApiIds.add(match.id);
         return { ...match, _fsFile: file };
       }
-      // Filesystem file with no API match — not uploaded via UI, skip it
-      return null;
+      // File exists on disk but not in API — show as unindexed
+      return {
+        id: `fs-${file.path}`,
+        name: file.name,
+        filename: file.name,
+        source: file.path,
+        size: file.size,
+        _fsFile: file,
+      };
     });
 
-    // Add API docs not matched to any directory file (e.g. uploaded from elsewhere)
-    for (const doc of serverDocs) {
-      if (!matchedApiIds.has(doc.id)) {
-        merged.push(doc);
-      }
-    }
-
-    return [...merged.filter(Boolean), ...pending];
+    return [...merged, ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
   // Load MCP servers from project data
@@ -1046,68 +1046,6 @@ export default function RightSidebar({
                                   <span className="text-[11px] text-gray-300 truncate flex-1">
                                     {filename}
                                   </span>
-                                  {isFsOnly && (
-                                    <Tooltip title={isProcessing ? "Processing..." : "Process this document"} placement="top">
-                                      <span>
-                                        <IconButton
-                                          size="small"
-                                          disabled={isProcessing}
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const filePath = fsFile?.path || doc.source;
-                                            if (!filePath || !selectedProject?.id) return;
-                                            const projectId = selectedProject.id;
-                                            setProcessingDocs(prev => new Map(prev).set(doc.id, 'processing'));
-                                            try {
-                                              const result = await documentService.addLocalDocument(
-                                                projectId,
-                                                filePath,
-                                                (progress) => {
-                                                  const apiDoc = progress.documents?.[0];
-                                                  const apiDocId = apiDoc?.id || apiDoc?.document_id;
-
-                                                  if (progress.event === 'done') {
-                                                    setProcessingDocs(prev => { const next = new Map(prev); next.delete(doc.id); return next; });
-                                                    if (apiDocId) {
-                                                      setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
-                                                      setIndexingStatus(prev => ({ ...prev, [apiDocId]: apiDoc.status || 'indexed', [doc.id]: apiDoc.status || 'indexed' }));
-                                                      if (apiDoc?.status === 'indexed') storageService.setDocumentProcessed(apiDocId, projectId);
-                                                    }
-                                                    window.dispatchEvent(new Event('documentUploaded'));
-                                                  } else {
-                                                    const docStatus = apiDoc?.status || 'processing';
-                                                    setProcessingDocs(prev => new Map(prev).set(doc.id, docStatus));
-                                                    setIndexingStatus(prev => ({ ...prev, [doc.id]: docStatus, ...(apiDocId ? { [apiDocId]: docStatus } : {}) }));
-                                                  }
-                                                },
-                                                currentProjectData?.folder_path,
-                                              );
-                                              if (result.success && result.data) {
-                                                const apiDocId = result.data.id || result.data.document_id;
-                                                if (apiDocId) {
-                                                  setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
-                                                }
-                                              }
-                                            } catch { /* ignore */ }
-                                          }}
-                                          sx={{
-                                            color: isProcessing ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                                            padding: '2px',
-                                            '&:hover': { color: 'var(--sl-brand-primary)' },
-                                            ...(isProcessing && {
-                                              animation: 'spin 1s linear infinite',
-                                              '@keyframes spin': {
-                                                '0%': { transform: 'rotate(0deg)' },
-                                                '100%': { transform: 'rotate(360deg)' },
-                                              },
-                                            }),
-                                          }}
-                                        >
-                                          <SyncIcon sx={{ fontSize: 12 }} />
-                                        </IconButton>
-                                      </span>
-                                    </Tooltip>
-                                  )}
                                   <IconButton
                                     size="small"
                                     onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
@@ -1134,7 +1072,26 @@ export default function RightSidebar({
                                   {fileSizeLabel && (
                                     <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                   )}
-                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? (docIndexStatus === 'failed' || docIndexStatus === 'error' ? 'Failed' : docIndexStatus === 'unknown' ? 'Pending' : docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1)) : 'Pending'}</span>}
+                                  {(() => {
+                                    const status = isFsOnly ? 'local' : (docIndexStatus || 'pending');
+                                    const statusBg: Record<string, string> = {
+                                      local: 'rgba(139,139,245,0.12)',
+                                      indexed: 'rgba(74,222,128,0.12)',
+                                      indexing: 'rgba(250,204,21,0.12)',
+                                      converting: 'rgba(250,204,21,0.12)',
+                                      processing: 'rgba(250,204,21,0.12)',
+                                      pending: 'rgba(148,163,184,0.1)',
+                                      unknown: 'rgba(148,163,184,0.1)',
+                                      failed: 'rgba(248,113,113,0.12)',
+                                      error: 'rgba(248,113,113,0.12)',
+                                    };
+                                    const label = status === 'failed' || status === 'error' ? 'Failed' : status === 'unknown' ? 'Pending' : status.charAt(0).toUpperCase() + status.slice(1);
+                                    return (
+                                      <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: statusBg[status] || statusBg.pending, borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                        {label}
+                                      </span>
+                                    );
+                                  })()}
 
                                 </Box>
                               </Box>
@@ -1567,6 +1524,58 @@ export default function RightSidebar({
                 </Box>
                 <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
                   Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
+                </p>
+              </div>
+
+              {/* Export Project */}
+              <div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Export</div>
+                <Box
+                  onClick={async () => {
+                    if (exporting || !selectedProject?.id) return;
+                    setExporting(true);
+                    setExportDone(false);
+                    try {
+                      const result = await (window as any).electronAPI.exportProject(selectedProject.id);
+                      if (result?.success) {
+                        setExportDone(true);
+                        setTimeout(() => setExportDone(false), 2000);
+                      }
+                    } catch (err) {
+                      console.error('Export failed:', err);
+                    } finally {
+                      setExporting(false);
+                    }
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-10)',
+                    cursor: exporting ? 'default' : 'pointer',
+                    opacity: exporting ? 0.6 : 1,
+                    '&:hover': {
+                      backgroundColor: exporting ? 'var(--sl-white-alpha-2)' : 'var(--sl-white-alpha-5)',
+                      borderColor: exporting ? 'var(--sl-white-alpha-10)' : 'var(--sl-brand-alpha-30)',
+                    },
+                  }}
+                >
+                  {exporting ? (
+                    <CircularProgress size={16} sx={{ color: 'var(--sl-text-muted)' }} />
+                  ) : exportDone ? (
+                    <CheckIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                  ) : (
+                    <IosShareIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                  )}
+                  <span className="text-xs text-[var(--sl-text-primary)]">
+                    {exporting ? 'Exporting...' : exportDone ? 'Exported' : `Export ${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                  </span>
+                </Box>
+                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                  Export project and all its contents to a zip file to distribute.
                 </p>
               </div>
             </div>

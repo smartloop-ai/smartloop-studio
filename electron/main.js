@@ -167,6 +167,25 @@ ipcMain.handle('save-file-dialog', async (event, defaultName, content, defaultDi
   }
 });
 
+// IPC: save binary file via native save dialog (defaults to Downloads)
+ipcMain.handle('save-binary-file', async (event, fileName, buffer) => {
+  try {
+    const { app, dialog } = require('electron');
+    const downloadsDir = app.getPath('downloads');
+    const defaultPath = path.join(downloadsDir, fileName);
+    const ext = path.extname(fileName).replace('.', '');
+    const result = await dialog.showSaveDialog({
+      defaultPath,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'All Files', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+    fs.writeFileSync(result.filePath, Buffer.from(buffer));
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: delete a file from disk
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
@@ -216,6 +235,359 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
     return { success: true, files };
   } catch (err) {
     return { success: false, error: err.message, files: [] };
+  }
+});
+
+// IPC: extract conversations from a zip file (reads conversations/*.jsonl entries)
+ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
+  try {
+    const resolved = zipPath.startsWith('~')
+      ? path.join(os.homedir(), zipPath.replace(/^~[/\\]?/, ''))
+      : zipPath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
+
+    // List files in the zip matching conversations/*.jsonl
+    const { execFileSync } = require('child_process');
+    const listOutput = execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
+    const conversationFiles = listOutput
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => /conversations\/[^/]+\.jsonl$/.test(line))
+      .map(line => {
+        const match = line.match(/(conversations\/[^\s]+\.jsonl)$/);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+
+    const conversations = [];
+    for (const filePath of conversationFiles) {
+      try {
+        const content = execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
+        const lines = content.split('\n').filter(l => l.trim());
+        const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        // Derive conversation ID from filename
+        const convId = path.basename(filePath, '.jsonl');
+        // Use first user message as title
+        const firstUserMsg = messages.find(m => m.role === 'user');
+        const title = firstUserMsg?.content
+          ? (firstUserMsg.content.length > 60 ? firstUserMsg.content.substring(0, 60) + '...' : firstUserMsg.content)
+          : 'Imported Conversation';
+        conversations.push({ id: convId, title, messages });
+      } catch (e) {
+        console.warn(`[Import] Failed to read ${filePath}:`, e.message);
+      }
+    }
+    return { success: true, conversations };
+  } catch (err) {
+    console.error('[Import] Error extracting conversations:', err.message);
+    return { success: false, error: err.message, conversations: [] };
+  }
+});
+
+// Helper: recursively copy a directory, optionally skipping certain subdirectory names
+function copyDirRecursive(src, dest, skipDirs = []) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      if (skipDirs.includes(entry.name)) continue;
+      copyDirRecursive(srcPath, destPath, skipDirs);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+// Helper: read the SLP config.json and find the workspace project directory for a given project ID
+function getSlpProjectDir(projectId) {
+  const configPath = path.join(os.homedir(), '.smartloop', 'config.json');
+  if (!fs.existsSync(configPath)) return null;
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const workspaceId = config?.workspace?.id;
+    if (!workspaceId) return null;
+    const projects = config?.workspace?.projects || [];
+    const match = projects.find(p => p.id === projectId);
+    if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
+    // Fallback: try the conventional path
+    const conventionalDir = path.join(os.homedir(), '.smartloop', workspaceId, projectId);
+    return fs.existsSync(conventionalDir) ? conventionalDir : null;
+  } catch {
+    return null;
+  }
+}
+
+// IPC: export a project via SLP API + SQLite state
+ipcMain.handle('export-project', async (event, projectId) => {
+  try {
+    const project = database.getProject(projectId);
+    if (!project) return { success: false, error: 'Project not found' };
+
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local service is not running' };
+
+    const tmpDir = os.tmpdir();
+    const exportDir = path.join(tmpDir, `smartloop-export-${projectId}-${Date.now()}`);
+    fs.mkdirSync(exportDir, { recursive: true });
+
+    // Call SLP export API to get the base zip (project data, documents, config)
+    const exportRes = await fetch(`${baseUrl}/v1/projects/${projectId}/export`, { method: 'POST' });
+    if (!exportRes.ok) {
+      fs.rmSync(exportDir, { recursive: true, force: true });
+      return { success: false, error: `Export failed (${exportRes.status})` };
+    }
+
+    const slpZipPath = path.join(tmpDir, `slp-export-${projectId}.zip`);
+    const arrayBuf = await exportRes.arrayBuffer();
+    fs.writeFileSync(slpZipPath, Buffer.from(arrayBuf));
+    execFileSync('unzip', ['-o', slpZipPath, '-d', exportDir], { timeout: 120000 });
+    fs.unlinkSync(slpZipPath);
+
+    // Augment with SQLite state (conversations, messages, MCP servers, folders, tabs)
+    const conversations = database.getConversations(projectId);
+    const conversationsWithMessages = conversations.map(conv => ({
+      ...conv,
+      messages: database.getMessages(conv.id),
+    }));
+    const mcpServers = database.getMcpServersByProject(projectId);
+    const folders = database.listFoldersByProject(projectId);
+    const documentFolders = database.getDocumentFoldersByProject(projectId);
+    const documentStatus = database.getDocumentStatusByProject(projectId);
+    const tabState = database.getSetting(`openTabs_${projectId}`);
+
+    const manifest = {
+      version: 2,
+      exported_at: new Date().toISOString(),
+      project,
+      conversations: conversationsWithMessages,
+      mcp_servers: mcpServers,
+      folders,
+      document_folders: documentFolders,
+      document_status: documentStatus,
+      tab_state: tabState || null,
+    };
+
+    fs.writeFileSync(path.join(exportDir, 'project.json'), JSON.stringify(manifest, null, 2));
+
+    // Write conversations as individual JSONL files for backwards compatibility
+    const convDir = path.join(exportDir, 'conversations');
+    fs.mkdirSync(convDir, { recursive: true });
+    for (const conv of conversationsWithMessages) {
+      const lines = conv.messages.map(m => JSON.stringify(m)).join('\n');
+      fs.writeFileSync(path.join(convDir, `${conv.id}.jsonl`), lines);
+    }
+
+    const slugName = (project.name || 'project').replace(/\s+/g, '_').toLowerCase();
+    const zipFileName = `${slugName}.zip`;
+    const zipPath = path.join(tmpDir, zipFileName);
+
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    execFileSync('zip', ['-r', zipPath, '.'], { cwd: exportDir, timeout: 120000 });
+    fs.rmSync(exportDir, { recursive: true, force: true });
+
+    const downloadsDir = require('electron').app.getPath('downloads');
+    const result = await dialog.showSaveDialog({
+      defaultPath: path.join(downloadsDir, zipFileName),
+      filters: [{ name: 'ZIP', extensions: ['zip'] }, { name: 'All Files', extensions: ['*'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      fs.unlinkSync(zipPath);
+      return { success: false, error: 'Cancelled' };
+    }
+
+    fs.copyFileSync(zipPath, result.filePath);
+    fs.unlinkSync(zipPath);
+
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    console.error('[Export] Error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: import a project via SLP API + SQLite state restoration
+ipcMain.handle('import-project', async (event, zipPath, overrides) => {
+  try {
+    const resolved = zipPath.startsWith('~')
+      ? path.join(os.homedir(), zipPath.replace(/^~[/\\]?/, ''))
+      : zipPath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+
+    const tmpDir = path.join(os.tmpdir(), `smartloop-import-${Date.now()}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
+
+    const manifestPath = path.join(tmpDir, 'project.json');
+    let manifest = null;
+    if (fs.existsSync(manifestPath)) {
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      } catch (e) {
+        console.warn('[Import] Failed to parse project.json:', e.message);
+      }
+    }
+
+    const projectName = overrides?.name || manifest?.project?.name || 'Imported Project';
+    const projectColor = overrides?.color || manifest?.project?.color || null;
+    const projectSlug = projectName.trim().toLowerCase().replace(/\s+/g, '_');
+
+    // Determine the new working directory
+    const smartloopBase = path.join(os.homedir(), 'smartloop');
+    fs.mkdirSync(smartloopBase, { recursive: true });
+    const newFolderPath = path.join(smartloopBase, projectSlug);
+
+    // Register the project with the SLP backend via its import API
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return { success: false, error: 'Local service is not running' };
+    }
+
+    const fileBuffer = fs.readFileSync(resolved);
+    const fileName = path.basename(resolved);
+    const file = new File([fileBuffer], fileName, { type: 'application/zip' });
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const importRes = await fetch(`${baseUrl}/v1/projects/import`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!importRes.ok) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      const err = await importRes.json().catch(() => ({}));
+      return { success: false, error: err.detail || err.message || `Import failed (${importRes.status})` };
+    }
+
+    const createdProject = await importRes.json();
+    const newProjectId = createdProject.id;
+
+    // Save UI metadata (display name, color) to SQLite
+    database.upsertProject({
+      id: newProjectId,
+      name: projectName,
+      color: projectColor,
+      temperature: manifest?.project?.temperature ?? 0.3,
+      system: false,
+      folder_path: newFolderPath,
+    });
+
+    const importedTabs = [];
+
+    if (manifest && manifest.conversations) {
+      for (const conv of manifest.conversations) {
+        const newConvId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        database.createConversation({
+          id: newConvId,
+          title: conv.title,
+          project_id: newProjectId,
+        });
+        if (conv.messages && conv.messages.length > 0) {
+          const messages = conv.messages.map(m => ({
+            ...m,
+            id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          }));
+          database.addMessages(newConvId, messages);
+        }
+        importedTabs.push({ id: `conv-${newConvId}`, type: 'conversation', title: conv.title });
+      }
+
+      if (manifest.mcp_servers) {
+        for (const server of manifest.mcp_servers) {
+          const newId = `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          database.addMcpServer({
+            id: newId,
+            project_id: newProjectId,
+            name: server.name,
+            server_type: server.server_type,
+            config: server.config,
+          });
+        }
+      }
+
+      if (manifest.folders && manifest.folders.length > 0) {
+        const folderIdMap = {};
+        for (const folder of manifest.folders) {
+          const newFolderId = `folder_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          database.createFolder({
+            id: newFolderId,
+            project_id: newProjectId,
+            name: folder.name,
+          });
+          folderIdMap[folder.id] = newFolderId;
+        }
+
+        if (manifest.document_folders) {
+          for (const [docId, oldFolderId] of Object.entries(manifest.document_folders)) {
+            const newFolderId = folderIdMap[oldFolderId];
+            if (newFolderId) {
+              database.setDocumentFolder({
+                document_id: docId,
+                project_id: newProjectId,
+                folder_id: newFolderId,
+              });
+            }
+          }
+        }
+      }
+
+      // Note: document_status from manifest uses old document IDs that won't match
+      // the new project's API documents, so we skip restoring them.
+    }
+
+    if (importedTabs.length > 0) {
+      database.setSetting(`openTabs_${newProjectId}`, {
+        tabs: importedTabs,
+        activeTabId: importedTabs[0].id,
+      });
+    }
+
+    // Ensure the working directory exists
+    if (!fs.existsSync(newFolderPath)) {
+      fs.mkdirSync(newFolderPath, { recursive: true });
+    }
+
+    // Restore project working directory files from the export
+    const projectDir = path.join(tmpDir, 'project');
+    if (fs.existsSync(projectDir)) {
+      fs.cpSync(projectDir, newFolderPath, { recursive: true });
+    }
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    const project = database.getProject(newProjectId);
+    return { success: true, project };
+  } catch (err) {
+    console.error('[Import] Error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: select a file using native dialog (filtered by extensions)
+ipcMain.handle('select-file', async (event, filters) => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Select File',
+    filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// IPC: read a file as binary (returns ArrayBuffer)
+ipcMain.handle('read-binary-file', async (event, filePath) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+    const buffer = fs.readFileSync(resolved);
+    return { success: true, buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 
