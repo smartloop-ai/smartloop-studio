@@ -1391,7 +1391,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   </Typography>
                   <IconButton
                     size="small"
-                    onClick={() => { setImportFile(null); setNewProjectTitle(''); setImportError(''); }}
+                    onClick={() => { setImportFile(null); setImportZipPath(null); setNewProjectTitle(''); setImportError(''); }}
                     sx={{
                       padding: '3px',
                       color: 'var(--sl-white-alpha-40)',
