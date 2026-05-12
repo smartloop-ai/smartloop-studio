@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 import { storageService } from '@/app/services/storage.service';
@@ -150,6 +150,8 @@ export default function SettingsPage() {
     const [localModels, setLocalModels] = useState<any[]>([]);
     const [localModelsLoading, setLocalModelsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>('');
+    const [initingModel, setInitingModel] = useState<string | null>(null);
+    const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
 
@@ -194,7 +196,37 @@ export default function SettingsPage() {
         }
     }, []);
 
+    // Select a model — triggers /v1/init which downloads + sets up if needed
+    const handleSelectModel = useCallback(async (modelName: string) => {
+        const api = (window as any).electronAPI;
+        if (!api?.slpInitModel) return;
 
+        setSelectedModel(modelName);
+        setInitingModel(modelName);
+        setInitProgress({ percent: 0, status: 'Initializing...' });
+
+        await storageService.setItem('selected_model', modelName);
+        await storageService.setSetting('selected_model', modelName);
+        if (api?.slpUpdateUserSettings) {
+            await api.slpUpdateUserSettings({ selected_model: modelName });
+        }
+
+        api.onModelInitProgress?.((data: any) => {
+            if (data.model === modelName) {
+                setInitProgress({ percent: data.percent, status: data.status });
+            }
+        });
+
+        try {
+            await api.slpInitModel(modelName);
+        } catch (err) {
+            console.error('Model init error:', err);
+        } finally {
+            setInitingModel(null);
+            setInitProgress(null);
+            api.removeModelInitProgressListener?.();
+        }
+    }, []);
 
     useEffect(() => {
         fetchLocalModels();
@@ -715,18 +747,23 @@ export default function SettingsPage() {
                                         const description = model.description || '';
                                         const size = model.size || model.file_size;
                                         const isSelected = selectedModel === name;
+                                        const isIniting = initingModel === name;
 
                                         return (
                                             <Box
                                                 key={name}
+                                                onClick={() => !initingModel && handleSelectModel(name)}
                                                 sx={{
                                                     p: 2,
                                                     bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-black-alpha-40)',
                                                     border: `1px solid ${isSelected ? 'var(--sl-brand-alpha-25)' : 'var(--sl-white-alpha-8)'}`,
                                                     borderRadius: '10px',
+                                                    cursor: initingModel ? 'default' : 'pointer',
+                                                    opacity: initingModel && !isIniting ? 0.5 : 1,
                                                     transition: 'all 0.2s ease',
-                                                    '&:hover': {
+                                                    '&:hover': initingModel ? {} : {
                                                         borderColor: 'var(--sl-white-alpha-15)',
+                                                        bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
                                                     },
                                                 }}
                                             >
@@ -741,7 +778,7 @@ export default function SettingsPage() {
                                                             }}>
                                                                 {name}
                                                             </span>
-                                                            {isSelected && (
+                                                            {isSelected && !isIniting && (
                                                                 <Box sx={{
                                                                     px: 1,
                                                                     py: 0.25,
@@ -765,6 +802,35 @@ export default function SettingsPage() {
                                                         )}
                                                     </Box>
                                                 </Box>
+
+                                                {/* Init progress bar */}
+                                                {isIniting && initProgress && (
+                                                    <Box sx={{ mt: 1.5 }}>
+                                                        <Box className="flex items-center justify-between mb-1">
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-50)' }}>
+                                                                {initProgress.status}
+                                                            </span>
+                                                            {initProgress.percent > 0 && (
+                                                                <span style={{ fontSize: '11px', color: 'var(--sl-brand-primary)', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                    {initProgress.percent}%
+                                                                </span>
+                                                            )}
+                                                        </Box>
+                                                        <LinearProgress
+                                                            variant={initProgress.percent > 0 ? 'determinate' : 'indeterminate'}
+                                                            value={initProgress.percent}
+                                                            sx={{
+                                                                height: 6,
+                                                                borderRadius: '3px',
+                                                                bgcolor: 'var(--sl-white-alpha-5)',
+                                                                '& .MuiLinearProgress-bar': {
+                                                                    bgcolor: 'var(--sl-brand-primary)',
+                                                                    borderRadius: '3px',
+                                                                },
+                                                            }}
+                                                        />
+                                                    </Box>
+                                                )}
                                             </Box>
                                         );
                                     })}

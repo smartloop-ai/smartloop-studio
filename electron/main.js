@@ -1070,6 +1070,84 @@ ipcMain.handle('load-model', async () => {
   return { success: result };
 });
 
+// IPC: init/select a model — downloads + sets up if missing, streams SSE progress
+ipcMain.handle('slp-init-model', async (event, modelName) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  return new Promise((resolve) => {
+    const http = require('http');
+    const url = new URL(`${baseUrl}/v1/init`);
+
+    const postData = JSON.stringify({ model_name: modelName });
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        return;
+      }
+
+      let buffer = '';
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const progress = bootstrapProgress(data);
+
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('model-init-progress', {
+                  ...progress,
+                  model: modelName,
+                });
+              }
+            } catch {
+              // ignore unparseable SSE data
+            }
+          }
+        }
+      });
+
+      res.on('end', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('model-init-progress', {
+            model: modelName,
+            percent: 100,
+            status: 'Ready',
+            downloading: false,
+          });
+        }
+        resolve({ success: true, model: modelName });
+      });
+
+      res.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+});
+
 // IPC: unload model (called from renderer)
 ipcMain.handle('unload-model', async () => {
   await slpService.unloadModel();
