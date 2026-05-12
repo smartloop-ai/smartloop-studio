@@ -11,6 +11,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import SyncIcon from '@mui/icons-material/Sync';
+import IosShareIcon from '@mui/icons-material/IosShare';
+import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
 import SkillCreateDialog from './skill-create-dialog';
@@ -20,7 +22,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS } from '@/app/constants';
+import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -76,6 +78,8 @@ export default function RightSidebar({
   const [skillDragOver, setSkillDragOver] = useState(false);
   const [pendingSkill, setPendingSkill] = useState<{ baselineCount: number; content: string } | null>(null);
   const savingSkill = pendingSkill !== null;
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState(false);
 
   useEffect(() => {
     if (!pendingSkill) return;
@@ -1567,6 +1571,69 @@ export default function RightSidebar({
                 </Box>
                 <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
                   Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
+                </p>
+              </div>
+
+              {/* Export Project */}
+              <div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Export</div>
+                <Box
+                  onClick={async () => {
+                    if (exporting || !selectedProject?.id) return;
+                    setExporting(true);
+                    setExportDone(false);
+                    try {
+                      const localBase = await getLocalApiEndpoint();
+                      if (!localBase) throw new Error('Service not ready');
+                      const res = await fetch(`${localBase}/v1/projects/${selectedProject.id}/export`, { method: 'POST' });
+                      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+                      const disposition = res.headers.get('content-disposition') || '';
+                      const match = disposition.match(/filename="?([^"]+)"?/);
+                      const filename = match?.[1] || `${(selectedProject.name || 'project').replace(/\s+/g, '_')}.zip`;
+                      const arrayBuffer = await res.arrayBuffer();
+                      const result = await (window as any).electronAPI.saveBinaryFile(
+                        filename,
+                        Array.from(new Uint8Array(arrayBuffer))
+                      );
+                      if (result?.success) {
+                        setExportDone(true);
+                        setTimeout(() => setExportDone(false), 2000);
+                      }
+                    } catch (err) {
+                      console.error('Export failed:', err);
+                    } finally {
+                      setExporting(false);
+                    }
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--sl-white-alpha-2)',
+                    border: '1px solid var(--sl-white-alpha-10)',
+                    cursor: exporting ? 'default' : 'pointer',
+                    opacity: exporting ? 0.6 : 1,
+                    '&:hover': {
+                      backgroundColor: exporting ? 'var(--sl-white-alpha-2)' : 'var(--sl-white-alpha-5)',
+                      borderColor: exporting ? 'var(--sl-white-alpha-10)' : 'var(--sl-brand-alpha-30)',
+                    },
+                  }}
+                >
+                  {exporting ? (
+                    <CircularProgress size={16} sx={{ color: 'var(--sl-text-muted)' }} />
+                  ) : exportDone ? (
+                    <CheckIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
+                  ) : (
+                    <IosShareIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                  )}
+                  <span className="text-xs text-[var(--sl-text-primary)]">
+                    {exporting ? 'Exporting...' : exportDone ? 'Exported' : `Export ${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                  </span>
+                </Box>
+                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                  Export project and all its contents to a zip file to distribute.
                 </p>
               </div>
             </div>

@@ -24,6 +24,12 @@ export interface ElectronAPI {
   deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   // Recursively delete a folder from disk
   deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
+  // Extract conversations from a zip file (conversations/*.jsonl)
+  extractConversationsFromZip: (zipPath: string) => Promise<{ success: boolean; conversations: Array<{ id: string; title: string; messages: any[] }>; error?: string }>;
+  // Select a file using native file dialog (with optional filters)
+  selectFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>;
+  // Read a binary file from disk
+  readBinaryFile: (filePath: string) => Promise<{ success: boolean; buffer?: ArrayBuffer; error?: string }>;
   // Select a folder using native file dialog
   selectFolder: () => Promise<string | null>;
   // Get the OS home directory
