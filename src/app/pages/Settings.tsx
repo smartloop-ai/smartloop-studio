@@ -13,7 +13,7 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
-const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+
 
 const TPS_GRAPH_POINTS = 60; // Show last 60 data points
 
@@ -263,7 +263,6 @@ export default function SettingsPage() {
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
         const loadHistory = async () => {
-            if (!isElectron) return;
             const history = await storageService.getTpsHistory(TPS_GRAPH_POINTS);
             if (history.length > 0) {
                 setTpsHistory(history);
@@ -276,7 +275,6 @@ export default function SettingsPage() {
 
     useEffect(() => {
         const load = async () => {
-            if (!isElectron) return;
             const api = (window as any).electronAPI;
             if (api?.getSlpConfig) {
                 const cfg = await api.getSlpConfig();
@@ -422,7 +420,7 @@ export default function SettingsPage() {
                     </Box>
 
                     {/* Active Model Card - Redesigned */}
-                    {isElectron && slpConfig && (() => {
+                    {slpConfig && (() => {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
                         if (!activeModel) return null;
 
@@ -525,8 +523,7 @@ export default function SettingsPage() {
                     })()}
 
                     {/* Service */}
-                    {isElectron && (
-                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                             <Box className="flex items-center justify-between mb-4">
                                 <Box className="flex items-center gap-2">
                                     <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -715,12 +712,10 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
-                    )}
 
 
                     {/* Available Models */}
-                    {isElectron && (
-                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                             <Box className="flex items-center justify-between mb-4">
                                 <Box className="flex items-center gap-2">
                                     <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -845,7 +840,6 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
-                    )}
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
