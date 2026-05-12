@@ -67,6 +67,9 @@ export interface ElectronAPI {
   slpFetchUser: (opts?: { force?: boolean }) => Promise<{ success: boolean; user?: any }>;
   slpUpdateUserSettings: (settings: Record<string, any>) => Promise<{ success: boolean; user?: any; error?: string }>;
   slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpInitModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  onModelInitProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean; stage?: string }) => void) => void;
+  removeModelInitProgressListener: () => void;
   slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
   onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
   removeModelDownloadProgressListener: () => void;
