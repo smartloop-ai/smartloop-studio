@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   GCP_BUCKET: gs://smartloop-gcp-us-east-releases
@@ -255,4 +256,39 @@ jobs:
           gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/windows/ || echo "No Windows builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Print GitHub artifact download URLs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id,
+              per_page: 100
+            });
+            core.info(`GitHub Actions run: ${runUrl}`);
+            if (!data.artifacts || data.artifacts.length === 0) {
+              core.info("No artifacts found for this run.");
+              await core.summary
+                .addHeading("GitHub Artifact Downloads", 2)
+                .addRaw(`Run: ${runUrl}\n\nNo artifacts found for this run.\n`)
+                .write();
+              return;
+            }
+            const links = data.artifacts.map((artifact) =>
+              `- ${artifact.name}: https://github.com/${owner}/${repo}/actions/runs/${run_id}/artifacts/${artifact.id}`
+            );
+            core.info("GitHub artifact download URLs:");
+            for (const link of links) {
+              core.info(link);
+            }
+            await core.summary
+              .addHeading("GitHub Artifact Downloads", 2)
+              .addRaw(`Run: ${runUrl}\n\n`)
+              .addRaw(links.join("\n") + "\n")
+              .write();
 
