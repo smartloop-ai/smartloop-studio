@@ -145,7 +145,8 @@ async function startService() {
     }
     if (logStream) {
       logStream.write(`--- Service exited with code ${code} at ${new Date().toISOString()} ---\n`);
-      logStream.flush();
+      logStream.end();
+      logStream = null;
     }
   });
 
