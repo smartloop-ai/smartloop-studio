@@ -26,6 +26,10 @@ export interface ElectronAPI {
   deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
   // Extract conversations from a zip file (conversations/*.jsonl)
   extractConversationsFromZip: (zipPath: string) => Promise<{ success: boolean; conversations: Array<{ id: string; title: string; messages: any[] }>; error?: string }>;
+  // Export a project to a zip file (fully local)
+  exportProject: (projectId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  // Import a project from a zip file (fully local)
+  importProject: (zipPath: string, overrides?: { name?: string; color?: string }) => Promise<{ success: boolean; project?: any; error?: string }>;
   // Select a file using native file dialog (with optional filters)
   selectFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>;
   // Read a binary file from disk
