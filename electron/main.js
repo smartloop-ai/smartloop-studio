@@ -167,6 +167,25 @@ ipcMain.handle('save-file-dialog', async (event, defaultName, content, defaultDi
   }
 });
 
+// IPC: save binary file via native save dialog (defaults to Downloads)
+ipcMain.handle('save-binary-file', async (event, fileName, buffer) => {
+  try {
+    const { app, dialog } = require('electron');
+    const downloadsDir = app.getPath('downloads');
+    const defaultPath = path.join(downloadsDir, fileName);
+    const ext = path.extname(fileName).replace('.', '');
+    const result = await dialog.showSaveDialog({
+      defaultPath,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'All Files', extensions: ['*'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+    fs.writeFileSync(result.filePath, Buffer.from(buffer));
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: delete a file from disk
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
@@ -216,6 +235,77 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
     return { success: true, files };
   } catch (err) {
     return { success: false, error: err.message, files: [] };
+  }
+});
+
+// IPC: extract conversations from a zip file (reads conversations/*.jsonl entries)
+ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
+  try {
+    const resolved = zipPath.startsWith('~')
+      ? path.join(os.homedir(), zipPath.replace(/^~[/\\]?/, ''))
+      : zipPath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
+
+    // List files in the zip matching conversations/*.jsonl
+    const { execFileSync } = require('child_process');
+    const listOutput = execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
+    const conversationFiles = listOutput
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => /conversations\/[^/]+\.jsonl$/.test(line))
+      .map(line => {
+        const match = line.match(/(conversations\/[^\s]+\.jsonl)$/);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+
+    const conversations = [];
+    for (const filePath of conversationFiles) {
+      try {
+        const content = execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
+        const lines = content.split('\n').filter(l => l.trim());
+        const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        // Derive conversation ID from filename
+        const convId = path.basename(filePath, '.jsonl');
+        // Use first user message as title
+        const firstUserMsg = messages.find(m => m.role === 'user');
+        const title = firstUserMsg?.content
+          ? (firstUserMsg.content.length > 60 ? firstUserMsg.content.substring(0, 60) + '...' : firstUserMsg.content)
+          : 'Imported Conversation';
+        conversations.push({ id: convId, title, messages });
+      } catch (e) {
+        console.warn(`[Import] Failed to read ${filePath}:`, e.message);
+      }
+    }
+    return { success: true, conversations };
+  } catch (err) {
+    console.error('[Import] Error extracting conversations:', err.message);
+    return { success: false, error: err.message, conversations: [] };
+  }
+});
+
+// IPC: select a file using native dialog (filtered by extensions)
+ipcMain.handle('select-file', async (event, filters) => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: 'Select File',
+    filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// IPC: read a file as binary (returns ArrayBuffer)
+ipcMain.handle('read-binary-file', async (event, filePath) => {
+  try {
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+    const buffer = fs.readFileSync(resolved);
+    return { success: true, buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 
