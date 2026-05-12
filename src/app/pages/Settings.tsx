@@ -9,6 +9,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
@@ -145,8 +147,8 @@ export default function SettingsPage() {
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [lastTps, setLastTps] = useState<number | null>(null);
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
-    const [_localModels, setLocalModels] = useState<any[]>([]);
-    const [_localModelsLoading, setLocalModelsLoading] = useState(false);
+    const [localModels, setLocalModels] = useState<any[]>([]);
+    const [localModelsLoading, setLocalModelsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>('');
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
@@ -683,6 +685,101 @@ export default function SettingsPage() {
                         </Box>
                     )}
 
+
+                    {/* Available Models */}
+                    {isElectron && (
+                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                            <Box className="flex items-center justify-between mb-4">
+                                <Box className="flex items-center gap-2">
+                                    <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                </Box>
+                                <IconButton
+                                    onClick={fetchLocalModels}
+                                    disabled={localModelsLoading}
+                                    size="small"
+                                    title="Refresh models"
+                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                >
+                                    {localModelsLoading
+                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        : <RefreshIcon sx={{ fontSize: 20 }} />
+                                    }
+                                </IconButton>
+                            </Box>
+
+                            {localModels.length > 0 && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                    {localModels.map((model: any) => {
+                                        const name = model.name || model.id || model.model;
+                                        const description = model.description || '';
+                                        const size = model.size || model.file_size;
+                                        const isSelected = selectedModel === name;
+
+                                        return (
+                                            <Box
+                                                key={name}
+                                                sx={{
+                                                    p: 2,
+                                                    bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-black-alpha-40)',
+                                                    border: `1px solid ${isSelected ? 'var(--sl-brand-alpha-25)' : 'var(--sl-white-alpha-8)'}`,
+                                                    borderRadius: '10px',
+                                                    transition: 'all 0.2s ease',
+                                                    '&:hover': {
+                                                        borderColor: 'var(--sl-white-alpha-15)',
+                                                    },
+                                                }}
+                                            >
+                                                <Box className="flex items-center justify-between">
+                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                                                        <Box className="flex items-center gap-2">
+                                                            <span style={{
+                                                                fontSize: '14px',
+                                                                fontWeight: 600,
+                                                                fontFamily: 'monospace',
+                                                                color: 'var(--sl-white-alpha-80)',
+                                                            }}>
+                                                                {name}
+                                                            </span>
+                                                            {isSelected && (
+                                                                <Box sx={{
+                                                                    px: 1,
+                                                                    py: 0.25,
+                                                                    bgcolor: 'var(--sl-brand-alpha-10)',
+                                                                    border: '1px solid var(--sl-brand-alpha-25)',
+                                                                    borderRadius: '4px',
+                                                                }}>
+                                                                    <span style={{ fontSize: '10px', color: 'var(--sl-brand-primary)', fontWeight: 600 }}>ACTIVE</span>
+                                                                </Box>
+                                                            )}
+                                                        </Box>
+                                                        {description && (
+                                                            <p style={{ fontSize: '12px', color: 'var(--sl-white-alpha-40)', marginTop: 4, marginBottom: 0 }}>
+                                                                {description}
+                                                            </p>
+                                                        )}
+                                                        {size && (
+                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontFamily: 'monospace' }}>
+                                                                {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
+                                                            </span>
+                                                        )}
+                                                    </Box>
+                                                </Box>
+                                            </Box>
+                                        );
+                                    })}
+                                </Box>
+                            )}
+
+                            {!localModelsLoading && localModels.length === 0 && (
+                                <Box sx={{ p: 3, textAlign: 'center' }}>
+                                    <span style={{ fontSize: '13px', color: 'var(--sl-white-alpha-30)' }}>
+                                        No models available
+                                    </span>
+                                </Box>
+                            )}
+                        </Box>
+                    )}
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
