@@ -10,7 +10,6 @@ import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
-import SyncIcon from '@mui/icons-material/Sync';
 import IosShareIcon from '@mui/icons-material/IosShare';
 import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
@@ -1047,68 +1046,6 @@ export default function RightSidebar({
                                   <span className="text-[11px] text-gray-300 truncate flex-1">
                                     {filename}
                                   </span>
-                                  {isFsOnly && (
-                                    <Tooltip title={isProcessing ? "Processing..." : "Process this document"} placement="top">
-                                      <span>
-                                        <IconButton
-                                          size="small"
-                                          disabled={isProcessing}
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const filePath = fsFile?.path || doc.source;
-                                            if (!filePath || !selectedProject?.id) return;
-                                            const projectId = selectedProject.id;
-                                            setProcessingDocs(prev => new Map(prev).set(doc.id, 'processing'));
-                                            try {
-                                              const result = await documentService.addLocalDocument(
-                                                projectId,
-                                                filePath,
-                                                (progress) => {
-                                                  const apiDoc = progress.documents?.[0];
-                                                  const apiDocId = apiDoc?.id || apiDoc?.document_id;
-
-                                                  if (progress.event === 'done') {
-                                                    setProcessingDocs(prev => { const next = new Map(prev); next.delete(doc.id); return next; });
-                                                    if (apiDocId) {
-                                                      setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
-                                                      setIndexingStatus(prev => ({ ...prev, [apiDocId]: apiDoc.status || 'indexed', [doc.id]: apiDoc.status || 'indexed' }));
-                                                      if (apiDoc?.status === 'indexed') storageService.setDocumentProcessed(apiDocId, projectId);
-                                                    }
-                                                    window.dispatchEvent(new Event('documentUploaded'));
-                                                  } else {
-                                                    const docStatus = apiDoc?.status || 'processing';
-                                                    setProcessingDocs(prev => new Map(prev).set(doc.id, docStatus));
-                                                    setIndexingStatus(prev => ({ ...prev, [doc.id]: docStatus, ...(apiDocId ? { [apiDocId]: docStatus } : {}) }));
-                                                  }
-                                                },
-                                                currentProjectData?.folder_path,
-                                              );
-                                              if (result.success && result.data) {
-                                                const apiDocId = result.data.id || result.data.document_id;
-                                                if (apiDocId) {
-                                                  setFsToApiMap(prev => new Map(prev).set(filePath, apiDocId));
-                                                }
-                                              }
-                                            } catch { /* ignore */ }
-                                          }}
-                                          sx={{
-                                            color: isProcessing ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                                            padding: '2px',
-                                            '&:hover': { color: 'var(--sl-brand-primary)' },
-                                            ...(isProcessing && {
-                                              animation: 'spin 1s linear infinite',
-                                              '@keyframes spin': {
-                                                '0%': { transform: 'rotate(0deg)' },
-                                                '100%': { transform: 'rotate(360deg)' },
-                                              },
-                                            }),
-                                          }}
-                                        >
-                                          <SyncIcon sx={{ fontSize: 12 }} />
-                                        </IconButton>
-                                      </span>
-                                    </Tooltip>
-                                  )}
                                   <IconButton
                                     size="small"
                                     onClick={(e) => { e.stopPropagation(); onDeleteDocument(doc); }}
@@ -1135,7 +1072,26 @@ export default function RightSidebar({
                                   {fileSizeLabel && (
                                     <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
                                   )}
-                                  {<span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>{ docIndexStatus ? (docIndexStatus === 'failed' || docIndexStatus === 'error' ? 'Failed' : docIndexStatus === 'unknown' ? 'Pending' : docIndexStatus.charAt(0).toUpperCase() + docIndexStatus.slice(1)) : 'Pending'}</span>}
+                                  {(() => {
+                                    const status = isFsOnly ? 'local' : (docIndexStatus || 'pending');
+                                    const statusBg: Record<string, string> = {
+                                      local: 'rgba(139,139,245,0.12)',
+                                      indexed: 'rgba(74,222,128,0.12)',
+                                      indexing: 'rgba(250,204,21,0.12)',
+                                      converting: 'rgba(250,204,21,0.12)',
+                                      processing: 'rgba(250,204,21,0.12)',
+                                      pending: 'rgba(148,163,184,0.1)',
+                                      unknown: 'rgba(148,163,184,0.1)',
+                                      failed: 'rgba(248,113,113,0.12)',
+                                      error: 'rgba(248,113,113,0.12)',
+                                    };
+                                    const label = status === 'failed' || status === 'error' ? 'Failed' : status === 'unknown' ? 'Pending' : status.charAt(0).toUpperCase() + status.slice(1);
+                                    return (
+                                      <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: statusBg[status] || statusBg.pending, borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                        {label}
+                                      </span>
+                                    );
+                                  })()}
 
                                 </Box>
                               </Box>

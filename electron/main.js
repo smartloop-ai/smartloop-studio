@@ -534,11 +534,8 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
         }
       }
 
-      if (manifest.document_status) {
-        for (const [docId] of Object.entries(manifest.document_status)) {
-          database.setDocumentProcessed(docId, newProjectId);
-        }
-      }
+      // Note: document_status from manifest uses old document IDs that won't match
+      // the new project's API documents, so we skip restoring them.
     }
 
     if (importedTabs.length > 0) {
@@ -548,10 +545,15 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
       });
     }
 
-    // SLP import API already restores workspace/ and data/ directories
-    // Ensure the working directory exists for the UI
+    // Ensure the working directory exists
     if (!fs.existsSync(newFolderPath)) {
       fs.mkdirSync(newFolderPath, { recursive: true });
+    }
+
+    // Restore project working directory files from the export
+    const projectDir = path.join(tmpDir, 'project');
+    if (fs.existsSync(projectDir)) {
+      fs.cpSync(projectDir, newFolderPath, { recursive: true });
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
