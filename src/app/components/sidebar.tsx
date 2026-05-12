@@ -12,11 +12,11 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
-import FileUploadIcon from '@mui/icons-material/FileUpload';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { PROJECT_COLORS, DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
+import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -49,8 +49,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
   const [importZipPath, setImportZipPath] = useState<string | null>(null);
+  const [openImportDialog, setOpenImportDialog] = useState(false);
+  const [importProjectTitle, setImportProjectTitle] = useState('');
+  const [importSelectedColor, setImportSelectedColor] = useState(DEFAULT_COLOR);
+  const [newProjectMenuAnchor, setNewProjectMenuAnchor] = useState<{ top: number; left: number } | null>(null);
 
   // Load OS home directory for display in folder path field
   useEffect(() => {
@@ -435,9 +438,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
-    setImportError('');
-    setImportFile(null);
-    setImportZipPath(null);
     setFolderPath(`${homeDir}/smartloop`);
     setFolderPathTouched(false);
     setOpenCreateProjectDialog(true);
@@ -448,11 +448,25 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
-    setImportError('');
-    setImportFile(null);
-    setImportZipPath(null);
     setFolderPath(`${homeDir}/smartloop`);
     setFolderPathTouched(false);
+  };
+
+  const handleOpenImportDialog = () => {
+    setImportProjectTitle('');
+    setImportSelectedColor(DEFAULT_COLOR);
+    setImportError('');
+    setImportZipPath(null);
+    setOpenImportDialog(true);
+  };
+
+  const handleCloseImportDialog = () => {
+    setOpenImportDialog(false);
+    setImportProjectTitle('');
+    setImportSelectedColor(DEFAULT_COLOR);
+    setImportError('');
+    setImportZipPath(null);
+    setIsDragOver(false);
   };
 
   const handleBrowseFolder = async () => {
@@ -518,93 +532,35 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Stage a file for import (populates the existing project name field)
-  const stageImportFile = (file: File) => {
-    if (!file.name.endsWith('.zip')) {
-      setImportError('Please select a .zip file');
-      return;
-    }
-    setImportError('');
-    setCreateProjectError('');
-    setImportFile(file);
-    // Derive a default project name from the filename (strip .zip extension)
-    const baseName = file.name.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
-    setNewProjectTitle(baseName);
-  };
-
   const handleConfirmImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!importFile) return;
+    if (!importZipPath) return;
 
-    if (!newProjectTitle.trim()) {
-      setCreateProjectError('Project name is required');
+    if (!importProjectTitle.trim()) {
+      setImportError('Project name is required');
       return;
     }
 
     setImportError('');
-    setCreateProjectError('');
     setIsImporting(true);
 
     try {
-      const localBase = await getLocalApiEndpoint();
-      if (!localBase) {
-        setImportError('Local API service is not ready');
+      const result = await window.electronAPI?.importProject(importZipPath, {
+        name: importProjectTitle.trim(),
+        color: importSelectedColor,
+      });
+
+      if (!result?.success) {
+        setImportError(result?.error || 'Import failed');
         setIsImporting(false);
         return;
       }
 
-      const formData = new FormData();
-      formData.append('file', importFile, importFile.name);
-
-      const response = await fetch(`${localBase}/v1/projects/import`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        setImportError(errorData.detail || errorData.message || `Import failed (HTTP ${response.status})`);
-        setIsImporting(false);
-        return;
-      }
-
-      const project = await response.json();
-      const projectId = project.id;
-
-      // If user changed the name, rename the project via API
-      const finalName = newProjectTitle.trim();
-      if (finalName !== project.name) {
-        await projectService.updateProject(projectId, { name: finalName });
-      }
-
-      await storageService.upsertProject({
-        id: projectId,
-        name: finalName,
-        color: selectedColor,
-        system: false,
-      });
-
-      // Extract conversations from the zip and save to local SQLite
-      if (importZipPath && window.electronAPI?.extractConversationsFromZip) {
-        const convResult = await window.electronAPI.extractConversationsFromZip(importZipPath);
-        if (convResult?.success && convResult.conversations.length > 0) {
-          for (const conv of convResult.conversations) {
-            await storageService.saveConversation({
-              id: conv.id,
-              title: conv.title,
-              project_id: projectId,
-            });
-            if (conv.messages.length > 0) {
-              await storageService.saveMessages(conv.id, conv.messages);
-            }
-          }
-        }
-      }
+      const projectId = result.project.id;
 
       const updatedProjects = await projectService.getProjects();
       setLocalProjects(updatedProjects);
 
-      // Refresh conversations so sidebar picks them up
       await refreshConversations();
 
       if (user) {
@@ -612,7 +568,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
       }
 
-      handleCloseCreateProjectDialog();
+      handleCloseImportDialog();
       navigate(`/?project=${projectId}`);
     } catch (error: any) {
       console.error('Error importing project:', error);
@@ -628,29 +584,44 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     ]);
     if (!filePath) return;
 
-    const fileResult = await window.electronAPI?.readBinaryFile?.(filePath);
-    if (!fileResult?.success || !fileResult.buffer) {
-      setImportError(fileResult?.error || 'Failed to read file');
+    if (!filePath.endsWith('.zip')) {
+      setImportError('Please select a .zip file');
       return;
     }
 
-    const fileName = filePath.split('/').pop() || 'project.zip';
-    const file = new File([fileResult.buffer], fileName, { type: 'application/zip' });
     setImportZipPath(filePath);
-    stageImportFile(file);
+    const fileName = filePath.split('/').pop() || 'project.zip';
+    const baseName = fileName.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
+    setImportProjectTitle(baseName);
+    setImportError('');
   };
 
-  const handleImportDrop = (e: React.DragEvent) => {
+  const handleImportDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
     const file = e.dataTransfer.files?.[0];
-    if (file) {
-      // Electron adds .path to dropped File objects
-      setImportZipPath((file as any).path || null);
-      stageImportFile(file);
+    if (!file || !file.name.endsWith('.zip')) {
+      setImportError('Please select a .zip file');
+      return;
     }
+
+    // file.path is stripped with contextIsolation, save to temp first
+    let filePath = (file as any).path;
+    if (!filePath) {
+      const buffer = await file.arrayBuffer();
+      filePath = await window.electronAPI?.saveTempFile(file.name, buffer);
+    }
+    if (!filePath) {
+      setImportError('Failed to read dropped file');
+      return;
+    }
+
+    setImportZipPath(filePath);
+    const baseName = file.name.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
+    setImportProjectTitle(baseName);
+    setImportError('');
   };
 
   const handleImportDragOver = (e: React.DragEvent) => {
@@ -931,10 +902,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           );
         })()}
 
-        {/* New Project button */}
+        {/* New Project button (right-click for Import) */}
         <Tooltip title={!user?.email ? "Login to create a new project" : ""} placement="right">
           <Box
             onClick={!user?.email ? undefined : handleOpenCreateProjectDialog}
+            onContextMenu={(e) => {
+              if (!user?.email) return;
+              e.preventDefault();
+              setNewProjectMenuAnchor({ top: e.clientY, left: e.clientX });
+            }}
             sx={{
               display: 'flex',
               alignItems: 'center',
@@ -962,6 +938,38 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <span style={{ flex: 1 }}>New Project</span>
           </Box>
         </Tooltip>
+        <Menu
+          open={!!newProjectMenuAnchor}
+          onClose={() => setNewProjectMenuAnchor(null)}
+          anchorReference="anchorPosition"
+          anchorPosition={newProjectMenuAnchor ?? undefined}
+          PaperProps={{
+            sx: {
+              bgcolor: 'rgba(0, 0, 0, 0.98)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              border: '1px solid var(--sl-white-alpha-10)',
+              borderRadius: '8px',
+              minWidth: '160px',
+              boxShadow: '0 8px 32px var(--sl-black-alpha-50)',
+            }
+          }}
+        >
+          <MenuItem
+            onClick={() => { setNewProjectMenuAnchor(null); handleOpenCreateProjectDialog(); }}
+            sx={{ color: 'var(--sl-white-alpha-85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-white-alpha-8)' } }}
+          >
+            <AddIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-white-alpha-50)' }} />
+            New Project
+          </MenuItem>
+          <MenuItem
+            onClick={() => { setNewProjectMenuAnchor(null); handleOpenImportDialog(); }}
+            sx={{ color: 'var(--sl-white-alpha-85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-white-alpha-8)' } }}
+          >
+            <FileDownloadIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-white-alpha-50)' }} />
+            Import Project
+          </MenuItem>
+        </Menu>
       </Box>
 
       {/* Recent Conversations Section */}
@@ -1261,7 +1269,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           <h3 className="text-white font-semibold text-lg mb-6">
             Create New Project
           </h3>
-          <form onSubmit={importFile ? handleConfirmImport : handleCreateProject}>
+          <form onSubmit={handleCreateProject}>
             <Box className="space-y-4">
               <TextField
                 autoFocus
@@ -1382,27 +1390,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 </Typography>
               </Box>
 
-              {/* Staged import file indicator */}
-              {importFile && (
-                <Box className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 border border-gray-800">
-                  <FileUploadIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />
-                  <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-70)', flex: 1 }} className="truncate">
-                    {importFile.name}
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    onClick={() => { setImportFile(null); setImportZipPath(null); setNewProjectTitle(''); setImportError(''); }}
-                    sx={{
-                      padding: '3px',
-                      color: 'var(--sl-white-alpha-40)',
-                      '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-white-alpha-10)' },
-                    }}
-                  >
-                    <CloseIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Box>
-              )}
-
               <Box className="flex gap-3 pt-2">
                 <button
                   type="button"
@@ -1413,70 +1400,224 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 </button>
                 <button
                   type="submit"
-                  disabled={(importFile ? isImporting : isCreatingProject) || !newProjectTitle.trim()}
+                  disabled={isCreatingProject || !newProjectTitle.trim()}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {importFile ? (
-                    isImporting ? (
-                      <>
-                        <CircularProgress size={18} sx={{ color: 'white' }} />
-                        Importing...
-                      </>
-                    ) : (
-                      'Import Project'
-                    )
+                  {isCreatingProject ? (
+                    <CircularProgress size={18} sx={{ color: 'white' }} />
                   ) : (
-                    isCreatingProject ? (
-                      <CircularProgress size={18} sx={{ color: 'white' }} />
-                    ) : (
-                      'Create Project'
-                    )
+                    'Create Project'
                   )}
                 </button>
               </Box>
+            </Box>
+          </form>
+        </Box>
+      </Dialog>
 
-              {/* Divider */}
-              {!importFile && (
-                <>
-                  <Box className="flex items-center gap-3 pt-4">
-                    <Box className="flex-1 h-px bg-gray-800" />
-                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', fontWeight: 500 }}>or</Typography>
-                    <Box className="flex-1 h-px bg-gray-800" />
-                  </Box>
+      {/* Import Project Dialog */}
+      <Dialog
+        open={openImportDialog}
+        onClose={handleCloseImportDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: dialogStyles.paper
+        }}
+        BackdropProps={{
+          sx: dialogStyles.backdrop
+        }}
+      >
+        <Box className="relative p-6">
+          <IconButton
+            onClick={handleCloseImportDialog}
+            sx={{
+              position: 'absolute',
+              right: 12,
+              top: 12,
+              color: 'var(--sl-text-disabled)',
+              '&:hover': {
+                color: 'var(--sl-text-primary)',
+                bgcolor: 'var(--sl-bg-surface-1)',
+              },
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
 
-                  {/* Import Project drop zone */}
-                  <Box
-                    onDrop={handleImportDrop}
-                    onDragOver={handleImportDragOver}
-                    onDragLeave={handleImportDragLeave}
-                    onClick={handleImportBrowse}
-                    sx={{
+          <h3 className="text-white font-semibold text-lg mb-1">
+            Import Project
+          </h3>
+          <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-40)', mb: 3 }}>
+            Import a previously exported project archive.
+          </Typography>
+          <form onSubmit={handleConfirmImport}>
+            <Box className="space-y-4">
+              {/* Drop zone */}
+              <Box
+                onDrop={handleImportDrop}
+                onDragOver={handleImportDragOver}
+                onDragLeave={handleImportDragLeave}
+                onClick={!importZipPath ? handleImportBrowse : undefined}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.5,
+                  py: importZipPath ? 2.5 : 5,
+                  px: 2,
+                  borderRadius: '10px',
+                  border: importZipPath
+                    ? '1px solid var(--sl-brand-alpha-30)'
+                    : isDragOver
+                      ? '2px dashed var(--sl-brand-primary)'
+                      : '2px dashed var(--sl-white-alpha-10)',
+                  bgcolor: importZipPath
+                    ? 'var(--sl-brand-alpha-5)'
+                    : isDragOver
+                      ? 'var(--sl-brand-alpha-10)'
+                      : 'var(--sl-white-alpha-2)',
+                  cursor: importZipPath ? 'default' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  ...(!importZipPath && {
+                    '&:hover': {
+                      borderColor: 'var(--sl-brand-alpha-40)',
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                    },
+                  }),
+                }}
+              >
+                {importZipPath ? (
+                  <Box className="flex items-center gap-2.5 w-full px-1">
+                    <Box sx={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: '8px',
+                      bgcolor: 'var(--sl-brand-alpha-15)',
                       display: 'flex',
-                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: 1,
-                      py: 3,
-                      px: 2,
-                      borderRadius: '8px',
-                      border: isDragOver
-                        ? '2px dashed var(--sl-brand-primary)'
-                        : '2px dashed var(--sl-white-alpha-10)',
-                      bgcolor: isDragOver
-                        ? 'var(--sl-brand-alpha-10)'
-                        : 'transparent',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        borderColor: 'var(--sl-white-alpha-30)',
-                        bgcolor: 'var(--sl-white-alpha-3)',
+                      flexShrink: 0,
+                    }}>
+                      <FileDownloadIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }} className="truncate">
+                        {importZipPath.split('/').pop() || 'project.zip'}
+                      </Typography>
+                    </Box>
+                    <IconButton
+                      size="small"
+                      onClick={() => { setImportZipPath(null); setImportProjectTitle(''); setImportError(''); }}
+                      sx={{
+                        padding: '4px',
+                        color: 'var(--sl-white-alpha-40)',
+                        '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-white-alpha-10)' },
+                      }}
+                    >
+                      <CloseIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Box>
+                ) : (
+                  <>
+                    <Box sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '12px',
+                      bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s ease',
+                    }}>
+                      <FileDownloadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-30)' }} />
+                    </Box>
+                    <Box className="text-center">
+                      <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-60)', fontWeight: 500 }}>
+                        {isDragOver ? 'Drop to import' : 'Drag & drop your project archive'}
+                      </Typography>
+                      {!isDragOver && (
+                        <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-25)', mt: 0.5 }}>
+                          or <span style={{ color: 'var(--sl-brand-primary)', cursor: 'pointer' }}>browse files</span> (.zip)
+                        </Typography>
+                      )}
+                    </Box>
+                  </>
+                )}
+              </Box>
+
+              {/* Project details - shown after file is staged */}
+              {importZipPath && (
+                <>
+                  <TextField
+                    autoFocus
+                    fullWidth
+                    placeholder="Project name"
+                    value={importProjectTitle}
+                    onChange={(e) => setImportProjectTitle(e.target.value)}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        color: 'white',
+                        bgcolor: 'var(--sl-bg-base)',
+                        '& fieldset': { borderColor: 'var(--sl-border-default)' },
+                        '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
+                        '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                       },
                     }}
-                  >
-                    <FileUploadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-30)' }} />
-                    <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-50)', fontWeight: 500 }}>
-                      {isDragOver ? 'Drop to import' : 'Drag & drop or click to import (.zip)'}
+                  />
+
+                  <Box>
+                    <Typography className="text-gray-400 text-sm mb-2">
+                      Label
                     </Typography>
+                    <Box className="flex flex-wrap gap-1.5">
+                      {PROJECT_COLORS.map((color) => (
+                        <Box
+                          key={color.value}
+                          onClick={() => setImportSelectedColor(color.value)}
+                          sx={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '6px',
+                            bgcolor: color.value,
+                            cursor: 'pointer',
+                            border: importSelectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
+                            boxShadow: importSelectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
+                            },
+                          }}
+                          title={color.name}
+                        />
+                      ))}
+                    </Box>
+                  </Box>
+
+                  <Box className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleCloseImportDialog}
+                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isImporting || !importProjectTitle.trim()}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isImporting ? (
+                        <>
+                          <CircularProgress size={18} sx={{ color: 'white' }} />
+                          Importing...
+                        </>
+                      ) : (
+                        'Import Project'
+                      )}
+                    </button>
                   </Box>
                 </>
               )}

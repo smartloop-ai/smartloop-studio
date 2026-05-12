@@ -22,7 +22,7 @@ import '../styles/markdown-editor.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
+import { PROJECT_COLORS } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -404,16 +404,11 @@ export default function RightSidebar({
     });
   }, [selectedProject?.id, currentProjectData?.folder_path]);
 
-  // Directory files are the primary list; API data enriches them with status/summary
+  // Project folder is the source of truth; API data enriches with status/summary
   const effectiveDocuments = useMemo(() => {
     const serverDocs: any[] = apiDocuments;
     const serverIds = new Set(serverDocs.map((d: any) => d.id));
     const pending = uploadingDocs.filter((d: any) => !serverIds.has(d.id));
-
-    // If no directory files, fall back to API docs + pending uploads
-    if (directoryFiles.length === 0) {
-      return [...serverDocs, ...pending];
-    }
 
     // Build multiple lookups from API docs for robust matching
     const baseName = (name: string) => name.replace(/\.[^/.]+$/, '').toLowerCase();
@@ -422,21 +417,23 @@ export default function RightSidebar({
     const apiByPath = new Map<string, any>();
     for (const doc of serverDocs) {
       if (doc.id) apiById.set(doc.id, doc);
-      // Match by base name from any available name field
       const docFileName = (doc.path || doc.source || '').split('/').pop()
         || doc.filename || doc.name || '';
       const base = baseName(docFileName);
       if (base) apiByBase.set(base, doc);
-      // Match by full source/path
       if (doc.source) apiByPath.set(doc.source, doc);
       if (doc.path) apiByPath.set(doc.path, doc);
     }
 
-    // For each directory file, find matching API doc
+    // If no directory files, filter API docs to only those that still exist or are processing
+    if (directoryFiles.length === 0) {
+      return [...serverDocs, ...pending];
+    }
+
+    // For each directory file, find matching API doc or show as unindexed
     const matchedApiIds = new Set<string>();
     const merged = directoryFiles.map((file: any) => {
       const base = baseName(file.name);
-      // Try matching: explicit mapping → full path → base name
       const mappedId = fsToApiMap.get(file.path);
       const match = (mappedId ? apiById.get(mappedId) : null)
         || apiByPath.get(file.path)
@@ -445,18 +442,18 @@ export default function RightSidebar({
         matchedApiIds.add(match.id);
         return { ...match, _fsFile: file };
       }
-      // Filesystem file with no API match — not uploaded via UI, skip it
-      return null;
+      // File exists on disk but not in API — show as unindexed
+      return {
+        id: `fs-${file.path}`,
+        name: file.name,
+        filename: file.name,
+        source: file.path,
+        size: file.size,
+        _fsFile: file,
+      };
     });
 
-    // Add API docs not matched to any directory file (e.g. uploaded from elsewhere)
-    for (const doc of serverDocs) {
-      if (!matchedApiIds.has(doc.id)) {
-        merged.push(doc);
-      }
-    }
-
-    return [...merged.filter(Boolean), ...pending];
+    return [...merged, ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
   // Load MCP servers from project data
@@ -1583,18 +1580,7 @@ export default function RightSidebar({
                     setExporting(true);
                     setExportDone(false);
                     try {
-                      const localBase = await getLocalApiEndpoint();
-                      if (!localBase) throw new Error('Service not ready');
-                      const res = await fetch(`${localBase}/v1/projects/${selectedProject.id}/export`, { method: 'POST' });
-                      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-                      const disposition = res.headers.get('content-disposition') || '';
-                      const match = disposition.match(/filename="?([^"]+)"?/);
-                      const filename = match?.[1] || `${(selectedProject.name || 'project').replace(/\s+/g, '_')}.zip`;
-                      const arrayBuffer = await res.arrayBuffer();
-                      const result = await (window as any).electronAPI.saveBinaryFile(
-                        filename,
-                        Array.from(new Uint8Array(arrayBuffer))
-                      );
+                      const result = await (window as any).electronAPI.exportProject(selectedProject.id);
                       if (result?.success) {
                         setExportDone(true);
                         setTimeout(() => setExportDone(false), 2000);

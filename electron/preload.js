@@ -110,6 +110,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFolder: (folderPath) => ipcRenderer.invoke('delete-folder', folderPath),
   // Extract conversations from a zip file (conversations/*.jsonl)
   extractConversationsFromZip: (zipPath) => ipcRenderer.invoke('extract-conversations-from-zip', zipPath),
+  // Export a project to a zip file (fully local)
+  exportProject: (projectId) => ipcRenderer.invoke('export-project', projectId),
+  // Import a project from a zip file (fully local)
+  importProject: (zipPath, overrides) => ipcRenderer.invoke('import-project', zipPath, overrides),
   // Select a file using native file dialog (with optional filters)
   selectFile: (filters) => ipcRenderer.invoke('select-file', filters),
   // Read a binary file from disk (returns { success, buffer } or { success, error })
