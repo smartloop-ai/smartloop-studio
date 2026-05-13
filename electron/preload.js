@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   // Recursively delete a folder from disk
   deleteFolder: (folderPath) => ipcRenderer.invoke('delete-folder', folderPath),
+  // Rename a folder on disk
+  renameFolder: (oldPath, newPath) => ipcRenderer.invoke('rename-folder', oldPath, newPath),
   // Extract conversations from a zip file (conversations/*.jsonl)
   extractConversationsFromZip: (zipPath) => ipcRenderer.invoke('extract-conversations-from-zip', zipPath),
   // Export a project to a zip file (fully local)

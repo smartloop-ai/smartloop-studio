@@ -24,6 +24,8 @@ export interface ElectronAPI {
   deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   // Recursively delete a folder from disk
   deleteFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
+  // Rename a folder on disk
+  renameFolder: (oldPath: string, newPath: string) => Promise<{ success: boolean; error?: string }>;
   // Extract conversations from a zip file (conversations/*.jsonl)
   extractConversationsFromZip: (zipPath: string) => Promise<{ success: boolean; conversations: Array<{ id: string; title: string; messages: any[] }>; error?: string }>;
   // Export a project to a zip file (fully local)
