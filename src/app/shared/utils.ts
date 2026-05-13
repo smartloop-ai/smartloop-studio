@@ -136,8 +136,8 @@ export const dialogStyles = {
   },
   // Darker backdrop
   backdrop: {
-    backdropFilter: 'blur(2px)',
-    bgcolor: 'var(--sl-black-alpha-40)',
+    backdropFilter: 'blur(4px)',
+    bgcolor: 'rgba(0, 0, 0, 0.4)',
   },
   // Wide dialog paper props (for larger dialogs)
   paperWide: {

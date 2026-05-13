@@ -871,6 +871,8 @@ export default function Home() {
         const newSlug = trimmedName.toLowerCase().replace(/\s+/g, '_');
         if (currentPath.endsWith(`/${oldSlug}`) || currentPath === oldSlug) {
           const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
+          // Rename the actual folder on disk
+          await window.electronAPI!.renameFolder(currentPath, newPath);
           await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName, folder_path: newPath });
           setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
           setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);

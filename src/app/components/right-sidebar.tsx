@@ -10,7 +10,7 @@ import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
-import IosShareIcon from '@mui/icons-material/IosShare';
+import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
@@ -1156,7 +1156,7 @@ export default function RightSidebar({
                   }}
                 />
                 <Box className="text-gray-500 text-[10px] mt-1 px-1">
-                  Enter the url of the MCP server <br/>(e.g., https://mcp.example.com) <br/>or package name (e.g., yahoo-finance-mcp) <br/>— Press Enter to add
+                  Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
                 </Box>
               </Box>
 
@@ -1527,9 +1527,9 @@ export default function RightSidebar({
                 </p>
               </div>
 
-              {/* Export Project */}
+              {/* Share Project */}
               <div>
-                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Export</div>
+                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Share</div>
                 <Box
                   onClick={async () => {
                     if (exporting || !selectedProject?.id) return;
@@ -1568,14 +1568,16 @@ export default function RightSidebar({
                   ) : exportDone ? (
                     <CheckIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
                   ) : (
-                    <IosShareIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                    <ShareIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
                   )}
                   <span className="text-xs text-[var(--sl-text-primary)]">
-                    {exporting ? 'Exporting...' : exportDone ? 'Exported' : `Export ${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                    {exporting ? 'Sharing...' : exportDone ? 'Shared' : (
+                      <>Share <span className="text-[var(--sl-text-muted)] bg-[var(--sl-white-alpha-8)] px-1.5 py-0.5 rounded text-[11px]">{selectedProject.name || 'Project'}</span></>
+                    )}
                   </span>
                 </Box>
                 <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
-                  Export project and all its contents to a zip file to distribute.
+                  Share project and all its contents as a zip file.
                 </p>
               </div>
             </div>

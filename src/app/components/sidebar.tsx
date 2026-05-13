@@ -54,6 +54,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [importProjectTitle, setImportProjectTitle] = useState('');
   const [importSelectedColor, setImportSelectedColor] = useState(DEFAULT_COLOR);
   const [createProjectMode, setCreateProjectMode] = useState<'choose' | 'blank' | 'import'>('choose');
+  const [selectedProjectOption, setSelectedProjectOption] = useState<'blank' | 'import'>('blank');
 
   // Load OS home directory for display in folder path field
   useEffect(() => {
@@ -145,7 +146,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               setIsLoggingIn(false);
               window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
             }
-          } catch {}
+          } catch { }
         }, 2000);
       }
     } catch (error) {
@@ -436,6 +437,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleOpenCreateProjectDialog = () => {
     setCreateProjectMode('choose');
+    setSelectedProjectOption('blank');
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
@@ -451,6 +453,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   const handleCloseCreateProjectDialog = () => {
     setOpenCreateProjectDialog(false);
+    setSelectedProjectOption('blank');
     setNewProjectTitle('');
     setSelectedColor(DEFAULT_COLOR);
     setCreateProjectError('');
@@ -1240,86 +1243,176 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
           {/* Step 1: Choose mode */}
           {createProjectMode === 'choose' && (
-            <Box className="flex flex-col gap-2.5">
-              <Box
-                onClick={() => setCreateProjectMode('blank')}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  py: 2,
-                  px: 2.5,
-                  borderRadius: '10px',
-                  border: '1px solid var(--sl-white-alpha-10)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  '&:hover': {
-                    borderColor: 'var(--sl-brand-alpha-40)',
-                    bgcolor: 'var(--sl-white-alpha-5)',
-                  },
-                }}
-              >
-                <Box sx={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '10px',
-                  bgcolor: 'var(--sl-brand-alpha-10)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <AutoAwesomeIcon sx={{ fontSize: 20, color: 'var(--sl-brand-primary)' }} />
+            <Box className="flex flex-col gap-3">
+              <Box className="flex flex-col gap-2">
+                {/* Blank project option */}
+                <Box
+                  onClick={() => setSelectedProjectOption('blank')}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    py: 2,
+                    px: 2.5,
+                    borderRadius: '10px',
+                    border: selectedProjectOption === 'blank'
+                      ? '1.5px solid var(--sl-brand-primary)'
+                      : '1.5px solid var(--sl-white-alpha-10)',
+                    bgcolor: selectedProjectOption === 'blank'
+                      ? 'var(--sl-brand-alpha-5)'
+                      : 'var(--sl-white-alpha-2)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    '&:hover': {
+                      borderColor: selectedProjectOption === 'blank' ? 'var(--sl-brand-primary)' : 'var(--sl-brand-alpha-40)',
+                      bgcolor: selectedProjectOption === 'blank' ? 'var(--sl-brand-alpha-5)' : 'var(--sl-white-alpha-5)',
+                    },
+                  }}
+                >
+                  <Box sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '10px',
+                    bgcolor: selectedProjectOption === 'blank' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-brand-alpha-10)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <AutoAwesomeIcon sx={{ fontSize: 20, color: 'var(--sl-brand-primary)' }} />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                      Blank project
+                    </Typography>
+                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
+                      Start fresh with a new workspace
+                    </Typography>
+                  </Box>
+                  {/* Radio indicator */}
+                  <Box sx={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: selectedProjectOption === 'blank'
+                      ? '2px solid var(--sl-brand-primary)'
+                      : '2px solid var(--sl-white-alpha-20)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                  }}>
+                    {selectedProjectOption === 'blank' && (
+                      <Box sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: 'var(--sl-brand-primary)',
+                      }} />
+                    )}
+                  </Box>
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
-                    Blank Project
-                  </Typography>
-                  <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
-                    Start fresh with a new workspace
-                  </Typography>
+
+                {/* Import project option */}
+                <Box
+                  onClick={() => setSelectedProjectOption('import')}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    py: 2,
+                    px: 2.5,
+                    borderRadius: '10px',
+                    border: selectedProjectOption === 'import'
+                      ? '1.5px solid var(--sl-brand-primary)'
+                      : '1.5px solid var(--sl-white-alpha-10)',
+                    bgcolor: selectedProjectOption === 'import'
+                      ? 'var(--sl-brand-alpha-5)'
+                      : 'var(--sl-white-alpha-2)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    '&:hover': {
+                      borderColor: selectedProjectOption === 'import' ? 'var(--sl-brand-primary)' : 'var(--sl-brand-alpha-40)',
+                      bgcolor: selectedProjectOption === 'import' ? 'var(--sl-brand-alpha-5)' : 'var(--sl-white-alpha-5)',
+                    },
+                  }}
+                >
+                  <Box sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '10px',
+                    bgcolor: selectedProjectOption === 'import' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <FileDownloadIcon sx={{ fontSize: 20, color: selectedProjectOption === 'import' ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-50)' }} />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                      From an existing project
+                    </Typography>
+                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
+                      Create project from a shared archive (.zip)
+                    </Typography>
+                  </Box>
+                  {/* Radio indicator */}
+                  <Box sx={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: selectedProjectOption === 'import'
+                      ? '2px solid var(--sl-brand-primary)'
+                      : '2px solid var(--sl-white-alpha-20)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                  }}>
+                    {selectedProjectOption === 'import' && (
+                      <Box sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: 'var(--sl-brand-primary)',
+                      }} />
+                    )}
+                  </Box>
                 </Box>
               </Box>
+
+              {/* Continue button */}
               <Box
-                onClick={() => setCreateProjectMode('import')}
+                component="button"
+                type="button"
+                onClick={() => setCreateProjectMode(selectedProjectOption)}
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  py: 2,
-                  px: 2.5,
-                  borderRadius: '10px',
-                  border: '1px solid var(--sl-white-alpha-10)',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  '&:hover': {
-                    borderColor: 'var(--sl-brand-alpha-40)',
-                    bgcolor: 'var(--sl-white-alpha-5)',
-                  },
-                }}
-              >
-                <Box sx={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '10px',
-                  bgcolor: 'var(--sl-white-alpha-5)',
+                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  <FileDownloadIcon sx={{ fontSize: 20, color: 'var(--sl-white-alpha-50)' }} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
-                    From Archive
-                  </Typography>
-                  <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
-                    Restore from an exported archive (.zip)
-                  </Typography>
-                </Box>
+                  gap: 1,
+                  px: 2,
+                  py: 1.25,
+                  bgcolor: 'var(--sl-brand-alpha-15)',
+                  border: '1px solid var(--sl-brand-alpha-30)',
+                  borderRadius: '8px',
+                  color: 'var(--sl-brand-primary)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  mt: 0.5,
+                  '&:hover': {
+                    bgcolor: 'var(--sl-brand-alpha-20)',
+                    borderColor: 'var(--sl-brand-alpha-50)',
+                  },
+                }}
+              >
+                Continue
               </Box>
             </Box>
           )}
@@ -1442,24 +1535,66 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 </Box>
 
                 <Box className="flex gap-3 pt-2">
-                  <button
+                  <Box
+                    component="button"
                     type="button"
                     onClick={() => setCreateProjectMode('choose')}
-                    className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                    sx={{
+                      flex: 1,
+                      px: 2,
+                      py: 1.25,
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                      border: '1px solid var(--sl-white-alpha-10)',
+                      borderRadius: '8px',
+                      color: 'var(--sl-white-alpha-60)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        bgcolor: 'var(--sl-white-alpha-8)',
+                        color: 'var(--sl-text-primary)',
+                      },
+                    }}
                   >
                     Back
-                  </button>
-                  <button
+                  </Box>
+                  <Box
+                    component="button"
                     type="submit"
                     disabled={isCreatingProject || !newProjectTitle.trim()}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    sx={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 1,
+                      px: 2,
+                      py: 1.25,
+                      bgcolor: 'var(--sl-brand-alpha-15)',
+                      border: '1px solid var(--sl-brand-alpha-30)',
+                      borderRadius: '8px',
+                      color: 'var(--sl-brand-primary)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover:not(:disabled)': {
+                        bgcolor: 'var(--sl-brand-alpha-20)',
+                        borderColor: 'var(--sl-brand-alpha-50)',
+                      },
+                      '&:disabled': {
+                        opacity: 0.4,
+                        cursor: 'not-allowed',
+                      },
+                    }}
                   >
                     {isCreatingProject ? (
-                      <CircularProgress size={18} sx={{ color: 'white' }} />
+                      <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
                     ) : (
                       'Create Project'
                     )}
-                  </button>
+                  </Box>
                 </Box>
               </Box>
             </form>
@@ -1621,27 +1756,69 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 )}
 
                 <Box className="flex gap-3 pt-2">
-                  <button
+                  <Box
+                    component="button"
                     type="button"
                     onClick={() => { setCreateProjectMode('choose'); setImportZipPath(null); setImportProjectTitle(''); setImportError(''); setIsDragOver(false); }}
-                    className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium"
+                    sx={{
+                      flex: 1,
+                      px: 2,
+                      py: 1.25,
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                      border: '1px solid var(--sl-white-alpha-10)',
+                      borderRadius: '8px',
+                      color: 'var(--sl-white-alpha-60)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        bgcolor: 'var(--sl-white-alpha-8)',
+                        color: 'var(--sl-text-primary)',
+                      },
+                    }}
                   >
                     Back
-                  </button>
-                  <button
+                  </Box>
+                  <Box
+                    component="button"
                     type="submit"
                     disabled={isImporting || !importZipPath || !importProjectTitle.trim()}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    sx={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 1,
+                      px: 2,
+                      py: 1.25,
+                      bgcolor: 'var(--sl-brand-alpha-15)',
+                      border: '1px solid var(--sl-brand-alpha-30)',
+                      borderRadius: '8px',
+                      color: 'var(--sl-brand-primary)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      '&:hover:not(:disabled)': {
+                        bgcolor: 'var(--sl-brand-alpha-20)',
+                        borderColor: 'var(--sl-brand-alpha-50)',
+                      },
+                      '&:disabled': {
+                        opacity: 0.4,
+                        cursor: 'not-allowed',
+                      },
+                    }}
                   >
                     {isImporting ? (
                       <>
-                        <CircularProgress size={18} sx={{ color: 'white' }} />
+                        <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
                         Importing...
                       </>
                     ) : (
                       'Import Project'
                     )}
-                  </button>
+                  </Box>
                 </Box>
               </Box>
             </form>

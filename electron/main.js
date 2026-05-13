@@ -214,6 +214,24 @@ ipcMain.handle('delete-folder', async (event, folderPath) => {
   }
 });
 
+// IPC: rename a folder on disk
+ipcMain.handle('rename-folder', async (event, oldPath, newPath) => {
+  try {
+    const resolvedOld = oldPath.startsWith('~')
+      ? path.join(os.homedir(), oldPath.replace(/^~[/\\]?/, ''))
+      : oldPath;
+    const resolvedNew = newPath.startsWith('~')
+      ? path.join(os.homedir(), newPath.replace(/^~[/\\]?/, ''))
+      : newPath;
+    if (!fs.existsSync(resolvedOld)) return { success: false, error: 'Source folder not found' };
+    if (fs.existsSync(resolvedNew)) return { success: false, error: 'Destination folder already exists' };
+    fs.renameSync(resolvedOld, resolvedNew);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: list supported document files from a directory
 ipcMain.handle('list-directory', async (event, dirPath) => {
   try {
