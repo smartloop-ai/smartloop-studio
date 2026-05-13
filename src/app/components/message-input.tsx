@@ -1,8 +1,9 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Box, InputBase, InputAdornment } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CloseIcon from '@mui/icons-material/Close';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import FileAttacher from './file-attacher';
 
@@ -48,6 +49,9 @@ export default function MessageInput({
   onQuoteClear,
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [droppedFile, setDroppedFile] = useState<{ file: File; id: number } | null>(null);
+  const dragCounterRef = useRef(0);
 
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);
@@ -86,18 +90,68 @@ export default function MessageInput({
     }
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!allowAttachments) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes('Files')) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!allowAttachments) return;
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) setIsDraggingOver(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!allowAttachments) return;
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!allowAttachments) return;
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) setDroppedFile({ file, id: Date.now() });
+  };
+
   return (
-    <Box>
+    <Box
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <Box
         className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
         sx={{
           bgcolor: 'rgba(17, 24, 39, 0.5)',
-          border: '1px solid var(--sl-bg-inline-code)',
+          border: isDraggingOver
+            ? '1px solid var(--sl-brand-primary)'
+            : '1px solid var(--sl-bg-inline-code)',
           '&:focus-within': {
-            border: '1px solid var(--sl-white-alpha-30)',
+            border: isDraggingOver
+              ? '1px solid var(--sl-brand-primary)'
+              : '1px solid var(--sl-white-alpha-30)',
           },
         }}
       >
+        {isDraggingOver && (
+          <Box
+            className="absolute inset-0 flex flex-col items-center justify-center rounded-lg z-10 pointer-events-none gap-1"
+            sx={{
+              bgcolor: 'var(--sl-brand-alpha-10)',
+              border: '2px dashed var(--sl-brand-alpha-40)',
+              borderRadius: '8px',
+            }}
+          >
+            <AttachFileIcon sx={{ fontSize: 28, color: 'var(--sl-brand-primary)' }} />
+            <span className="text-xs" style={{ color: 'var(--sl-brand-primary)' }}>Drop file to attach</span>
+          </Box>
+        )}
         <InputBase
           inputRef={inputRef}
           name="message"
@@ -161,12 +215,13 @@ export default function MessageInput({
                   }
                 }}
                 onError={(error) => {
-                  console.error('File upload error:', error);
+                  console.error('File attach error:', error);
                 }}
                 disabled={disabled || isLoading}
                 size="small"
                 showDragDrop={showDragDrop}
                 clearTrigger={clearAttachmentTrigger}
+                externalDrop={droppedFile}
               />
             )}
             {/* Selected quote indicator */}
