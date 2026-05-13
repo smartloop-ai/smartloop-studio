@@ -736,7 +736,7 @@ export default function SettingsPage() {
                             </Box>
 
                             {localModels.length > 0 && (
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                <div className="flex flex-col gap-3">
                                     {localModels.map((model: any) => {
                                         const name = model.name || model.id || model.model;
                                         const description = model.description || '';
@@ -745,72 +745,55 @@ export default function SettingsPage() {
                                         const isIniting = initingModel === name;
 
                                         return (
-                                            <Box
+                                            <div
                                                 key={name}
                                                 onClick={() => !initingModel && handleSelectModel(name)}
-                                                sx={{
-                                                    p: 2,
-                                                    bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-black-alpha-40)',
-                                                    border: `1px solid ${isSelected ? 'var(--sl-brand-alpha-25)' : 'var(--sl-white-alpha-8)'}`,
-                                                    borderRadius: '10px',
-                                                    cursor: initingModel ? 'default' : 'pointer',
-                                                    opacity: initingModel && !isIniting ? 0.5 : 1,
-                                                    transition: 'all 0.2s ease',
-                                                    '&:hover': initingModel ? {} : {
-                                                        borderColor: 'var(--sl-white-alpha-15)',
-                                                        bgcolor: isSelected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
-                                                    },
-                                                }}
+                                                className={`p-4 rounded-[10px] border transition-all duration-200 ${
+                                                    initingModel ? 'cursor-default' : 'cursor-pointer'
+                                                } ${initingModel && !isIniting ? 'opacity-50' : 'opacity-100'} ${
+                                                    isSelected
+                                                        ? 'bg-pink-500/10 border-pink-500/30 hover:border-pink-500/30'
+                                                        : `bg-black/40 border-white/[0.08] ${!initingModel ? 'hover:border-white/15 hover:bg-white/5' : ''}`
+                                                }`}
                                             >
-                                                <Box className="flex items-center justify-between">
-                                                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                                                        <Box className="flex items-center gap-2">
-                                                            <span style={{
-                                                                fontSize: '14px',
-                                                                fontWeight: 600,
-                                                                fontFamily: 'monospace',
-                                                                color: 'var(--sl-white-alpha-80)',
-                                                            }}>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-semibold font-mono text-white/80">
                                                                 {name}
                                                             </span>
                                                             {isSelected && !isIniting && (
-                                                                <Box sx={{
-                                                                    px: 1,
-                                                                    py: 0.25,
-                                                                    bgcolor: 'var(--sl-brand-alpha-10)',
-                                                                    border: '1px solid var(--sl-brand-alpha-25)',
-                                                                    borderRadius: '4px',
-                                                                }}>
-                                                                    <span style={{ fontSize: '10px', color: 'var(--sl-brand-primary)', fontWeight: 600 }}>ACTIVE</span>
-                                                                </Box>
+                                                                <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
+                                                                    ACTIVE
+                                                                </span>
                                                             )}
-                                                        </Box>
+                                                        </div>
                                                         {description && (
-                                                            <p style={{ fontSize: '12px', color: 'var(--sl-white-alpha-40)', marginTop: 4, marginBottom: 0 }}>
+                                                            <p className="text-xs text-white/40 mt-1 mb-0">
                                                                 {description}
                                                             </p>
                                                         )}
                                                         {size && (
-                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontFamily: 'monospace' }}>
+                                                            <span className="text-[11px] text-white/30 font-mono">
                                                                 {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
                                                             </span>
                                                         )}
-                                                    </Box>
-                                                </Box>
+                                                    </div>
+                                                </div>
 
                                                 {/* Init progress bar */}
                                                 {isIniting && initProgress && (
-                                                    <Box sx={{ mt: 1.5 }}>
-                                                        <Box className="flex items-center justify-between mb-1">
-                                                            <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-50)' }}>
+                                                    <div className="mt-3">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[11px] text-white/50">
                                                                 {initProgress.status}
                                                             </span>
                                                             {initProgress.percent > 0 && (
-                                                                <span style={{ fontSize: '11px', color: 'var(--sl-brand-primary)', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                                <span className="text-[11px] text-pink-500 font-mono font-semibold">
                                                                     {initProgress.percent}%
                                                                 </span>
                                                             )}
-                                                        </Box>
+                                                        </div>
                                                         <LinearProgress
                                                             variant={initProgress.percent > 0 ? 'determinate' : 'indeterminate'}
                                                             value={initProgress.percent}
@@ -824,20 +807,20 @@ export default function SettingsPage() {
                                                                 },
                                                             }}
                                                         />
-                                                    </Box>
+                                                    </div>
                                                 )}
-                                            </Box>
+                                            </div>
                                         );
                                     })}
-                                </Box>
+                                </div>
                             )}
 
                             {!localModelsLoading && localModels.length === 0 && (
-                                <Box sx={{ p: 3, textAlign: 'center' }}>
-                                    <span style={{ fontSize: '13px', color: 'var(--sl-white-alpha-30)' }}>
+                                <div className="p-6 text-center">
+                                    <span className="text-[13px] text-white/30">
                                         No models available
                                     </span>
-                                </Box>
+                                </div>
                             )}
                         </Box>
 
