@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, IconButton, CircularProgress } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import CloseIcon from '@mui/icons-material/Close';
@@ -16,6 +16,8 @@ interface FileAttacherProps {
   showDragDrop?: boolean;
   maxFileSize?: number; // in MB
   clearTrigger?: number; // Increment this to trigger clear from parent
+
+  externalDrop?: { file: File; id: number } | null; // Forwarded from parent drag/drop
 }
 
 export default function FileAttacher({
@@ -25,24 +27,33 @@ export default function FileAttacher({
   disabled = false,
   size = 'small',
   showDragDrop = false,
-  maxFileSize = 10,
+  maxFileSize = 20,
   clearTrigger = 0,
+  externalDrop = null,
 }: FileAttacherProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string>('');
+  const [attachError, setAttachError] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevClearTrigger = useRef(clearTrigger);
 
   const isSmall = size === 'small';
 
+  // Handle external drop forwarded from parent
+  const handleFileSelectRef = useRef<(file: File) => Promise<void>>(null as any);
+  useEffect(() => {
+    if (externalDrop && handleFileSelectRef.current) {
+      handleFileSelectRef.current(externalDrop.file);
+    }
+  }, [externalDrop?.id]);
+
   // Handle external clear trigger
   useEffect(() => {
     if (clearTrigger !== prevClearTrigger.current) {
       prevClearTrigger.current = clearTrigger;
       setSelectedFile(null);
-      setUploadError('');
+      setAttachError('');
       setIsUploading(false);
     }
   }, [clearTrigger]);
@@ -76,7 +87,7 @@ export default function FileAttacher({
 
   const uploadFile = async (file: File) => {
     setIsUploading(true);
-    setUploadError('');
+    setAttachError('');
 
     try {
       // Upload as asset to local SLP server (POST /v1/assets)
@@ -89,7 +100,7 @@ export default function FileAttacher({
       const asset = uploadResult.data;
 
       if (asset.id) {
-        setUploadError('');
+        setAttachError('');
         setIsUploading(false);
         onSuccess(asset.id, file.name);
       } else {
@@ -98,27 +109,31 @@ export default function FileAttacher({
     } catch (error: any) {
       console.error('Failed to upload asset:', error);
       const errorMessage = error.message || 'Failed to upload asset';
-      setUploadError(errorMessage);
+      setAttachError(errorMessage);
       setIsUploading(false);
       if (onError) onError(errorMessage);
       setSelectedFile(null);
     }
   };
 
-  const handleFileSelect = async (file: File) => {
+  const handleFileSelect = useCallback(async (file: File) => {
     const validationError = validateFile(file);
     if (validationError) {
-      setUploadError(validationError);
+      setSelectedFile(file); // show error state in UI
+      setAttachError(validationError);
       if (onError) onError(validationError);
       return;
     }
 
     setSelectedFile(file);
-    setUploadError('');
+    setAttachError('');
 
     // Start upload immediately
     await uploadFile(file);
-  };
+  }, [maxFileSize, onError]);
+
+  // Keep ref in sync so external drop useEffect can call it
+  handleFileSelectRef.current = handleFileSelect;
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -129,7 +144,7 @@ export default function FileAttacher({
 
   const handleClear = () => {
     setSelectedFile(null);
-    setUploadError('');
+    setAttachError('');
     setIsUploading(false);
     if (onClear) onClear();
   };
@@ -169,14 +184,14 @@ export default function FileAttacher({
           <>
             <CircularProgress size={isSmall ? 14 : 24} sx={{ color: 'var(--sl-brand-primary)' }} />
             <Box className={`text-gray-300 ${isSmall ? 'text-xs' : 'text-sm'}`}>
-              {uploadError && (uploadError.toLowerCase().includes('processing') || uploadError.toLowerCase().includes('attachment')) ? uploadError : 'Uploading...'}
+              {attachError && (attachError.toLowerCase().includes('processing') || attachError.toLowerCase().includes('attachment')) ? attachError : 'Attaching...'}
             </Box>
           </>
-        ) : uploadError ? (
+        ) : attachError ? (
           <>
             <CloseIcon sx={{ color: 'var(--sl-status-error)', fontSize: isSmall ? 14 : 24 }} />
             <Box className={`text-red-400 ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[200px]' : 'max-w-[300px]'}`}>
-              {uploadError}
+              {attachError}
             </Box>
           </>
         ) : (
