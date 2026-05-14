@@ -1122,7 +1122,16 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
         }
       });
 
-      res.on('end', () => {
+      res.on('end', async () => {
+        // Persist selected_model in the SLP user profile
+        try {
+          await fetch(`${baseUrl}/v1/users/me`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selected_model: modelName }),
+          });
+        } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
+
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('model-init-progress', {
             model: modelName,
