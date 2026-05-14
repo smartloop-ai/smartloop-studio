@@ -120,6 +120,7 @@ async function startService() {
   const proc = spawn(slpBinary, ['start'], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   });
 
   proc.stdout.on('data', (data) => {
@@ -210,6 +211,7 @@ async function stopService() {
         execFile(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
+          windowsHide: true,
         }, (error) => {
           if (error) reject(error);
           else resolve();

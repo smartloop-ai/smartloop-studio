@@ -587,7 +587,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
 
     setImportZipPath(filePath);
-    const fileName = filePath.split('/').pop() || 'project.zip';
+    const fileName = filePath.split(/[/\\]/).pop() || 'project.zip';
     const baseName = fileName.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
     setImportProjectTitle(baseName);
     setImportError('');
@@ -1655,7 +1655,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }} className="truncate">
-                          {importZipPath.split('/').pop() || 'project.zip'}
+                          {importZipPath.split(/[/\\]/).pop() || 'project.zip'}
                         </Typography>
                       </Box>
                       <IconButton
