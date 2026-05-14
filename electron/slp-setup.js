@@ -31,15 +31,16 @@ function semverGte(a, b) {
 }
 
 function getInstalledBinaryPath() {
+  const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
     if (fs.existsSync(MARKER_FILE)) {
       const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
       if (semverGte(installed, VERSION)) {
-        return path.join(INSTALL_DIR, installed, 'bin', 'slp');
+        return path.join(INSTALL_DIR, installed, 'bin', binaryName);
       }
     }
   } catch {}
-  return path.join(VERSION_DIR, 'slp');
+  return path.join(VERSION_DIR, binaryName);
 }
 
 function needsInstall() {
@@ -220,8 +221,8 @@ async function installService(onProgress) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slp-extract-'));
   try {
     if (isWindows) {
-      await runAsync('powershell', ['-NoProfile', '-Command',
-        `Expand-Archive -LiteralPath "${cachedArchive}" -DestinationPath "${tmpDir}" -Force`]);
+      // Windows 10+ ships tar.exe (libarchive) which handles .zip and is much faster than Expand-Archive
+      await runAsync('tar', ['-xf', cachedArchive, '-C', tmpDir]);
     } else {
       await runAsync('tar', ['-xzf', cachedArchive, '-C', tmpDir]);
     }
@@ -256,7 +257,7 @@ async function installService(onProgress) {
   }
 
   try {
-    await runAsync(slpBinary, ['--version']);
+    await runAsync(slpBinary, ['--version'], { windowsHide: true });
   } catch (err) {
     throw new Error(`Installation verification failed: 'slp --version' did not succeed: ${err.message}`);
   }

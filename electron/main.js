@@ -266,12 +266,16 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
 
     // List files in the zip matching conversations/*.jsonl
     const { execFileSync } = require('child_process');
-    const listOutput = execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
+    const isWin = process.platform === 'win32';
+    const listOutput = isWin
+      ? execFileSync('tar', ['-tf', resolved], { timeout: 10000 }).toString()
+      : execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
     const conversationFiles = listOutput
       .split('\n')
       .map(line => line.trim())
       .filter(line => /conversations\/[^/]+\.jsonl$/.test(line))
       .map(line => {
+        if (isWin) return line || null;
         const match = line.match(/(conversations\/[^\s]+\.jsonl)$/);
         return match ? match[1] : null;
       })
@@ -280,7 +284,9 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
     const conversations = [];
     for (const filePath of conversationFiles) {
       try {
-        const content = execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
+        const content = isWin
+          ? execFileSync('tar', ['-xOf', resolved, filePath], { timeout: 10000 }).toString()
+          : execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
         const lines = content.split('\n').filter(l => l.trim());
         const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
         // Derive conversation ID from filename
@@ -359,7 +365,11 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const slpZipPath = path.join(tmpDir, `slp-export-${projectId}.zip`);
     const arrayBuf = await exportRes.arrayBuffer();
     fs.writeFileSync(slpZipPath, Buffer.from(arrayBuf));
-    execFileSync('unzip', ['-o', slpZipPath, '-d', exportDir], { timeout: 120000 });
+    if (process.platform === 'win32') {
+      execFileSync('tar', ['-xf', slpZipPath, '-C', exportDir], { timeout: 120000 });
+    } else {
+      execFileSync('unzip', ['-o', slpZipPath, '-d', exportDir], { timeout: 120000 });
+    }
     fs.unlinkSync(slpZipPath);
 
     // Augment with SQLite state (conversations, messages, MCP servers, folders, tabs)
@@ -435,7 +445,11 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const tmpDir = path.join(os.tmpdir(), `smartloop-import-${Date.now()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
-    execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
+    if (process.platform === 'win32') {
+      execFileSync('tar', ['-xf', resolved, '-C', tmpDir], { timeout: 120000 });
+    } else {
+      execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
+    }
 
     const manifestPath = path.join(tmpDir, 'project.json');
     let manifest = null;
