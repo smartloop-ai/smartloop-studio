@@ -182,7 +182,7 @@ export default function SettingsPage() {
     const fetchLocalModels = useCallback(async () => {
         setLocalModelsLoading(true);
         try {
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (api?.slpListModels) {
                 const result = await api.slpListModels();
                 if (result?.success && result.models) {
@@ -196,26 +196,33 @@ export default function SettingsPage() {
         }
     }, []);
 
+    // Listen for model init progress events (with cleanup to prevent leaks)
+    useEffect(() => {
+        const api = window.electronAPI;
+        if (!api?.onModelInitProgress) return;
+
+        api.onModelInitProgress((data: any) => {
+            setInitingModel((current) => {
+                if (current && data.model === current) {
+                    setInitProgress({ percent: data.percent, status: data.status });
+                }
+                return current;
+            });
+        });
+
+        return () => {
+            api.removeModelInitProgressListener?.();
+        };
+    }, []);
+
     // Select a model — triggers /v1/init which downloads + sets up if needed
     const handleSelectModel = useCallback(async (modelName: string) => {
-        const api = (window as any).electronAPI;
+        const api = window.electronAPI;
         if (!api?.slpInitModel) return;
 
         setSelectedModel(modelName);
         setInitingModel(modelName);
         setInitProgress({ percent: 0, status: 'Initializing...' });
-
-        await storageService.setItem('selected_model', modelName);
-        await storageService.setSetting('selected_model', modelName);
-        if (api?.slpUpdateUserSettings) {
-            await api.slpUpdateUserSettings({ selected_model: modelName });
-        }
-
-        api.onModelInitProgress?.((data: any) => {
-            if (data.model === modelName) {
-                setInitProgress({ percent: data.percent, status: data.status });
-            }
-        });
 
         try {
             await api.slpInitModel(modelName);
@@ -224,7 +231,6 @@ export default function SettingsPage() {
         } finally {
             setInitingModel(null);
             setInitProgress(null);
-            api.removeModelInitProgressListener?.();
         }
     }, []);
 
@@ -275,7 +281,7 @@ export default function SettingsPage() {
 
     useEffect(() => {
         const load = async () => {
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (api?.getSlpConfig) {
                 const cfg = await api.getSlpConfig();
                 setSlpConfig(cfg);
