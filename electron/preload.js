@@ -66,6 +66,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpFetchUser: (opts) => ipcRenderer.invoke('slp-fetch-user', opts),
   slpUpdateUserSettings: (settings) => ipcRenderer.invoke('slp-update-user-settings', settings),
   slpListModels: () => ipcRenderer.invoke('slp-list-models'),
+  slpInitModel: (modelName) => ipcRenderer.invoke('slp-init-model', modelName),
+  onModelInitProgress: (callback) => {
+    ipcRenderer.on('model-init-progress', (event, data) => callback(data));
+  },
+  removeModelInitProgressListener: () => {
+    ipcRenderer.removeAllListeners('model-init-progress');
+  },
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
   onModelDownloadProgress: (callback) => {
     ipcRenderer.on('model-download-progress', (event, data) => callback(data));

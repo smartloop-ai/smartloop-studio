@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 import { storageService } from '@/app/services/storage.service';
@@ -9,9 +9,11 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
-const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+
 
 const TPS_GRAPH_POINTS = 60; // Show last 60 data points
 
@@ -145,9 +147,11 @@ export default function SettingsPage() {
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [lastTps, setLastTps] = useState<number | null>(null);
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
-    const [_localModels, setLocalModels] = useState<any[]>([]);
-    const [_localModelsLoading, setLocalModelsLoading] = useState(false);
+    const [localModels, setLocalModels] = useState<any[]>([]);
+    const [localModelsLoading, setLocalModelsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState<string>('');
+    const [initingModel, setInitingModel] = useState<string | null>(null);
+    const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
 
@@ -174,17 +178,16 @@ export default function SettingsPage() {
         }
     }, []);
 
-    // Fetch models from local service /v1/models
+    // Fetch models from local SLP service via IPC
     const fetchLocalModels = useCallback(async () => {
         setLocalModelsLoading(true);
         try {
-            const baseUrl = await getLocalApiEndpoint();
-            if (!baseUrl) return;
-            const res = await fetch(`${baseUrl}/v1/models`);
-            if (res.ok) {
-                const data = await res.json();
-                const models = Array.isArray(data) ? data : (data.data || []);
-                setLocalModels(models);
+            const api = window.electronAPI;
+            if (api?.slpListModels) {
+                const result = await api.slpListModels();
+                if (result?.success && result.models) {
+                    setLocalModels(result.models);
+                }
             }
         } catch (err) {
             console.warn('Failed to fetch local models:', err);
@@ -193,7 +196,43 @@ export default function SettingsPage() {
         }
     }, []);
 
+    // Listen for model init progress events (with cleanup to prevent leaks)
+    useEffect(() => {
+        const api = window.electronAPI;
+        if (!api?.onModelInitProgress) return;
 
+        api.onModelInitProgress((data: any) => {
+            setInitingModel((current) => {
+                if (current && data.model === current) {
+                    setInitProgress({ percent: data.percent, status: data.status });
+                }
+                return current;
+            });
+        });
+
+        return () => {
+            api.removeModelInitProgressListener?.();
+        };
+    }, []);
+
+    // Select a model — triggers /v1/init which downloads + sets up if needed
+    const handleSelectModel = useCallback(async (modelName: string) => {
+        const api = window.electronAPI;
+        if (!api?.slpInitModel) return;
+
+        setSelectedModel(modelName);
+        setInitingModel(modelName);
+        setInitProgress({ percent: 0, status: 'Initializing...' });
+
+        try {
+            await api.slpInitModel(modelName);
+        } catch (err) {
+            console.error('Model init error:', err);
+        } finally {
+            setInitingModel(null);
+            setInitProgress(null);
+        }
+    }, []);
 
     useEffect(() => {
         fetchLocalModels();
@@ -230,7 +269,6 @@ export default function SettingsPage() {
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
         const loadHistory = async () => {
-            if (!isElectron) return;
             const history = await storageService.getTpsHistory(TPS_GRAPH_POINTS);
             if (history.length > 0) {
                 setTpsHistory(history);
@@ -243,8 +281,7 @@ export default function SettingsPage() {
 
     useEffect(() => {
         const load = async () => {
-            if (!isElectron) return;
-            const api = (window as any).electronAPI;
+            const api = window.electronAPI;
             if (api?.getSlpConfig) {
                 const cfg = await api.getSlpConfig();
                 setSlpConfig(cfg);
@@ -389,7 +426,7 @@ export default function SettingsPage() {
                     </Box>
 
                     {/* Active Model Card - Redesigned */}
-                    {isElectron && slpConfig && (() => {
+                    {slpConfig && (() => {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
                         if (!activeModel) return null;
 
@@ -492,8 +529,7 @@ export default function SettingsPage() {
                     })()}
 
                     {/* Service */}
-                    {isElectron && (
-                        <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
                             <Box className="flex items-center justify-between mb-4">
                                 <Box className="flex items-center gap-2">
                                     <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -682,8 +718,117 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
-                    )}
 
+
+                    {/* Available Models */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                            <Box className="flex items-center justify-between mb-4">
+                                <Box className="flex items-center gap-2">
+                                    <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                    <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
+                                </Box>
+                                <IconButton
+                                    onClick={fetchLocalModels}
+                                    disabled={localModelsLoading}
+                                    size="small"
+                                    title="Refresh models"
+                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                >
+                                    {localModelsLoading
+                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        : <RefreshIcon sx={{ fontSize: 20 }} />
+                                    }
+                                </IconButton>
+                            </Box>
+
+                            {localModels.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    {localModels.map((model: any) => {
+                                        const name = model.name || model.id || model.model;
+                                        const description = model.description || '';
+                                        const size = model.size || model.file_size;
+                                        const isSelected = selectedModel === name;
+                                        const isIniting = initingModel === name;
+
+                                        return (
+                                            <div
+                                                key={name}
+                                                onClick={() => !initingModel && handleSelectModel(name)}
+                                                className={`p-4 rounded-[10px] border transition-all duration-200 ${
+                                                    initingModel ? 'cursor-default' : 'cursor-pointer'
+                                                } ${initingModel && !isIniting ? 'opacity-50' : 'opacity-100'} ${
+                                                    isSelected
+                                                        ? 'bg-pink-500/10 border-pink-500/30 hover:border-pink-500/30'
+                                                        : `bg-black/40 border-white/[0.08] ${!initingModel ? 'hover:border-white/15 hover:bg-white/5' : ''}`
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-semibold font-mono text-white/80">
+                                                                {name}
+                                                            </span>
+                                                            {isSelected && !isIniting && (
+                                                                <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
+                                                                    ACTIVE
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {description && (
+                                                            <p className="text-xs text-white/40 mt-1 mb-0">
+                                                                {description}
+                                                            </p>
+                                                        )}
+                                                        {size && (
+                                                            <span className="text-[11px] text-white/30 font-mono">
+                                                                {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Init progress bar */}
+                                                {isIniting && initProgress && (
+                                                    <div className="mt-3">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[11px] text-white/50">
+                                                                {initProgress.status}
+                                                            </span>
+                                                            {initProgress.percent > 0 && (
+                                                                <span className="text-[11px] text-pink-500 font-mono font-semibold">
+                                                                    {initProgress.percent}%
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <LinearProgress
+                                                            variant={initProgress.percent > 0 ? 'determinate' : 'indeterminate'}
+                                                            value={initProgress.percent}
+                                                            sx={{
+                                                                height: 6,
+                                                                borderRadius: '3px',
+                                                                bgcolor: 'var(--sl-white-alpha-5)',
+                                                                '& .MuiLinearProgress-bar': {
+                                                                    bgcolor: 'var(--sl-brand-primary)',
+                                                                    borderRadius: '3px',
+                                                                },
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {!localModelsLoading && localModels.length === 0 && (
+                                <div className="p-6 text-center">
+                                    <span className="text-[13px] text-white/30">
+                                        No models available
+                                    </span>
+                                </div>
+                            )}
+                        </Box>
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
