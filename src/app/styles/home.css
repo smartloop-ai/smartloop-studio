@@ -23,3 +23,21 @@
 	border-radius: 4px 4px 0 0;
 	box-shadow: 2px 2px 8px var(--sl-black-alpha-20);
 }
+
+/* Right sidebar pink scrollbar */
+.sidebar-scroll::-webkit-scrollbar {
+	width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+	background: rgba(236, 72, 153, 0.25);
+	border-radius: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+	background: rgba(236, 72, 153, 0.6);
+}

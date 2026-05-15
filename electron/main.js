@@ -78,6 +78,18 @@ ipcMain.handle('open-document-reference', async (event, filePath, documentId, pr
   return { success: false, error: 'No file path' };
 });
 
+// Reveal a file in Finder / Explorer
+ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+  if (filePath) {
+    const resolved = filePath.startsWith('~')
+      ? filePath.replace('~', require('os').homedir())
+      : filePath;
+    shell.showItemInFolder(resolved);
+    return true;
+  }
+  return false;
+});
+
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
@@ -635,6 +647,15 @@ ipcMain.handle('select-folder', async () => {
 
 // IPC: get the OS home directory
 ipcMain.handle('get-home-dir', () => os.homedir());
+
+// Get the path to the bundled blank project template zip
+ipcMain.handle('get-template-zip-path', () => {
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    return path.join(__dirname, 'data', 'project_1.zip');
+  }
+  return path.join(process.resourcesPath, 'data', 'project_1.zip');
+});
 
 // --- SQLite database IPC handlers ---
 
@@ -1514,7 +1535,7 @@ function createWindow() {
           fetchUserProfile(); // throttled by TTL
         }
       }
-    } catch {}
+    } catch { }
   });
 
   // Open external links in default browser
