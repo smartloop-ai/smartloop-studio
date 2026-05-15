@@ -6,6 +6,11 @@ directories:
   output: dist
   buildResources: build
 asar: true
+extraResources:
+  - from: electron/data/
+    to: data/
+    filter:
+      - "**/*"
 protocols:
   name: smartloop
   schemes:

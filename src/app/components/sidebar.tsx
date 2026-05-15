@@ -13,11 +13,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { PROJECT_COLORS, DEFAULT_COLOR } from '@/app/constants';
+import { DEFAULT_COLOR } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -40,28 +39,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
-  const [newProjectTitle, setNewProjectTitle] = useState('');
-  const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
-  const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [createProjectError, setCreateProjectError] = useState('');
-  const [folderPath, setFolderPath] = useState('');
-  const [folderPathTouched, setFolderPathTouched] = useState(false);
-  const [homeDir, setHomeDir] = useState('~');
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [importZipPath, setImportZipPath] = useState<string | null>(null);
-  const [importProjectTitle, setImportProjectTitle] = useState('');
-  const [importSelectedColor, setImportSelectedColor] = useState(DEFAULT_COLOR);
-  const [createProjectMode, setCreateProjectMode] = useState<'choose' | 'blank' | 'import'>('choose');
-  const [selectedProjectOption, setSelectedProjectOption] = useState<'blank' | 'import'>('blank');
-
-  // Load OS home directory for display in folder path field
-  useEffect(() => {
-    window.electronAPI?.getHomeDir?.().then((dir) => {
-      if (dir) setHomeDir(dir);
-    });
-  }, []);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<any>(null);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
@@ -436,116 +416,25 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleOpenCreateProjectDialog = () => {
-    setCreateProjectMode('choose');
-    setSelectedProjectOption('blank');
-    setNewProjectTitle('');
-    setSelectedColor(DEFAULT_COLOR);
-    setCreateProjectError('');
-    setFolderPath(`${homeDir}/smartloop`);
-    setFolderPathTouched(false);
-    setImportProjectTitle('');
-    setImportSelectedColor(DEFAULT_COLOR);
     setImportError('');
-    setImportZipPath(null);
     setIsDragOver(false);
     setOpenCreateProjectDialog(true);
   };
 
   const handleCloseCreateProjectDialog = () => {
     setOpenCreateProjectDialog(false);
-    setSelectedProjectOption('blank');
-    setNewProjectTitle('');
-    setSelectedColor(DEFAULT_COLOR);
-    setCreateProjectError('');
-    setFolderPath(`${homeDir}/smartloop`);
-    setFolderPathTouched(false);
-    setImportProjectTitle('');
-    setImportSelectedColor(DEFAULT_COLOR);
     setImportError('');
-    setImportZipPath(null);
     setIsDragOver(false);
   };
 
-  const handleBrowseFolder = async () => {
-    const selected = await window.electronAPI?.selectFolder?.();
-    if (selected) {
-      setFolderPath(selected);
-      setFolderPathTouched(true);
-    }
-  };
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!user?.email) {
-      setCreateProjectError('Please sign in to create a project');
-      return;
-    }
-
-    if (!newProjectTitle.trim()) {
-      setCreateProjectError('Project title is required');
-      return;
-    }
-
-    setIsCreatingProject(true);
-    setCreateProjectError('');
-
-    try {
-      const selectedModel = await storageService.getItem('selected_model') || '';
-      const slug = newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_');
-      const defaultPath = `~/smartloop/${slug}`;
-      const result = await projectService.createProject({
-        name: newProjectTitle.trim(),
-        color: selectedColor,
-        model_name: selectedModel,
-        folder_path: folderPath.trim() || defaultPath,
-      });
-
-      if (result.success && result.data) {
-        const projectId = result.data.id;
-
-        // Reload projects from local API (enriched with SQLite metadata)
-        const updatedProjects = await projectService.getProjects();
-        setLocalProjects(updatedProjects);
-
-        // Update AuthContext user with the refreshed projects list
-        if (user) {
-          const updatedUser = { ...user, projects: updatedProjects };
-          window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-        }
-
-        handleCloseCreateProjectDialog();
-
-        // Navigate to the new project
-        navigate(`/?project=${projectId}`);
-      } else {
-        setCreateProjectError(result.error || 'Failed to create project');
-      }
-    } catch (error: any) {
-      console.error('Error creating project:', error);
-      setCreateProjectError('An error occurred while creating the project.');
-    } finally {
-      setIsCreatingProject(false);
-    }
-  };
-
-  const handleConfirmImport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!importZipPath) return;
-
-    if (!importProjectTitle.trim()) {
-      setImportError('Project name is required');
-      return;
-    }
-
+  const handleImportFromZip = async (zipPath: string, name?: string) => {
     setImportError('');
     setIsImporting(true);
 
     try {
-      const result = await window.electronAPI?.importProject(importZipPath, {
-        name: importProjectTitle.trim(),
-        color: importSelectedColor,
-      });
+      const overrides: { name?: string; color: string } = { color: DEFAULT_COLOR };
+      if (name) overrides.name = name;
+      const result = await window.electronAPI?.importProject(zipPath, overrides);
 
       if (!result?.success) {
         setImportError(result?.error || 'Import failed');
@@ -586,11 +475,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       return;
     }
 
-    setImportZipPath(filePath);
     const fileName = filePath.split(/[/\\]/).pop() || 'project.zip';
     const baseName = fileName.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
-    setImportProjectTitle(baseName);
-    setImportError('');
+    await handleImportFromZip(filePath, baseName);
   };
 
   const handleImportDrop = async (e: React.DragEvent) => {
@@ -604,7 +491,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       return;
     }
 
-    // file.path is stripped with contextIsolation, save to temp first
     let filePath = (file as any).path;
     if (!filePath) {
       const buffer = await file.arrayBuffer();
@@ -615,10 +501,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       return;
     }
 
-    setImportZipPath(filePath);
     const baseName = file.name.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
-    setImportProjectTitle(baseName);
-    setImportError('');
+    await handleImportFromZip(filePath, baseName);
   };
 
   const handleImportDragOver = (e: React.DragEvent) => {
@@ -1226,602 +1110,143 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <CloseIcon />
           </IconButton>
 
-          {createProjectMode === 'choose' ? (
-            <Box className="mb-5">
-              <h3 className="text-white font-semibold text-lg mb-1">
-                Create a new project
-              </h3>
-              <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-40)', lineHeight: 1.5 }}>
-                Organize your conversations, documents, and tools in one place.
-              </Typography>
-            </Box>
-          ) : (
-            <h3 className="text-white font-semibold text-lg mb-6">
-              {createProjectMode === 'blank' ? 'Create New Project' : 'Import Project'}
+          <Box className="mb-5">
+            <h3 className="text-white font-semibold text-lg mb-1">
+              Create a new project
             </h3>
-          )}
+            <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-40)', lineHeight: 1.5 }}>
+              Organize your conversations, documents, and tools in one place.
+            </Typography>
+          </Box>
 
-          {/* Step 1: Choose mode */}
-          {createProjectMode === 'choose' && (
-            <Box className="flex flex-col gap-3">
-              <Box className="flex flex-col gap-2">
-                {/* Blank project option */}
-                <Box
-                  onClick={() => setSelectedProjectOption('blank')}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    py: 2,
-                    px: 2.5,
-                    borderRadius: '10px',
-                    border: selectedProjectOption === 'blank'
-                      ? '1.5px solid var(--sl-brand-primary)'
-                      : '1.5px solid var(--sl-white-alpha-10)',
-                    bgcolor: selectedProjectOption === 'blank'
-                      ? 'var(--sl-brand-alpha-5)'
-                      : 'var(--sl-white-alpha-2)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    '&:hover': {
-                      borderColor: selectedProjectOption === 'blank' ? 'var(--sl-brand-primary)' : 'var(--sl-brand-alpha-40)',
-                      bgcolor: selectedProjectOption === 'blank' ? 'var(--sl-brand-alpha-5)' : 'var(--sl-white-alpha-5)',
-                    },
-                  }}
-                >
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '10px',
-                    bgcolor: selectedProjectOption === 'blank' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-brand-alpha-10)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    <AutoAwesomeIcon sx={{ fontSize: 20, color: 'var(--sl-brand-primary)' }} />
-                  </Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
-                      Blank project
-                    </Typography>
-                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
-                      Start fresh with a new workspace
-                    </Typography>
-                  </Box>
-                  {/* Radio indicator */}
-                  <Box sx={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: '50%',
-                    border: selectedProjectOption === 'blank'
-                      ? '2px solid var(--sl-brand-primary)'
-                      : '2px solid var(--sl-white-alpha-20)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    transition: 'all 0.15s ease',
-                  }}>
-                    {selectedProjectOption === 'blank' && (
-                      <Box sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        bgcolor: 'var(--sl-brand-primary)',
-                      }} />
-                    )}
-                  </Box>
-                </Box>
-
-                {/* Import project option */}
-                <Box
-                  onClick={() => setSelectedProjectOption('import')}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    py: 2,
-                    px: 2.5,
-                    borderRadius: '10px',
-                    border: selectedProjectOption === 'import'
-                      ? '1.5px solid var(--sl-brand-primary)'
-                      : '1.5px solid var(--sl-white-alpha-10)',
-                    bgcolor: selectedProjectOption === 'import'
-                      ? 'var(--sl-brand-alpha-5)'
-                      : 'var(--sl-white-alpha-2)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    '&:hover': {
-                      borderColor: selectedProjectOption === 'import' ? 'var(--sl-brand-primary)' : 'var(--sl-brand-alpha-40)',
-                      bgcolor: selectedProjectOption === 'import' ? 'var(--sl-brand-alpha-5)' : 'var(--sl-white-alpha-5)',
-                    },
-                  }}
-                >
-                  <Box sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '10px',
-                    bgcolor: selectedProjectOption === 'import' ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    <FileDownloadIcon sx={{ fontSize: 20, color: selectedProjectOption === 'import' ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-50)' }} />
-                  </Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
-                      From an existing project
-                    </Typography>
-                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.25 }}>
-                      Create project from a shared archive (.zip)
-                    </Typography>
-                  </Box>
-                  {/* Radio indicator */}
-                  <Box sx={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: '50%',
-                    border: selectedProjectOption === 'import'
-                      ? '2px solid var(--sl-brand-primary)'
-                      : '2px solid var(--sl-white-alpha-20)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    transition: 'all 0.15s ease',
-                  }}>
-                    {selectedProjectOption === 'import' && (
-                      <Box sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        bgcolor: 'var(--sl-brand-primary)',
-                      }} />
-                    )}
-                  </Box>
-                </Box>
-              </Box>
-
-              {/* Continue button */}
-              <Box
-                component="button"
-                type="button"
-                onClick={() => setCreateProjectMode(selectedProjectOption)}
-                sx={{
-                  width: '100%',
+          <Box className="flex gap-3">
+            {/* Blank Template card */}
+            <Box
+              onClick={async () => {
+                if (isImporting) return;
+                setIsImporting(true);
+                setImportError('');
+                try {
+                  const templatePath = await window.electronAPI?.getTemplateZipPath();
+                  if (!templatePath) {
+                    setImportError('Template not found');
+                    setIsImporting(false);
+                    return;
+                  }
+                  await handleImportFromZip(templatePath);
+                } catch (error: any) {
+                  console.error('Error creating blank project:', error);
+                  setImportError(error.message || 'An error occurred.');
+                  setIsImporting(false);
+                }
+              }}
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1.5,
+                py: 4,
+                px: 2,
+                borderRadius: '10px',
+                border: '1.5px solid var(--sl-white-alpha-10)',
+                bgcolor: 'var(--sl-white-alpha-2)',
+                cursor: isImporting ? 'not-allowed' : 'pointer',
+                opacity: isImporting ? 0.5 : 1,
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: 'var(--sl-brand-alpha-40)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
+                },
+              }}
+            >
+              {isImporting ? (
+                <CircularProgress size={24} sx={{ color: 'var(--sl-brand-primary)' }} />
+              ) : (
+                <Box sx={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '12px',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 1,
-                  px: 2,
-                  py: 1.25,
-                  bgcolor: 'var(--sl-brand-alpha-15)',
-                  border: '1px solid var(--sl-brand-alpha-30)',
-                  borderRadius: '8px',
-                  color: 'var(--sl-brand-primary)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  mt: 0.5,
-                  '&:hover': {
-                    bgcolor: 'var(--sl-brand-alpha-20)',
-                    borderColor: 'var(--sl-brand-alpha-50)',
-                  },
-                }}
-              >
-                Continue
+                }}>
+                  <AutoAwesomeIcon sx={{ fontSize: 24, color: 'var(--sl-brand-primary)' }} />
+                </Box>
+              )}
+              <Box className="text-center">
+                <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                  Blank Template
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
+                  Start fresh with a new workspace
+                </Typography>
               </Box>
             </Box>
-          )}
 
-          {/* Step 2a: Blank project form */}
-          {createProjectMode === 'blank' && (
-            <form onSubmit={handleCreateProject}>
-              <Box className="space-y-4">
-                <TextField
-                  autoFocus
-                  fullWidth
-                  placeholder="Project name"
-                  value={newProjectTitle}
-                  onChange={(e) => {
-                    setNewProjectTitle(e.target.value);
-                    if (!folderPathTouched) {
-                      const slug = e.target.value.trim().toLowerCase().replace(/\s+/g, '_');
-                      setFolderPath(slug ? `${homeDir}/smartloop/${slug}` : `${homeDir}/smartloop`);
-                    }
-                  }}
-                  error={!!createProjectError}
-                  helperText={createProjectError}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      color: 'white',
-                      bgcolor: 'var(--sl-bg-base)',
-                      '& fieldset': { borderColor: 'var(--sl-border-default)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiFormHelperText-root': {
-                      color: 'var(--sl-status-error)',
-                    },
-                  }}
-                />
-
-                {/* Color Label Selector */}
-                <Box>
-                  <Typography className="text-gray-400 text-sm mb-2">
-                    Label
-                  </Typography>
-                  <Box className="flex flex-wrap gap-1.5">
-                    {PROJECT_COLORS.map((color) => (
-                      <Box
-                        key={color.value}
-                        onClick={() => setSelectedColor(color.value)}
-                        sx={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          bgcolor: color.value,
-                          cursor: 'pointer',
-                          border: selectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
-                          boxShadow: selectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
-                          transition: 'all 0.2s ease',
-                          '&:hover': {
-                            transform: 'scale(1.1)',
-                            boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
-                          },
-                        }}
-                        title={color.name}
-                      />
-                    ))}
-                  </Box>
-                </Box>
-
-                {/* Folder Path */}
-                <Box>
-                  <Typography className="text-gray-400 text-sm mb-2">
-                    Working Directory
-                  </Typography>
-                  <Box className="flex gap-2 items-center">
-                    <TextField
-                      autoComplete="off"
-                      type="text"
-                      placeholder={`${homeDir}/smartloop/${newProjectTitle.trim().toLowerCase().replace(/\s+/g, '_') || 'project-name'}`}
-                      value={folderPath}
-                      onChange={(e) => {
-                        setFolderPath(e.target.value);
-                        setFolderPathTouched(true);
-                      }}
-                      fullWidth
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'var(--sl-bg-base)',
-                          '& fieldset': { borderColor: 'var(--sl-border-default)' },
-                          '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
-                          '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                        },
-                        '& .MuiInputBase-input::placeholder': {
-                          color: 'var(--sl-text-disabled)',
-                          opacity: 1,
-                        },
-                      }}
-                    />
-                    {window.electronAPI?.selectFolder && (
-                      <IconButton
-                        onClick={handleBrowseFolder}
-                        title="Browse folder"
-                        sx={{
-                          color: 'var(--sl-text-muted)',
-                          border: '1px solid var(--sl-border-default)',
-                          borderRadius: '8px',
-                          padding: '8px',
-                          flexShrink: 0,
-                          '&:hover': {
-                            color: 'var(--sl-brand-primary)',
-                            borderColor: 'var(--sl-brand-primary)',
-                          },
-                        }}
-                      >
-                        <FolderOpenIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                  <Typography sx={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
-                    Used as working directory for chat commands.
-                  </Typography>
-                </Box>
-
-                <Box className="flex gap-3 pt-2">
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => setCreateProjectMode('choose')}
-                    sx={{
-                      flex: 1,
-                      px: 2,
-                      py: 1.25,
-                      bgcolor: 'var(--sl-white-alpha-5)',
-                      border: '1px solid var(--sl-white-alpha-10)',
-                      borderRadius: '8px',
-                      color: 'var(--sl-white-alpha-60)',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        bgcolor: 'var(--sl-white-alpha-8)',
-                        color: 'var(--sl-text-primary)',
-                      },
-                    }}
-                  >
-                    Back
-                  </Box>
-                  <Box
-                    component="button"
-                    type="submit"
-                    disabled={isCreatingProject || !newProjectTitle.trim()}
-                    sx={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 1,
-                      px: 2,
-                      py: 1.25,
-                      bgcolor: 'var(--sl-brand-alpha-15)',
-                      border: '1px solid var(--sl-brand-alpha-30)',
-                      borderRadius: '8px',
-                      color: 'var(--sl-brand-primary)',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover:not(:disabled)': {
-                        bgcolor: 'var(--sl-brand-alpha-20)',
-                        borderColor: 'var(--sl-brand-alpha-50)',
-                      },
-                      '&:disabled': {
-                        opacity: 0.4,
-                        cursor: 'not-allowed',
-                      },
-                    }}
-                  >
-                    {isCreatingProject ? (
-                      <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                    ) : (
-                      'Create Project'
-                    )}
-                  </Box>
-                </Box>
+            {/* From Existing Project — drop zone + click to browse */}
+            <Box
+              onDrop={handleImportDrop}
+              onDragOver={handleImportDragOver}
+              onDragLeave={handleImportDragLeave}
+              onClick={() => {
+                if (isImporting) return;
+                handleImportBrowse();
+              }}
+              sx={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1.5,
+                py: 4,
+                px: 2,
+                borderRadius: '10px',
+                border: isDragOver
+                  ? '2px dashed var(--sl-brand-primary)'
+                  : '1.5px solid var(--sl-white-alpha-10)',
+                bgcolor: isDragOver
+                  ? 'var(--sl-brand-alpha-10)'
+                  : 'var(--sl-white-alpha-2)',
+                cursor: isImporting ? 'not-allowed' : 'pointer',
+                opacity: isImporting ? 0.5 : 1,
+                transition: 'all 0.15s ease',
+                '&:hover': {
+                  borderColor: 'var(--sl-brand-alpha-40)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
+                },
+              }}
+            >
+              <Box sx={{
+                width: 48,
+                height: 48,
+                borderRadius: '12px',
+                bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+              }}>
+                <FileDownloadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-50)' }} />
               </Box>
-            </form>
-          )}
-
-          {/* Step 2b: Import project form */}
-          {createProjectMode === 'import' && (
-            <form onSubmit={handleConfirmImport}>
-              <Box className="space-y-4">
-                {/* Drop zone */}
-                <Box
-                  onDrop={handleImportDrop}
-                  onDragOver={handleImportDragOver}
-                  onDragLeave={handleImportDragLeave}
-                  onClick={!importZipPath ? handleImportBrowse : undefined}
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 1.5,
-                    py: importZipPath ? 2.5 : 5,
-                    px: 2,
-                    borderRadius: '10px',
-                    border: importZipPath
-                      ? '1px solid var(--sl-brand-alpha-30)'
-                      : isDragOver
-                        ? '2px dashed var(--sl-brand-primary)'
-                        : '2px dashed var(--sl-white-alpha-10)',
-                    bgcolor: importZipPath
-                      ? 'var(--sl-brand-alpha-5)'
-                      : isDragOver
-                        ? 'var(--sl-brand-alpha-10)'
-                        : 'var(--sl-white-alpha-2)',
-                    cursor: importZipPath ? 'default' : 'pointer',
-                    transition: 'all 0.2s ease',
-                    ...(!importZipPath && {
-                      '&:hover': {
-                        borderColor: 'var(--sl-brand-alpha-40)',
-                        bgcolor: 'var(--sl-white-alpha-5)',
-                      },
-                    }),
-                  }}
-                >
-                  {importZipPath ? (
-                    <Box className="flex items-center gap-2.5 w-full px-1">
-                      <Box sx={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: '8px',
-                        bgcolor: 'var(--sl-brand-alpha-15)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}>
-                        <FileDownloadIcon sx={{ fontSize: 18, color: 'var(--sl-brand-primary)' }} />
-                      </Box>
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }} className="truncate">
-                          {importZipPath.split(/[/\\]/).pop() || 'project.zip'}
-                        </Typography>
-                      </Box>
-                      <IconButton
-                        size="small"
-                        onClick={() => { setImportZipPath(null); setImportProjectTitle(''); setImportError(''); }}
-                        sx={{
-                          padding: '4px',
-                          color: 'var(--sl-white-alpha-40)',
-                          '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-white-alpha-10)' },
-                        }}
-                      >
-                        <CloseIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Box>
-                  ) : (
-                    <>
-                      <Box sx={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: '12px',
-                        bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s ease',
-                      }}>
-                        <FileDownloadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-30)' }} />
-                      </Box>
-                      <Box className="text-center">
-                        <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-60)', fontWeight: 500 }}>
-                          {isDragOver ? 'Drop to import' : 'Drag & drop your project archive'}
-                        </Typography>
-                        {!isDragOver && (
-                          <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-25)', mt: 0.5 }}>
-                            or <span style={{ color: 'var(--sl-brand-primary)', cursor: 'pointer' }}>browse files</span> (.zip)
-                          </Typography>
-                        )}
-                      </Box>
-                    </>
-                  )}
-                </Box>
-
-                {/* Project details - shown after file is staged */}
-                {importZipPath && (
-                  <>
-                    <TextField
-                      autoFocus
-                      fullWidth
-                      placeholder="Project name"
-                      value={importProjectTitle}
-                      onChange={(e) => setImportProjectTitle(e.target.value)}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'var(--sl-bg-base)',
-                          '& fieldset': { borderColor: 'var(--sl-border-default)' },
-                          '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
-                          '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                        },
-                      }}
-                    />
-
-                    <Box>
-                      <Typography className="text-gray-400 text-sm mb-2">
-                        Label
-                      </Typography>
-                      <Box className="flex flex-wrap gap-1.5">
-                        {PROJECT_COLORS.map((color) => (
-                          <Box
-                            key={color.value}
-                            onClick={() => setImportSelectedColor(color.value)}
-                            sx={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              bgcolor: color.value,
-                              cursor: 'pointer',
-                              border: importSelectedColor === color.value ? '2px solid var(--sl-brand-primary)' : '2px solid transparent',
-                              boxShadow: importSelectedColor === color.value ? '0 0 0 2px var(--sl-brand-alpha-20)' : 'none',
-                              transition: 'all 0.2s ease',
-                              '&:hover': {
-                                transform: 'scale(1.1)',
-                                boxShadow: '0 0 0 2px var(--sl-brand-alpha-30)',
-                              },
-                            }}
-                            title={color.name}
-                          />
-                        ))}
-                      </Box>
-                    </Box>
-                  </>
-                )}
-
-                {importError && (
-                  <Typography sx={{ fontSize: '12px', color: 'var(--sl-status-error)', mt: 1 }}>
-                    {importError}
-                  </Typography>
-                )}
-
-                <Box className="flex gap-3 pt-2">
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => { setCreateProjectMode('choose'); setImportZipPath(null); setImportProjectTitle(''); setImportError(''); setIsDragOver(false); }}
-                    sx={{
-                      flex: 1,
-                      px: 2,
-                      py: 1.25,
-                      bgcolor: 'var(--sl-white-alpha-5)',
-                      border: '1px solid var(--sl-white-alpha-10)',
-                      borderRadius: '8px',
-                      color: 'var(--sl-white-alpha-60)',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover': {
-                        bgcolor: 'var(--sl-white-alpha-8)',
-                        color: 'var(--sl-text-primary)',
-                      },
-                    }}
-                  >
-                    Back
-                  </Box>
-                  <Box
-                    component="button"
-                    type="submit"
-                    disabled={isImporting || !importZipPath || !importProjectTitle.trim()}
-                    sx={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 1,
-                      px: 2,
-                      py: 1.25,
-                      bgcolor: 'var(--sl-brand-alpha-15)',
-                      border: '1px solid var(--sl-brand-alpha-30)',
-                      borderRadius: '8px',
-                      color: 'var(--sl-brand-primary)',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      '&:hover:not(:disabled)': {
-                        bgcolor: 'var(--sl-brand-alpha-20)',
-                        borderColor: 'var(--sl-brand-alpha-50)',
-                      },
-                      '&:disabled': {
-                        opacity: 0.4,
-                        cursor: 'not-allowed',
-                      },
-                    }}
-                  >
-                    {isImporting ? (
-                      <>
-                        <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                        Importing...
-                      </>
-                    ) : (
-                      'Import Project'
-                    )}
-                  </Box>
-                </Box>
+              <Box className="text-center">
+                <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                  {isDragOver ? 'Drop to import' : 'From Existing Project'}
+                </Typography>
+                <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
+                  {isDragOver ? 'Release to import your project' : 'Drop or browse a .zip archive'}
+                </Typography>
               </Box>
-            </form>
+            </Box>
+          </Box>
+
+          {importError && (
+            <Typography sx={{ fontSize: '12px', color: 'var(--sl-status-error)', mt: 2 }}>
+              {importError}
+            </Typography>
           )}
         </Box>
       </Dialog>
