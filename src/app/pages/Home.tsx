@@ -743,7 +743,10 @@ export default function Home() {
         const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: skill.content }),
+          body: JSON.stringify({
+            content: skill.content,
+            cwd: currentProjectData?.folder_path || selectedProject.folder_path || undefined,
+          }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -757,7 +760,10 @@ export default function Home() {
         await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: skill.content }),
+          body: JSON.stringify({
+            content: skill.content,
+            cwd: currentProjectData?.folder_path || selectedProject.folder_path || undefined,
+          }),
         });
       }
 
