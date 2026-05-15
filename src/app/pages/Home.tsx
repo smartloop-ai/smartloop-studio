@@ -1116,7 +1116,7 @@ export default function Home() {
     if (closedTab?.type === 'conversation') {
       const convId = tabId.replace('conv-', '');
       if (convId && convId !== 'new') {
-        storageService.deleteConversation(convId).catch(() => {});
+        storageService.deleteConversation(convId).catch(() => { });
         setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
         window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { conversationId: convId } }));
       }
@@ -1796,9 +1796,33 @@ export default function Home() {
                         }}
                       />
                       <Box className="flex-1 min-w-0">
-                        <div className="text-xl md:text-2xl font-bold text-white truncate">
-                          {selectedProject?.name || 'General'}
-                        </div>
+                        {selectedProject ? (
+                          <input
+                            key={selectedProject.id}
+                            defaultValue={selectedProject.name}
+                            onBlur={(e) => {
+                              const trimmed = e.target.value.trim();
+                              if (trimmed && trimmed !== selectedProject.name) {
+                                handleRenameProject(trimmed);
+                              } else {
+                                e.target.value = selectedProject.name;
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                              if (e.key === 'Escape') {
+                                (e.target as HTMLInputElement).value = selectedProject.name;
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="text-xl md:text-2xl font-bold text-white bg-transparent border-none outline-none w-full truncate cursor-text hover:opacity-80 focus:opacity-100 focus:border-b focus:border-pink-500"
+                            style={{ caretColor: 'var(--sl-brand-primary)' }}
+                          />
+                        ) : (
+                          <div className="text-xl md:text-2xl font-bold text-white truncate">
+                            General
+                          </div>
+                        )}
                       </Box>
                     </Box>
                   </Box>
