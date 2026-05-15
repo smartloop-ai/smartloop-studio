@@ -18,6 +18,7 @@ import SkillCreateDialog from './skill-create-dialog';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
+import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
@@ -268,7 +269,7 @@ export default function RightSidebar({
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
-  const [_processedDates, setProcessedDates] = useState<Record<string, string>>({});
+  const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
   const [directoryFiles, setDirectoryFiles] = useState<any[]>([]);
 
   // Load processed dates when project changes
@@ -322,7 +323,8 @@ export default function RightSidebar({
             const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
             if (status === 'indexed') {
               apiStatus[doc.id] = 'indexed';
-              storageService.setDocumentProcessed(doc.id, projectId);
+              // Don't overwrite processed_at here — only record it on first transition
+              // so the timestamp stays accurate (handled by onIndexingUpdate)
             } else if (status) {
               apiStatus[doc.id] = status;
             }
@@ -343,6 +345,7 @@ export default function RightSidebar({
           statusMap[docId] = 'indexed';
         }
         setIndexingStatus(statusMap);
+        setProcessedDates(dates);
       }
     };
 
@@ -358,14 +361,22 @@ export default function RightSidebar({
       const docs: Record<string, string> = detail.documents || {};
       if (!cancelled) {
         setIndexingStatus((prev) => {
-          let newlyIndexed = false;
+          const newlyIndexedIds: string[] = [];
           for (const [id, status] of Object.entries(docs)) {
             if (status === 'indexed' && prev[id] !== 'indexed') {
-              newlyIndexed = true;
+              newlyIndexedIds.push(id);
               storageService.setDocumentProcessed(id, projectId);
             }
           }
-          if (newlyIndexed) refreshApi();
+          if (newlyIndexedIds.length > 0) {
+            const now = new Date().toISOString();
+            setProcessedDates(prev => {
+              const next = { ...prev };
+              for (const id of newlyIndexedIds) next[id] = now;
+              return next;
+            });
+            refreshApi();
+          }
           return { ...prev, ...docs };
         });
       }
@@ -834,7 +845,7 @@ export default function RightSidebar({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      validateAndUploadFile(e.target.files[0]);
+      Array.from(e.target.files).forEach(file => validateAndUploadFile(file));
     }
     e.target.value = '';
   };
@@ -857,7 +868,7 @@ export default function RightSidebar({
     setIsDragging(false);
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      validateAndUploadFile(e.dataTransfer.files[0]);
+      Array.from(e.dataTransfer.files).forEach(file => validateAndUploadFile(file));
     }
   };
 
@@ -872,6 +883,8 @@ export default function RightSidebar({
         display: { xs: 'none', md: 'flex' },
         flexDirection: 'row',
         flexShrink: 0,
+        height: '100%',
+        overflow: 'hidden',
         borderLeft: '1px solid',
         borderColor: 'var(--sl-white-alpha-10)',
       }}
@@ -895,7 +908,7 @@ export default function RightSidebar({
       {/* Content Area */}
       {activeSection && (
         <Box
-          className="flex-1 overflow-y-auto p-3 space-y-4"
+          className="flex-1 overflow-y-auto p-3 space-y-4 sidebar-scroll"
           sx={{
             opacity: activeSection ? 1 : 0,
             transition: 'opacity 0.3s ease',
@@ -922,6 +935,7 @@ export default function RightSidebar({
                     ref={fileInputRef}
                     type="file"
                     accept=".pdf,.docx,.txt"
+                    multiple
                     onChange={handleFileSelect}
                     className="hidden"
                   />
@@ -958,7 +972,7 @@ export default function RightSidebar({
                       color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                     }} />
                     <span className="text-[12px] text-gray-400 font-medium">
-                      {isDragging ? 'Drop file here' : 'Drop files or click to add'}
+                      {isDragging ? 'Drop files here' : 'Drop files or click to add'}
                     </span>
                     <span className="flex items-center gap-1.5 mt-1">
                       {['PDF', 'DOCX', 'TXT'].map((type) => (
@@ -1028,16 +1042,23 @@ export default function RightSidebar({
                               key={rowId}
                               onMouseEnter={() => setHoveredDocId(rowId)}
                               onMouseLeave={() => setHoveredDocId(null)}
+                              onClick={() => {
+                                const filePath = doc._fsFile?.path || doc.source || doc.path;
+                                if (filePath && window.electronAPI?.showItemInFolder) {
+                                  window.electronAPI.showItemInFolder(filePath);
+                                }
+                              }}
                               sx={{
                                 px: 1,
                                 py: '6px',
-                                cursor: 'default',
+                                cursor: 'pointer',
                                 display: 'flex',
                                 gap: 0.75,
                                 transition: 'background 0.1s ease',
                                 border: '1px solid var(--sl-white-alpha-8)',
                                 borderRadius: '6px',
                                 mb: 0.75,
+                                '&:hover': { bgcolor: 'var(--sl-white-alpha-3)' },
                               }}
                             >
                               <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
@@ -1074,9 +1095,28 @@ export default function RightSidebar({
                                   )}
                                   {(() => {
                                     const status = isFsOnly ? 'local' : (docIndexStatus || 'pending');
+                                    if (status === 'indexed') {
+                                      const processedAt = processedDates[doc.id];
+                                      let timeLabel = 'Indexed';
+                                      if (processedAt) {
+                                        const diffMs = Date.now() - new Date(processedAt).getTime();
+                                        const diffMin = Math.floor(diffMs / 60000);
+                                        const diffHr = Math.floor(diffMin / 60);
+                                        const diffDay = Math.floor(diffHr / 24);
+                                        if (diffMin < 1) timeLabel = 'Just now';
+                                        else if (diffMin < 60) timeLabel = `${diffMin}m ago`;
+                                        else if (diffHr < 24) timeLabel = `${diffHr}h ago`;
+                                        else if (diffDay < 30) timeLabel = `${diffDay}d ago`;
+                                        else timeLabel = new Date(processedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                                      }
+                                      return (
+                                        <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>
+                                          {timeLabel}
+                                        </span>
+                                      );
+                                    }
                                     const statusBg: Record<string, string> = {
                                       local: 'rgba(139,139,245,0.12)',
-                                      indexed: 'rgba(74,222,128,0.12)',
                                       indexing: 'rgba(250,204,21,0.12)',
                                       converting: 'rgba(250,204,21,0.12)',
                                       processing: 'rgba(250,204,21,0.12)',

@@ -40,6 +40,8 @@ export interface ElectronAPI {
   selectFolder: () => Promise<string | null>;
   // Get the OS home directory
   getHomeDir: () => Promise<string>;
+  // Get the path to the bundled blank project template zip
+  getTemplateZipPath: () => Promise<string>;
   // SLP document upload (proxied through main process)
   slpAddDocument: (filePath: string, projectId?: string, cwd?: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   onSlpDocumentProgress: (callback: (data: { percent: number; status: string; event?: string; documents?: any[] }) => void) => void;
@@ -89,6 +91,7 @@ export interface ElectronAPI {
   writeClipboard: (text: string) => void;
   readClipboard: () => string;
   openInFinder: (filePath: string) => void;
+  showItemInFolder: (filePath: string) => Promise<boolean>;
   openDocumentReference: (filePath: string, documentId?: string, projectId?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   platform: string;
   versions: {

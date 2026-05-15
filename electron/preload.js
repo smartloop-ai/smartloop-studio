@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   // Open a folder in Finder / file manager
   openInFinder: (path) => ipcRenderer.invoke('open-in-finder', path),
+  // Reveal a specific file in Finder / Explorer
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   // Open a document reference (citation) with the system's native viewer
   openDocumentReference: (filePath, documentId, projectId) => ipcRenderer.invoke('open-document-reference', filePath, documentId, projectId),
   // Storage methods - native Electron storage using electron-store
@@ -124,6 +126,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   // Get the OS home directory
   getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
+  // Get the path to the bundled blank project template zip
+  getTemplateZipPath: () => ipcRenderer.invoke('get-template-zip-path'),
   // SQLite database methods
   db: {
     // Projects
