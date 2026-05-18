@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.14';
+const VERSION = '1.0.15';
 const BASE_URL = `https://dl.smartloop.ai/slp/${VERSION}`;
 const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 const VERSION_DIR = path.join(INSTALL_DIR, VERSION, 'bin');
