@@ -428,46 +428,53 @@ export default function Home() {
   }, [chatMessage, conversation]);
 
 
-  // Load project data from local API when selected
-  const prevProjectIdRef = useRef<string | null>(null);
+  // Load project data from local API when selected project ID changes
   useEffect(() => {
-    if (selectedProject) {
-      (async () => {
+    if (!selectedProject?.id) {
+      setCurrentProjectData(null);
+      setProjectSkills([]);
+      setProjectMemory(true);
+      return;
+    }
+
+    let cancelled = false;
+    const projectId = selectedProject.id;
+
+    (async () => {
+      try {
+        const project = await loadProjectFromApi(projectId);
+        if (cancelled) return;
+        if (project) {
+          setCurrentProjectData(project);
+          setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
+        }
+
+        // Load skills from dedicated endpoint
         try {
-          const project = await loadProjectFromApi(selectedProject.id);
-          if (project) {
-            setCurrentProjectData(project);
-            setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
-          }
-
-          prevProjectIdRef.current = selectedProject.id;
-
-          // Load skills from dedicated endpoint
-          try {
-            const localBase = await getLocalApiEndpoint();
-            const skillsRes = await fetch(`${localBase}/v1/projects/${selectedProject.id}/skills`);
-            if (skillsRes.ok) {
-              const skillsData = await skillsRes.json();
-              const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-              setProjectSkills(skills);
-            } else {
-              const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-              setProjectSkills(skills);
-            }
-          } catch {
+          const localBase = await getLocalApiEndpoint();
+          const skillsRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+          if (cancelled) return;
+          if (skillsRes.ok) {
+            const skillsData = await skillsRes.json();
+            const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+            setProjectSkills(skills);
+          } else {
             const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
             setProjectSkills(skills);
           }
         } catch {
-          setProjectSkills([]);
+          if (cancelled) return;
+          const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
+          setProjectSkills(skills);
         }
-      })();
-    } else {
-      setCurrentProjectData(null);
-      setProjectSkills([]);
-      setProjectMemory(true);
-    }
-  }, [selectedProject]);
+      } catch {
+        if (cancelled) return;
+        setProjectSkills([]);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedProject?.id]);
 
   // Refresh currentProjectData.documents when a document is uploaded or processing completes
   useEffect(() => {

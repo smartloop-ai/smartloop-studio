@@ -64,7 +64,7 @@ export default function SkillEditor({
       '|',
       'quote',
     ] as const,
-    minHeight: '500px',
+    minHeight: '100%',
     placeholder: 'Add skills or guidelines for this project...',
   }), [selectedProject?.id]);
 
@@ -182,17 +182,15 @@ export default function SkillEditor({
       </Box>
 
       {/* Editor */}
-      <Box className="flex-1 overflow-y-auto">
-        <Box className="max-w-3xl mx-auto px-10 py-8 markdown-editor-container">
-          <SimpleMDE
-            ref={editorRef}
-            value={content}
-            onChange={handleChange}
-            options={editorOptions}
-          />
-          <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mt: 1.5, textAlign: 'right' }}>
-            Markdown &middot; auto-saves &middot; ⌘S to save
-          </Box>
+      <Box className="flex-1 flex flex-col overflow-hidden px-6 py-4 markdown-editor-container skill-editor-fullsize">
+        <SimpleMDE
+          ref={editorRef}
+          value={content}
+          onChange={handleChange}
+          options={editorOptions}
+        />
+        <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mt: 1.5, textAlign: 'right', flexShrink: 0 }}>
+          Markdown &middot; auto-saves &middot; ⌘S to save
         </Box>
       </Box>
     </Box>
