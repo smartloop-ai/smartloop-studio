@@ -20,6 +20,7 @@ export interface ElectronAPI {
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // List supported document files in a directory
   listDirectory: (dirPath: string) => Promise<{ success: boolean; files: Array<{ name: string; path: string; size: number; modified: string }>; error?: string }>;
+  readSkillsDir: (projectId: string) => Promise<{ success: boolean; skills: Array<{ id: string; name: string; folderName: string; content: string; description: string }>; error?: string }>;
   // Delete a file from disk
   deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   // Recursively delete a folder from disk
