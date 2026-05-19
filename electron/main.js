@@ -1211,8 +1211,9 @@ ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
     if (res.ok) {
       const data = await res.json();
       console.log('[SLP] Auth token set successfully');
-      // Fetch user profile now that we have a token
+      // Fetch user profile and models now that we have a token
       fetchUserProfile(true);
+      fetchModels(true);
       return { success: true, data };
     } else {
       console.error('[SLP] Failed to set auth token:', res.status);
@@ -1307,6 +1308,8 @@ async function fetchUserProfile(force = false) {
 function clearCachedUser() {
   cachedUserProfile = null;
   lastUserFetchTime = 0;
+  cachedModels = null;
+  lastModelsFetchTime = 0;
 }
 
 // IPC: Renderer requests user profile (throttled)
@@ -1337,22 +1340,40 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
-// IPC: Fetch available models from local SLP service
-ipcMain.handle('slp-list-models', async () => {
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
-  try {
-    const modelsRes = await fetch(`${baseUrl}/v1/models`);
-    if (modelsRes.ok) {
-      const data = await modelsRes.json();
-      const models = Array.isArray(data) ? data : (data.data || data.models || []);
-      return { success: true, models };
-    } else {
-      return { success: false, error: `HTTP ${modelsRes.status}` };
-    }
-  } catch (err) {
-    return { success: false, error: err.message };
+// --- Centralized model list management ---
+let cachedModels = null;
+let lastModelsFetchTime = 0;
+const MODELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function fetchModels(force = false) {
+  const now = Date.now();
+  if (!force && cachedModels && now - lastModelsFetchTime < MODELS_CACHE_TTL) {
+    return cachedModels;
   }
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/v1/models`);
+    if (res.ok) {
+      const data = await res.json();
+      cachedModels = Array.isArray(data) ? data : (data.data || data.models || []);
+      lastModelsFetchTime = now;
+      return cachedModels;
+    }
+    return cachedModels; // return stale cache on HTTP error
+  } catch (err) {
+    console.warn('[Models] Error fetching models:', err.message);
+    return cachedModels; // return stale cache on network error
+  }
+}
+
+// IPC: Fetch available models from local SLP service (cached)
+ipcMain.handle('slp-list-models', async (event, force) => {
+  const models = await fetchModels(force);
+  if (models) {
+    return { success: true, models };
+  }
+  return { success: false, error: 'No local service' };
 });
 
 // IPC: Download a model via local SLP service (SSE streaming progress)
@@ -1809,6 +1830,7 @@ if (!gotTheLock) {
               setAppReady(true);
               mainWindow.show();
               mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+              fetchModels(); // prime model cache
             }
           } catch (error) {
             console.error('[SLP] Bootstrap failed:', error.message);
@@ -1827,6 +1849,7 @@ if (!gotTheLock) {
           setAppReady(true);
           mainWindow.show();
           mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+          fetchModels(); // prime model cache
         }
       }
     } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
@@ -1902,6 +1925,7 @@ if (!gotTheLock) {
             setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+            fetchModels(); // prime model cache
           }
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
@@ -1948,6 +1972,7 @@ if (!gotTheLock) {
             setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+            fetchModels(); // prime model cache
           }
         } catch (error) {
           console.error('[SLP] Setup failed:', error.message);
