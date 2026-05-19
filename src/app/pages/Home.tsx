@@ -1855,7 +1855,7 @@ export default function Home() {
                 {/* Main Content Area - 2 columns */}
                 <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
                   {/* Main Content Area */}
-                  <Box className="flex-1 overflow-hidden">
+                  <Box className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
                     {(() => {
                       const currentTab = getActiveTab();
                       if (currentTab?.type === 'document' && currentTab.data) {

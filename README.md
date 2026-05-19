@@ -44,6 +44,12 @@ make electron-dev
 npm run electron-dev
 ```
 
+On Windows, the equivalent Make-style PowerShell runner is:
+
+```powershell
+.\scripts\electron.ps1 electron-dev
+```
+
 This will:
 1. Start the Vite dev server on `http://localhost:5173`
 2. Launch Electron with the dev server
@@ -65,6 +71,18 @@ The Makefile provides convenient targets for building the Electron app:
 
 ```bash
 make build-electron
+```
+
+On Windows, use either:
+
+```bash
+npm run electron-build
+```
+
+or:
+
+```powershell
+.\scripts\electron.ps1 build-electron
 ```
 
 ### Build for Specific Platforms
