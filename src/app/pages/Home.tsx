@@ -729,11 +729,7 @@ export default function Home() {
       const projectId = selectedProject.id;
       const oldSkills = projectSkills;
       const projectFolderPath = currentProjectData?.folder_path || selectedProject.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
-      const baseDir = `${projectFolderPath}/skills`;
       const localBase = await getLocalApiEndpoint();
-
-      const toFolderName = (name: string) =>
-        name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
 
       // Detect added skills (no id or new entries beyond old length)
       const added = skills.filter(s => !s.id && !oldSkills.find(o => o.content === s.content));
@@ -746,7 +742,11 @@ export default function Home() {
         return old && old.content !== s.content;
       });
 
-      // Add new skills — ask API to generate the skill_id, then write to filesystem
+      const baseDir = `${projectFolderPath}/skills`;
+      const toFolderName = (name: string) =>
+        name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
+
+      // Add new skills — try API for id, fall back to client-generated folder name
       for (const skill of added) {
         let folderName = toFolderName(skill.name || skill.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'skill');
         if (localBase) {
@@ -767,19 +767,19 @@ export default function Home() {
         skill.id = folderName;
       }
 
-      // Update modified skills — write to filesystem, then notify API
+      // Update modified skills — write to filesystem, notify API fire-and-forget
       for (const skill of updated) {
         await window.electronAPI!.writeTextFile(`${baseDir}/${(skill as any).id}/SKILL.md`, skill.content);
         if (localBase) {
           fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
-            method: 'POST',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: skill.name, content: skill.content }),
           }).catch(() => {});
         }
       }
 
-      // Delete removed skills — delete from filesystem, then notify API
+      // Delete removed skills — remove from filesystem, notify API fire-and-forget
       for (const skill of deletedSkills) {
         if ((skill as any).id) {
           await window.electronAPI!.deleteFolder(`${baseDir}/${(skill as any).id}`);
@@ -791,7 +791,7 @@ export default function Home() {
         }
       }
 
-      // Refresh skills from filesystem after save
+      // Refresh skills from filesystem after API writes are done
       const fsResult = await window.electronAPI?.readSkillsDir(projectFolderPath);
       const refreshed = fsResult?.success
         ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
