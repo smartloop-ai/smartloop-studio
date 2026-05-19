@@ -1789,45 +1789,35 @@ if (!gotTheLock) {
         needsBootstrap = true;
       }
 
+      const showMainWindow = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        setAppReady(true);
+        mainWindow.show();
+        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+      };
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        showMainWindow();
+      }
+
       if (needsBootstrap) {
-        console.log('[SLP] No projects — running bootstrap on splash');
-        createStartingSplash();
-        if (splashWindow && !splashWindow.isDestroyed()) {
-          splashWindow.webContents.executeJavaScript(`
-            document.querySelector('.status-text').textContent = 'Downloading model...';
-          `);
-        }
+        console.log('[SLP] No projects — bootstrapping in background');
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
             refreshTray();
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              setAppReady(true);
-              mainWindow.show();
-              mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            }
           } catch (error) {
             console.error('[SLP] Bootstrap failed:', error.message);
+          } finally {
             if (splashWindow && !splashWindow.isDestroyed()) {
               splashWindow.close();
               splashWindow = null;
-            }
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              setAppReady(true);
-              mainWindow.show();
             }
           }
         })();
-      } else {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          setAppReady(true);
-          mainWindow.show();
-          mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-        }
+      } else if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
       }
     } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
       // Not healthy but binary is installed — show splash, start service, then show app
@@ -1861,7 +1851,7 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Service is healthy — dismiss splash, show main window
+          // Service is healthy — show main window immediately, bootstrap in background
           let needsBootstrap = false;
           try {
             const http = require('http');
@@ -1883,17 +1873,19 @@ if (!gotTheLock) {
             needsBootstrap = true;
           }
 
-          if (needsBootstrap) {
-            console.log('[SLP] No projects — running bootstrap on splash');
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.webContents.executeJavaScript(`
-                document.querySelector('.status-text').textContent = 'Downloading model...';
-              `);
+          // Bootstrap happens after the app is visible so startup feels faster.
+          (async () => {
+            if (!needsBootstrap) return;
+            console.log('[SLP] No projects — bootstrapping in background');
+            try {
+              await bootstrapSlpService(baseUrl);
+              refreshTray();
+            } catch (error) {
+              console.error('[SLP] Bootstrap failed:', error.message);
             }
-            await bootstrapSlpService(baseUrl);
-          }
+          })();
 
-          // Bootstrap done (or not needed) — dismiss splash, show main window
+          // Show main window immediately once the service is ready.
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
@@ -1936,10 +1928,7 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Run bootstrap on splash screen before showing main window
-          await bootstrapSlpService(baseUrl);
-
-          // Bootstrap done — dismiss splash, show main window ready
+          // Show the main window immediately; bootstrap continues after startup.
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
@@ -1949,6 +1938,15 @@ if (!gotTheLock) {
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
           }
+
+          (async () => {
+            try {
+              await bootstrapSlpService(baseUrl);
+              refreshTray();
+            } catch (error) {
+              console.error('[SLP] Setup bootstrap failed:', error.message);
+            }
+          })();
         } catch (error) {
           console.error('[SLP] Setup failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });

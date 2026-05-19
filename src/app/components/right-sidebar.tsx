@@ -14,7 +14,6 @@ import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
-import SkillCreateDialog from './skill-create-dialog';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -42,6 +41,20 @@ interface RightSidebarProps {
   onSaveSkills?: (skills: Array<{ id?: string; name: string; content: string; description?: string }>) => void;
   onRefreshSkills?: () => void;
 }
+
+const getSkillPreviewText = (content: string, description?: string) => {
+  const source = (description && description.trim()) ? description : content;
+  const withoutFrontMatter = source.replace(/^---[\s\S]*?---\s*/m, '').trim();
+  const lines = withoutFrontMatter
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return '';
+
+  const preview = lines.slice(0, 3).join('\n');
+  return preview.length > 240 ? `${preview.slice(0, 240).trimEnd()}…` : preview;
+};
 
 export default function RightSidebar({
   selectedProject,
@@ -95,10 +108,6 @@ export default function RightSidebar({
     return () => clearTimeout(timeout);
   }, [pendingSkill]);
 
-  const [skillDialogOpen, setSkillDialogOpen] = useState(false);
-  const [skillDialogInitialContent, setSkillDialogInitialContent] = useState<string | undefined>();
-  const [skillDialogInitialName, setSkillDialogInitialName] = useState<string | undefined>();
-
 
   const skillEditorOptions = useMemo(() => ({
     spellChecker: false,
@@ -150,10 +159,20 @@ export default function RightSidebar({
   const handleSkillFileContent = useCallback((content: string, fileName: string) => {
     const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
     const name = nameMatch?.[1]?.trim() || fileName.replace(/\.md$/i, '');
-    setSkillDialogInitialContent(content);
-    setSkillDialogInitialName(name);
-    setSkillDialogOpen(true);
-  }, []);
+    const normalizedContent = content.trim();
+
+    if (onTabChange) {
+      if (onSaveSkills) {
+        onSaveSkills([...projectSkills, { name, content: normalizedContent }]);
+      }
+      return;
+    }
+
+    setEditingSkillIndex(null);
+    setEditingSkillIsNew(true);
+    setSkillContent(normalizedContent);
+    setSkillHasUnsavedChanges(true);
+  }, [onSaveSkills, onTabChange, projectSkills]);
 
   const handleSkillDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1440,9 +1459,20 @@ export default function RightSidebar({
                               <span className="text-[11px] text-gray-300 truncate">
                                 {skill.name || 'Untitled'}
                               </span>
-                              {skill.description && (
-                                <span className="text-[10px] text-gray-500" style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                  {skill.description}
+                              {getSkillPreviewText(skill.content || '', skill.description) && (
+                                <span
+                                  className="text-[10px] text-gray-500"
+                                  style={{
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 3,
+                                    WebkitBoxOrient: 'vertical' as const,
+                                    overflow: 'hidden',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {getSkillPreviewText(skill.content || '', skill.description)}
                                 </span>
                               )}
                             </Box>
@@ -1788,18 +1818,6 @@ export default function RightSidebar({
 
       </Box>
 
-      {/* Skill Create Dialog */}
-      <SkillCreateDialog
-        open={skillDialogOpen}
-        onClose={() => setSkillDialogOpen(false)}
-        onSave={(skill) => {
-          if (onSaveSkills) {
-            onSaveSkills([...projectSkills, skill]);
-          }
-        }}
-        initialContent={skillDialogInitialContent}
-        initialName={skillDialogInitialName}
-      />
     </Box>
   );
 }
