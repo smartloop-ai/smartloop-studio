@@ -179,12 +179,12 @@ export default function SettingsPage() {
     }, []);
 
     // Fetch models from local SLP service via IPC
-    const fetchLocalModels = useCallback(async () => {
+    const fetchLocalModels = useCallback(async (force = false) => {
         setLocalModelsLoading(true);
         try {
             const api = window.electronAPI;
             if (api?.slpListModels) {
-                const result = await api.slpListModels();
+                const result = await api.slpListModels(force);
                 if (result?.success && result.models) {
                     setLocalModels(result.models);
                 }
@@ -237,6 +237,10 @@ export default function SettingsPage() {
     useEffect(() => {
         fetchLocalModels();
         fetchServerHealth();
+
+        const handleAuthChange = () => fetchLocalModels(true);
+        window.addEventListener('authStateChanged', handleAuthChange);
+        return () => window.removeEventListener('authStateChanged', handleAuthChange);
     }, []);
 
     // Set selected model: load from storage first, fallback to local config
@@ -728,7 +732,7 @@ export default function SettingsPage() {
                                     <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
                                 </Box>
                                 <IconButton
-                                    onClick={fetchLocalModels}
+                                    onClick={() => fetchLocalModels(true)}
                                     disabled={localModelsLoading}
                                     size="small"
                                     title="Refresh models"
@@ -745,32 +749,52 @@ export default function SettingsPage() {
                                 <div className="flex flex-col gap-3">
                                     {localModels.map((model: any) => {
                                         const name = model.name || model.id || model.model;
+                                        const displayName = model.display_name || name;
                                         const description = model.description || '';
                                         const size = model.size || model.file_size;
+                                        const accessLevel = model.access_level || 'free';
                                         const isSelected = selectedModel === name;
                                         const isIniting = initingModel === name;
+                                        const canSelect = model.is_accessible !== false;
 
                                         return (
                                             <div
                                                 key={name}
-                                                onClick={() => !initingModel && handleSelectModel(name)}
+                                                onClick={() => canSelect && !initingModel && handleSelectModel(name)}
                                                 className={`p-4 rounded-[10px] border transition-all duration-200 ${
-                                                    initingModel ? 'cursor-default' : 'cursor-pointer'
-                                                } ${initingModel && !isIniting ? 'opacity-50' : 'opacity-100'} ${
+                                                    !canSelect ? 'opacity-50 cursor-not-allowed'
+                                                    : initingModel ? 'cursor-default'
+                                                    : 'cursor-pointer'
+                                                } ${initingModel && !isIniting && canSelect ? 'opacity-50' : ''} ${
                                                     isSelected
                                                         ? 'bg-pink-500/10 border-pink-500/30 hover:border-pink-500/30'
-                                                        : `bg-black/40 border-white/[0.08] ${!initingModel ? 'hover:border-white/15 hover:bg-white/5' : ''}`
+                                                        : `bg-black/40 border-white/[0.08] ${canSelect && !initingModel ? 'hover:border-white/15 hover:bg-white/5' : ''}`
                                                 }`}
                                             >
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
                                                             <span className="text-sm font-semibold font-mono text-white/80">
-                                                                {name}
+                                                                {displayName}
                                                             </span>
                                                             {isSelected && !isIniting && (
                                                                 <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
                                                                     ACTIVE
+                                                                </span>
+                                                            )}
+                                                            {accessLevel === 'free' && (
+                                                                <span className="px-2 py-0.5 bg-sl-bg-surface-2 border border-sl-text-faint rounded text-[10px] font-semibold text-sl-text-muted">
+                                                                    FREE
+                                                                </span>
+                                                            )}
+                                                            {accessLevel === 'pro' && (
+                                                                <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
+                                                                    PRO
+                                                                </span>
+                                                            )}
+                                                            {accessLevel === 'internal' && (
+                                                                <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 rounded text-[10px] font-semibold text-purple-500">
+                                                                    INTERNAL
                                                                 </span>
                                                             )}
                                                         </div>
