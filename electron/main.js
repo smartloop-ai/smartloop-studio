@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, VERSION } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, setInstallDir, VERSION } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -92,6 +92,17 @@ ipcMain.handle('show-item-in-folder', async (event, filePath) => {
 
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
+
+// Derive SLP install directory from the app's install location.
+// In production the exe sits in the directory the user chose in the NSIS wizard,
+// so we place the SLP backend in a '.smartloop' subfolder next to it.
+// In development we fall back to the default ~/.smartloop/.
+{
+  if (app.isPackaged) {
+    const appDir = path.dirname(process.execPath);
+    setInstallDir(path.join(appDir, '.smartloop'));
+  }
+}
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {

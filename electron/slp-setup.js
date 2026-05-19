@@ -8,11 +8,21 @@ const database = require('./database');
 
 const VERSION = '1.0.16';
 const BASE_URL = `https://dl.smartloop.ai/slp/${VERSION}`;
-const INSTALL_DIR = path.join(os.homedir(), '.smartloop');
-const VERSION_DIR = path.join(INSTALL_DIR, VERSION, 'bin');
-const CACHE_DIR = path.join(INSTALL_DIR, 'cache');
-const MARKER_FILE = path.join(INSTALL_DIR, '.installed-version');
-const HASH_FILE = path.join(INSTALL_DIR, '.binary-hash');
+const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
+let INSTALL_DIR = DEFAULT_INSTALL_DIR;
+
+function getVersionDir() { return path.join(INSTALL_DIR, VERSION, 'bin'); }
+function getCacheDir()   { return path.join(INSTALL_DIR, 'cache'); }
+function getMarkerFile() { return path.join(INSTALL_DIR, '.installed-version'); }
+function getHashFile()   { return path.join(INSTALL_DIR, '.binary-hash'); }
+
+function setInstallDir(dir) {
+  INSTALL_DIR = dir || DEFAULT_INSTALL_DIR;
+}
+
+function getInstallDir() {
+  return INSTALL_DIR;
+}
 
 /**
  * Compare two semver strings (major.minor.patch).
@@ -33,25 +43,25 @@ function semverGte(a, b) {
 function getInstalledBinaryPath() {
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
-    if (fs.existsSync(MARKER_FILE)) {
-      const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
+    if (fs.existsSync(getMarkerFile())) {
+      const installed = fs.readFileSync(getMarkerFile(), 'utf-8').trim();
       if (semverGte(installed, VERSION)) {
         return path.join(INSTALL_DIR, installed, 'bin', binaryName);
       }
     }
   } catch {}
-  return path.join(VERSION_DIR, binaryName);
+  return path.join(getVersionDir(), binaryName);
 }
 
 function needsInstall() {
   try {
-    if (!fs.existsSync(MARKER_FILE)) return true;
-    const installed = fs.readFileSync(MARKER_FILE, 'utf-8').trim();
+    if (!fs.existsSync(getMarkerFile())) return true;
+    const installed = fs.readFileSync(getMarkerFile(), 'utf-8').trim();
     if (!semverGte(installed, VERSION)) return true;
     const installedBinary = getInstalledBinaryPath();
     if (!fs.existsSync(installedBinary)) return true;
-    if (fs.existsSync(HASH_FILE)) {
-      const storedHash = fs.readFileSync(HASH_FILE, 'utf-8').trim();
+    if (fs.existsSync(getHashFile())) {
+      const storedHash = fs.readFileSync(getHashFile(), 'utf-8').trim();
       const currentHash = crypto.createHash('sha256').update(fs.readFileSync(installedBinary)).digest('hex');
       if (storedHash !== currentHash) return true;
     }
@@ -200,7 +210,7 @@ async function installService(onProgress) {
     return;
   }
 
-  for (const dir of [INSTALL_DIR, CACHE_DIR]) {
+  for (const dir of [INSTALL_DIR, getCacheDir()]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
@@ -209,7 +219,7 @@ async function installService(onProgress) {
   const ext = isWindows ? 'zip' : 'tar.gz';
   const archiveName = `${plat}-${arch}-slp.${ext}`;
   const archiveUrl = `${BASE_URL}/${archiveName}`;
-  const cachedArchive = path.join(CACHE_DIR, `slp-${VERSION}-${plat}-${arch}.${ext}`);
+  const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
 
   // ── Step 2: Download archive ──────────────────────────────────────────────
   await doDownload(archiveUrl, cachedArchive, onProgress);
@@ -228,17 +238,17 @@ async function installService(onProgress) {
     }
 
     // Copy extracted contents to version dir
-    fs.mkdirSync(VERSION_DIR, { recursive: true });
-    const existing = fs.readdirSync(VERSION_DIR);
+    fs.mkdirSync(getVersionDir(), { recursive: true });
+    const existing = fs.readdirSync(getVersionDir());
     for (const f of existing) {
-      fs.rmSync(path.join(VERSION_DIR, f), { recursive: true, force: true });
+      fs.rmSync(path.join(getVersionDir(), f), { recursive: true, force: true });
     }
 
     const extractedSlpDir = path.join(tmpDir, 'slp');
     if (fs.existsSync(extractedSlpDir)) {
-      copyDirRecursive(extractedSlpDir, VERSION_DIR);
+      copyDirRecursive(extractedSlpDir, getVersionDir());
     } else {
-      copyDirRecursive(tmpDir, VERSION_DIR);
+      copyDirRecursive(tmpDir, getVersionDir());
     }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -264,7 +274,7 @@ async function installService(onProgress) {
 
   // Store binary hash for integrity tracking on future launches
   const binaryHash = await fileSha256(slpBinary);
-  fs.writeFileSync(HASH_FILE, binaryHash);
+  fs.writeFileSync(getHashFile(), binaryHash);
 
   // ── Step 5: Write version tracking files ─────────────────────────────────
   if (onProgress) onProgress({ status: 'installing', message: 'Configuring...' });
@@ -281,7 +291,7 @@ async function installService(onProgress) {
   // macOS: strip quarantine attributes
   if (process.platform === 'darwin') {
     try {
-      execSync(`xattr -dr com.apple.quarantine "${VERSION_DIR}"`, { stdio: 'pipe' });
+      execSync(`xattr -dr com.apple.quarantine "${getVersionDir()}"`, { stdio: 'pipe' });
     } catch {}
   }
 
@@ -395,7 +405,7 @@ async function setupSlpService(onProgress = null) {
 
   // Write version marker
   fs.mkdirSync(INSTALL_DIR, { recursive: true });
-  fs.writeFileSync(MARKER_FILE, VERSION);
+  fs.writeFileSync(getMarkerFile(), VERSION);
 
   console.log('[SLP Setup] Setup complete');
   return true;
@@ -436,6 +446,9 @@ module.exports = {
   setupSlpService,
   uninstallSlpService,
   getInstalledBinaryPath,
-  INSTALL_DIR,
+  getInstallDir,
+  setInstallDir,
+  DEFAULT_INSTALL_DIR,
+  get INSTALL_DIR() { return INSTALL_DIR; },
   VERSION,
 };
