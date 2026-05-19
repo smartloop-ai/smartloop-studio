@@ -17,7 +17,7 @@ import { projectService } from '@/app/services/project.service';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR } from '@/app/constants';
+import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
 import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
@@ -449,9 +449,10 @@ export default function Home() {
           setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
         }
 
-        // Load skills from ~/smartloop/<projectId>/skills/<name>/skills.md
+        // Load skills from local filesystem
         try {
-          const result = await window.electronAPI?.readSkillsDir(projectId);
+          const folderPath = selectedProject.folder_path || project?.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+          const result = await window.electronAPI?.readSkillsDir(folderPath);
           if (cancelled) return;
           if (result?.success) {
             setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
@@ -727,7 +728,9 @@ export default function Home() {
     try {
       const projectId = selectedProject.id;
       const oldSkills = projectSkills;
-      const baseDir = `~/smartloop/${projectId}/skills`;
+      const projectFolderPath = currentProjectData?.folder_path || selectedProject.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+      const baseDir = `${projectFolderPath}/skills`;
+      const localBase = await getLocalApiEndpoint();
 
       const toFolderName = (name: string) =>
         name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
@@ -743,73 +746,97 @@ export default function Home() {
         return old && old.content !== s.content;
       });
 
-      // Add new skills — write to ~/smartloop/<projectId>/skills/<folderName>/skills.md
+      // Add new skills — ask API to generate the skill_id, then write to filesystem
       for (const skill of added) {
-        const folderName = toFolderName(skill.name || skill.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'skill');
-        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/skills.md`, skill.content);
+        let folderName = toFolderName(skill.name || skill.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'skill');
+        if (localBase) {
+          try {
+            const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: skill.name, content: skill.content }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.id) folderName = data.id;
+              else if (data?.skill_id) folderName = data.skill_id;
+            }
+          } catch { /* fallback to client-generated name */ }
+        }
+        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/SKILL.md`, skill.content);
         skill.id = folderName;
       }
 
-      // Update modified skills
+      // Update modified skills — write to filesystem, then notify API
       for (const skill of updated) {
-        await window.electronAPI!.writeTextFile(`${baseDir}/${(skill as any).id}/skills.md`, skill.content);
-      }
-
-      // Delete removed skills
-      for (const skill of deletedSkills) {
-        if ((skill as any).id) {
-          await window.electronAPI!.deleteFolder(`${baseDir}/${(skill as any).id}`);
+        await window.electronAPI!.writeTextFile(`${baseDir}/${(skill as any).id}/SKILL.md`, skill.content);
+        if (localBase) {
+          fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: skill.name, content: skill.content }),
+          }).catch(() => {});
         }
       }
 
-      // Refresh skills from filesystem
-      const fsResult = await window.electronAPI!.readSkillsDir(projectId);
-      if (fsResult.success) {
-        const refreshed = fsResult.skills.map((s: any) => ({ id: s.id, name: s.name, content: s.content, description: s.description || '' }));
-        setProjectSkills(refreshed);
-        const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
-        const deletedTabIds = new Set(deletedSkills.map((s: any) => {
-          const idx = oldSkills.indexOf(s);
-          return `skill-${s.id || idx}`;
-        }));
-        setOpenTabs((prev) => {
-          const filtered = prev.filter((t) => {
-            if (t.type !== 'skill') return true;
-            if (deletedTabIds.has(t.id)) return false;
-            const idx = t.data?.index;
-            if (idx !== undefined && deletedIndices.has(idx)) return false;
-            return true;
-          });
-          return filtered.map((t) => {
-            if (t.type !== 'skill') return t;
-            if (t.id === 'skill-new') {
-              const newIndex = refreshed.length - 1;
-              const saved = refreshed[newIndex];
-              return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
-            }
-            const idx = t.data?.index;
-            if (idx !== undefined && refreshed[idx]) {
-              return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
-            }
-            return t;
-          });
-        });
-        setActiveTabId((prevId) => {
-          if (!prevId) return prevId;
-          const activeTab = openTabs.find((t) => t.id === prevId);
-          if (!activeTab) return prevId;
-          const isDeleted = deletedTabIds.has(prevId) ||
-            (activeTab.type === 'skill' && activeTab.data?.index !== undefined && deletedIndices.has(activeTab.data.index));
-          if (!isDeleted) return prevId;
-          const remaining = openTabs.filter((t) =>
-            !deletedTabIds.has(t.id) &&
-            !(t.type === 'skill' && t.data?.index !== undefined && deletedIndices.has(t.data.index))
-          );
-          return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
-        });
-      } else {
-        setProjectSkills(skills);
+      // Delete removed skills — delete from filesystem, then notify API
+      for (const skill of deletedSkills) {
+        if ((skill as any).id) {
+          await window.electronAPI!.deleteFolder(`${baseDir}/${(skill as any).id}`);
+          if (localBase) {
+            fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+              method: 'DELETE',
+            }).catch(() => {});
+          }
+        }
       }
+
+      // Refresh skills from filesystem after save
+      const fsResult = await window.electronAPI?.readSkillsDir(projectFolderPath);
+      const refreshed = fsResult?.success
+        ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
+        : skills;
+      setProjectSkills(refreshed);
+      const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
+      const deletedTabIds = new Set(deletedSkills.map((s: any) => {
+        const idx = oldSkills.indexOf(s);
+        return `skill-${s.id || idx}`;
+      }));
+      setOpenTabs((prev) => {
+        const filtered = prev.filter((t) => {
+          if (t.type !== 'skill') return true;
+          if (deletedTabIds.has(t.id)) return false;
+          const idx = t.data?.index;
+          if (idx !== undefined && deletedIndices.has(idx)) return false;
+          return true;
+        });
+        return filtered.map((t) => {
+          if (t.type !== 'skill') return t;
+          if (t.id === 'skill-new') {
+            const newIndex = refreshed.length - 1;
+            const saved = refreshed[newIndex];
+            return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
+          }
+          const idx = t.data?.index;
+          if (idx !== undefined && refreshed[idx]) {
+            return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
+          }
+          return t;
+        });
+      });
+      setActiveTabId((prevId) => {
+        if (!prevId) return prevId;
+        const activeTab = openTabs.find((t) => t.id === prevId);
+        if (!activeTab) return prevId;
+        const isDeleted = deletedTabIds.has(prevId) ||
+          (activeTab.type === 'skill' && activeTab.data?.index !== undefined && deletedIndices.has(activeTab.data.index));
+        if (!isDeleted) return prevId;
+        const remaining = openTabs.filter((t) =>
+          !deletedTabIds.has(t.id) &&
+          !(t.type === 'skill' && t.data?.index !== undefined && deletedIndices.has(t.data.index))
+        );
+        return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+      });
     } catch (ex: any) {
       console.error('Error saving project skills:', ex);
     } finally {
@@ -820,10 +847,9 @@ export default function Home() {
   const refreshSkills = useCallback(async () => {
     if (!selectedProject?.id) return;
     try {
-      const result = await window.electronAPI?.readSkillsDir(selectedProject.id);
-      if (result?.success) {
-        setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
-      }
+      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
+      const result = await window.electronAPI?.readSkillsDir(folderPath);
+      if (result?.success) setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
     } catch {
       // silent – keep existing skills on failure
     }
