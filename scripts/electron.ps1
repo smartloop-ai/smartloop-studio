@@ -192,19 +192,19 @@ switch ($Target) {
         Invoke-Step 'Installing dependencies...' { Invoke-Npm @('install') }
         Invoke-Step 'Building Vite app...' { Invoke-Npm @('run', 'build') }
         Invoke-Step 'Ensuring electron-builder NSIS templates...' { Ensure-NsisTemplates }
-        Invoke-Step 'Packaging Electron app...' { Invoke-Npm @('run', 'electron-pack-win') }
+        Invoke-Step 'Packaging Electron app...' { Invoke-Npm @('exec', '--', 'electron-builder', '--win') }
     }
     'build-electron-windows' {
         Invoke-Step 'Cleaning Electron build artifacts...' { Remove-BuildArtifacts }
         Invoke-Step 'Installing dependencies...' { Invoke-Npm @('install') }
         Invoke-Step 'Building Vite app...' { Invoke-Npm @('run', 'build') }
         Invoke-Step 'Ensuring electron-builder NSIS templates...' { Ensure-NsisTemplates }
-        Invoke-Step 'Packaging Electron app for Windows...' { Invoke-Npm @('run', 'electron-pack-win') }
+        Invoke-Step 'Packaging Electron app for Windows...' { Invoke-Npm @('exec', '--', 'electron-builder', '--win') }
     }
     'rebuild-electron' {
         Invoke-Step 'Building Vite app...' { Invoke-Npm @('run', 'build') }
         Invoke-Step 'Ensuring electron-builder NSIS templates...' { Ensure-NsisTemplates }
-        Invoke-Step 'Packaging Electron app for Windows...' { Invoke-Npm @('run', 'electron-pack-win') }
+        Invoke-Step 'Packaging Electron app for Windows...' { Invoke-Npm @('exec', '--', 'electron-builder', '--win') }
     }
     default {
         Write-Error "Unknown target '$Target'. Run '.\\scripts\\electron.ps1 help-electron' for available targets."
