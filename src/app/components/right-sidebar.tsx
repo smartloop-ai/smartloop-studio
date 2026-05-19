@@ -94,18 +94,19 @@ export default function RightSidebar({
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
-  // Skills loaded directly from ~/smartloop/<projectId>/skills/
+  // Skills loaded directly from <folder_path>/skills/
   const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
 
   const loadSkillsFromDir = useCallback(async () => {
     if (!selectedProject?.id || !(window as any).electronAPI?.readSkillsDir) return;
     try {
-      const result = await (window as any).electronAPI.readSkillsDir(selectedProject.id);
+      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
+      const result = await (window as any).electronAPI.readSkillsDir(folderPath);
       if (result?.success) {
         setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
       }
     } catch { /* silent */ }
-  }, [selectedProject?.id]);
+  }, [selectedProject?.id, selectedProject?.folder_path]);
 
   // Load on project change — retry a few times to handle race where SLP writes default
   // skills to the directory shortly after the project is created/selected.
@@ -119,7 +120,8 @@ export default function RightSidebar({
       if (cancelled) return;
       if (!(window as any).electronAPI?.readSkillsDir) return;
       try {
-        const result = await (window as any).electronAPI.readSkillsDir(projectId);
+        const folderPath = selectedProject?.folder_path || `~/smartloop/${(selectedProject?.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+        const result = await (window as any).electronAPI.readSkillsDir(folderPath);
         if (cancelled) return;
         if (result?.success) {
           setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));

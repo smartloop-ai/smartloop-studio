@@ -256,21 +256,24 @@ ipcMain.handle('rename-folder', async (event, oldPath, newPath) => {
 });
 
 // IPC: list supported document files from a directory
-// IPC: read all skills from ~/smartloop/<projectId>/skills/<skillName>/skills.md
-ipcMain.handle('read-skills-dir', async (event, projectId) => {
+// IPC: read all skills from <folderPath>/skills/<skillName>/SKILL.md
+ipcMain.handle('read-skills-dir', async (event, folderPath) => {
   try {
-    const dir = path.join(os.homedir(), 'smartloop', projectId, 'skills');
+    const resolved = folderPath.startsWith('~')
+      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      : folderPath;
+    const dir = path.join(resolved, 'skills');
     if (!fs.existsSync(dir)) return { success: true, skills: [] };
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const skills = [];
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const skillDir = path.join(dir, entry.name);
-      // Accept skills.md, SKILL.md, or any .md file in the subfolder
+      // Prefer SKILL.md, fall back to any .md file in the subfolder
       const mdFiles = fs.readdirSync(skillDir).filter(f => f.toLowerCase().endsWith('.md'));
       if (mdFiles.length === 0) continue;
-      const skillFile = path.join(skillDir, mdFiles[0]);
-      const content = fs.readFileSync(skillFile, 'utf-8');
+      const preferred = mdFiles.find(f => f === 'SKILL.md') || mdFiles[0];
+      const content = fs.readFileSync(path.join(skillDir, preferred), 'utf-8');
       // Parse display name from YAML frontmatter or first heading
       const frontmatterName = content.match(/^---[\s\S]*?\bname:\s*(.+)/m)?.[1]?.trim();
       const headingName = content.match(/^#\s+(.+)$/m)?.[1]?.trim();
