@@ -15,7 +15,29 @@ env:
   APP_NAME: smartloop-studio
 
 jobs:
+  notify-start:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify build started
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Build started*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Triggered by:* ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
+
   build-linux:
+    needs: [notify-start]
     name: Build for Linux
     runs-on: ubuntu-latest
     
@@ -54,6 +76,7 @@ jobs:
           retention-days: 1
 
   build-macos:
+    needs: [notify-start]
     name: Build for macOS
     runs-on: macos-latest
     
@@ -98,6 +121,7 @@ jobs:
           retention-days: 1
 
   build-windows:
+    needs: [notify-start]
     name: Build for Windows
     runs-on: windows-latest
 
@@ -291,4 +315,47 @@ jobs:
               .addRaw(`Run: ${runUrl}\n\n`)
               .addRaw(links.join("\n") + "\n")
               .write();
+
+  notify-result:
+    if: always()
+    needs: [upload-to-gcp]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify build success
+        if: needs.upload-to-gcp.result == 'success'
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
+
+      - name: Notify build failure
+        if: needs.upload-to-gcp.result != 'success'
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Build failed*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
 
