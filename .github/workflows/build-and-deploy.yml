@@ -248,9 +248,8 @@ jobs:
               done
             fi
           done
-          echo "download_urls<<URLS_EOF" >> $GITHUB_OUTPUT
-          echo -e "$URLS" >> $GITHUB_OUTPUT
-          echo "URLS_EOF" >> $GITHUB_OUTPUT
+          # Write as single line with literal \n so it's safe inside JSON strings
+          echo "download_urls=${URLS}" >> $GITHUB_OUTPUT
 
       - name: Create version manifest
         run: |
