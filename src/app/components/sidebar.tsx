@@ -1143,11 +1143,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 </Typography>
               </Box>
 
-              <Box className="flex gap-3">
+              <Box className="flex gap-3 mb-6">
                 {/* Blank Template card */}
                 <Box
                   onClick={() => {
                     setCreateSource('blank');
+                    setCreateStep('details');
                   }}
                   sx={{
                     flex: 1,
@@ -1253,39 +1254,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 </Box>
               </Box>
 
-              {/* Continue button */}
-              <Box className="flex justify-end mt-4">
-                <Box
-                  onClick={() => {
-                    if (createSource === 'blank') {
-                      setCreateStep('details');
-                    } else {
-                      handleImportBrowse();
-                    }
-                  }}
-                  sx={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    px: 3,
-                    py: 1.5,
-                    bgcolor: 'var(--sl-brand-alpha-10)',
-                    border: '1px solid var(--sl-brand-alpha-20)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: 500,
-                    color: 'var(--sl-brand-primary)',
-                    transition: 'all 0.15s ease',
-                    '&:hover': {
-                      bgcolor: 'var(--sl-brand-alpha-20)',
-                    },
-                  }}
-                >
-                  Continue
-                </Box>
-              </Box>
             </>
           ) : (
             <>

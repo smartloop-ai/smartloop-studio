@@ -754,11 +754,12 @@ export default function Home() {
             const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: skill.name, content: skill.content }),
+              body: JSON.stringify({ content: skill.content }),
             });
             if (res.ok) {
               const data = await res.json();
-              if (data?.id) folderName = data.id;
+              if (data?.name) folderName = data.name;
+              else if (data?.id) folderName = data.id;
               else if (data?.skill_id) folderName = data.skill_id;
             }
           } catch { /* fallback to client-generated name */ }
@@ -1813,7 +1814,7 @@ export default function Home() {
                       <Box className="flex-1 min-w-0">
                         {selectedProject ? (
                           <input
-                            key={selectedProject.id}
+                            key={`${selectedProject.id}-${selectedProject.name}`}
                             defaultValue={selectedProject.name}
                             onBlur={(e) => {
                               const trimmed = e.target.value.trim();
