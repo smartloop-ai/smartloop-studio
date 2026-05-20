@@ -14,7 +14,6 @@ import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
 import McpServerItem from './mcp-server-item';
-import SkillCreateDialog from './skill-create-dialog';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -43,6 +42,20 @@ interface RightSidebarProps {
   onRefreshSkills?: () => void;
 }
 
+const getSkillPreviewText = (content: string, description?: string) => {
+  const source = (description && description.trim()) ? description : content;
+  const withoutFrontMatter = source.replace(/^---[\s\S]*?---\s*/m, '').trim();
+  const lines = withoutFrontMatter
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return '';
+
+  const preview = lines.slice(0, 3).join('\n');
+  return preview.length > 240 ? `${preview.slice(0, 240).trimEnd()}…` : preview;
+};
+
 export default function RightSidebar({
   selectedProject,
   currentProjectData,
@@ -52,7 +65,7 @@ export default function RightSidebar({
   onRenameProject,
   activeTab,
   onTabChange,
-  projectSkills = [],
+  projectSkills: _projectSkills = [],
   onSaveSkills,
   onRefreshSkills,
 }: RightSidebarProps) {
@@ -81,23 +94,73 @@ export default function RightSidebar({
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
+  // Skills loaded directly from <folder_path>/skills/
+  const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
+
+  const loadSkillsFromDir = useCallback(async () => {
+    if (!selectedProject?.id || !(window as any).electronAPI?.readSkillsDir) return;
+    try {
+      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
+      const result = await (window as any).electronAPI.readSkillsDir(folderPath);
+      if (result?.success) {
+        setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+      }
+    } catch { /* silent */ }
+  }, [selectedProject?.id, selectedProject?.folder_path]);
+
+  // Load on project change — retry a few times to handle race where SLP writes default
+  // skills to the directory shortly after the project is created/selected.
+  useEffect(() => {
+    let cancelled = false;
+    const projectId = selectedProject?.id;
+    setLocalSkills([]);
+    if (!projectId) return;
+
+    const attempt = async (retriesLeft: number) => {
+      if (cancelled) return;
+      if (!(window as any).electronAPI?.readSkillsDir) return;
+      try {
+        const folderPath = selectedProject?.folder_path || `~/smartloop/${(selectedProject?.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+        const result = await (window as any).electronAPI.readSkillsDir(folderPath);
+        if (cancelled) return;
+        if (result?.success) {
+          setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+          if (result.skills.length === 0 && retriesLeft > 0) {
+            setTimeout(() => attempt(retriesLeft - 1), 1500);
+          }
+        }
+      } catch { /* silent */ }
+    };
+
+    attempt(3);
+    return () => { cancelled = true; };
+  }, [selectedProject?.id]);
+
+  // Reload when skills panel becomes active
+  useEffect(() => {
+    if (activeSection === 'skills') loadSkillsFromDir();
+  }, [activeSection, loadSkillsFromDir]);
+
+  // Refresh when skills are saved elsewhere (e.g. skill editor tabs)
+  useEffect(() => {
+    const handler = () => loadSkillsFromDir();
+    window.addEventListener('skillsSaved', handler);
+    return () => window.removeEventListener('skillsSaved', handler);
+  }, [loadSkillsFromDir]);
+
   useEffect(() => {
     if (!pendingSkill) return;
     const appeared =
-      projectSkills.length > pendingSkill.baselineCount ||
-      projectSkills.some((s) => (s.content || '').trim() === pendingSkill.content.trim());
+      localSkills.length > pendingSkill.baselineCount ||
+      localSkills.some((s) => (s.content || '').trim() === pendingSkill.content.trim());
     if (appeared) setPendingSkill(null);
-  }, [projectSkills, pendingSkill]);
+  }, [localSkills, pendingSkill]);
 
   useEffect(() => {
     if (!pendingSkill) return;
     const timeout = setTimeout(() => setPendingSkill(null), 15000);
     return () => clearTimeout(timeout);
   }, [pendingSkill]);
-
-  const [skillDialogOpen, setSkillDialogOpen] = useState(false);
-  const [skillDialogInitialContent, setSkillDialogInitialContent] = useState<string | undefined>();
-  const [skillDialogInitialName, setSkillDialogInitialName] = useState<string | undefined>();
 
 
   const skillEditorOptions = useMemo(() => ({
@@ -113,18 +176,19 @@ export default function RightSidebar({
     if (editingSkillIsNew) {
       const nameMatch = skillContent.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || skillContent.match(/^#\s+(.+)$/m);
       const name = nameMatch?.[1]?.trim() || 'Untitled Skill';
-      onSaveSkills([...projectSkills, { name, content: skillContent }]);
-      // Switch from "new" to editing the just-created skill
-      setEditingSkillIndex(projectSkills.length);
+      onSaveSkills([...localSkills, { name, content: skillContent }]);
+      setEditingSkillIndex(localSkills.length);
       setEditingSkillIsNew(false);
+      setTimeout(() => loadSkillsFromDir(), 800);
     } else if (editingSkillIndex !== null) {
-      const updated = projectSkills.map((s, i) =>
+      const updated = localSkills.map((s, i) =>
         i === editingSkillIndex ? { ...s, content: skillContent } : s
       );
       onSaveSkills(updated);
+      setTimeout(() => loadSkillsFromDir(), 800);
     }
     setSkillHasUnsavedChanges(false);
-  }, [onSaveSkills, editingSkillIsNew, editingSkillIndex, skillContent, projectSkills]);
+  }, [onSaveSkills, editingSkillIsNew, editingSkillIndex, skillContent, localSkills, loadSkillsFromDir]);
 
   // Auto-save skill after 1.5s
   useEffect(() => {
@@ -150,10 +214,21 @@ export default function RightSidebar({
   const handleSkillFileContent = useCallback((content: string, fileName: string) => {
     const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
     const name = nameMatch?.[1]?.trim() || fileName.replace(/\.md$/i, '');
-    setSkillDialogInitialContent(content);
-    setSkillDialogInitialName(name);
-    setSkillDialogOpen(true);
-  }, []);
+    const normalizedContent = content.trim();
+
+    if (onTabChange) {
+      if (onSaveSkills) {
+        onSaveSkills([...localSkills, { name, content: normalizedContent }]);
+        setTimeout(() => loadSkillsFromDir(), 800);
+      }
+      return;
+    }
+
+    setEditingSkillIndex(null);
+    setEditingSkillIsNew(true);
+    setSkillContent(normalizedContent);
+    setSkillHasUnsavedChanges(true);
+  }, [onSaveSkills, onTabChange, localSkills, loadSkillsFromDir]);
 
   const handleSkillDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -259,12 +334,7 @@ export default function RightSidebar({
     setUploadError('');
   }, [selectedProject?.id]);
 
-  // When switching to a system project, always show MCP section
-  useEffect(() => {
-    if (selectedProject?.system) {
-      setActiveSection('mcp');
-    }
-  }, [selectedProject?.id]);
+
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
@@ -1296,7 +1366,7 @@ export default function RightSidebar({
                       <ArrowBackIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                     <span className="text-xs text-white font-medium truncate">
-                      {editingSkillIsNew ? 'New Skill' : (projectSkills[editingSkillIndex!]?.name || 'Untitled Skill')}
+                      {editingSkillIsNew ? 'New Skill' : (localSkills[editingSkillIndex!]?.name || 'Untitled Skill')}
                     </span>
                     {skillHasUnsavedChanges && (
                       <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)' }} />
@@ -1336,9 +1406,10 @@ export default function RightSidebar({
                               const content = skillSearchQuery.trim();
                               const heading = content.match(/^#\s+(.+)$/m);
                               const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
-                              setPendingSkill({ baselineCount: projectSkills.length, content });
-                              onSaveSkills([...projectSkills, { name, content }]);
+                              setPendingSkill({ baselineCount: localSkills.length, content });
+                              onSaveSkills([...localSkills, { name, content }]);
                               setSkillSearchQuery('');
+                              setTimeout(() => loadSkillsFromDir(), 800);
                             }
                           }
                         }}
@@ -1372,9 +1443,10 @@ export default function RightSidebar({
                             const content = skillSearchQuery.trim();
                             const heading = content.match(/^#\s+(.+)$/m);
                             const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
-                            setPendingSkill({ baselineCount: projectSkills.length, content });
-                            onSaveSkills([...projectSkills, { name, content }]);
+                            setPendingSkill({ baselineCount: localSkills.length, content });
+                            onSaveSkills([...localSkills, { name, content }]);
                             setSkillSearchQuery('');
+                            setTimeout(() => loadSkillsFromDir(), 800);
                           }
                         }}
                         disabled={!skillSearchQuery.trim()}
@@ -1386,7 +1458,7 @@ export default function RightSidebar({
                   </Box>
 
                   {/* Skill List */}
-                  {(projectSkills.length > 0 || savingSkill) && (
+                  {(localSkills.length > 0 || savingSkill) && (
                     <Box sx={{ mt: 3 }}>
                       <Box sx={{
                         border: '1px solid var(--sl-white-alpha-8)',
@@ -1399,14 +1471,14 @@ export default function RightSidebar({
                             display: 'flex',
                             alignItems: 'center',
                             gap: 0.75,
-                            borderBottom: projectSkills.length > 0 ? '1px solid var(--sl-white-alpha-5)' : 'none',
+                            borderBottom: localSkills.length > 0 ? '1px solid var(--sl-white-alpha-5)' : 'none',
                             bgcolor: 'var(--sl-brand-alpha-10)',
                           }}>
                             <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
                             <span className="text-[11px] text-gray-400">Adding skill…</span>
                           </Box>
                         )}
-                        {projectSkills.map((skill, index) => (
+                        {localSkills.map((skill, index) => (
                           <Box
                             key={`skill-${index}`}
                             onMouseEnter={() => setHoveredSkillIndex(index)}
@@ -1440,9 +1512,20 @@ export default function RightSidebar({
                               <span className="text-[11px] text-gray-300 truncate">
                                 {skill.name || 'Untitled'}
                               </span>
-                              {skill.description && (
-                                <span className="text-[10px] text-gray-500" style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                  {skill.description}
+                              {getSkillPreviewText(skill.content || '', skill.description) && (
+                                <span
+                                  className="text-[10px] text-gray-500"
+                                  style={{
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 3,
+                                    WebkitBoxOrient: 'vertical' as const,
+                                    overflow: 'hidden',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.35,
+                                  }}
+                                >
+                                  {getSkillPreviewText(skill.content || '', skill.description)}
                                 </span>
                               )}
                             </Box>
@@ -1451,7 +1534,8 @@ export default function RightSidebar({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (onSaveSkills) {
-                                  onSaveSkills(projectSkills.filter((_, i) => i !== index));
+                                  onSaveSkills(localSkills.filter((_, i) => i !== index));
+                                  setTimeout(() => loadSkillsFromDir(), 800);
                                 }
                               }}
                               sx={{
@@ -1788,18 +1872,6 @@ export default function RightSidebar({
 
       </Box>
 
-      {/* Skill Create Dialog */}
-      <SkillCreateDialog
-        open={skillDialogOpen}
-        onClose={() => setSkillDialogOpen(false)}
-        onSave={(skill) => {
-          if (onSaveSkills) {
-            onSaveSkills([...projectSkills, skill]);
-          }
-        }}
-        initialContent={skillDialogInitialContent}
-        initialName={skillDialogInitialName}
-      />
     </Box>
   );
 }

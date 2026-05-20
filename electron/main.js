@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, VERSION } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, setInstallDir, VERSION } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -92,6 +92,17 @@ ipcMain.handle('show-item-in-folder', async (event, filePath) => {
 
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
+
+// Derive SLP install directory from the app's install location.
+// In production the exe sits in the directory the user chose in the NSIS wizard,
+// so we place the SLP backend in a '.smartloop' subfolder next to it.
+// In development we fall back to the default ~/.smartloop/.
+{
+  if (app.isPackaged) {
+    const appDir = path.dirname(process.execPath);
+    setInstallDir(path.join(appDir, '.smartloop'));
+  }
+}
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
@@ -245,6 +256,37 @@ ipcMain.handle('rename-folder', async (event, oldPath, newPath) => {
 });
 
 // IPC: list supported document files from a directory
+// IPC: read all skills from <folderPath>/skills/<skillName>/SKILL.md
+ipcMain.handle('read-skills-dir', async (event, folderPath) => {
+  try {
+    const resolved = folderPath.startsWith('~')
+      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      : folderPath;
+    const dir = path.join(resolved, 'skills');
+    if (!fs.existsSync(dir)) return { success: true, skills: [] };
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const skills = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillDir = path.join(dir, entry.name);
+      // Prefer SKILL.md, fall back to any .md file in the subfolder
+      const mdFiles = fs.readdirSync(skillDir).filter(f => f.toLowerCase().endsWith('.md'));
+      if (mdFiles.length === 0) continue;
+      const preferred = mdFiles.find(f => f === 'SKILL.md') || mdFiles[0];
+      const content = fs.readFileSync(path.join(skillDir, preferred), 'utf-8');
+      // Parse display name from YAML frontmatter or first heading
+      const frontmatterName = content.match(/^---[\s\S]*?\bname:\s*(.+)/m)?.[1]?.trim();
+      const headingName = content.match(/^#\s+(.+)$/m)?.[1]?.trim();
+      const name = frontmatterName || headingName || entry.name;
+      const description = content.match(/^---[\s\S]*?\bdescription:\s*(.+)/m)?.[1]?.trim() || '';
+      skills.push({ id: entry.name, name, folderName: entry.name, content, description });
+    }
+    return { success: true, skills };
+  } catch (err) {
+    return { success: false, error: err.message, skills: [] };
+  }
+});
+
 ipcMain.handle('list-directory', async (event, dirPath) => {
   try {
     const resolved = dirPath.startsWith('~')
@@ -1810,47 +1852,35 @@ if (!gotTheLock) {
         needsBootstrap = true;
       }
 
+      const showMainWindow = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        setAppReady(true);
+        mainWindow.show();
+        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+      };
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        showMainWindow();
+      }
+
       if (needsBootstrap) {
-        console.log('[SLP] No projects — running bootstrap on splash');
-        createStartingSplash();
-        if (splashWindow && !splashWindow.isDestroyed()) {
-          splashWindow.webContents.executeJavaScript(`
-            document.querySelector('.status-text').textContent = 'Downloading model...';
-          `);
-        }
+        console.log('[SLP] No projects — bootstrapping in background');
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
             refreshTray();
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              setAppReady(true);
-              mainWindow.show();
-              mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-              fetchModels(); // prime model cache
-            }
           } catch (error) {
             console.error('[SLP] Bootstrap failed:', error.message);
+          } finally {
             if (splashWindow && !splashWindow.isDestroyed()) {
               splashWindow.close();
               splashWindow = null;
-            }
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              setAppReady(true);
-              mainWindow.show();
             }
           }
         })();
-      } else {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          setAppReady(true);
-          mainWindow.show();
-          mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-          fetchModels(); // prime model cache
-        }
+      } else if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
       }
     } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
       // Not healthy but binary is installed — show splash, start service, then show app
@@ -1884,7 +1914,7 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Service is healthy — dismiss splash, show main window
+          // Service is healthy — show main window immediately, bootstrap in background
           let needsBootstrap = false;
           try {
             const http = require('http');
@@ -1906,17 +1936,19 @@ if (!gotTheLock) {
             needsBootstrap = true;
           }
 
-          if (needsBootstrap) {
-            console.log('[SLP] No projects — running bootstrap on splash');
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.webContents.executeJavaScript(`
-                document.querySelector('.status-text').textContent = 'Downloading model...';
-              `);
+          // Bootstrap happens after the app is visible so startup feels faster.
+          (async () => {
+            if (!needsBootstrap) return;
+            console.log('[SLP] No projects — bootstrapping in background');
+            try {
+              await bootstrapSlpService(baseUrl);
+              refreshTray();
+            } catch (error) {
+              console.error('[SLP] Bootstrap failed:', error.message);
             }
-            await bootstrapSlpService(baseUrl);
-          }
+          })();
 
-          // Bootstrap done (or not needed) — dismiss splash, show main window
+          // Show main window immediately once the service is ready.
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
@@ -1960,10 +1992,7 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Run bootstrap on splash screen before showing main window
-          await bootstrapSlpService(baseUrl);
-
-          // Bootstrap done — dismiss splash, show main window ready
+          // Show the main window immediately; bootstrap continues after startup.
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
@@ -1974,6 +2003,15 @@ if (!gotTheLock) {
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             fetchModels(); // prime model cache
           }
+
+          (async () => {
+            try {
+              await bootstrapSlpService(baseUrl);
+              refreshTray();
+            } catch (error) {
+              console.error('[SLP] Setup bootstrap failed:', error.message);
+            }
+          })();
         } catch (error) {
           console.error('[SLP] Setup failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });

@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
-const { INSTALL_DIR, getInstalledBinaryPath } = require('./slp-setup');
+const { getInstallDir, getInstalledBinaryPath } = require('./slp-setup');
 
 let localServicePort = null;
 let serviceProcess = null;
@@ -10,7 +10,7 @@ let logStream = null;
 let startedByApp = false;
 
 function getSlpDir() {
-  return path.join(os.homedir(), '.smartloop');
+  return getInstallDir();
 }
 
 function getSlpBinaryPath() {

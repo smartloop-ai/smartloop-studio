@@ -449,23 +449,19 @@ export default function Home() {
           setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
         }
 
-        // Load skills from dedicated endpoint
+        // Load skills from local filesystem
         try {
-          const localBase = await getLocalApiEndpoint();
-          const skillsRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+          const folderPath = selectedProject.folder_path || project?.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+          const result = await window.electronAPI?.readSkillsDir(folderPath);
           if (cancelled) return;
-          if (skillsRes.ok) {
-            const skillsData = await skillsRes.json();
-            const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-            setProjectSkills(skills);
+          if (result?.success) {
+            setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
           } else {
-            const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-            setProjectSkills(skills);
+            setProjectSkills([]);
           }
         } catch {
           if (cancelled) return;
-          const skills = (selectedProject.skills || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-          setProjectSkills(skills);
+          setProjectSkills([]);
         }
       } catch {
         if (cancelled) return;
@@ -730,9 +726,10 @@ export default function Home() {
     setIsSavingSkills(true);
 
     try {
-      const localBase = await getLocalApiEndpoint();
       const projectId = selectedProject.id;
       const oldSkills = projectSkills;
+      const projectFolderPath = currentProjectData?.folder_path || selectedProject.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
+      const localBase = await getLocalApiEndpoint();
 
       // Detect added skills (no id or new entries beyond old length)
       const added = skills.filter(s => !s.id && !oldSkills.find(o => o.content === s.content));
@@ -745,93 +742,103 @@ export default function Home() {
         return old && old.content !== s.content;
       });
 
-      // Add new skills
+      const baseDir = `${projectFolderPath}/skills`;
+      const toFolderName = (name: string) =>
+        name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
+
+      // Add new skills — try API for id, fall back to client-generated folder name
       for (const skill of added) {
-        const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: skill.content,
-            cwd: currentProjectData?.folder_path || selectedProject.folder_path || undefined,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          skill.id = data.id;
-          skill.name = data.name || skill.name;
+        let folderName = toFolderName(skill.name || skill.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'skill');
+        if (localBase) {
+          try {
+            const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: skill.content }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.name) folderName = data.name;
+              else if (data?.id) folderName = data.id;
+              else if (data?.skill_id) folderName = data.skill_id;
+            }
+          } catch { /* fallback to client-generated name */ }
+        }
+        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/SKILL.md`, skill.content);
+        skill.id = folderName;
+      }
+
+      // Update modified skills — write to filesystem, notify API fire-and-forget
+      for (const skill of updated) {
+        await window.electronAPI!.writeTextFile(`${baseDir}/${(skill as any).id}/SKILL.md`, skill.content);
+        if (localBase) {
+          fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: skill.name, content: skill.content }),
+          }).catch(() => {});
         }
       }
 
-      // Update modified skills
-      for (const skill of updated) {
-        await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content: skill.content,
-            cwd: currentProjectData?.folder_path || selectedProject.folder_path || undefined,
-          }),
-        });
-      }
-
-      // Delete removed skills
+      // Delete removed skills — remove from filesystem, notify API fire-and-forget
       for (const skill of deletedSkills) {
         if ((skill as any).id) {
-          await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
-            method: 'DELETE',
-          });
+          await window.electronAPI!.deleteFolder(`${baseDir}/${(skill as any).id}`);
+          if (localBase) {
+            fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+              method: 'DELETE',
+            }).catch(() => {});
+          }
         }
       }
 
-      // Refresh skills from server
-      const listRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
-      if (listRes.ok) {
-        const data = await listRes.json();
-        const refreshed = (data.skills || data || []).map((s: any) => ({ id: s.id, name: s.name, content: s.content, description: s.description || '' }));
-        setProjectSkills(refreshed);
-        const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
-        const deletedTabIds = new Set(deletedSkills.map((s: any) => {
-          const idx = oldSkills.indexOf(s);
-          return `skill-${s.id || idx}`;
-        }));
-        setOpenTabs((prev) => {
-          const filtered = prev.filter((t) => {
-            if (t.type !== 'skill') return true;
-            if (deletedTabIds.has(t.id)) return false;
-            const idx = t.data?.index;
-            if (idx !== undefined && deletedIndices.has(idx)) return false;
-            return true;
-          });
-          return filtered.map((t) => {
-            if (t.type !== 'skill') return t;
-            if (t.id === 'skill-new') {
-              const newIndex = refreshed.length - 1;
-              const saved = refreshed[newIndex];
-              return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
-            }
-            const idx = t.data?.index;
-            if (idx !== undefined && refreshed[idx]) {
-              return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
-            }
-            return t;
-          });
+      // Refresh skills from filesystem after API writes are done
+      const fsResult = await window.electronAPI?.readSkillsDir(projectFolderPath);
+      const refreshed = fsResult?.success
+        ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
+        : skills;
+      setProjectSkills(refreshed);
+      window.dispatchEvent(new CustomEvent('skillsSaved'));
+      const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
+      const deletedTabIds = new Set(deletedSkills.map((s: any) => {
+        const idx = oldSkills.indexOf(s);
+        return `skill-${s.id || idx}`;
+      }));
+      setOpenTabs((prev) => {
+        const filtered = prev.filter((t) => {
+          if (t.type !== 'skill') return true;
+          if (deletedTabIds.has(t.id)) return false;
+          const idx = t.data?.index;
+          if (idx !== undefined && deletedIndices.has(idx)) return false;
+          return true;
         });
-        setActiveTabId((prevId) => {
-          if (!prevId) return prevId;
-          const activeTab = openTabs.find((t) => t.id === prevId);
-          if (!activeTab) return prevId;
-          const isDeleted = deletedTabIds.has(prevId) ||
-            (activeTab.type === 'skill' && activeTab.data?.index !== undefined && deletedIndices.has(activeTab.data.index));
-          if (!isDeleted) return prevId;
-          const remaining = openTabs.filter((t) =>
-            !deletedTabIds.has(t.id) &&
-            !(t.type === 'skill' && t.data?.index !== undefined && deletedIndices.has(t.data.index))
-          );
-          return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+        return filtered.map((t) => {
+          if (t.type !== 'skill') return t;
+          if (t.id === 'skill-new') {
+            const newIndex = refreshed.length - 1;
+            const saved = refreshed[newIndex];
+            return { ...t, id: `skill-${newIndex}`, title: saved?.name || 'Untitled Skill', data: { skill: saved, index: newIndex } };
+          }
+          const idx = t.data?.index;
+          if (idx !== undefined && refreshed[idx]) {
+            return { ...t, title: refreshed[idx].name || 'Untitled Skill', data: { ...t.data, skill: refreshed[idx] } };
+          }
+          return t;
         });
-      } else {
-        setProjectSkills(skills);
-      }
+      });
+      setActiveTabId((prevId) => {
+        if (!prevId) return prevId;
+        const activeTab = openTabs.find((t) => t.id === prevId);
+        if (!activeTab) return prevId;
+        const isDeleted = deletedTabIds.has(prevId) ||
+          (activeTab.type === 'skill' && activeTab.data?.index !== undefined && deletedIndices.has(activeTab.data.index));
+        if (!isDeleted) return prevId;
+        const remaining = openTabs.filter((t) =>
+          !deletedTabIds.has(t.id) &&
+          !(t.type === 'skill' && t.data?.index !== undefined && deletedIndices.has(t.data.index))
+        );
+        return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+      });
     } catch (ex: any) {
       console.error('Error saving project skills:', ex);
     } finally {
@@ -842,13 +849,9 @@ export default function Home() {
   const refreshSkills = useCallback(async () => {
     if (!selectedProject?.id) return;
     try {
-      const localBase = await getLocalApiEndpoint();
-      const skillsRes = await fetch(`${localBase}/v1/projects/${selectedProject.id}/skills`);
-      if (skillsRes.ok) {
-        const skillsData = await skillsRes.json();
-        const skills = (skillsData.skills || skillsData || []).map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }));
-        setProjectSkills(skills);
-      }
+      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
+      const result = await window.electronAPI?.readSkillsDir(folderPath);
+      if (result?.success) setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
     } catch {
       // silent – keep existing skills on failure
     }
@@ -1811,7 +1814,7 @@ export default function Home() {
                       <Box className="flex-1 min-w-0">
                         {selectedProject ? (
                           <input
-                            key={selectedProject.id}
+                            key={`${selectedProject.id}-${selectedProject.name}`}
                             defaultValue={selectedProject.name}
                             onBlur={(e) => {
                               const trimmed = e.target.value.trim();
@@ -1855,7 +1858,7 @@ export default function Home() {
                 {/* Main Content Area - 2 columns */}
                 <Box className="flex-1 overflow-hidden flex" style={{ height: (selectedProject || searchParams.get('project') || conversation || searchParams.get('conversation')) ? 'calc(100vh - 137px)' : 'calc(100vh - 89px)' }}>
                   {/* Main Content Area */}
-                  <Box className="flex-1 overflow-hidden">
+                  <Box className="flex-1 min-h-0 overflow-hidden">
                     {(() => {
                       const currentTab = getActiveTab();
                       if (currentTab?.type === 'document' && currentTab.data) {
