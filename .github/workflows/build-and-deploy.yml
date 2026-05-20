@@ -238,11 +238,13 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           BASE_URL="https://storage.googleapis.com/smartloop-gcp-us-east-releases"
           URLS=""
-          for platform in linux macos windows; do
+          declare -A LABELS=( [linux]="Linux" [macos]="MacOS" [windows]="Windows" )
+          for platform in macos windows linux; do
             if [ -d "release/$VERSION/$platform" ]; then
+              URLS="${URLS}*${LABELS[$platform]}:*\n"
               for f in release/$VERSION/$platform/*; do
                 fname=$(basename "$f")
-                URLS="${URLS}${BASE_URL}/latest/${platform}/${fname}\n"
+                URLS="${URLS} • <${BASE_URL}/latest/${platform}/${fname}|${fname}>\n"
               done
             fi
           done
