@@ -17,7 +17,18 @@ env:
 jobs:
   notify-start:
     runs-on: ubuntu-latest
+    outputs:
+      framework_version: ${{ steps.fw.outputs.version }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get framework version
+        id: fw
+        run: |
+          VERSION=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Notify build started
         uses: slackapi/slack-github-action@v2.1.0
         with:
@@ -30,7 +41,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":rocket: *Build started*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Triggered by:* ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                    "text": ":rocket: *Build started*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Framework:* `${{ steps.fw.outputs.version }}`\n*Triggered by:* ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
                   }
                 }
               ]
@@ -340,7 +351,7 @@ jobs:
 
   notify-result:
     if: always()
-    needs: [upload-to-gcp]
+    needs: [notify-start, upload-to-gcp]
     runs-on: ubuntu-latest
     steps:
       - name: Notify build success
@@ -356,7 +367,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Framework:* `${{ needs.notify-start.outputs.framework_version }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
                   }
                 }
               ]
