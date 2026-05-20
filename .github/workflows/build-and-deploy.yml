@@ -156,7 +156,10 @@ jobs:
     name: Upload to GCP Bucket
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
-    
+    outputs:
+      download_urls: ${{ steps.urls.outputs.download_urls }}
+      version: ${{ steps.version.outputs.version }}
+
     steps:
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
@@ -228,6 +231,24 @@ jobs:
           # Make files publicly readable (optional)
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/latest/
+
+      - name: Collect public download URLs
+        id: urls
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BASE_URL="https://storage.googleapis.com/smartloop-gcp-us-east-releases"
+          URLS=""
+          for platform in linux macos windows; do
+            if [ -d "release/$VERSION/$platform" ]; then
+              for f in release/$VERSION/$platform/*; do
+                fname=$(basename "$f")
+                URLS="${URLS}${BASE_URL}/latest/${platform}/${fname}\n"
+              done
+            fi
+          done
+          echo "download_urls<<URLS_EOF" >> $GITHUB_OUTPUT
+          echo -e "$URLS" >> $GITHUB_OUTPUT
+          echo "URLS_EOF" >> $GITHUB_OUTPUT
 
       - name: Create version manifest
         run: |
@@ -334,7 +355,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
                   }
                 }
               ]
