@@ -141,6 +141,13 @@ export default function RightSidebar({
     if (activeSection === 'skills') loadSkillsFromDir();
   }, [activeSection, loadSkillsFromDir]);
 
+  // Refresh when skills are saved elsewhere (e.g. skill editor tabs)
+  useEffect(() => {
+    const handler = () => loadSkillsFromDir();
+    window.addEventListener('skillsSaved', handler);
+    return () => window.removeEventListener('skillsSaved', handler);
+  }, [loadSkillsFromDir]);
+
   useEffect(() => {
     if (!pendingSkill) return;
     const appeared =

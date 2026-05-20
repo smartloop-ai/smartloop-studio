@@ -797,6 +797,7 @@ export default function Home() {
         ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
         : skills;
       setProjectSkills(refreshed);
+      window.dispatchEvent(new CustomEvent('skillsSaved'));
       const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
       const deletedTabIds = new Set(deletedSkills.map((s: any) => {
         const idx = oldSkills.indexOf(s);
