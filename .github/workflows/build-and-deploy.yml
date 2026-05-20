@@ -244,7 +244,7 @@ jobs:
               URLS="${URLS}*${LABELS[$platform]}:*\n"
               for f in release/$VERSION/$platform/*; do
                 fname=$(basename "$f")
-                URLS="${URLS}  - <${BASE_URL}/latest/${platform}/${fname}|${fname}>\n"
+                URLS="${URLS} • <${BASE_URL}/latest/${platform}/${fname}|${fname}>\n"
               done
             fi
           done
