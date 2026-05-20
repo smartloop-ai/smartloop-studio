@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeTextFile: (filePath, content) => ipcRenderer.invoke('write-text-file', filePath, content),
   // List supported document files in a directory
   listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
+  // Read all skills from ~/smartloop/<projectId>/skills/ directory
+  readSkillsDir: (projectId) => ipcRenderer.invoke('read-skills-dir', projectId),
   // Delete a file from disk
   deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   // Recursively delete a folder from disk

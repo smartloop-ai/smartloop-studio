@@ -46,6 +46,7 @@ mac:
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
+  signAndEditExecutable: false
   target:
     - nsis
     - portable
@@ -60,5 +61,8 @@ linux:
 nsis:
   oneClick: false
   perMachine: false
+  allowElevation: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
