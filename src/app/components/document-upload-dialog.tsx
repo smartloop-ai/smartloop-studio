@@ -16,6 +16,7 @@ interface DocumentUploadDialogProps {
   setUser: (user: any) => void;
   preselectedProjectId?: string;
   disableProjectSelection?: boolean;
+  folderPath?: string;
 }
 
 export default function DocumentUploadDialog({
@@ -24,7 +25,8 @@ export default function DocumentUploadDialog({
   onSuccess,
   user,
   preselectedProjectId,
-  disableProjectSelection = false
+  disableProjectSelection = false,
+  folderPath,
 }: DocumentUploadDialogProps) {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [projectInputValue, setProjectInputValue] = useState('');
@@ -116,14 +118,11 @@ export default function DocumentUploadDialog({
 
       const targetProject = selectedProject;
       const file = uploadFiles[0];
+      const filePath = (file as any).path;
 
-      // Save file to a temp path then upload via local SLP POST /v1/documents
-      if (!window.electronAPI?.saveTempFile) {
-        throw new Error('Local file upload is not available outside of the desktop app');
+      if (!filePath) {
+        throw new Error('File path is not available outside of the desktop app');
       }
-
-      const buffer = await file.arrayBuffer();
-      const tempPath = await window.electronAPI.saveTempFile(file.name, buffer);
 
       // Listen for progress updates
       setUploadProgress({ percent: 0, status: 'Uploading...' });
@@ -134,7 +133,7 @@ export default function DocumentUploadDialog({
       window.electronAPI?.onSlpDocumentProgress?.(progressHandler);
 
       try {
-        await documentService.addLocalDocument(targetProject.id, tempPath, undefined, targetProject.folder_path);
+        await documentService.addLocalDocument(targetProject.id, filePath, undefined, folderPath);
         setUploadProgress({ percent: 100, status: 'Complete' });
       } catch (_err) {
         // best-effort

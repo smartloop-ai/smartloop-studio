@@ -1555,6 +1555,7 @@ export default function Home() {
             setUser={setUser}
             preselectedProjectId={selectedProject?.id}
             disableProjectSelection={true}
+            folderPath={currentProjectData?.folder_path || selectedProject?.folder_path}
           />
 
           {/* Delete Conversation Confirmation Dialog */}
