@@ -9,6 +9,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 interface Skill {
   name: string;
   content: string;
+  description?: string;
 }
 
 interface SkillEditorProps {
@@ -20,7 +21,21 @@ interface SkillEditorProps {
   isNew?: boolean;
 }
 
-const DEFAULT_SKILL_TEMPLATE = `# My Skill Name
+/** Extract display name from content (frontmatter or first heading). */
+const getDisplayName = (raw: string): string => {
+  const fmMatch = raw.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const nameMatch = fmMatch[1].match(/^name:\s*(.*)$/m);
+    if (nameMatch?.[1]?.trim()) return nameMatch[1].trim();
+  }
+  const heading = raw.match(/^#\s+(.+)$/m);
+  return heading?.[1]?.trim() || 'Untitled Skill';
+};
+
+const DEFAULT_SKILL_TEMPLATE = `---
+name: My Skill Name
+description:
+---
 
 [Add your instructions here]
 `;
@@ -105,13 +120,12 @@ export default function SkillEditor({
       if (!latest.trim()) return;
       const save = onSaveSkillsRef.current;
       if (!save) return;
+      const name = getDisplayName(latest);
       if (isNewRef.current) {
-        const nameMatch = latest.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || latest.match(/^#\s+(.+)$/m);
-        const name = nameMatch?.[1]?.trim() || 'Untitled Skill';
         save([...projectSkillsRef.current, { name, content: latest }]);
       } else {
         const updated = projectSkillsRef.current.map((s, i) =>
-          i === skillIndexRef.current ? { ...s, content: latest } : s
+          i === skillIndexRef.current ? { ...s, name, content: latest } : s
         );
         save(updated);
       }
@@ -119,13 +133,12 @@ export default function SkillEditor({
   }, []);
 
   const handleSave = () => {
+    const name = getDisplayName(content);
     if (isNew) {
-      const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
-      const name = nameMatch?.[1]?.trim() || 'Untitled Skill';
       onSaveSkills([...projectSkills, { name, content }]);
     } else {
       const updated = projectSkills.map((s, i) =>
-        i === skillIndex ? { ...s, content } : s
+        i === skillIndex ? { ...s, name, content } : s
       );
       onSaveSkills(updated);
     }
@@ -137,6 +150,8 @@ export default function SkillEditor({
     setHasUnsavedChanges(true);
   };
 
+  const displayName = getDisplayName(content);
+
   return (
     <Box
       className="h-full flex flex-col overflow-hidden"
@@ -145,7 +160,7 @@ export default function SkillEditor({
         bgcolor: 'var(--sl-bg-base)',
       }}
     >
-      {/* Header — matches DocumentViewer header */}
+      {/* Header */}
       <Box
         sx={{
           flex: 'none',
@@ -160,7 +175,7 @@ export default function SkillEditor({
       >
         <ConstructionIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
         <Box sx={{ fontSize: '12px', color: 'var(--sl-text-secondary)', fontWeight: 500 }}>
-          {isNew ? 'New Skill' : (skill?.name || 'Untitled Skill')}
+          {displayName || (isNew ? 'New Skill' : 'Untitled Skill')}
         </Box>
         <Box
           sx={{
