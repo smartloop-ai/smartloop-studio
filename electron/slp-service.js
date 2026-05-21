@@ -4,6 +4,8 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { getInstallDir, getInstalledBinaryPath } = require('./slp-setup');
 
+const DEFAULT_SLP_PORT = 38540;
+
 let localServicePort = null;
 let serviceProcess = null;
 let logStream = null;
@@ -40,14 +42,22 @@ function readLocalServicePort() {
   return null;
 }
 
+// Returns the port the service should use: env var override > port file > default 38540
+function getTargetPort() {
+  if (process.env.SLP_PORT) {
+    const p = parseInt(process.env.SLP_PORT, 10);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  return readLocalServicePort() || DEFAULT_SLP_PORT;
+}
+
 function getLocalBaseUrl() {
-  const port = localServicePort || readLocalServicePort();
-  if (port) localServicePort = port;
-  return port ? `http://localhost:${port}` : null;
+  const port = localServicePort || DEFAULT_SLP_PORT;
+  return `http://localhost:${port}`;
 }
 
 function getPort() {
-  return localServicePort;
+  return localServicePort || DEFAULT_SLP_PORT;
 }
 
 /**
@@ -56,8 +66,7 @@ function getPort() {
  * @returns {Promise<boolean>}
  */
 async function checkHealth() {
-  const port = localServicePort || readLocalServicePort();
-  if (!port) return false;
+  const port = localServicePort || DEFAULT_SLP_PORT;
 
   try {
     const res = await fetch(`http://localhost:${port}/health`);
@@ -85,27 +94,22 @@ async function startService() {
 
   ensureSlpDir();
 
-  // Check if already running
-  const existingPort = readLocalServicePort();
-  if (existingPort) {
-    try {
-      const res = await fetch(`http://localhost:${existingPort}/health`);
-      if (res.ok) {
-        console.log('[SLP] Service already running on port', existingPort);
-        localServicePort = existingPort;
-        startedByApp = true;
-        return true;
-      }
-    } catch {
-      // Stale port file — remove it
-      console.log('[SLP] Stale port file, removing and starting fresh...');
-      try {
-        fs.unlinkSync(path.join(getSlpDir(), 'server.port'));
-      } catch { }
+  const targetPort = DEFAULT_SLP_PORT;
+
+  // Check if already running on the target port
+  try {
+    const res = await fetch(`http://localhost:${targetPort}/health`);
+    if (res.ok) {
+      console.log('[SLP] Service already running on port', targetPort);
+      localServicePort = targetPort;
+      startedByApp = true;
+      return true;
     }
+  } catch {
+    // Not running yet
   }
 
-  console.log('[SLP] Starting service from:', slpBinary);
+  console.log('[SLP] Starting service from:', slpBinary, 'on port', targetPort);
 
   // Open log file for stdout/stderr — append mode so logs persist across restarts
   const logFile = getLogPath();
@@ -117,7 +121,7 @@ async function startService() {
   console.log('[SLP] Server logs writing to:', logFile);
 
   // Start as a child process — use pipe and manually redirect output to log file
-  const proc = spawn(slpBinary, ['start'], {
+  const proc = spawn(slpBinary, ['start', '--port', String(targetPort)], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -151,7 +155,7 @@ async function startService() {
     }
   });
 
-  // Poll for server.port file + health check (up to 120s)
+  // Poll health endpoint until server is ready (up to 120s)
   // Abort early if the process crashes
   return new Promise((resolve) => {
     let attempts = 0;
@@ -168,21 +172,18 @@ async function startService() {
         return;
       }
 
-      const port = readLocalServicePort();
-      if (port) {
-        try {
-          const res = await fetch(`http://localhost:${port}/health`);
-          if (res.ok) {
-            clearInterval(pollInterval);
-            localServicePort = port;
-            startedByApp = true;
-            console.log('[SLP] Service started on port', port);
-            resolve(true);
-            return;
-          }
-        } catch {
-          // Port file exists but server not ready yet
+      try {
+        const res = await fetch(`http://localhost:${targetPort}/health`);
+        if (res.ok) {
+          clearInterval(pollInterval);
+          localServicePort = targetPort;
+          startedByApp = true;
+          console.log('[SLP] Service started on port', targetPort);
+          resolve(true);
+          return;
         }
+      } catch {
+        // Server not ready yet
       }
       if (attempts >= maxAttempts) {
         clearInterval(pollInterval);
@@ -232,17 +233,6 @@ async function stopService() {
       console.warn('[SLP] Error killing child process:', error.message);
     }
     serviceProcess = null;
-  }
-
-  // Clean up stale port file
-  try {
-    const portFile = path.join(getSlpDir(), 'server.port');
-    if (fs.existsSync(portFile)) {
-      fs.unlinkSync(portFile);
-      console.log('[SLP] Removed port file');
-    }
-  } catch (error) {
-    console.warn('[SLP] Error removing port file:', error.message);
   }
 
   // Close log stream
