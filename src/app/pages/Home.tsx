@@ -449,15 +449,39 @@ export default function Home() {
           setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
         }
 
-        // Load skills from local filesystem
+        // Load skills: filesystem first, fall back to API and sync to disk
         try {
           const folderPath = selectedProject.folder_path || project?.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
           const result = await window.electronAPI?.readSkillsDir(folderPath);
           if (cancelled) return;
-          if (result?.success) {
+          if (result?.success && result.skills.length > 0) {
             setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
           } else {
-            setProjectSkills([]);
+            // Nothing on disk — fetch from API and write to disk so readSkillsDir works going forward
+            const localBase = await getLocalApiEndpoint();
+            const skillsRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+            if (cancelled) return;
+            if (skillsRes.ok) {
+              const data = await skillsRes.json();
+              const apiSkills: any[] = data.skills || data || [];
+              for (const s of apiSkills) {
+                if (s.id && s.content) {
+                  const hasFrontmatter = /^---[\s\S]*?name:/m.test(s.content);
+                  const hasHeading = /^#\s/m.test(s.content);
+                  let fileContent = s.content;
+                  if (!hasFrontmatter && !hasHeading) {
+                    const fm = [`---`, `name: ${s.name || s.id}`];
+                    if (s.description) fm.push(`description: ${s.description}`);
+                    fm.push(`---`, ``);
+                    fileContent = fm.join('\n') + '\n' + s.content;
+                  }
+                  await window.electronAPI!.writeTextFile(`${folderPath}/skills/${s.id}/SKILL.md`, fileContent);
+                }
+              }
+              setProjectSkills(apiSkills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+            } else {
+              setProjectSkills([]);
+            }
           }
         } catch {
           if (cancelled) return;
@@ -764,7 +788,13 @@ export default function Home() {
             }
           } catch { /* fallback to client-generated name */ }
         }
-        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/SKILL.md`, skill.content);
+        const hasFrontmatter = /^---[\s\S]*?name:/m.test(skill.content);
+        const hasHeading = /^#\s/m.test(skill.content);
+        let fileContent = skill.content;
+        if (!hasFrontmatter && !hasHeading && skill.name) {
+          fileContent = `---\nname: ${skill.name}\n---\n\n${skill.content}`;
+        }
+        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/SKILL.md`, fileContent);
         skill.id = folderName;
       }
 
