@@ -15,7 +15,40 @@ env:
   APP_NAME: smartloop-studio
 
 jobs:
+  notify-start:
+    runs-on: ubuntu-latest
+    outputs:
+      framework_version: ${{ steps.fw.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get framework version
+        id: fw
+        run: |
+          VERSION=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Notify build started
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Build started*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Framework:* `${{ steps.fw.outputs.version }}`\n*Triggered by:* ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
+
   build-linux:
+    needs: [notify-start]
     name: Build for Linux
     runs-on: ubuntu-latest
     
@@ -54,6 +87,7 @@ jobs:
           retention-days: 1
 
   build-macos:
+    needs: [notify-start]
     name: Build for macOS
     runs-on: macos-latest
     
@@ -98,6 +132,7 @@ jobs:
           retention-days: 1
 
   build-windows:
+    needs: [notify-start]
     name: Build for Windows
     runs-on: windows-latest
 
@@ -132,7 +167,10 @@ jobs:
     name: Upload to GCP Bucket
     needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
-    
+    outputs:
+      download_urls: ${{ steps.urls.outputs.download_urls }}
+      version: ${{ steps.version.outputs.version }}
+
     steps:
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
@@ -204,6 +242,25 @@ jobs:
           # Make files publicly readable (optional)
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/latest/
+
+      - name: Collect public download URLs
+        id: urls
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BASE_URL="https://storage.googleapis.com/smartloop-gcp-us-east-releases"
+          URLS=""
+          declare -A LABELS=( [linux]="Linux" [macos]="MacOS" [windows]="Windows" )
+          for platform in macos windows linux; do
+            if [ -d "release/$VERSION/$platform" ]; then
+              URLS="${URLS}*${LABELS[$platform]}:*\n"
+              for f in release/$VERSION/$platform/*; do
+                fname=$(basename "$f")
+                URLS="${URLS} • <${BASE_URL}/latest/${platform}/${fname}|${fname}>\n"
+              done
+            fi
+          done
+          # Write as single line with literal \n so it's safe inside JSON strings
+          echo "download_urls=${URLS}" >> $GITHUB_OUTPUT
 
       - name: Create version manifest
         run: |
@@ -291,4 +348,47 @@ jobs:
               .addRaw(`Run: ${runUrl}\n\n`)
               .addRaw(links.join("\n") + "\n")
               .write();
+
+  notify-result:
+    if: always()
+    needs: [notify-start, upload-to-gcp]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify build success
+        if: needs.upload-to-gcp.result == 'success'
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Framework:* `${{ needs.notify-start.outputs.framework_version }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
+
+      - name: Notify build failure
+        if: needs.upload-to-gcp.result != 'success'
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *Build failed*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                  }
+                }
+              ]
+            }
 

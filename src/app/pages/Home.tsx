@@ -778,11 +778,12 @@ export default function Home() {
             const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: skill.name, content: skill.content }),
+              body: JSON.stringify({ content: skill.content }),
             });
             if (res.ok) {
               const data = await res.json();
-              if (data?.id) folderName = data.id;
+              if (data?.name) folderName = data.name;
+              else if (data?.id) folderName = data.id;
               else if (data?.skill_id) folderName = data.skill_id;
             }
           } catch { /* fallback to client-generated name */ }
@@ -827,6 +828,7 @@ export default function Home() {
         ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
         : skills;
       setProjectSkills(refreshed);
+      window.dispatchEvent(new CustomEvent('skillsSaved'));
       const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
       const deletedTabIds = new Set(deletedSkills.map((s: any) => {
         const idx = oldSkills.indexOf(s);
@@ -1553,6 +1555,7 @@ export default function Home() {
             setUser={setUser}
             preselectedProjectId={selectedProject?.id}
             disableProjectSelection={true}
+            folderPath={currentProjectData?.folder_path || selectedProject?.folder_path}
           />
 
           {/* Delete Conversation Confirmation Dialog */}
@@ -1842,7 +1845,7 @@ export default function Home() {
                       <Box className="flex-1 min-w-0">
                         {selectedProject ? (
                           <input
-                            key={selectedProject.id}
+                            key={`${selectedProject.id}-${selectedProject.name}`}
                             defaultValue={selectedProject.name}
                             onBlur={(e) => {
                               const trimmed = e.target.value.trim();
