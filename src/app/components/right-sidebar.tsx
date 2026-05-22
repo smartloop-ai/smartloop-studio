@@ -21,7 +21,7 @@ import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
 import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
-import { PROJECT_COLORS } from '@/app/constants';
+import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
 import { OpenTab } from './conversation-tabs';
@@ -94,19 +94,21 @@ export default function RightSidebar({
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
-  // Skills loaded directly from <folder_path>/skills/
+  // Skills loaded from the API
   const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
 
   const loadSkillsFromDir = useCallback(async () => {
-    if (!selectedProject?.id || !(window as any).electronAPI?.readSkillsDir) return;
+    if (!selectedProject?.id) return;
     try {
-      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
-      const result = await (window as any).electronAPI.readSkillsDir(folderPath);
-      if (result?.success) {
-        setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+      const base = await getLocalApiEndpoint();
+      const res = await fetch(`${base}/v1/projects/${selectedProject.id}/skills`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data?.skills ?? []);
+        setLocalSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
       }
     } catch { /* silent */ }
-  }, [selectedProject?.id, selectedProject?.folder_path]);
+  }, [selectedProject?.id]);
 
   // Load on project change — retry a few times to handle race where SLP writes default
   // skills to the directory shortly after the project is created/selected.
@@ -118,14 +120,15 @@ export default function RightSidebar({
 
     const attempt = async (retriesLeft: number) => {
       if (cancelled) return;
-      if (!(window as any).electronAPI?.readSkillsDir) return;
       try {
-        const folderPath = selectedProject?.folder_path || `~/smartloop/${(selectedProject?.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
-        const result = await (window as any).electronAPI.readSkillsDir(folderPath);
+        const base = await getLocalApiEndpoint();
+        const res = await fetch(`${base}/v1/projects/${projectId}/skills`);
         if (cancelled) return;
-        if (result?.success) {
-          setLocalSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
-          if (result.skills.length === 0 && retriesLeft > 0) {
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data?.skills ?? []);
+          setLocalSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
+          if (list.length === 0 && retriesLeft > 0) {
             setTimeout(() => attempt(retriesLeft - 1), 1500);
           }
         }
