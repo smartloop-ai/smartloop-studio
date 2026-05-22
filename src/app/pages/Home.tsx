@@ -449,13 +449,15 @@ export default function Home() {
           setProjectMemory(project.config?.memory !== undefined ? project.config.memory : true);
         }
 
-        // Load skills: filesystem first, fall back to API and sync to disk
+        // Load skills from the API
         try {
-          const folderPath = selectedProject.folder_path || project?.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
-          const result = await window.electronAPI?.readSkillsDir(folderPath);
+          const base = await getLocalApiEndpoint();
+          const res = await fetch(`${base}/v1/projects/${projectId}/skills`);
           if (cancelled) return;
-          if (result?.success && result.skills.length > 0) {
-            setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+          if (res.ok) {
+            const data = await res.json();
+            const list = Array.isArray(data) ? data : (data?.skills ?? []);
+            setProjectSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
           } else {
             // Nothing on disk — fetch from API and write to disk so readSkillsDir works going forward
             const localBase = await getLocalApiEndpoint();
@@ -752,9 +754,7 @@ export default function Home() {
     try {
       const projectId = selectedProject.id;
       const oldSkills = projectSkills;
-      const projectFolderPath = currentProjectData?.folder_path || selectedProject.folder_path || `~/smartloop/${(selectedProject.name || projectId).toLowerCase().replace(/\s+/g, '_')}`;
       const localBase = await getLocalApiEndpoint();
-
       // Detect added skills (no id or new entries beyond old length)
       const added = skills.filter(s => !s.id && !oldSkills.find(o => o.content === s.content));
       // Detect deleted skills
@@ -766,67 +766,48 @@ export default function Home() {
         return old && old.content !== s.content;
       });
 
-      const baseDir = `${projectFolderPath}/skills`;
-      const toFolderName = (name: string) =>
-        name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
-
-      // Add new skills — try API for id, fall back to client-generated folder name
+      // Add new skills via the API (API handles file system writes)
       for (const skill of added) {
-        let folderName = toFolderName(skill.name || skill.content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'skill');
-        if (localBase) {
-          try {
-            const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: skill.content }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data?.name) folderName = data.name;
-              else if (data?.id) folderName = data.id;
-              else if (data?.skill_id) folderName = data.skill_id;
-            }
-          } catch { /* fallback to client-generated name */ }
+        const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          skill.id = data?.name || data?.id || data?.skill_id;
         }
-        const hasFrontmatter = /^---[\s\S]*?name:/m.test(skill.content);
-        const hasHeading = /^#\s/m.test(skill.content);
-        let fileContent = skill.content;
-        if (!hasFrontmatter && !hasHeading && skill.name) {
-          fileContent = `---\nname: ${skill.name}\n---\n\n${skill.content}`;
-        }
-        await window.electronAPI!.writeTextFile(`${baseDir}/${folderName}/SKILL.md`, fileContent);
-        skill.id = folderName;
       }
 
-      // Update modified skills — write to filesystem, notify API fire-and-forget
+      // Update modified skills via the API
       for (const skill of updated) {
-        await window.electronAPI!.writeTextFile(`${baseDir}/${(skill as any).id}/SKILL.md`, skill.content);
-        if (localBase) {
-          fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: skill.name, content: skill.content }),
-          }).catch(() => {});
-        }
+        await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: skill.content }),
+        });
       }
 
-      // Delete removed skills — remove from filesystem, notify API fire-and-forget
+      // Delete removed skills via the API and clean up any SQLite folder entry
       for (const skill of deletedSkills) {
         if ((skill as any).id) {
-          await window.electronAPI!.deleteFolder(`${baseDir}/${(skill as any).id}`);
-          if (localBase) {
-            fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
-              method: 'DELETE',
-            }).catch(() => {});
-          }
+          await fetch(`${localBase}/v1/projects/${projectId}/skills/${(skill as any).id}`, {
+            method: 'DELETE',
+          });
+          storageService.deleteFolder((skill as any).id).catch(() => {});
         }
       }
 
-      // Refresh skills from filesystem after API writes are done
-      const fsResult = await window.electronAPI?.readSkillsDir(projectFolderPath);
-      const refreshed = fsResult?.success
-        ? fsResult.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' }))
-        : skills;
+      // Refresh skills from the API after writes are done
+      let refreshed = skills;
+      try {
+        const res = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data?.skills ?? []);
+          refreshed = list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' }));
+        }
+      } catch { /* fallback to local skills array */ }
       setProjectSkills(refreshed);
       window.dispatchEvent(new CustomEvent('skillsSaved'));
       const deletedIndices = new Set(deletedSkills.map((s: any) => oldSkills.indexOf(s)));
@@ -879,9 +860,13 @@ export default function Home() {
   const refreshSkills = useCallback(async () => {
     if (!selectedProject?.id) return;
     try {
-      const folderPath = selectedProject.folder_path || `~/smartloop/${(selectedProject.name || selectedProject.id).toLowerCase().replace(/\s+/g, '_')}`;
-      const result = await window.electronAPI?.readSkillsDir(folderPath);
-      if (result?.success) setProjectSkills(result.skills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+      const base = await getLocalApiEndpoint();
+      const res = await fetch(`${base}/v1/projects/${selectedProject.id}/skills`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data?.skills ?? []);
+        setProjectSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
+      }
     } catch {
       // silent – keep existing skills on failure
     }
@@ -919,6 +904,8 @@ export default function Home() {
           const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
           // Rename the actual folder on disk
           await window.electronAPI!.renameFolder(currentPath, newPath);
+          // Sync the new folder_path to both the API and local SQLite
+          await projectService.updateProject(selectedProject.id, { name: trimmedName, folder_path: newPath });
           await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName, folder_path: newPath });
           setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
           setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
