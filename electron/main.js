@@ -372,6 +372,7 @@ function copyDirRecursive(src, dest, skipDirs = []) {
       if (skipDirs.includes(entry.name)) continue;
       copyDirRecursive(srcPath, destPath, skipDirs);
     } else {
+      if (entry.name === '.DS_Store') continue;
       fs.copyFileSync(srcPath, destPath);
     }
   }
