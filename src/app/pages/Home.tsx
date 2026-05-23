@@ -1434,20 +1434,18 @@ export default function Home() {
       const docId = documentToDelete.id;
       const isFsOnly = docId?.startsWith('fs-');
 
-      // Always call the API to delete the document from the backend
+      // Try to delete the document from the API backend
       if (!isFsOnly) {
-        const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, docId);
-        if (!deleteResult.success) {
-          setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
-          return;
+        try {
+          await documentService.deleteLocalDocument(selectedProject.id, docId);
+        } catch (err) {
+          console.warn('API delete failed, proceeding with local cleanup:', err);
         }
       }
 
       // Clean up all SQLite records for this document
-      if (!isFsOnly) {
-        await storageService.deleteDocumentStatus(docId);
-        await storageService.clearDocumentFolder(docId);
-      }
+      await storageService.deleteDocumentStatus(docId);
+      await storageService.clearDocumentFolder(docId);
 
       // Delete the file from disk
       const filePath = documentToDelete._fsFile?.path || documentToDelete.source || documentToDelete.path;

@@ -384,28 +384,41 @@ export default function RightSidebar({
       });
     };
 
-    const refreshApi = () => {
-      documentService.getLocalDocuments(projectId).then((result) => {
-        if (!cancelled && result.success && result.data) {
-          const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
-          setApiDocuments(docs);
-          const apiStatus: Record<string, string> = {};
-          for (const doc of docs) {
-            if (!doc.id) continue;
-            const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-            if (status === 'indexed') {
-              apiStatus[doc.id] = 'indexed';
-              // Don't overwrite processed_at here — only record it on first transition
-              // so the timestamp stays accurate (handled by onIndexingUpdate)
-            } else if (status) {
-              apiStatus[doc.id] = status;
-            }
-          }
-          if (Object.keys(apiStatus).length > 0) {
-            setIndexingStatus(prev => ({ ...prev, ...apiStatus }));
-          }
+    const refreshApi = async () => {
+      const result = await documentService.getLocalDocuments(projectId);
+      if (cancelled || !result.success || !result.data) return;
+
+      const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
+      setApiDocuments(docs);
+      const apiStatus: Record<string, string> = {};
+      const apiDocIds = new Set<string>();
+      for (const doc of docs) {
+        if (!doc.id) continue;
+        apiDocIds.add(doc.id);
+        const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
+        if (status === 'indexed') {
+          apiStatus[doc.id] = 'indexed';
+        } else if (status) {
+          apiStatus[doc.id] = status;
         }
-      });
+      }
+      if (Object.keys(apiStatus).length > 0) {
+        setIndexingStatus(prev => ({ ...prev, ...apiStatus }));
+      }
+
+      // Remove SQLite records for documents that no longer exist in the API
+      const storedDates = await storageService.getDocumentStatusByProject(projectId);
+      for (const docId of Object.keys(storedDates)) {
+        if (!apiDocIds.has(docId)) {
+          await storageService.deleteDocumentStatus(docId);
+          await storageService.clearDocumentFolder(docId);
+        }
+      }
+      // Refresh processed dates after cleanup
+      if (!cancelled) {
+        const updatedDates = await storageService.getDocumentStatusByProject(projectId);
+        setProcessedDates(updatedDates);
+      }
     };
 
     // Load indexed status from SQLite
