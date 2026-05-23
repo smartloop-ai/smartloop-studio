@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       framework_version: ${{ steps.fw.outputs.version }}
+      build_version: ${{ steps.bv.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,6 +28,12 @@ jobs:
         id: fw
         run: |
           VERSION=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get build version
+        id: bv
+        run: |
+          VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Notify build started
@@ -247,7 +254,7 @@ jobs:
         id: urls
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          BASE_URL="https://storage.googleapis.com/smartloop-gcp-us-east-releases"
+          BASE_URL="https://dl.smartloop.ai"
           URLS=""
           declare -A LABELS=( [linux]="Linux" [macos]="MacOS" [windows]="Windows" )
           for platform in macos windows linux; do
@@ -255,7 +262,7 @@ jobs:
               URLS="${URLS}*${LABELS[$platform]}:*\n"
               for f in release/$VERSION/$platform/*; do
                 fname=$(basename "$f")
-                URLS="${URLS} • <${BASE_URL}/latest/${platform}/${fname}|${fname}>\n"
+                URLS="${URLS} • <${BASE_URL}/${VERSION}/${platform}/${fname}|${fname}>\n"
               done
             fi
           done
@@ -367,7 +374,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":white_check_mark: *Build succeeded*\n*Ref:* `${{ github.ref_name }}`\n*Repo:* `${{ github.repository }}`\n*Framework:* `${{ needs.notify-start.outputs.framework_version }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
+                    "text": ":white_check_mark: *Build succeeded*\n*Build:* `${{ needs.notify-start.outputs.build_version }}`\n*Release:* `${{ needs.upload-to-gcp.outputs.version }}`\n*Framework:* `${{ needs.notify-start.outputs.framework_version }}`\n\n*Downloads:*\n${{ needs.upload-to-gcp.outputs.download_urls }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View workflow run>"
                   }
                 }
               ]
