@@ -1226,9 +1226,9 @@ export default function Chat(props: {
                                 <div className="flex flex-wrap gap-1.5">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
-                                    const filePath = citation.source || citation.path || citation.filepath || '';
-                                    const resolvedPath = filePath
-                                      || (props.project?.folder_path && label ? `${props.project.folder_path}/${label}` : '');
+                                    const slug = (props.project?.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
+                                    const folderPath = props.project?.folder_path || `~/smartloop/${slug}`;
+                                    const resolvedPath = label ? `${folderPath}/documents/${label}` : '';
                                     return (
                                       <span
                                         key={idx}
