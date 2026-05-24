@@ -459,7 +459,31 @@ export default function Home() {
             const list = Array.isArray(data) ? data : (data?.skills ?? []);
             setProjectSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
           } else {
-            setProjectSkills([]);
+            // Nothing on disk — fetch from API and write to disk so readSkillsDir works going forward
+            const localBase = await getLocalApiEndpoint();
+            const skillsRes = await fetch(`${localBase}/v1/projects/${projectId}/skills`);
+            if (cancelled) return;
+            if (skillsRes.ok) {
+              const data = await skillsRes.json();
+              const apiSkills: any[] = data.skills || data || [];
+              for (const s of apiSkills) {
+                if (s.id && s.content) {
+                  const hasFrontmatter = /^---[\s\S]*?name:/m.test(s.content);
+                  const hasHeading = /^#\s/m.test(s.content);
+                  let fileContent = s.content;
+                  if (!hasFrontmatter && !hasHeading) {
+                    const fm = [`---`, `name: ${s.name || s.id}`];
+                    if (s.description) fm.push(`description: ${s.description}`);
+                    fm.push(`---`, ``);
+                    fileContent = fm.join('\n') + '\n' + s.content;
+                  }
+                  await window.electronAPI!.writeTextFile(`${folderPath}/skills/${s.id}/SKILL.md`, fileContent);
+                }
+              }
+              setProjectSkills(apiSkills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+            } else {
+              setProjectSkills([]);
+            }
           }
         } catch {
           if (cancelled) return;
@@ -1410,20 +1434,18 @@ export default function Home() {
       const docId = documentToDelete.id;
       const isFsOnly = docId?.startsWith('fs-');
 
-      // Always call the API to delete the document from the backend
+      // Try to delete the document from the API backend
       if (!isFsOnly) {
-        const deleteResult = await documentService.deleteLocalDocument(selectedProject.id, docId);
-        if (!deleteResult.success) {
-          setDeleteDocError(deleteResult.error || 'Failed to delete document. Please try again.');
-          return;
+        try {
+          await documentService.deleteLocalDocument(selectedProject.id, docId);
+        } catch (err) {
+          console.warn('API delete failed, proceeding with local cleanup:', err);
         }
       }
 
       // Clean up all SQLite records for this document
-      if (!isFsOnly) {
-        await storageService.deleteDocumentStatus(docId);
-        await storageService.clearDocumentFolder(docId);
-      }
+      await storageService.deleteDocumentStatus(docId);
+      await storageService.clearDocumentFolder(docId);
 
       // Delete the file from disk
       const filePath = documentToDelete._fsFile?.path || documentToDelete.source || documentToDelete.path;
@@ -1518,6 +1540,7 @@ export default function Home() {
             setUser={setUser}
             preselectedProjectId={selectedProject?.id}
             disableProjectSelection={true}
+            folderPath={currentProjectData?.folder_path || selectedProject?.folder_path}
           />
 
           {/* Delete Conversation Confirmation Dialog */}
