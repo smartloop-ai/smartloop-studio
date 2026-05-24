@@ -477,7 +477,7 @@ export default function Home() {
                     fm.push(`---`, ``);
                     fileContent = fm.join('\n') + '\n' + s.content;
                   }
-                  await window.electronAPI!.writeTextFile(`${folderPath}/skills/${s.id}/SKILL.md`, fileContent);
+                  await window.electronAPI!.writeTextFile(`${project.folder_path}/skills/${s.id}/SKILL.md`, fileContent);
                 }
               }
               setProjectSkills(apiSkills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
