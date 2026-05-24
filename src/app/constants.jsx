@@ -36,10 +36,14 @@ if (typeof window !== 'undefined' && window.electronAPI?.onBootstrapProgress) {
       detail: { loading: progress.downloading, model: progress.model }
     }));
 
-    // Dispatch download progress for the progress bar
-    window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-      detail: { downloading: progress.downloading, model: progress.model, percent: progress.percent, status: progress.status, stage: progress.stage }
-    }));
+    // Only dispatch download progress while still in progress.
+    // When complete (downloading: false), modelInitStatus above already clears the UI —
+    // dispatching here too would overwrite the null in the same React batch and keep the panel visible.
+    if (progress.downloading) {
+      window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
+        detail: { downloading: progress.downloading, model: progress.model, percent: progress.percent, status: progress.status, stage: progress.stage }
+      }));
+    }
   });
 }
 
