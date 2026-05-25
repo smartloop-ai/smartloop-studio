@@ -10,6 +10,8 @@ export interface ElectronAPI {
   storageClear: () => Promise<void>;
   storageHas: (key: string) => Promise<boolean>;
   storageGetAll: () => Promise<Record<string, any>>;
+  // Open external URL in system browser
+  openExternal: (url: string) => Promise<boolean>;
   // Machine ID
   getMachineId: () => Promise<string | null>;
   // Save a file to a temp directory for local SLP document upload
@@ -56,6 +58,9 @@ export interface ElectronAPI {
   removeBootstrapProgressListener: () => void;
   // Model management
   unloadModel: () => Promise<any>;
+  // SLP version management
+  slpListVersions: () => Promise<{ success: boolean; versions: string[]; current: string | null; error?: string }>;
+  slpSwitchVersion: (version: string) => Promise<{ success: boolean; port?: number; error?: string }>;
   // SLP service lifecycle
   slpServiceStatus: () => Promise<{ running: boolean; port?: number; health?: any }>;
   slpServiceStart: () => Promise<{ success: boolean; error?: string }>;

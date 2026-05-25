@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, setInstallDir, VERSION } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -93,16 +93,8 @@ ipcMain.handle('show-item-in-folder', async (event, filePath) => {
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
-// Derive SLP install directory from the app's install location.
-// In production the exe sits in the directory the user chose in the NSIS wizard,
-// so we place the SLP backend in a '.smartloop' subfolder next to it.
-// In development we fall back to the default ~/.smartloop/.
-{
-  if (app.isPackaged) {
-    const appDir = path.dirname(process.execPath);
-    setInstallDir(path.join(appDir, '.smartloop'));
-  }
-}
+// SLP install directory is always ~/.smartloop/ regardless of where the app is installed.
+// This keeps the binary, config, and data in a consistent, well-known location.
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
@@ -985,6 +977,34 @@ ipcMain.handle('slp-service-status', async () => {
   }
 });
 
+// IPC: list installed SLP versions
+ipcMain.handle('slp-list-versions', async () => {
+  try {
+    const versions = listInstalledVersions();
+    const current = getCurrentVersion();
+    return { success: true, versions, current };
+  } catch (err) {
+    return { success: false, error: err.message, versions: [], current: null };
+  }
+});
+
+// IPC: switch to a different SLP version (restarts service)
+ipcMain.handle('slp-switch-version', async (event, version) => {
+  try {
+    const result = switchVersion(version);
+    if (!result.success) return result;
+
+    // Restart the service with the new version
+    await slpService.stopService();
+    await new Promise(r => setTimeout(r, 1000));
+    const started = await slpService.startService();
+    refreshTray();
+    return { success: started, port: slpService.getPort() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // Bootstrap the SLP service via SSE endpoint
 // Handles workspace creation, model download, project creation, and model loading
 const { bootstrapProgress } = require('./bootstrap-progress.js');
@@ -1831,13 +1851,15 @@ if (!gotTheLock) {
       const baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
-      // Check if bootstrap is needed (e.g. no projects yet)
+      // Check if bootstrap is needed (no projects or no model loaded)
       let needsBootstrap = false;
       try {
         const http = require('http');
-        const url = new URL(`${baseUrl}/v1/projects`);
+
+        // Check projects
+        const projectsUrl = new URL(`${baseUrl}/v1/projects`);
         const projects = await new Promise((resolve) => {
-          http.get({ hostname: url.hostname, port: url.port, path: url.pathname }, (res) => {
+          http.get({ hostname: projectsUrl.hostname, port: projectsUrl.port, path: projectsUrl.pathname }, (res) => {
             let body = '';
             res.on('data', (c) => { body += c; });
             res.on('end', () => {
@@ -1848,7 +1870,26 @@ if (!gotTheLock) {
             });
           }).on('error', () => resolve([]));
         });
-        needsBootstrap = projects.length === 0;
+
+        // Check model loaded via health endpoint
+        const healthUrl = new URL(`${baseUrl}/health`);
+        const health = await new Promise((resolve) => {
+          http.get({ hostname: healthUrl.hostname, port: healthUrl.port, path: healthUrl.pathname }, (res) => {
+            let body = '';
+            res.on('data', (c) => { body += c; });
+            res.on('end', () => {
+              try { resolve(JSON.parse(body)); } catch { resolve({}); }
+            });
+          }).on('error', () => resolve({}));
+        });
+
+        const hasProjects = projects.length > 0;
+        const hasModel = !!(health.model_loaded || health.model_name || health.model);
+
+        if (!hasProjects) console.log('[SLP] No projects found — bootstrap needed');
+        if (!hasModel) console.log('[SLP] No model loaded — bootstrap needed');
+
+        needsBootstrap = !hasProjects || !hasModel;
       } catch {
         needsBootstrap = true;
       }
@@ -1915,13 +1956,14 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Service is healthy — show main window immediately, bootstrap in background
+          // Service is healthy — show main window immediately, bootstrap in background if needed
           let needsBootstrap = false;
           try {
             const http = require('http');
-            const url = new URL(`${baseUrl}/v1/projects`);
+
+            const projectsUrl = new URL(`${baseUrl}/v1/projects`);
             const projects = await new Promise((resolve) => {
-              http.get({ hostname: url.hostname, port: url.port, path: url.pathname }, (res) => {
+              http.get({ hostname: projectsUrl.hostname, port: projectsUrl.port, path: projectsUrl.pathname }, (res) => {
                 let body = '';
                 res.on('data', (c) => { body += c; });
                 res.on('end', () => {
@@ -1932,7 +1974,25 @@ if (!gotTheLock) {
                 });
               }).on('error', () => resolve([]));
             });
-            needsBootstrap = projects.length === 0;
+
+            const healthUrl = new URL(`${baseUrl}/health`);
+            const health = await new Promise((resolve) => {
+              http.get({ hostname: healthUrl.hostname, port: healthUrl.port, path: healthUrl.pathname }, (res) => {
+                let body = '';
+                res.on('data', (c) => { body += c; });
+                res.on('end', () => {
+                  try { resolve(JSON.parse(body)); } catch { resolve({}); }
+                });
+              }).on('error', () => resolve({}));
+            });
+
+            const hasProjects = projects.length > 0;
+            const hasModel = !!(health.model_loaded || health.model_name || health.model);
+
+            if (!hasProjects) console.log('[SLP] No projects found — bootstrap needed');
+            if (!hasModel) console.log('[SLP] No model loaded — bootstrap needed');
+
+            needsBootstrap = !hasProjects || !hasModel;
           } catch {
             needsBootstrap = true;
           }
@@ -1940,7 +2000,7 @@ if (!gotTheLock) {
           // Bootstrap happens after the app is visible so startup feels faster.
           (async () => {
             if (!needsBootstrap) return;
-            console.log('[SLP] No projects — bootstrapping in background');
+            console.log('[SLP] Bootstrap needed — running in background');
             try {
               await bootstrapSlpService(baseUrl);
               refreshTray();

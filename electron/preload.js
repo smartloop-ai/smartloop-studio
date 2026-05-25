@@ -80,6 +80,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeModelDownloadProgressListener: () => {
     ipcRenderer.removeAllListeners('model-download-progress');
   },
+  // SLP version management
+  slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
+  slpSwitchVersion: (version) => ipcRenderer.invoke('slp-switch-version', version),
   // SLP service lifecycle
   slpServiceStart: () => ipcRenderer.invoke('slp-service-start'),
   slpServiceStop: () => ipcRenderer.invoke('slp-service-stop'),
