@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress, Select, MenuItem } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 import { storageService } from '@/app/services/storage.service';
@@ -8,10 +8,8 @@ import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 
 
@@ -154,6 +152,9 @@ export default function SettingsPage() {
     const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
+    const [installedVersions, setInstalledVersions] = useState<string[]>([]);
+    const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+    const [switchingVersion, setSwitchingVersion] = useState(false);
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
@@ -177,6 +178,41 @@ export default function SettingsPage() {
             setServerHealth(null);
         }
     }, []);
+
+    // Fetch installed SLP versions
+    const fetchVersions = useCallback(async () => {
+        const api = window.electronAPI;
+        if (!api?.slpListVersions) return;
+        try {
+            const result = await api.slpListVersions();
+            if (result?.success) {
+                setInstalledVersions(result.versions || []);
+                setCurrentVersion(result.current || null);
+            }
+        } catch (err) {
+            console.warn('Failed to fetch versions:', err);
+        }
+    }, []);
+
+    // Switch SLP version
+    const handleSwitchVersion = useCallback(async (version: string) => {
+        const api = window.electronAPI;
+        if (!api?.slpSwitchVersion || version === currentVersion) return;
+
+        setSwitchingVersion(true);
+        try {
+            const result = await api.slpSwitchVersion(version);
+            if (result?.success) {
+                setCurrentVersion(version);
+                await fetchServerHealth();
+                await fetchVersions();
+            }
+        } catch (err) {
+            console.error('Failed to switch version:', err);
+        } finally {
+            setSwitchingVersion(false);
+        }
+    }, [currentVersion, fetchServerHealth]);
 
     // Fetch models from local SLP service via IPC
     const fetchLocalModels = useCallback(async (force = false) => {
@@ -237,6 +273,7 @@ export default function SettingsPage() {
     useEffect(() => {
         fetchLocalModels();
         fetchServerHealth();
+        fetchVersions();
 
         const handleAuthChange = () => fetchLocalModels(true);
         window.addEventListener('authStateChanged', handleAuthChange);
@@ -429,141 +466,11 @@ export default function SettingsPage() {
                         <p className="text-gray-400 text-sm md:text-base">Model configuration and default settings</p>
                     </Box>
 
-                    {/* Active Model Card - Redesigned */}
-                    {slpConfig && (() => {
-                        const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
-                        if (!activeModel) return null;
-
-                        // Show specs for the selected model, not just the is_active one
-                        const displayModel = slpConfig?.workspace?.models?.find((m: any) => m.model_name === selectedModel) || activeModel;
-                        // Use health endpoint quantization (reflects what's actually running)
-                        const healthQuantize = serverHealth?.details?.quantization;
-                        const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel.config?.quantize?.toUpperCase()) || '—';
-                        const ctxSize = serverHealth?.details?.ctx_size ?? displayModel.config?.ctx_size;
-                        const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
-                        const ramTotal = systemInfo?.totalMemGb;
-
-                        return (
-                            <Box
-                                className="mb-6 md:mb-8"
-                                sx={{
-                                    borderRadius: '16px',
-                                    overflow: 'hidden',
-                                    border: '1px solid var(--sl-white-alpha-8)',
-                                    background: 'linear-gradient(145deg, rgba(20, 20, 25, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)',
-                                }}
-                            >
-                                {/* Active model specs */}
-                                <Box sx={{ p: { xs: 2.5, md: 3 }, pb: 0 }}>
-                                    {/* Specs Row */}
-                                    <Box className="flex flex-wrap gap-2 mb-3">
-                                        {[
-                                            { label: 'Quantization', value: quantize },
-                                            ...(ctxSize ? [{ label: 'Context', value: `${ctxSize.toLocaleString()} tokens` }] : []),
-                                            ...(ramUsed && ramTotal ? [{ label: 'RAM', value: `${ramUsed} / ${ramTotal} GB` }] : []),
-                                            ...(systemInfo?.gpu ? [{ label: 'GPU', value: systemInfo.gpu }] : []),
-                                        ].map(({ label, value }) => (
-                                            <Box
-                                                key={label}
-                                                sx={{
-                                                    px: 1.5,
-                                                    py: 0.75,
-                                                    bgcolor: 'var(--sl-white-alpha-5)',
-                                                    border: '1px solid var(--sl-white-alpha-5)',
-                                                    borderRadius: '8px',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 0.75,
-                                                }}
-                                            >
-                                                <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontWeight: 500 }}>{label}</span>
-                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-80)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
-                                            </Box>
-                                        ))}
-                                    </Box>
-                                </Box>
-
-                                {/* Tok/s Performance Section */}
-                                {(tpsHistory.length > 0 || latestTps !== null) && (
-                                    <Box sx={{
-                                        mx: { xs: 2.5, md: 3 },
-                                        mb: { xs: 2.5, md: 3 },
-                                        p: 2,
-                                        bgcolor: 'var(--sl-black-alpha-40)',
-                                        borderRadius: '12px',
-                                        border: '1px solid var(--sl-white-alpha-5)',
-                                    }}>
-                                        <Box className="flex items-center justify-between mb-2">
-                                            <Box className="flex items-center gap-1.5">
-                                                <SpeedIcon sx={{ fontSize: 16, color: tpsColor }} />
-                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>TOKEN PERFORMANCE</span>
-                                            </Box>
-                                            {latestTps !== null && (
-                                                <Box className="flex items-center gap-1.5">
-                                                    <span style={{
-                                                        fontSize: '22px',
-                                                        fontWeight: 700,
-                                                        fontFamily: 'monospace',
-                                                        color: tpsColor,
-                                                        lineHeight: 1,
-                                                    }}>
-                                                        {latestTps}
-                                                    </span>
-                                                    <span style={{ fontSize: '12px', color: tpsColor, fontWeight: 500, opacity: 0.7 }}>tok/s</span>
-                                                </Box>
-                                            )}
-                                        </Box>
-                                        {tpsHistory.length > 0 && (
-                                            <TpsLineGraph
-                                                dataPoints={tpsHistory.map(h => h.tokens_per_second)}
-                                                timestamps={tpsHistory.map(h => h.created_at)}
-                                            />
-                                        )}
-                                        {tpsHistory.length === 0 && latestTps !== null && (
-                                            <Box sx={{ mt: 1 }}>
-                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block' }}>
-                                                    Graph will appear after more conversations...
-                                                </span>
-                                            </Box>
-                                        )}
-                                    </Box>
-                                )}
-                            </Box>
-                        );
-                    })()}
-
                     {/* Service */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                            <Box className="flex items-center justify-between mb-4">
-                                <Box className="flex items-center gap-2">
-                                    <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                    <h2 className="text-lg md:text-xl font-semibold text-white">Service</h2>
-                                    {/* Status badge next to title */}
-                                    <div
-                                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border"
-                                        style={{
-                                            backgroundColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.1)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.1)' : 'var(--sl-white-alpha-5)',
-                                            borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.2)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.2)' : 'var(--sl-white-alpha-8)',
-                                        }}
-                                    >
-                                        <Box sx={{
-                                            width: 6,
-                                            height: 6,
-                                            borderRadius: '50%',
-                                            bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
-                                            ...(serverHealth?.status === 'running' && {
-                                                boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
-                                            }),
-                                        }} />
-                                        <span style={{
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
-                                        }}>
-                                            {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
-                                        </span>
-                                    </div>
-                                </Box>
+                            <Box className="flex items-center gap-2 mb-4">
+                                <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                <h2 className="text-lg md:text-xl font-semibold text-white">Service</h2>
                             </Box>
 
                             {/* Table */}
@@ -593,25 +500,43 @@ export default function SettingsPage() {
                                 <tbody>
                                     <tr>
                                         <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
-                                            Service URL
+                                            Status
                                         </Box>
-                                        <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                            <Box className="flex items-center gap-1">
-                                                <span>{serverHealth?.url || 'Not available'}</span>
-                                                {serverHealth?.url && (
-                                                    <CopyToClipboard text={`${serverHealth.url}/docs`}>
-                                                        <IconButton
-                                                            size="small"
-                                                            sx={{
-                                                                color: 'var(--sl-white-alpha-40)',
-                                                                padding: '2px',
-                                                                '&:hover': { color: 'var(--sl-white-alpha-80)' },
-                                                            }}
-                                                        >
-                                                            <ContentCopyIcon sx={{ fontSize: 13 }} />
-                                                        </IconButton>
-                                                    </CopyToClipboard>
-                                                )}
+                                        <Box component="td">
+                                            <Box
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer transition-all duration-150"
+                                                onClick={() => {
+                                                    if (serverHealth?.url) {
+                                                        window.electronAPI?.openExternal(`${serverHealth.url}/docs`);
+                                                    }
+                                                }}
+                                                title={serverHealth?.url ? `${serverHealth.url}/docs` : undefined}
+                                                sx={{
+                                                    border: '1px solid',
+                                                    borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.3)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'var(--sl-white-alpha-8)',
+                                                    bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.08)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.08)' : 'var(--sl-white-alpha-5)',
+                                                    '&:hover': {
+                                                        bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.15)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--sl-white-alpha-8)',
+                                                    },
+                                                }}
+                                            >
+                                                <Box sx={{
+                                                    width: 6,
+                                                    height: 6,
+                                                    borderRadius: '50%',
+                                                    flexShrink: 0,
+                                                    bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
+                                                    ...(serverHealth?.status === 'running' && {
+                                                        boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
+                                                    }),
+                                                }} />
+                                                <span style={{
+                                                    fontSize: '12px',
+                                                    fontWeight: 600,
+                                                    color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
+                                                }}>
+                                                    {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
+                                                </span>
                                             </Box>
                                         </Box>
                                     </tr>
@@ -621,7 +546,69 @@ export default function SettingsPage() {
                                                 Version
                                             </Box>
                                             <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                {frameworkVersion}
+                                                {installedVersions.length > 1 ? (
+                                                    <Box className="flex items-center gap-2">
+                                                        <Select
+                                                            value={currentVersion || frameworkVersion}
+                                                            onChange={(e) => handleSwitchVersion(e.target.value)}
+                                                            disabled={switchingVersion}
+                                                            size="small"
+                                                            sx={{
+                                                                fontFamily: 'monospace',
+                                                                fontSize: '13px',
+                                                                fontWeight: 600,
+                                                                color: 'var(--sl-white-alpha-80)',
+                                                                minWidth: 120,
+                                                                '& .MuiSelect-select': {
+                                                                    py: 0.5,
+                                                                    px: 1.5,
+                                                                },
+                                                                '& .MuiOutlinedInput-notchedOutline': {
+                                                                    borderColor: 'var(--sl-white-alpha-8)',
+                                                                },
+                                                                '&:hover .MuiOutlinedInput-notchedOutline': {
+                                                                    borderColor: 'var(--sl-white-alpha-20)',
+                                                                },
+                                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                                                                    borderColor: 'var(--sl-brand-primary)',
+                                                                },
+                                                                '& .MuiSvgIcon-root': {
+                                                                    color: 'var(--sl-white-alpha-40)',
+                                                                },
+                                                            }}
+                                                            MenuProps={{
+                                                                PaperProps: {
+                                                                    sx: {
+                                                                        bgcolor: '#1a1a1a',
+                                                                        border: '1px solid var(--sl-white-alpha-8)',
+                                                                        '& .MuiMenuItem-root': {
+                                                                            fontFamily: 'monospace',
+                                                                            fontSize: '13px',
+                                                                            color: 'var(--sl-white-alpha-80)',
+                                                                            '&:hover': {
+                                                                                bgcolor: 'var(--sl-white-alpha-5)',
+                                                                            },
+                                                                            '&.Mui-selected': {
+                                                                                bgcolor: 'var(--sl-white-alpha-8)',
+                                                                            },
+                                                                        },
+                                                                    },
+                                                                },
+                                                            }}
+                                                        >
+                                                            {installedVersions.map((v) => (
+                                                                <MenuItem key={v} value={v}>
+                                                                    {v}
+                                                                </MenuItem>
+                                                            ))}
+                                                        </Select>
+                                                        {switchingVersion && (
+                                                            <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                                        )}
+                                                    </Box>
+                                                ) : (
+                                                    currentVersion || frameworkVersion
+                                                )}
                                             </Box>
                                         </tr>
                                     )}
@@ -649,7 +636,7 @@ export default function SettingsPage() {
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
                                     {serverHealth?.details && Object.entries(serverHealth.details)
-                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded'].includes(key))
+                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded', 'ctx_size', 'n_ctx', 'model_size'].includes(key))
                                         .map(([key, value]) => {
                                             // Format value for display
                                             let displayValue: React.ReactNode;
@@ -853,6 +840,107 @@ export default function SettingsPage() {
                                 </div>
                             )}
                         </Box>
+
+                    {/* Active Model Card — specs + performance graph */}
+                    {slpConfig && (() => {
+                        const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
+                        if (!activeModel) return null;
+
+                        // Show specs for the selected model, not just the is_active one
+                        const displayModel = slpConfig?.workspace?.models?.find((m: any) => m.model_name === selectedModel) || activeModel;
+                        // Use health endpoint quantization (reflects what's actually running)
+                        const healthQuantize = serverHealth?.details?.quantization;
+                        const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel.config?.quantize?.toUpperCase()) || '—';
+                        const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
+                        const ramTotal = systemInfo?.totalMemGb;
+
+                        return (
+                            <Box
+                                className="mb-6 md:mb-8"
+                                sx={{
+                                    borderRadius: '16px',
+                                    overflow: 'hidden',
+                                    border: '1px solid var(--sl-white-alpha-8)',
+                                    background: 'linear-gradient(145deg, rgba(20, 20, 25, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)',
+                                }}
+                            >
+                                {/* Active model specs */}
+                                <Box sx={{ p: { xs: 2.5, md: 3 }, pb: 0 }}>
+                                    {/* Specs Row */}
+                                    <Box className="flex flex-wrap gap-2 mb-3">
+                                        {[
+                                            { label: 'Quantization', value: quantize },
+                                            ...(ramUsed && ramTotal ? [{ label: 'RAM', value: `${ramUsed} / ${ramTotal} GB` }] : []),
+                                            ...(systemInfo?.gpu ? [{ label: 'GPU', value: systemInfo.gpu }] : []),
+                                        ].map(({ label, value }) => (
+                                            <Box
+                                                key={label}
+                                                sx={{
+                                                    px: 1.5,
+                                                    py: 0.75,
+                                                    bgcolor: 'var(--sl-white-alpha-5)',
+                                                    border: '1px solid var(--sl-white-alpha-5)',
+                                                    borderRadius: '8px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 0.75,
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontWeight: 500 }}>{label}</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-80)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                </Box>
+
+                                {/* Tok/s Performance Section */}
+                                {(tpsHistory.length > 0 || latestTps !== null) && (
+                                    <Box sx={{
+                                        mx: { xs: 2.5, md: 3 },
+                                        mb: { xs: 2.5, md: 3 },
+                                        p: 2,
+                                        bgcolor: 'var(--sl-black-alpha-40)',
+                                        borderRadius: '12px',
+                                        border: '1px solid var(--sl-white-alpha-5)',
+                                    }}>
+                                        <Box className="flex items-center justify-between mb-2">
+                                            <Box className="flex items-center gap-1.5">
+                                                <SpeedIcon sx={{ fontSize: 16, color: tpsColor }} />
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>TOKEN PERFORMANCE</span>
+                                            </Box>
+                                            {latestTps !== null && (
+                                                <Box className="flex items-center gap-1.5">
+                                                    <span style={{
+                                                        fontSize: '22px',
+                                                        fontWeight: 700,
+                                                        fontFamily: 'monospace',
+                                                        color: tpsColor,
+                                                        lineHeight: 1,
+                                                    }}>
+                                                        {latestTps}
+                                                    </span>
+                                                    <span style={{ fontSize: '12px', color: tpsColor, fontWeight: 500, opacity: 0.7 }}>tok/s</span>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                        {tpsHistory.length > 0 && (
+                                            <TpsLineGraph
+                                                dataPoints={tpsHistory.map(h => h.tokens_per_second)}
+                                                timestamps={tpsHistory.map(h => h.created_at)}
+                                            />
+                                        )}
+                                        {tpsHistory.length === 0 && latestTps !== null && (
+                                            <Box sx={{ mt: 1 }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block' }}>
+                                                    Graph will appear after more conversations...
+                                                </span>
+                                            </Box>
+                                        )}
+                                    </Box>
+                                )}
+                            </Box>
+                        );
+                    })()}
 
                     {/* AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">

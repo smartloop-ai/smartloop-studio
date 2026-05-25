@@ -442,12 +442,67 @@ function uninstallSlpService() {
   console.log('[SLP Setup] Uninstall complete');
 }
 
+/**
+ * List all installed SLP versions whose binary actually exists on disk.
+ * Reads the `installed` file and filters to versions with a valid binary.
+ */
+function listInstalledVersions() {
+  const installedFile = path.join(INSTALL_DIR, 'installed');
+  if (!fs.existsSync(installedFile)) return [];
+
+  const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
+  const versions = fs.readFileSync(installedFile, 'utf-8')
+    .split('\n')
+    .map(v => v.trim())
+    .filter(v => v.length > 0);
+
+  return versions.filter(v => {
+    const binaryPath = path.join(INSTALL_DIR, v, 'bin', binaryName);
+    return fs.existsSync(binaryPath);
+  });
+}
+
+/**
+ * Switch the active SLP version by updating the `.installed-version` marker.
+ * Returns { success, error? }.
+ */
+function switchVersion(version) {
+  const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
+  const binaryPath = path.join(INSTALL_DIR, version, 'bin', binaryName);
+
+  if (!fs.existsSync(binaryPath)) {
+    return { success: false, error: `Binary not found for version ${version}` };
+  }
+
+  try {
+    fs.writeFileSync(getMarkerFile(), version);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Get the current active version from the `.installed-version` marker file.
+ */
+function getCurrentVersion() {
+  try {
+    if (fs.existsSync(getMarkerFile())) {
+      return fs.readFileSync(getMarkerFile(), 'utf-8').trim();
+    }
+  } catch {}
+  return VERSION;
+}
+
 module.exports = {
   setupSlpService,
   uninstallSlpService,
   getInstalledBinaryPath,
   getInstallDir,
   setInstallDir,
+  listInstalledVersions,
+  switchVersion,
+  getCurrentVersion,
   DEFAULT_INSTALL_DIR,
   get INSTALL_DIR() { return INSTALL_DIR; },
   VERSION,
