@@ -193,7 +193,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     if (params.get('project') || params.get('conversation')) return;
     const list = projects ?? await projectService.getProjects();
     if (list.length === 0) return;
-    const target = list.find((p: any) => p.system) ?? list[0];
+    const savedId = await storageService.getSetting('selected_project_id');
+    const target = (savedId && list.find((p: any) => p.id === savedId))
+      ?? list.find((p: any) => p.system)
+      ?? list[0];
     navigate(`/?project=${target.id}`, { replace: true });
   };
 
@@ -423,6 +426,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const projectConversations = allConversations.filter(
         (conv: any) => conv.project_id === projectId
       );
+
+      storageService.setSetting('selected_project_id', projectId);
 
       if (projectConversations.length > 0) {
         // Sort by updated_at (most recent first) and navigate to the most recent
