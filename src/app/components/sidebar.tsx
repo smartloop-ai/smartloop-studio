@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { projectService } from '../services/project.service';
@@ -32,6 +32,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -247,6 +248,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
+  // Persist selected project whenever the URL project param changes (covers all navigation paths)
+  useEffect(() => {
+    const projectId = searchParams.get('project');
+    if (projectId) {
+      storageService.setSetting('selected_project_id', projectId);
+    }
+  }, [searchParams]);
+
   // Listen for conversation and project changes
   useEffect(() => {
     const handleConversationChange = () => { refreshConversations(); };
@@ -426,8 +435,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       const projectConversations = allConversations.filter(
         (conv: any) => conv.project_id === projectId
       );
-
-      storageService.setSetting('selected_project_id', projectId);
 
       if (projectConversations.length > 0) {
         // Sort by updated_at (most recent first) and navigate to the most recent
@@ -712,8 +719,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       <Box sx={{ flex: 1, overflowY: 'auto', px: 2.5, py: 1 }}>
         {/* Compute URL params once for selection logic */}
         {(() => {
-          const urlParams = new URLSearchParams(location.search);
-          const currentProjectId = urlParams.get('project');
+          const currentProjectId = searchParams.get('project');
 
           return (
             <>
