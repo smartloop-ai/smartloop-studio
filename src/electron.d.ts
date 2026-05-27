@@ -56,6 +56,8 @@ export interface ElectronAPI {
   // Bootstrap progress
   onBootstrapProgress: (callback: (data: any) => void) => void;
   removeBootstrapProgressListener: () => void;
+  onBootstrapComplete: (callback: () => void) => void;
+  removeBootstrapCompleteListener: () => void;
   // Model management
   unloadModel: () => Promise<any>;
   // SLP version management
