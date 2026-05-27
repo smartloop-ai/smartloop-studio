@@ -90,12 +90,6 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
     const localBase = await getLocalApiEndpoint();
     if (!localBase) return { success: false, error: 'Local API service is not ready' };
 
-    // Get the project's folder_path before deletion so we can clean it up
-    const projectMeta = await storageService.getProjectMeta(projectId);
-    // Fall back to the default folder path based on project name if not explicitly set
-    const slug = (projectMeta?.name || '').toLowerCase().replace(/\s+/g, '_');
-    const folderPath = projectMeta?.folder_path || (slug ? `~/smartloop/${slug}` : null);
-
     // Delete documents from the local API before deleting the project
     try {
       const docsResult = await documentService.getLocalDocuments(projectId);
@@ -119,12 +113,6 @@ const deleteProject = async (projectId: string): Promise<ProjectServiceResponse>
       await storageService.deleteDocumentStatusByProject(projectId);
       await storageService.deleteFoldersByProject(projectId);
       await storageService.deleteProjectMeta(projectId);
-
-      // Delete the project folders from disk
-      await window.electronAPI!.deleteFolder(`~/.smartloop/${projectId}`);
-      if (folderPath) {
-        await window.electronAPI!.deleteFolder(folderPath);
-      }
 
       return { success: true, data: { projectId } };
     }

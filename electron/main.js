@@ -528,6 +528,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     const file = new File([fileBuffer], fileName, { type: 'application/zip' });
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('name', projectSlug);
 
     const importRes = await fetch(`${baseUrl}/v1/projects/import`, {
       method: 'POST',
