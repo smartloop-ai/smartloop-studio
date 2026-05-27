@@ -121,6 +121,17 @@ function openDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_document_status_project ON document_status(project_id);
+
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
   `);
 
   // Seed install_status rows (4 steps) if not present
@@ -684,6 +695,44 @@ function deleteDocumentStatusByProject(projectId) {
   d.prepare('DELETE FROM document_status WHERE project_id = ?').run(projectId);
 }
 
+// --- Documents (local SQLite source of truth) ---
+
+function addDocument({ id, project_id, filename, status = 'pending' }) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare(`
+    INSERT OR REPLACE INTO documents (id, project_id, filename, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, project_id, filename, status, now, now);
+}
+
+function getDocumentsByProject(projectId) {
+  const d = openDatabase();
+  return d.prepare('SELECT * FROM documents WHERE project_id = ? ORDER BY created_at ASC').all(projectId);
+}
+
+function updateDocumentStatus(id, status) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare('UPDATE documents SET status = ?, updated_at = ? WHERE id = ?').run(status, now, id);
+}
+
+function updateDocumentId(oldId, newId, status) {
+  const d = openDatabase();
+  const now = new Date().toISOString();
+  d.prepare('UPDATE documents SET id = ?, status = ?, updated_at = ? WHERE id = ?').run(newId, status, now, oldId);
+}
+
+function deleteDocument(id) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM documents WHERE id = ?').run(id);
+}
+
+function deleteDocumentsByProject(projectId) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM documents WHERE project_id = ?').run(projectId);
+}
+
 function deleteFoldersByProject(projectId) {
   const d = openDatabase();
   d.prepare('DELETE FROM folders WHERE project_id = ?').run(projectId);
@@ -760,4 +809,11 @@ module.exports = {
   deleteDocumentStatus,
   deleteDocumentStatusByProject,
   deleteFoldersByProject,
+  // Documents (local source of truth)
+  addDocument,
+  getDocumentsByProject,
+  updateDocumentStatus,
+  updateDocumentId,
+  deleteDocument,
+  deleteDocumentsByProject,
 };

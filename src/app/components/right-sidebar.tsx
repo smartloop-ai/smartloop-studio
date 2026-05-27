@@ -354,9 +354,18 @@ export default function RightSidebar({
     load();
   }, [selectedProject?.id]);
 
-  // Clear uploading docs when project changes
+  // Load pending/processing uploads from SQLite when project changes so they survive navigation
   useEffect(() => {
-    setUploadingDocs([]);
+    if (!selectedProject?.id) { setUploadingDocs([]); setProcessingDocs(new Map()); return; }
+    storageService.getDocumentsByProject(selectedProject.id).then(docs => {
+      if (docs.length > 0) {
+        setUploadingDocs(docs.map((d: any) => ({ id: d.id, name: d.filename, source: d.filename })));
+        setProcessingDocs(new Map(docs.map((d: any) => [d.id, d.status])));
+      } else {
+        setUploadingDocs([]);
+        setProcessingDocs(new Map());
+      }
+    });
   }, [selectedProject?.id]);
 
   // Local copy of API documents, refreshed periodically
@@ -825,6 +834,10 @@ export default function RightSidebar({
           });
           setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== apiDocId));
 
+          // Remove from SQLite — doc is now owned by the API
+          storageService.deleteDocument(realDocId || placeholderId);
+          if (apiDocId && apiDocId !== realDocId) storageService.deleteDocument(apiDocId);
+
           if (finalDocId && doc) {
             const docStatus = doc.status || 'indexed';
             setIndexingStatus(prev => ({ ...prev, [finalDocId]: docStatus }));
@@ -847,6 +860,8 @@ export default function RightSidebar({
 
           if (!realDocId) {
             realDocId = apiDocId;
+            // Update SQLite: replace placeholder id with real API id
+            storageService.updateDocumentId(placeholderId, apiDocId, docStatus);
             setUploadingDocs(prev => prev.map(d =>
               d.id === placeholderId ? { ...doc, name: file.name } : d
             ));
@@ -857,11 +872,15 @@ export default function RightSidebar({
               return next;
             });
           } else {
+            storageService.updateDocumentStatus(apiDocId, docStatus);
             setProcessingDocs(prev => new Map(prev).set(apiDocId, docStatus));
           }
           setIndexingStatus(prev => ({ ...prev, [apiDocId]: docStatus }));
         } else {
-          setProcessingDocs(prev => new Map(prev).set(realDocId || placeholderId, progress.status || 'Processing...'));
+          const currentId = realDocId || placeholderId;
+          const currentStatus = progress.status || 'processing';
+          storageService.updateDocumentStatus(currentId, currentStatus);
+          setProcessingDocs(prev => new Map(prev).set(currentId, currentStatus));
         }
       },
       currentProjectData?.folder_path,
@@ -875,6 +894,9 @@ export default function RightSidebar({
         return next;
       });
       setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId));
+      // Remove from SQLite on failure
+      storageService.deleteDocument(placeholderId);
+      if (realDocId) storageService.deleteDocument(realDocId);
       throw new Error(localResult.error || 'Upload failed');
     }
 
@@ -889,6 +911,8 @@ export default function RightSidebar({
         return next;
       });
       setUploadingDocs(prev => prev.filter(d => d.id !== placeholderId && d.id !== realDocId && d.id !== docId));
+      // Remove from SQLite — doc is now owned by the API
+      storageService.deleteDocument(realDocId || placeholderId);
       if (docId) {
         const docStatus = uploadedDocument?.status || 'indexed';
         setIndexingStatus(prev => ({ ...prev, [docId]: docStatus }));
@@ -946,6 +970,11 @@ export default function RightSidebar({
       for (const e of entries) next.set(e.placeholderId, 'pending');
       return next;
     });
+
+    // Persist to SQLite immediately so pending uploads survive navigation
+    for (const e of entries) {
+      await storageService.addDocument({ id: e.placeholderId, project_id: projectId, filename: e.file.name, status: 'pending' });
+    }
 
     // Process uploads one at a time to avoid progress-listener conflicts
     for (const { file, placeholderId } of entries) {
