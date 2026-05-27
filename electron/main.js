@@ -739,6 +739,13 @@ ipcMain.handle('db-get-document-status-by-project', (event, projectId) => databa
 ipcMain.handle('db-delete-document-status', (event, documentId) => database.deleteDocumentStatus(documentId));
 ipcMain.handle('db-delete-document-status-by-project', (event, projectId) => database.deleteDocumentStatusByProject(projectId));
 ipcMain.handle('db-delete-folders-by-project', (event, projectId) => database.deleteFoldersByProject(projectId));
+// Documents (local source of truth)
+ipcMain.handle('db-add-document', (event, doc) => database.addDocument(doc));
+ipcMain.handle('db-get-documents-by-project', (event, projectId) => database.getDocumentsByProject(projectId));
+ipcMain.handle('db-update-document-status', (event, id, status) => database.updateDocumentStatus(id, status));
+ipcMain.handle('db-update-document-id', (event, oldId, newId, status) => database.updateDocumentId(oldId, newId, status));
+ipcMain.handle('db-delete-document', (event, id) => database.deleteDocument(id));
+ipcMain.handle('db-delete-documents-by-project', (event, projectId) => database.deleteDocumentsByProject(projectId));
 
 // --- Local SLP service helpers ---
 

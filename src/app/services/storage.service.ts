@@ -494,6 +494,63 @@ class StorageService {
       console.error('Error deleting folders by project:', error);
     }
   }
+
+  // --- Documents (local SQLite source of truth) ---
+
+  async addDocument(doc: { id: string; project_id: string; filename: string; status?: string }): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.addDocument(doc);
+    } catch (error) {
+      console.error('Error adding document:', error);
+    }
+  }
+
+  async getDocumentsByProject(projectId: string): Promise<any[]> {
+    if (!this.db) return [];
+    try {
+      return await this.db.getDocumentsByProject(projectId) ?? [];
+    } catch (error) {
+      console.error('Error getting documents by project:', error);
+      return [];
+    }
+  }
+
+  async updateDocumentStatus(id: string, status: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.updateDocumentStatus(id, status);
+    } catch (error) {
+      console.error('Error updating document status:', error);
+    }
+  }
+
+  async updateDocumentId(oldId: string, newId: string, status: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.updateDocumentId(oldId, newId, status);
+    } catch (error) {
+      console.error('Error updating document id:', error);
+    }
+  }
+
+  async deleteDocument(id: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteDocument(id);
+    } catch (error) {
+      console.error('Error deleting document:', error);
+    }
+  }
+
+  async deleteDocumentsByProject(projectId: string): Promise<void> {
+    if (!this.db) return;
+    try {
+      await this.db.deleteDocumentsByProject(projectId);
+    } catch (error) {
+      console.error('Error deleting documents by project:', error);
+    }
+  }
 }
 
 export const storageService = new StorageService();
