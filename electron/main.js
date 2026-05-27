@@ -512,9 +512,8 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     const projectColor = overrides?.color || manifest?.project?.color || null;
     const projectSlug = projectName.trim().toLowerCase().replace(/\s+/g, '_');
 
-    // Determine the new working directory
+    // Determine the working directory path (folder is created by the API)
     const smartloopBase = path.join(os.homedir(), 'smartloop');
-    fs.mkdirSync(smartloopBase, { recursive: true });
     const newFolderPath = path.join(smartloopBase, projectSlug);
 
     // Register the project with the SLP backend via its import API
@@ -622,17 +621,6 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
         tabs: importedTabs,
         activeTabId: importedTabs[0].id,
       });
-    }
-
-    // Ensure the working directory exists
-    if (!fs.existsSync(newFolderPath)) {
-      fs.mkdirSync(newFolderPath, { recursive: true });
-    }
-
-    // Restore project working directory files from the export
-    const projectDir = path.join(tmpDir, 'project');
-    if (fs.existsSync(projectDir)) {
-      fs.cpSync(projectDir, newFolderPath, { recursive: true });
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });

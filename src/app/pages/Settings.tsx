@@ -694,8 +694,8 @@ export default function SettingsPage() {
                                 </tbody>
                             </Box>
 
-                            {/* Error message if any */}
-                            {serverHealth?.error && (
+                            {/* Error message (skip for unreachable — status badge already shows it) */}
+                            {serverHealth?.error && serverHealth.status !== 'unreachable' && (
                                 <Box sx={{
                                     mt: 2,
                                     p: 2,
