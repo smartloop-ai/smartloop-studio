@@ -187,10 +187,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const autoSelectFirstProject = async (projects?: any[]) => {
-    // HashRouter (Electron) puts params in window.location.hash, not window.location.search
     const hash = window.location.hash;
     const queryStart = hash.indexOf('?');
-    const params = new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart) : window.location.search);
+    const params = new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart) : '');
     if (params.get('project') || params.get('conversation')) return;
     const list = projects ?? await projectService.getProjects();
     if (list.length === 0) return;
