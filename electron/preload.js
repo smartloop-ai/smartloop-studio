@@ -108,6 +108,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeBootstrapProgressListener: () => {
     ipcRenderer.removeAllListeners('bootstrap-progress');
   },
+  onBootstrapComplete: (callback) => {
+    ipcRenderer.on('bootstrap-complete', () => callback());
+  },
+  removeBootstrapCompleteListener: () => {
+    ipcRenderer.removeAllListeners('bootstrap-complete');
+  },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
   // Read a text file from disk

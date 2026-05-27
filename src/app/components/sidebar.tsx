@@ -183,6 +183,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const loadLocalProjects = async () => {
     const projects = await projectService.getProjects();
     setLocalProjects(projects);
+    return projects;
+  };
+
+  const autoSelectFirstProject = async (projects?: any[]) => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('project') || params.get('conversation')) return;
+    const list = projects ?? await projectService.getProjects();
+    if (list.length === 0) return;
+    const target = list.find((p: any) => p.system) ?? list[0];
+    navigate(`/?project=${target.id}`, { replace: true });
   };
 
   // Load projects and conversations on mount and when user.projects changes
@@ -197,11 +207,27 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
   // Reload when SLP service becomes ready (may fire after initial load)
   useEffect(() => {
-    const handleServiceReady = () => { loadLocalProjects(); refreshConversations(); };
+    const handleServiceReady = async () => {
+      const projects = await loadLocalProjects();
+      await refreshConversations();
+      await autoSelectFirstProject(projects);
+    };
     window.addEventListener('slpServiceReady', handleServiceReady);
     // Also check immediately in case event already fired
-    loadLocalProjects();
+    loadLocalProjects().then(autoSelectFirstProject);
     return () => window.removeEventListener('slpServiceReady', handleServiceReady);
+  }, []);
+
+  // Reload when bootstrap completes so newly downloaded models/projects appear
+  useEffect(() => {
+    if (!isElectron || !window.electronAPI?.onBootstrapComplete) return;
+    const handleBootstrapComplete = async () => {
+      const projects = await loadLocalProjects();
+      await refreshConversations();
+      await autoSelectFirstProject(projects);
+    };
+    window.electronAPI.onBootstrapComplete(handleBootstrapComplete);
+    return () => window.electronAPI!.removeBootstrapCompleteListener?.();
   }, []);
 
   // Load conversations from SQLite (local mode) or user service (remote)

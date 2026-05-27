@@ -1058,6 +1058,7 @@ async function bootstrapSlpService(baseUrl) {
           mainWindow.webContents.send('bootstrap-progress', {
             percent: 100, status: 'Ready', model: '', downloading: false
           });
+          mainWindow.webContents.send('bootstrap-complete');
         }
 
         resolve(true);
