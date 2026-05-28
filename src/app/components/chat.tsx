@@ -90,7 +90,7 @@ export default function Chat(props: {
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
-  const [, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
+  const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
   const [indexingProgress, setIndexingProgress] = useState<{ total: number; indexed: number; pending: number } | null>(null);
 
@@ -1226,9 +1226,8 @@ export default function Chat(props: {
                                 <div className="flex flex-wrap gap-1.5">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
-                                    const slug = (props.project?.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
-                                    const folderPath = props.project?.folder_path || `~/smartloop/${slug}`;
-                                    const resolvedPath = label ? `${folderPath}/documents/${label}` : '';
+                                    const folderPath = props.project?.folder_path;
+                                    const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
                                     return (
                                       <span
                                         key={idx}
@@ -1383,8 +1382,7 @@ export default function Chat(props: {
                                 onClick={async () => {
                                   if (!window.electronAPI?.saveFileDialog) return;
                                   setSaving(msg.id);
-                                  const slug = (props.project?.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
-                                  const folderPath = props.project?.folder_path || `~/smartloop/${slug}`;
+                                  const folderPath = props.project?.folder_path;
                                   if (!folderPath) { setSaving(''); return; }
                                   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
                                   const defaultName = `${timestamp}.md`;
@@ -1507,14 +1505,14 @@ export default function Chat(props: {
                     <span>ready</span>
                   </span>
                 )}
-                {props.project && (
+                {statusInfo.model && (
                   <span className="flex items-center gap-1 font-mono">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
                       <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
                       <path d="M8 6.5v8" stroke="var(--sl-text-faint)" strokeWidth="0.5" />
                       <path d="M2 4l6 2.5L14 4" stroke="var(--sl-text-faint)" strokeWidth="0.5" fill="none" />
                     </svg>
-                    <span>~/smartloop/{props.project.name || props.project.title || 'project'}</span>
+                    <span>{statusInfo.model}</span>
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">

@@ -894,28 +894,9 @@ export default function Home() {
     if (!trimmedName) return;
     const result = await projectService.updateProject(selectedProject.id, { name: trimmedName });
     if (result.success) {
-      // Update folder_path if it matches the old project name pattern
-      const oldName = selectedProject.name;
-      const currentPath = currentProjectData?.folder_path || '';
-      if (oldName && currentPath) {
-        const oldSlug = oldName.trim().toLowerCase().replace(/\s+/g, '_');
-        const newSlug = trimmedName.toLowerCase().replace(/\s+/g, '_');
-        if (currentPath.endsWith(`/${oldSlug}`) || currentPath === oldSlug) {
-          const newPath = currentPath.replace(new RegExp(`${oldSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), newSlug);
-          // Rename the actual folder on disk
-          await window.electronAPI!.renameFolder(currentPath, newPath);
-          // Sync the new folder_path to both the API and local SQLite
-          await projectService.updateProject(selectedProject.id, { name: trimmedName, folder_path: newPath });
-          await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName, folder_path: newPath });
-          setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
-          setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, folder_path: newPath } : prev);
-          window.dispatchEvent(new CustomEvent('projectUpdated'));
-          return;
-        }
-      }
-      await storageService.updateProjectMeta(selectedProject.id, { name: trimmedName });
-      setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName } : prev);
-      setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName } : prev);
+      const folderPath = result.data?.folder_path;
+      setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, ...(folderPath ? { folder_path: folderPath } : {}) } : prev);
+      setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, ...(folderPath ? { folder_path: folderPath } : {}) } : prev);
       window.dispatchEvent(new CustomEvent('projectUpdated'));
     }
   };
