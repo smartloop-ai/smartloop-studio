@@ -3,10 +3,11 @@ name: Bump Framework Version
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'New framework version (e.g. 1.0.7)'
+      bump_framework:
+        description: 'Also bump framework version (electron/slp-setup.js)?'
         required: true
-        type: string
+        type: boolean
+        default: true
 
 jobs:
   bump:
@@ -18,30 +19,77 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate version format
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compute next patch versions
+        id: ver
         run: |
-          if ! echo "${{ inputs.version }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Invalid version format '${{ inputs.version }}'. Expected semver (e.g. 1.0.7)"
-            exit 1
-          fi
+          FW_CURRENT=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+          FW_MAJOR=$(echo "$FW_CURRENT" | cut -d. -f1)
+          FW_MINOR=$(echo "$FW_CURRENT" | cut -d. -f2)
+          FW_PATCH=$(echo "$FW_CURRENT" | cut -d. -f3)
+          FW_NEXT="$FW_MAJOR.$FW_MINOR.$((FW_PATCH + 1))"
+
+          APP_CURRENT=$(node -p "require('./package.json').version")
+          APP_MAJOR=$(echo "$APP_CURRENT" | cut -d. -f1)
+          APP_MINOR=$(echo "$APP_CURRENT" | cut -d. -f2)
+          APP_PATCH=$(echo "$APP_CURRENT" | cut -d. -f3)
+          APP_NEXT="$APP_MAJOR.$APP_MINOR.$((APP_PATCH + 1))"
+
+          echo "fw_current=$FW_CURRENT" >> $GITHUB_OUTPUT
+          echo "fw_next=$FW_NEXT" >> $GITHUB_OUTPUT
+          echo "app_current=$APP_CURRENT" >> $GITHUB_OUTPUT
+          echo "app_next=$APP_NEXT" >> $GITHUB_OUTPUT
+          echo "Framework: $FW_CURRENT → $FW_NEXT"
+          echo "App: $APP_CURRENT → $APP_NEXT"
 
       - name: Bump VERSION in slp-setup.js
+        if: ${{ inputs.bump_framework == true }}
         run: |
-          sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ inputs.version }}';/" electron/slp-setup.js
+          sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ steps.ver.outputs.fw_next }}';/" electron/slp-setup.js
           grep "const VERSION" electron/slp-setup.js
 
-      - name: Create PR
+      - name: Bump version in package.json
+        run: |
+          npm version ${{ steps.ver.outputs.app_next }} --no-git-tag-version
+          node -p "require('./package.json').version"
+
+      - name: Create PR (framework + app)
+        if: ${{ inputs.bump_framework == true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="bump-framework-${{ inputs.version }}"
+          FW_NEXT="${{ steps.ver.outputs.fw_next }}"
+          APP_NEXT="${{ steps.ver.outputs.app_next }}"
+          BRANCH="bump-framework-$FW_NEXT"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add electron/slp-setup.js
-          git commit -m "bump framework version to ${{ inputs.version }}"
+          git add electron/slp-setup.js package.json
+          git commit -m "bump framework to $FW_NEXT, app to $APP_NEXT"
           git push -u origin "$BRANCH"
           gh pr create \
-            --title "Bump framework version to ${{ inputs.version }}" \
-            --body "Bumps \`VERSION\` in \`electron/slp-setup.js\` to \`${{ inputs.version }}\`." \
+            --title "Bump framework to $FW_NEXT, app to $APP_NEXT" \
+            --body "Auto-bumps versions:\n- Framework (\`electron/slp-setup.js\`): \`${{ steps.ver.outputs.fw_current }}\` → \`$FW_NEXT\`\n- App (\`package.json\`): \`${{ steps.ver.outputs.app_current }}\` → \`$APP_NEXT\`" \
+            --base main
+
+      - name: Create PR (app only)
+        if: ${{ inputs.bump_framework == false }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APP_NEXT="${{ steps.ver.outputs.app_next }}"
+          BRANCH="bump-app-$APP_NEXT"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add package.json
+          git commit -m "bump app version to $APP_NEXT"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "Bump app version to $APP_NEXT" \
+            --body "Auto-bumps \`package.json\` version: \`${{ steps.ver.outputs.app_current }}\` → \`$APP_NEXT\`." \
             --base main
