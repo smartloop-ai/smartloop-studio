@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsUpgrade, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -753,6 +753,9 @@ ipcMain.handle('db-delete-documents-by-project', (event, projectId) => database.
 
 // IPC: get framework version
 ipcMain.handle('get-framework-version', () => VERSION);
+
+// IPC: get app (package) version
+ipcMain.handle('get-app-version', () => app.getVersion());
 
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {
@@ -1826,13 +1829,46 @@ if (!gotTheLock) {
     });
     refreshTray();
 
+    // ── Upgrade gate ──────────────────────────────────────────────
+    // An older SLP version may still be installed (and possibly running
+    // and healthy on the default port). The health-check flow below would
+    // treat that as "good to go" and never pick up the newer bundled
+    // VERSION. So if an existing install is out of date, upgrade it up
+    // front: download the new version and stop the stale service. The
+    // normal flow then starts the freshly installed binary. (A fresh
+    // install — no version yet — is left to the "first launch" branch.)
+    let upgraded = false;
+    if (needsUpgrade()) {
+      console.log('[SLP] Installed SLP version is out of date — upgrading to', VERSION);
+      createSplashScreen();
+      try {
+        await setupSlpService((progress) => updateSplashProgress(progress));
+
+        // Stop the stale service so it releases the port; the freshly
+        // installed binary issues the stop via the shared pid file.
+        updateSplashProgress({ status: 'preparing', message: 'Finishing update...' });
+        await slpService.stopService();
+
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.close();
+          splashWindow = null;
+        }
+        upgraded = true;
+      } catch (error) {
+        console.error('[SLP] Upgrade failed:', error.message);
+        updateSplashProgress({ status: 'error', message: 'Update failed. Please restart the app.' });
+        return;
+      }
+    }
+
     // ── Startup flow ──────────────────────────────────────────────
     // 1. Health check → if healthy, skip straight to main window
     // 2. Not healthy but installed → start service, then go to main
     // 3. Not installed at all → show splash for installation
     // ──────────────────────────────────────────────────────────────
-
-    const serviceReady = await slpService.checkHealth();
+    // After an upgrade, skip the health fast-path so we never re-adopt a
+    // lingering old service — go straight to starting the new binary.
+    const serviceReady = upgraded ? false : await slpService.checkHealth();
 
     if (serviceReady) {
       // Service is already running (local or external) — go straight to main
