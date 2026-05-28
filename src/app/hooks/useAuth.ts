@@ -105,7 +105,6 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           const result = await projectService.createProject({
             name: 'General Chat',
             system: true,
-            folder_path: '~/smartloop/general_chat',
           });
           if (result.success && result.data) {
             projects = [result.data];

@@ -48,6 +48,7 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
 
     if (response.status === 200 || response.status === 201) {
       const project = await response.json();
+      const folderPath = project.cwd || params.folder_path;
 
       // Save UI metadata to local SQLite (preserve display name)
       await storageService.upsertProject({
@@ -55,7 +56,7 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
         name: trimmedName,
         color,
         system,
-        folder_path: params.folder_path,
+        folder_path: folderPath,
       });
 
       // Auto-register a local MCP server for the new project
@@ -67,7 +68,7 @@ const createProject = async (params: CreateProjectParams): Promise<ProjectServic
         config: { name: slug },
       });
 
-      return { success: true, data: { ...project, name: trimmedName, color, folder_path: params.folder_path } };
+      return { success: true, data: { ...project, name: trimmedName, color, folder_path: folderPath } };
     }
 
     const errorData = await response.json().catch(() => ({}));
@@ -148,14 +149,13 @@ const getProjects = async (): Promise<any[]> => {
 
     const enriched = projects.map((p: any) => {
       const meta = metaMap.get(p.id);
-      const slug = (meta?.name || p.name || 'general_chat').toLowerCase().replace(/\s+/g, '_');
-      const folderPath = meta?.folder_path || (p.system ? `~/smartloop/${slug}` : null);
+      const folderPath = p.cwd || meta?.folder_path || null;
       return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
     });
 
-    // Persist folder_path for system projects missing it in SQLite
+    // Persist folder_path from API response if missing in SQLite
     for (const p of enriched) {
-      if (p.system && p.folder_path && !metaMap.get(p.id)?.folder_path) {
+      if (p.folder_path && !metaMap.get(p.id)?.folder_path) {
         await storageService.updateProjectMeta(p.id, { folder_path: p.folder_path });
       }
     }
@@ -198,12 +198,12 @@ const updateProject = async (projectId: string, updates: Partial<CreateProjectPa
       const metaUpdates: any = {};
       if (trimmedName) metaUpdates.name = trimmedName;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
-      if (updates.folder_path !== undefined) metaUpdates.folder_path = updates.folder_path;
+      if (project.cwd) metaUpdates.folder_path = project.cwd;
       if (Object.keys(metaUpdates).length > 0) {
         await storageService.updateProjectMeta(projectId, metaUpdates);
       }
 
-      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color } };
+      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color, folder_path: project.cwd } };
     }
 
     const errorData = await response.json().catch(() => ({}));

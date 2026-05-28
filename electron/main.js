@@ -512,9 +512,8 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     const projectColor = overrides?.color || manifest?.project?.color || null;
     const projectSlug = projectName.trim().toLowerCase().replace(/\s+/g, '_');
 
-    // Determine the working directory path (folder is created by the API)
-    const smartloopBase = path.join(os.homedir(), 'smartloop');
-    const newFolderPath = path.join(smartloopBase, projectSlug);
+    // Use cwd if provided, otherwise construct from project slug
+    const newFolderPath = overrides?.cwd || path.join(os.homedir(), 'smartloop', projectSlug);
 
     // Register the project with the SLP backend via its import API
     const baseUrl = slpService.getLocalBaseUrl();
@@ -543,6 +542,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const createdProject = await importRes.json();
     const newProjectId = createdProject.id;
+    const resolvedFolderPath = createdProject.cwd || newFolderPath;
 
     // Save UI metadata (display name, color) to SQLite
     database.upsertProject({
@@ -551,7 +551,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
       color: projectColor,
       temperature: manifest?.project?.temperature ?? 0.3,
       system: false,
-      folder_path: newFolderPath,
+      folder_path: resolvedFolderPath,
     });
 
     const importedTabs = [];
