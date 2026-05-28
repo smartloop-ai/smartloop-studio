@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress, Select, MenuItem } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 import { storageService } from '@/app/services/storage.service';
@@ -151,10 +151,7 @@ export default function SettingsPage() {
     const [initingModel, setInitingModel] = useState<string | null>(null);
     const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
-    const [frameworkVersion, setFrameworkVersion] = useState<string | null>(null);
-    const [installedVersions, setInstalledVersions] = useState<string[]>([]);
-    const [currentVersion, setCurrentVersion] = useState<string | null>(null);
-    const [switchingVersion, setSwitchingVersion] = useState(false);
+    const [appVersion, setAppVersion] = useState<string | null>(null);
 
     // Fetch server health info
     const fetchServerHealth = useCallback(async () => {
@@ -178,41 +175,6 @@ export default function SettingsPage() {
             setServerHealth(null);
         }
     }, []);
-
-    // Fetch installed SLP versions
-    const fetchVersions = useCallback(async () => {
-        const api = window.electronAPI;
-        if (!api?.slpListVersions) return;
-        try {
-            const result = await api.slpListVersions();
-            if (result?.success) {
-                setInstalledVersions(result.versions || []);
-                setCurrentVersion(result.current || null);
-            }
-        } catch (err) {
-            console.warn('Failed to fetch versions:', err);
-        }
-    }, []);
-
-    // Switch SLP version
-    const handleSwitchVersion = useCallback(async (version: string) => {
-        const api = window.electronAPI;
-        if (!api?.slpSwitchVersion || version === currentVersion) return;
-
-        setSwitchingVersion(true);
-        try {
-            const result = await api.slpSwitchVersion(version);
-            if (result?.success) {
-                setCurrentVersion(version);
-                await fetchServerHealth();
-                await fetchVersions();
-            }
-        } catch (err) {
-            console.error('Failed to switch version:', err);
-        } finally {
-            setSwitchingVersion(false);
-        }
-    }, [currentVersion, fetchServerHealth]);
 
     // Fetch models from local SLP service via IPC
     const fetchLocalModels = useCallback(async (force = false) => {
@@ -273,7 +235,6 @@ export default function SettingsPage() {
     useEffect(() => {
         fetchLocalModels();
         fetchServerHealth();
-        fetchVersions();
 
         const handleAuthChange = () => fetchLocalModels(true);
         window.addEventListener('authStateChanged', handleAuthChange);
@@ -333,10 +294,10 @@ export default function SettingsPage() {
                     setSystemInfo(info);
                 } catch {}
             }
-            if (api?.getFrameworkVersion) {
+            if (api?.getAppVersion) {
                 try {
-                    const ver = await api.getFrameworkVersion();
-                    setFrameworkVersion(ver);
+                    const ver = await api.getAppVersion();
+                    setAppVersion(ver);
                 } catch {}
             }
         };
@@ -540,75 +501,13 @@ export default function SettingsPage() {
                                             </Box>
                                         </Box>
                                     </tr>
-                                    {frameworkVersion && (
+                                    {appVersion && (
                                         <tr>
                                             <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
                                                 Version
                                             </Box>
                                             <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                {installedVersions.length > 1 ? (
-                                                    <Box className="flex items-center gap-2">
-                                                        <Select
-                                                            value={currentVersion || frameworkVersion}
-                                                            onChange={(e) => handleSwitchVersion(e.target.value)}
-                                                            disabled={switchingVersion}
-                                                            size="small"
-                                                            sx={{
-                                                                fontFamily: 'monospace',
-                                                                fontSize: '13px',
-                                                                fontWeight: 600,
-                                                                color: 'var(--sl-white-alpha-80)',
-                                                                minWidth: 120,
-                                                                '& .MuiSelect-select': {
-                                                                    py: 0.5,
-                                                                    px: 1.5,
-                                                                },
-                                                                '& .MuiOutlinedInput-notchedOutline': {
-                                                                    borderColor: 'var(--sl-white-alpha-8)',
-                                                                },
-                                                                '&:hover .MuiOutlinedInput-notchedOutline': {
-                                                                    borderColor: 'var(--sl-white-alpha-20)',
-                                                                },
-                                                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                                                                    borderColor: 'var(--sl-brand-primary)',
-                                                                },
-                                                                '& .MuiSvgIcon-root': {
-                                                                    color: 'var(--sl-white-alpha-40)',
-                                                                },
-                                                            }}
-                                                            MenuProps={{
-                                                                PaperProps: {
-                                                                    sx: {
-                                                                        bgcolor: '#1a1a1a',
-                                                                        border: '1px solid var(--sl-white-alpha-8)',
-                                                                        '& .MuiMenuItem-root': {
-                                                                            fontFamily: 'monospace',
-                                                                            fontSize: '13px',
-                                                                            color: 'var(--sl-white-alpha-80)',
-                                                                            '&:hover': {
-                                                                                bgcolor: 'var(--sl-white-alpha-5)',
-                                                                            },
-                                                                            '&.Mui-selected': {
-                                                                                bgcolor: 'var(--sl-white-alpha-8)',
-                                                                            },
-                                                                        },
-                                                                    },
-                                                                },
-                                                            }}
-                                                        >
-                                                            {installedVersions.map((v) => (
-                                                                <MenuItem key={v} value={v}>
-                                                                    {v}
-                                                                </MenuItem>
-                                                            ))}
-                                                        </Select>
-                                                        {switchingVersion && (
-                                                            <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                                        )}
-                                                    </Box>
-                                                ) : (
-                                                    currentVersion || frameworkVersion
-                                                )}
+                                                {appVersion}
                                             </Box>
                                         </tr>
                                     )}

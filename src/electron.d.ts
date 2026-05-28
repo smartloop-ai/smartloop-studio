@@ -87,6 +87,7 @@ export interface ElectronAPI {
   removeSlpServiceReadyListener: () => void;
   // System hardware info
   getFrameworkVersion: () => Promise<string>;
+  getAppVersion: () => Promise<string>;
   getSystemInfo: () => Promise<{
     cpu: string;
     cores: number;
