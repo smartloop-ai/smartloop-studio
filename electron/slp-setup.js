@@ -72,6 +72,16 @@ function needsInstall() {
 }
 
 /**
+ * True when an SLP version is already installed but is older than (or no
+ * longer matches) the bundled VERSION and must be upgraded/reinstalled.
+ * Distinct from a fresh install (no version installed yet) — the marker
+ * file must exist for this to return true.
+ */
+function needsUpgrade() {
+  return fs.existsSync(getMarkerFile()) && needsInstall();
+}
+
+/**
  * Run a command asynchronously and return a promise.
  */
 function runAsync(command, args, options = {}) {
@@ -497,6 +507,8 @@ function getCurrentVersion() {
 module.exports = {
   setupSlpService,
   uninstallSlpService,
+  needsInstall,
+  needsUpgrade,
   getInstalledBinaryPath,
   getInstallDir,
   setInstallDir,
