@@ -21,10 +21,10 @@
     "electron-build-win": "powershell -ExecutionPolicy Bypass -File ./scripts/electron.ps1 build-electron-windows",
     "electron-clean": "powershell -ExecutionPolicy Bypass -File ./scripts/electron.ps1 clean-electron",
     "electron-rebuild": "powershell -ExecutionPolicy Bypass -File ./scripts/electron.ps1 rebuild-electron",
-    "electron-pack": "npm run build && electron-builder",
-    "electron-pack-win": "npm run build && electron-builder --win",
-    "electron-pack-mac": "npm run build && electron-builder --mac",
-    "electron-pack-linux": "npm run build && electron-builder --linux",
+    "electron-pack": "electron-builder",
+    "electron-pack-win": "electron-builder --win",
+    "electron-pack-mac": "electron-builder --mac",
+    "electron-pack-linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {

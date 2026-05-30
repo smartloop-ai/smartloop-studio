@@ -77,6 +77,49 @@ test: stop
 	@echo "✅ Clean slate ready"
 	@$(MAKE) run-electron-dev
 
+# SLP version (must match VERSION in electron/slp-setup.js)
+SLP_VERSION=1.0.22
+SLP_BASE_URL=https://dl.smartloop.ai/slp/$(SLP_VERSION)
+SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
+
+# Download the SLP binary for the current platform into electron/data/slp/<version>/
+fetch-slp:
+	@if [ -f "$(SLP_DATA_DIR)/slp" ] || [ -f "$(SLP_DATA_DIR)/slp.exe" ]; then \
+		echo "✅ SLP binary v$(SLP_VERSION) already present at $(SLP_DATA_DIR)/, skipping download"; \
+	else \
+		echo "📥 Fetching SLP binary v$(SLP_VERSION) for bundling..."; \
+		rm -rf $(SLP_DATA_DIR); \
+		mkdir -p $(SLP_DATA_DIR); \
+		TMPDIR=$$(mktemp -d); \
+		UNAME_S=$$(uname -s); \
+		if echo "$$UNAME_S" | grep -qi "darwin"; then \
+			PLAT=darwin; ARCH=arm64; EXT=tar.gz; \
+		elif echo "$$UNAME_S" | grep -qi "linux"; then \
+			PLAT=linux; ARCH=amd64; EXT=tar.gz; \
+		else \
+			PLAT=windows; ARCH=amd64; EXT=zip; \
+		fi; \
+		ARCHIVE="$$PLAT-$$ARCH-slp.$$EXT"; \
+		URL="$(SLP_BASE_URL)/$$ARCHIVE"; \
+		echo "  Downloading $$URL ..."; \
+		curl -fSL "$$URL" -o "$$TMPDIR/$$ARCHIVE"; \
+		echo "  Extracting to $(SLP_DATA_DIR)/ ..."; \
+		EXTRACT="$$TMPDIR/extract"; \
+		mkdir -p "$$EXTRACT"; \
+		if [ "$$EXT" = "zip" ]; then \
+			unzip -o "$$TMPDIR/$$ARCHIVE" -d "$$EXTRACT"; \
+		else \
+			tar -xzf "$$TMPDIR/$$ARCHIVE" -C "$$EXTRACT"; \
+		fi; \
+		if [ -d "$$EXTRACT/slp" ]; then \
+			cp -R "$$EXTRACT/slp/"* $(SLP_DATA_DIR)/; \
+		else \
+			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
+		fi; \
+		rm -rf "$$TMPDIR"; \
+		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/"; \
+	fi
+
 # Clean electron build artifacts
 clean-electron:
 	@echo "🧹 Cleaning Electron build artifacts..."
@@ -92,7 +135,7 @@ stop:
 	fi
 
 # Build Electron app for current platform
-build-electron: clean-electron
+build-electron: clean-electron fetch-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -101,7 +144,7 @@ build-electron: clean-electron
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron
+build-electron-linux: clean-electron fetch-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -111,7 +154,7 @@ build-electron-linux: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron
+build-electron-windows: clean-electron fetch-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -121,7 +164,7 @@ build-electron-windows: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron
+build-electron-mac: clean-electron fetch-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."

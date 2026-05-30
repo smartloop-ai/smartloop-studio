@@ -131,3 +131,4 @@ dist
 .DS_Store
 dist-web/
 build/slp/
+electron/data/slp/*/
