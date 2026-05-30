@@ -13,109 +13,155 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 
 
-const TPS_GRAPH_POINTS = 60; // Show last 60 data points
+const TPS_DAYS = 365;
 
-// SVG Line Graph component for tok/s performance
-function TpsLineGraph({ dataPoints, timestamps }: { dataPoints: number[]; timestamps?: string[] }) {
-    if (dataPoints.length === 0) return null;
+function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; created_at: string }[] }) {
+    const dailyMap = new Map<string, number[]>();
 
-    const width = 520;
-    const height = 140;
-    const padding = { top: 12, right: 12, bottom: 24, left: 36 };
-    const graphWidth = width - padding.left - padding.right;
-    const graphHeight = height - padding.top - padding.bottom;
+    for (const entry of history) {
+        const dateKey = new Date(entry.created_at).toISOString().slice(0, 10);
+        if (!dailyMap.has(dateKey)) dailyMap.set(dateKey, []);
+        dailyMap.get(dateKey)!.push(entry.tokens_per_second);
+    }
 
-    const maxVal = Math.max(...dataPoints, 1);
-    const points = dataPoints.map((val, i) => {
-        const x = padding.left + (i / Math.max(1, dataPoints.length - 1)) * graphWidth;
-        const y = padding.top + graphHeight - (val / maxVal) * graphHeight;
-        return { x, y, val };
+    const today = new Date();
+    const todayDay = today.getDay();
+    const totalDays = TPS_DAYS + todayDay;
+
+    const days: { date: string; avg: number; count: number; dow: number }[] = [];
+    for (let i = totalDays - 1; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().slice(0, 10);
+        const vals = dailyMap.get(key);
+        const avg = vals ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        days.push({ date: key, avg, count: vals?.length ?? 0, dow: d.getDay() });
+    }
+
+    const weeks: typeof days[] = [];
+    let currentWeek: typeof days = [];
+    for (const day of days) {
+        if (day.dow === 0 && currentWeek.length > 0) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+        }
+        currentWeek.push(day);
+    }
+    if (currentWeek.length > 0) weeks.push(currentWeek);
+
+    const maxVal = Math.max(...days.map(d => d.avg), 1);
+    const cell = 11;
+    const gap = 3;
+    const step = cell + gap;
+    const labelW = 28;
+    const headerH = 15;
+
+    const getColor = (val: number) => {
+        if (val === 0) return 'rgba(255,255,255,0.06)';
+        const ratio = val / maxVal;
+        if (ratio < 0.25) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)';
+        if (ratio < 0.5) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)';
+        if (ratio < 0.75) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.7)';
+        return 'var(--sl-brand-primary)';
+    };
+
+    const months: { label: string; col: number }[] = [];
+    let lastMonth = '';
+    weeks.forEach((week, wi) => {
+        const m = new Date(week[0].date).toLocaleDateString([], { month: 'short' });
+        if (m !== lastMonth) {
+            months.push({ label: m, col: wi });
+            lastMonth = m;
+        }
     });
 
-    // Smooth curve using catmull-rom to bezier conversion
-    const pathD = points.length <= 2
-        ? points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-        : points.map((p, i) => {
-            if (i === 0) return `M ${p.x} ${p.y}`;
-            const p0 = points[Math.max(0, i - 2)];
-            const p1 = points[i - 1];
-            const p2 = p;
-            const p3 = points[Math.min(points.length - 1, i + 1)];
-            const cp1x = p1.x + (p2.x - p0.x) / 6;
-            const cp1y = p1.y + (p2.y - p0.y) / 6;
-            const cp2x = p2.x - (p3.x - p1.x) / 6;
-            const cp2y = p2.y - (p3.y - p1.y) / 6;
-            return `C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-        }).join(' ');
+    const gridW = weeks.length * step - gap;
+    const gridH = 7 * step - gap;
+    const totalW = labelW + gridW;
+    const totalH = headerH + gridH;
 
-    const areaD = pathD + ` L ${points[points.length - 1].x} ${padding.top + graphHeight} L ${points[0].x} ${padding.top + graphHeight} Z`;
+    const dayLabels = [
+        { label: 'Mon', row: 1 },
+        { label: 'Wed', row: 3 },
+        { label: 'Fri', row: 5 },
+    ];
 
-    // Dynamic Y-axis ticks based on max value
-    const tickCount = 4;
-    const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => Math.round((maxVal / tickCount) * i));
-    const lineColor = 'var(--sl-brand-primary)';
-
-    // Time labels
-    const showTimeLabels = timestamps && timestamps.length > 1;
-    const firstTime = showTimeLabels ? new Date(timestamps![0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    const lastTime = showTimeLabels ? new Date(timestamps![timestamps!.length - 1]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const legendColors = [
+        'rgba(255,255,255,0.06)',
+        'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)',
+        'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)',
+        'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.7)',
+        'var(--sl-brand-primary)',
+    ];
 
     return (
-        <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ overflow: 'visible' }}>
-            {/* Grid lines */}
-            {yTicks.map(tick => {
-                const y = padding.top + graphHeight - (tick / maxVal) * graphHeight;
-                return (
-                    <g key={tick}>
-                        <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="rgba(255,255,255,0.04)" strokeWidth={1} />
-                        <text x={padding.left - 6} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.25)" fontSize="9" fontFamily="monospace">{tick}</text>
-                    </g>
-                );
-            })}
-
-            {/* Area fill */}
-            <path d={areaD} fill="url(#tpsGradient)" />
-
-            {/* Glow effect */}
-            <path d={pathD} fill="none" stroke={lineColor} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} filter="url(#tpsGlow)" />
-
-            {/* Line */}
-            <path d={pathD} fill="none" stroke={lineColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-
-            {/* Current value dot with pulse */}
-            {points.length > 0 && (
-                <>
-                    <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={6} fill={lineColor} opacity={0.2}>
-                        <animate attributeName="r" values="6;10;6" dur="2s" repeatCount="indefinite" />
-                        <animate attributeName="opacity" values="0.2;0;0.2" dur="2s" repeatCount="indefinite" />
-                    </circle>
-                    <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={4} fill={lineColor} stroke="rgba(0,0,0,0.5)" strokeWidth={1.5} />
-                </>
-            )}
-
-            {/* Time labels */}
-            {showTimeLabels && (
-                <>
-                    <text x={padding.left} y={height - 4} fill="rgba(255,255,255,0.2)" fontSize="9" fontFamily="monospace">{firstTime}</text>
-                    <text x={width - padding.right} y={height - 4} textAnchor="end" fill="rgba(255,255,255,0.2)" fontSize="9" fontFamily="monospace">{lastTime}</text>
-                </>
-            )}
-
-            {/* Gradient & filter definitions */}
-            <defs>
-                <linearGradient id="tpsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={lineColor} stopOpacity="0.2" />
-                    <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
-                </linearGradient>
-                <filter id="tpsGlow">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                </filter>
-            </defs>
-        </svg>
+        <div className="flex flex-col gap-2">
+            <div className="overflow-x-auto">
+                <svg width={totalW} height={totalH} style={{ display: 'block' }}>
+                    {months.map((m) => (
+                        <text
+                            key={m.col}
+                            x={labelW + m.col * step}
+                            y={10}
+                            fill="var(--sl-white-alpha-30)"
+                            fontSize={10}
+                        >
+                            {m.label}
+                        </text>
+                    ))}
+                    {dayLabels.map(({ label, row }) => (
+                        <text
+                            key={label}
+                            x={labelW - 6}
+                            y={headerH + row * step + cell * 0.75}
+                            fill="var(--sl-white-alpha-20)"
+                            fontSize={10}
+                            textAnchor="end"
+                        >
+                            {label}
+                        </text>
+                    ))}
+                    {weeks.map((week, wi) =>
+                        week.map((day) => {
+                            const x = labelW + wi * step;
+                            const y = headerH + day.dow * step;
+                            const dateLabel = new Date(day.date).toLocaleDateString([], { month: 'short', day: 'numeric' });
+                            const title = day.count > 0
+                                ? `${dateLabel} — ${day.avg.toFixed(1)} avg tok/s (${day.count} runs)`
+                                : `${dateLabel} — no activity`;
+                            return (
+                                <rect
+                                    key={day.date}
+                                    x={x}
+                                    y={y}
+                                    width={cell}
+                                    height={cell}
+                                    rx={2}
+                                    fill={getColor(day.avg)}
+                                >
+                                    <title>{title}</title>
+                                </rect>
+                            );
+                        })
+                    )}
+                </svg>
+            </div>
+            <div className="flex items-center justify-end gap-1">
+                <span style={{ fontSize: 10, color: 'var(--sl-white-alpha-20)' }}>Less</span>
+                {legendColors.map((color, i) => (
+                    <div
+                        key={i}
+                        style={{
+                            width: cell,
+                            height: cell,
+                            borderRadius: 2,
+                            backgroundColor: color,
+                        }}
+                    />
+                ))}
+                <span style={{ fontSize: 10, color: 'var(--sl-white-alpha-20)' }}>More</span>
+            </div>
+        </div>
     );
 }
 
@@ -271,7 +317,7 @@ export default function SettingsPage() {
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
         const loadHistory = async () => {
-            const history = await storageService.getTpsHistory(TPS_GRAPH_POINTS);
+            const history = await storageService.getTpsHistory(10000);
             if (history.length > 0) {
                 setTpsHistory(history);
             }
@@ -823,10 +869,7 @@ export default function SettingsPage() {
                                             )}
                                         </Box>
                                         {tpsHistory.length > 0 && (
-                                            <TpsLineGraph
-                                                dataPoints={tpsHistory.map(h => h.tokens_per_second)}
-                                                timestamps={tpsHistory.map(h => h.created_at)}
-                                            />
+                                            <TpsHeatmapGraph history={tpsHistory} />
                                         )}
                                         {tpsHistory.length === 0 && latestTps !== null && (
                                             <Box sx={{ mt: 1 }}>
