@@ -38,11 +38,9 @@ mac:
     - target: dmg
       arch:
         - arm64
-        - x64
     - target: zip
       arch:
         - arm64
-        - x64
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
