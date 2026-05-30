@@ -78,7 +78,7 @@ test: stop
 	@$(MAKE) run-electron-dev
 
 # SLP version (must match VERSION in electron/slp-setup.js)
-SLP_VERSION=1.0.22
+SLP_VERSION=1.0.23
 SLP_BASE_URL=https://dl.smartloop.ai/slp/$(SLP_VERSION)
 SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
 
