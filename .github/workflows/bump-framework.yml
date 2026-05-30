@@ -46,11 +46,13 @@ jobs:
           echo "Framework: $FW_CURRENT → $FW_NEXT"
           echo "App: $APP_CURRENT → $APP_NEXT"
 
-      - name: Bump VERSION in slp-setup.js
+      - name: Bump VERSION in slp-setup.js and Makefile
         if: ${{ inputs.bump_framework == true }}
         run: |
           sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ steps.ver.outputs.fw_next }}';/" electron/slp-setup.js
+          sed -i "s/^SLP_VERSION=.*$/SLP_VERSION=${{ steps.ver.outputs.fw_next }}/" Makefile
           grep "const VERSION" electron/slp-setup.js
+          grep "SLP_VERSION" Makefile
 
       - name: Bump version in package.json
         run: |
@@ -68,7 +70,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add electron/slp-setup.js package.json
+          git add electron/slp-setup.js Makefile package.json
           git commit -m "bump framework to $FW_NEXT, app to $APP_NEXT"
           git push -u origin "$BRANCH"
           gh pr create \
