@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
-const { getInstallDir, getInstalledBinaryPath } = require('./slp-setup');
+const { getInstallDir, getInstalledBinaryPath, isNonEmptyFile } = require('./slp-setup');
 
 const DEFAULT_SLP_PORT = 38540;
 
@@ -87,8 +87,11 @@ async function checkHealth() {
 async function startService() {
   const slpBinary = getSlpBinaryPath();
 
-  if (!fs.existsSync(slpBinary)) {
-    console.error('[SLP] Binary not found at:', slpBinary);
+  if (!isNonEmptyFile(slpBinary)) {
+    // A missing or zero-byte binary cannot run — spawning it would exit
+    // immediately and leave a stale port. Fail fast so the caller reinstalls
+    // (needsInstall() also treats an empty binary as missing).
+    console.error('[SLP] Binary missing or empty at:', slpBinary);
     return false;
   }
 
