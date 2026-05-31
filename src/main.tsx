@@ -1,12 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
 import './app/globals.css';
 import App from './App';
 import ErrorBoundary from './app/components/error-boundary';
-import { colors } from '@/app/theme/colors';
+import { AppThemeProvider } from '@/app/contexts/ThemeContext';
 
 // Use HashRouter for Electron (file:// protocol) and BrowserRouter for web
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
@@ -46,38 +44,6 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
-// Create a dark theme for Material-UI
-const theme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: colors.brand.primary,
-    },
-    background: {
-      default: colors.bg.base,
-      paper: colors.bg.base,
-    },
-  },
-  components: {
-    MuiDialog: {
-      styleOverrides: {
-        paper: {
-          backgroundColor: colors.bg.base,
-          backgroundImage: 'none',
-        },
-      },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundColor: colors.bg.base,
-          backgroundImage: 'none',
-        },
-      },
-    },
-  },
-});
-
 // Initialize app - load token from persistent storage if in Electron
 async function initializeApp() {
   // If running in Electron, load token and user data from electron-store to persistent storage
@@ -105,12 +71,11 @@ async function initializeApp() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
+        <AppThemeProvider>
           <Router>
             <App />
           </Router>
-        </ThemeProvider>
+        </AppThemeProvider>
       </ErrorBoundary>
     </StrictMode>
   );

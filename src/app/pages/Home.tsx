@@ -1538,24 +1538,24 @@ export default function Home() {
             }}
           >
             <Box className="p-6">
-              <h3 className="text-white font-semibold text-lg mb-3">
+              <h3 className="text-sl-text-primary font-semibold text-lg mb-3">
                 Delete Conversation?
               </h3>
-              <p className="text-gray-400 text-sm mb-6">
+              <p className="text-sl-text-muted text-sm mb-6">
                 Are you sure you want to delete this conversation? This action cannot be undone.
               </p>
               <Box className="flex items-center gap-3">
                 <button
                   onClick={() => setShowDeleteDialog(false)}
                   disabled={isDeleting}
-                  className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDeleteConversation}
                   disabled={isDeleting}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isDeleting ? (
                     <CircularProgress size={18} sx={{ color: 'white' }} />
@@ -1585,13 +1585,13 @@ export default function Home() {
           >
             <Box className="p-6">
               <Box className="flex items-center justify-between mb-4">
-                <h3 className="text-white text-xl font-semibold">Delete Project</h3>
+                <h3 className="text-sl-text-primary text-xl font-semibold">Delete Project</h3>
                 <IconButton
                   onClick={() => !isDeletingProject && setShowDeleteProjectDialog(false)}
                   sx={{
                     color: 'var(--sl-text-disabled)',
                     '&:hover': {
-                      color: 'white',
+                      color: 'var(--sl-text-primary)',
                       bgcolor: 'var(--sl-bg-surface-1)'
                     },
                   }}
@@ -1602,21 +1602,21 @@ export default function Home() {
 
               <form onSubmit={handleDeleteProject}>
                 <Box className="space-y-4">
-                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                  <Box className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: 'var(--sl-danger-alpha-10)', border: '1px solid var(--sl-danger-alpha-30)' }}>
                     <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
-                      <Typography className="text-red-400 font-medium mb-1">
+                      <Typography className="text-sl-status-error font-medium mb-1">
                         Warning: This action cannot be undone
                       </Typography>
-                      <Typography className="text-gray-300 text-sm">
+                      <Typography className="text-sl-text-tertiary text-sm">
                         Deleting "{selectedProject?.name || 'this project'}" will permanently remove all documents, conversations, and associated data.
                       </Typography>
                     </Box>
                   </Box>
 
                   <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
+                    <Typography className="text-sl-text-tertiary text-sm mb-3">
+                      Please type <span className="px-2 py-0.5 bg-sl-status-error text-white font-mono text-xs rounded">delete</span> to confirm:
                     </Typography>
                     <TextField
                       autoComplete="off"
@@ -1630,13 +1630,13 @@ export default function Home() {
                       disabled={isDeletingProject}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          color: 'var(--sl-text-primary)',
+                          bgcolor: 'var(--sl-bg-surface-1)',
                           '& fieldset': {
-                            borderColor: 'var(--sl-white-alpha-10)',
+                            borderColor: 'var(--sl-border-default)',
                           },
                           '&:hover fieldset': {
-                            borderColor: 'var(--sl-white-alpha-20)',
+                            borderColor: 'var(--sl-border-hover)',
                           },
                           '&.Mui-focused fieldset': {
                             borderColor: 'var(--sl-brand-primary)',
@@ -1645,7 +1645,7 @@ export default function Home() {
                       }}
                     />
                     {deleteProjectError && (
-                      <Typography className="text-red-400 text-sm mt-2">
+                      <Typography className="text-sl-status-error text-sm mt-2">
                         {deleteProjectError}
                       </Typography>
                     )}
@@ -1656,14 +1656,14 @@ export default function Home() {
                       type="button"
                       onClick={() => setShowDeleteProjectDialog(false)}
                       disabled={isDeletingProject}
-                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                      className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isDeletingProject || deleteProjectConfirm.toLowerCase() !== 'delete'}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isDeletingProject ? (
                         <CircularProgress size={18} sx={{ color: 'white' }} />
@@ -1695,13 +1695,13 @@ export default function Home() {
           >
             <Box className="p-6">
               <Box className="flex items-center justify-between mb-4">
-                <h3 className="text-white text-xl font-semibold">Delete Document</h3>
+                <h3 className="text-sl-text-primary text-xl font-semibold">Delete Document</h3>
                 <IconButton
                   onClick={() => !isDeletingDoc && handleCloseDeleteDocDialog()}
                   sx={{
                     color: 'var(--sl-text-disabled)',
                     '&:hover': {
-                      color: 'white',
+                      color: 'var(--sl-text-primary)',
                       bgcolor: 'var(--sl-bg-surface-1)'
                     },
                   }}
@@ -1712,21 +1712,21 @@ export default function Home() {
 
               <form onSubmit={handleDeleteDocument}>
                 <Box className="space-y-4">
-                  <Box className="flex items-start gap-3 p-4 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
+                  <Box className="flex items-start gap-3 p-4 rounded-lg" style={{ backgroundColor: 'var(--sl-danger-alpha-10)', border: '1px solid var(--sl-danger-alpha-30)' }}>
                     <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24, mt: 0.5 }} />
                     <Box>
-                      <Typography className="text-red-400 font-medium mb-1">
+                      <Typography className="text-sl-status-error font-medium mb-1">
                         Warning: This action cannot be undone
                       </Typography>
-                      <Typography className="text-gray-300 text-sm">
+                      <Typography className="text-sl-text-tertiary text-sm">
                         Deleting "{documentToDelete?.filename || documentToDelete?.name || 'this document'}" will permanently remove it from the project.
                       </Typography>
                     </Box>
                   </Box>
 
                   <Box>
-                    <Typography className="text-gray-300 text-sm mb-3">
-                      Please type <span className="px-2 py-0.5 bg-red-500 text-white font-mono text-xs rounded">delete</span> to confirm:
+                    <Typography className="text-sl-text-tertiary text-sm mb-3">
+                      Please type <span className="px-2 py-0.5 bg-sl-status-error text-white font-mono text-xs rounded">delete</span> to confirm:
                     </Typography>
                     <TextField
                       autoComplete="off"
@@ -1740,13 +1740,13 @@ export default function Home() {
                       disabled={isDeletingDoc}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          color: 'white',
-                          bgcolor: 'rgba(17, 24, 39, 0.6)',
+                          color: 'var(--sl-text-primary)',
+                          bgcolor: 'var(--sl-bg-surface-1)',
                           '& fieldset': {
-                            borderColor: 'var(--sl-white-alpha-10)',
+                            borderColor: 'var(--sl-border-default)',
                           },
                           '&:hover fieldset': {
-                            borderColor: 'var(--sl-white-alpha-20)',
+                            borderColor: 'var(--sl-border-hover)',
                           },
                           '&.Mui-focused fieldset': {
                             borderColor: 'var(--sl-brand-primary)',
@@ -1755,7 +1755,7 @@ export default function Home() {
                       }}
                     />
                     {deleteDocError && (
-                      <Typography className="text-red-400 text-sm mt-2">
+                      <Typography className="text-sl-status-error text-sm mt-2">
                         {deleteDocError}
                       </Typography>
                     )}
@@ -1766,14 +1766,14 @@ export default function Home() {
                       type="button"
                       onClick={handleCloseDeleteDocDialog}
                       disabled={isDeletingDoc}
-                      className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+                      className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isDeletingDoc || deleteDocConfirm.toLowerCase() !== 'delete'}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isDeletingDoc ? (
                         <CircularProgress size={18} sx={{ color: 'white' }} />
@@ -1791,9 +1791,9 @@ export default function Home() {
           </Dialog>
 
 
-          <Box className="min-h-screen bg-black text-white">
+          <Box className="min-h-screen bg-sl-bg-base text-sl-text-primary">
             {/* Chat View with 2-column layout */}
-            <Box className="h-screen flex flex-col bg-black">
+            <Box className="h-screen flex flex-col bg-sl-bg-base">
               <>
                 {/* Chat Header - matches project page style */}
                 <Box className="flex-none p-4">
@@ -1814,6 +1814,7 @@ export default function Home() {
                             key={`${selectedProject.id}-${selectedProject.name}`}
                             defaultValue={selectedProject.name}
                             onBlur={(e) => {
+                              e.currentTarget.style.borderBottomColor = 'transparent';
                               const trimmed = e.target.value.trim();
                               if (trimmed && trimmed !== selectedProject.name) {
                                 handleRenameProject(trimmed);
@@ -1828,11 +1829,12 @@ export default function Home() {
                                 (e.target as HTMLInputElement).blur();
                               }
                             }}
-                            className="text-xl md:text-2xl font-bold text-white bg-transparent border-none outline-none w-full truncate cursor-text hover:opacity-80 focus:opacity-100 focus:border-b focus:border-pink-500"
-                            style={{ caretColor: 'var(--sl-brand-primary)' }}
+                            className="text-xl md:text-2xl font-bold text-sl-text-primary bg-transparent border-none outline-none w-full truncate cursor-text hover:opacity-80 focus:opacity-100 focus:border-b"
+                            style={{ caretColor: 'var(--sl-brand-primary)', borderColor: 'transparent' }}
+                            onFocus={(e) => (e.currentTarget.style.borderBottomColor = 'var(--sl-brand-primary)')}
                           />
                         ) : (
-                          <div className="text-xl md:text-2xl font-bold text-white truncate">
+                          <div className="text-xl md:text-2xl font-bold text-sl-text-primary truncate">
                             General
                           </div>
                         )}

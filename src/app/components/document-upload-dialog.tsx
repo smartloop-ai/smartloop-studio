@@ -187,7 +187,7 @@ export default function DocumentUploadDialog({
         </IconButton>
 
         {/* Title */}
-        <h3 className="text-white font-semibold text-lg mb-6">
+        <h3 className="text-sl-text-primary font-semibold text-lg mb-6">
           Add New Document
         </h3>
 
@@ -195,7 +195,7 @@ export default function DocumentUploadDialog({
           {/* Project Selection */}
           {!disableProjectSelection && (
             <Box>
-              <Typography className="text-gray-300 text-sm font-medium mb-3">
+              <Typography className="text-sl-text-tertiary text-sm font-medium mb-3">
                 Select Project
               </Typography>
               <Autocomplete
@@ -229,7 +229,7 @@ export default function DocumentUploadDialog({
                     size="small"
                     sx={{
                       '& .MuiOutlinedInput-root': {
-                        color: 'white',
+                        color: 'var(--sl-text-primary)',
                         bgcolor: 'var(--sl-bg-base)',
                         borderRadius: '8px',
                         '& fieldset': {
@@ -255,12 +255,12 @@ export default function DocumentUploadDialog({
                 sx={{
                   '& .MuiAutocomplete-paper': {
                     bgcolor: 'var(--sl-bg-surface-1)',
-                    color: 'white',
+                    color: 'var(--sl-text-primary)',
                   },
                   '& .MuiAutocomplete-listbox': {
                     bgcolor: 'var(--sl-bg-surface-1)',
                     '& .MuiAutocomplete-option': {
-                      color: 'white',
+                      color: 'var(--sl-text-primary)',
                       '&:hover': {
                         bgcolor: 'var(--sl-bg-surface-2)',
                       },
@@ -274,7 +274,7 @@ export default function DocumentUploadDialog({
                   sx: {
                     bgcolor: 'var(--sl-bg-surface-1)',
                     '& .MuiAutocomplete-option': {
-                      color: 'white',
+                      color: 'var(--sl-text-primary)',
                       '&:hover': {
                         bgcolor: 'var(--sl-bg-surface-2)',
                       },
@@ -295,20 +295,20 @@ export default function DocumentUploadDialog({
 
           {/* File Upload */}
           <Box>
-            <Typography className="text-gray-300 text-sm font-medium mb-3">
+            <Typography className="text-sl-text-tertiary text-sm font-medium mb-3">
               Upload Document
             </Typography>
 
             {isUploading && uploadProgress ? (
-              <Box sx={{ p: 3, bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-white-alpha-10)', borderRadius: '8px' }}>
+              <Box sx={{ p: 3, bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)', borderRadius: '8px' }}>
                 <Box className="flex items-center gap-3 mb-3">
                   <InsertDriveFileIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
                   <Box>
-                    <Typography className="text-white text-sm">{uploadFiles[0]?.name}</Typography>
-                    <Typography className="text-gray-400 text-xs">{uploadProgress.status}</Typography>
+                    <Typography className="text-sl-text-primary text-sm">{uploadFiles[0]?.name}</Typography>
+                    <Typography className="text-sl-text-muted text-xs">{uploadProgress.status}</Typography>
                   </Box>
                 </Box>
-                <Box sx={{ width: '100%', bgcolor: 'var(--sl-white-alpha-10)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                <Box sx={{ width: '100%', bgcolor: 'var(--sl-border-default)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
                   <Box sx={{
                     width: `${uploadProgress.percent}%`,
                     bgcolor: 'var(--sl-brand-primary)',
@@ -317,7 +317,7 @@ export default function DocumentUploadDialog({
                     transition: 'width 0.3s ease',
                   }} />
                 </Box>
-                <Typography className="text-gray-500 text-xs mt-2 text-right">{uploadProgress.percent}%</Typography>
+                <Typography className="text-sl-text-disabled text-xs mt-2 text-right">{uploadProgress.percent}%</Typography>
               </Box>
             ) : uploadFiles.length === 0 ? (
               <Box
@@ -326,19 +326,22 @@ export default function DocumentUploadDialog({
                 onDrop={handleDrop}
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
                   isDragging
-                    ? 'border-pink-500 bg-pink-500/10'
-                    : 'border-gray-700 hover:border-pink-600 bg-gray-900/50'
+                    ? ''
+                    : 'border-sl-border-default bg-sl-bg-surface-1'
                 }`}
+                style={isDragging ? { borderColor: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' } : undefined}
+                onMouseEnter={(e) => { if (!isDragging) e.currentTarget.style.borderColor = 'var(--sl-brand-hover)'; }}
+                onMouseLeave={(e) => { if (!isDragging) e.currentTarget.style.borderColor = ''; }}
                 onClick={() => document.getElementById('file-upload-input')?.click()}
               >
                 <CloudUploadIcon sx={{ fontSize: 48, color: 'var(--sl-text-disabled)', mb: 2 }} />
-                <Typography className="text-gray-300 text-sm mb-1">
+                <Typography className="text-sl-text-tertiary text-sm mb-1">
                   Drag and drop your file here
                 </Typography>
-                <Typography className="text-gray-500 text-xs mb-3">
+                <Typography className="text-sl-text-disabled text-xs mb-3">
                   or click to browse
                 </Typography>
-                <Typography className="text-gray-600 text-xs">
+                <Typography className="text-sl-text-faint text-xs">
                   Supported: PDF, DOCX, TXT, CSV (Max 50MB)
                 </Typography>
                 <input
@@ -350,12 +353,12 @@ export default function DocumentUploadDialog({
                 />
               </Box>
             ) : (
-              <Box className="flex items-center justify-between p-4 bg-gray-900 border border-green-500/50 rounded-lg">
+              <Box className="flex items-center justify-between p-4 bg-sl-bg-surface-1 border border-sl-status-success/50 rounded-lg">
                 <Box className="flex items-center gap-3">
                   <InsertDriveFileIcon sx={{ color: 'var(--sl-status-success)', fontSize: 24 }} />
                   <Box>
-                    <Typography className="text-white text-sm">{uploadFiles[0].name}</Typography>
-                    <Typography className="text-gray-400 text-xs">
+                    <Typography className="text-sl-text-primary text-sm">{uploadFiles[0].name}</Typography>
+                    <Typography className="text-sl-text-muted text-xs">
                       {(uploadFiles[0].size / 1024 / 1024).toFixed(2)} MB
                     </Typography>
                   </Box>
@@ -373,8 +376,8 @@ export default function DocumentUploadDialog({
 
           {/* Error Message */}
           {uploadError && (
-            <Box className="p-3 bg-red-500 bg-opacity-10 border border-red-500 border-opacity-30 rounded-lg">
-              <Typography className="text-red-400 text-sm">
+            <Box className="p-3 rounded-lg" style={{ backgroundColor: 'var(--sl-danger-alpha-10)', border: '1px solid var(--sl-danger-alpha-30)' }}>
+              <Typography className="text-sl-status-error text-sm">
                 {uploadError}
               </Typography>
             </Box>
@@ -386,17 +389,20 @@ export default function DocumentUploadDialog({
               type="button"
               onClick={handleClose}
               disabled={isUploading}
-              className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+              className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleUploadDocument}
               disabled={(!selectedProject && !disableProjectSelection) || uploadFiles.length === 0 || isUploading}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-pink-600 hover:bg-pink-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sl-text-primary rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: 'var(--sl-brand-hover)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--sl-brand-primary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--sl-brand-hover)')}
             >
               {isUploading ? (
-                <CircularProgress size={18} sx={{ color: 'white' }} />
+                <CircularProgress size={18} sx={{ color: 'var(--sl-text-primary)' }} />
               ) : (
                 <>
                   <CloudUploadIcon fontSize="small" />

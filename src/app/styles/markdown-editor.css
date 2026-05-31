@@ -178,7 +178,7 @@
 }
 .doc-preview-markdown code {
     font-size: 0.9em;
-    background: var(--sl-white-alpha-5);
+    background: var(--sl-bg-surface-1);
     padding: 0 2px;
     border-radius: 2px;
 }

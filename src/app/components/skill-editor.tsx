@@ -156,7 +156,7 @@ export default function SkillEditor({
     <Box
       className="h-full flex flex-col overflow-hidden"
       sx={{
-        borderLeft: '1px solid var(--sl-white-alpha-10)',
+        borderLeft: '1px solid var(--sl-border-default)',
         bgcolor: 'var(--sl-bg-base)',
       }}
     >
@@ -169,8 +169,8 @@ export default function SkillEditor({
           gap: 1.5,
           px: 5,
           py: 1.5,
-          borderBottom: '1px solid var(--sl-white-alpha-8)',
-          bgcolor: 'rgba(255,255,255,0.02)',
+          borderBottom: '1px solid var(--sl-border-subtle)',
+          bgcolor: 'var(--sl-bg-surface-1)',
         }}
       >
         <ConstructionIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
@@ -181,7 +181,7 @@ export default function SkillEditor({
           sx={{
             fontSize: '10px',
             color: 'var(--sl-text-muted)',
-            bgcolor: 'var(--sl-white-alpha-8)',
+            bgcolor: 'var(--sl-bg-surface-1)',
             px: 1,
             py: 0.25,
             borderRadius: '3px',

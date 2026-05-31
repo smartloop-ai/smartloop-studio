@@ -139,7 +139,7 @@
 
   body {
     font-family: Poppins;
-    color: rgb(var(--foreground-rgb));
+    color: var(--sl-text-primary);
     line-height: 1;
     font-size: 1rem;
     -ms-text-size-adjust: 100%;

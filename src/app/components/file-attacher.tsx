@@ -177,27 +177,27 @@ export default function FileAttacher({
   if (selectedFile) {
     return (
       <Box
-        className="inline-flex items-center gap-2 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm"
+        className="inline-flex items-center gap-2 px-2 py-1 bg-sl-bg-surface-2 border border-sl-border-default rounded-sm"
         sx={{ height: isSmall ? '28px' : '40px' }}
       >
         {isUploading ? (
           <>
             <CircularProgress size={isSmall ? 14 : 24} sx={{ color: 'var(--sl-brand-primary)' }} />
-            <Box className={`text-gray-300 ${isSmall ? 'text-xs' : 'text-sm'}`}>
+            <Box className={`text-sl-text-tertiary ${isSmall ? 'text-xs' : 'text-sm'}`}>
               {attachError && (attachError.toLowerCase().includes('processing') || attachError.toLowerCase().includes('attachment')) ? attachError : 'Attaching...'}
             </Box>
           </>
         ) : attachError ? (
           <>
             <CloseIcon sx={{ color: 'var(--sl-status-error)', fontSize: isSmall ? 14 : 24 }} />
-            <Box className={`text-red-400 ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[200px]' : 'max-w-[300px]'}`}>
+            <Box className={`text-sl-status-error ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[200px]' : 'max-w-[300px]'}`}>
               {attachError}
             </Box>
           </>
         ) : (
           <>
             <InsertDriveFileIcon sx={{ color: 'var(--sl-status-success)', fontSize: isSmall ? 14 : 24 }} />
-            <Box className={`text-white ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[140px]' : 'max-w-[200px]'}`}>
+            <Box className={`text-sl-text-primary ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[140px]' : 'max-w-[200px]'}`}>
               {selectedFile.name}
             </Box>
           </>
@@ -227,13 +227,13 @@ export default function FileAttacher({
       onDrop={handleDrop}
     >
       {isDragging && showDragDrop && (
-        <Box className="absolute inset-0 flex items-center justify-center bg-pink-500/10 rounded-lg pointer-events-none z-10">
+        <Box className="absolute inset-0 flex items-center justify-center rounded-lg pointer-events-none z-10" sx={{ bgcolor: 'var(--sl-brand-alpha-10)' }}>
           <CloudUploadIcon sx={{ fontSize: 32, color: 'var(--sl-brand-primary)' }} />
         </Box>
       )}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/50 border border-gray-700 rounded-sm hover:bg-gray-800/70 hover:border-gray-600 text-gray-400 hover:text-gray-300 transition-all text-xs"
+        className="flex items-center gap-1.5 px-2 py-1 bg-sl-bg-surface-2 border border-sl-border-default rounded-sm hover:bg-sl-bg-surface-3 hover:border-sl-border-hover text-sl-text-muted hover:text-sl-text-tertiary transition-all text-xs"
         style={{ height: isSmall ? '28px' : '40px' }}
         disabled={disabled || isUploading}
       >
