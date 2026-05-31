@@ -97,7 +97,7 @@ export default function Login() {
   };
 
   return (
-    <Box className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative">
+    <Box className="min-h-screen bg-sl-bg-base flex flex-col items-center justify-center p-6 relative">
       {/* Home icon */}
       <IconButton
         onClick={() => navigate('/', { replace: true })}
@@ -109,8 +109,8 @@ export default function Login() {
       {/* Logo */}
       <Box className="mb-12">
         <Box className="flex items-center gap-0 justify-center">
-          <span className="text-4xl font-bold text-white">smartloop</span>
-          <span className="text-pink-500 text-4xl font-bold rounded-full">.</span>
+          <span className="text-4xl font-bold text-sl-text-primary">smartloop</span>
+          <span className="text-4xl font-bold rounded-full" style={{ color: 'var(--sl-brand-primary)' }}>.</span>
         </Box>
 
       </Box>
@@ -127,7 +127,7 @@ export default function Login() {
           textAlign: 'center',
         }}
       >
-        <h1 className="text-2xl font-normal text-white mb-8">Welcome</h1>
+        <h1 className="text-2xl font-normal text-sl-text-primary mb-8">Welcome</h1>
 
         {errorMessage.length > 0 && (
           <Box className="mb-6 p-3 bg-red-900 bg-opacity-20 border border-red-800 rounded-lg">
@@ -165,7 +165,7 @@ export default function Login() {
         </button>
 
         <Box className="mt-8 text-center">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-sl-text-disabled">
             By logging in, you agree to our{' '}
             <a
               href="#"
@@ -173,15 +173,15 @@ export default function Login() {
                 e.preventDefault();
                 navigate('/terms');
               }}
-              className="underline hover:text-white cursor-pointer"
+              className="underline hover:text-sl-text-primary cursor-pointer"
             >
               Terms and Privacy Policy
             </a>
           </p>
         </Box>
         {/* Sign Up Link */}
-        <Box className="mt-6 pt-6 border-t border-gray-800">
-          <p className="text-sm text-gray-400">
+        <Box className="mt-6 pt-6 border-t border-sl-border-default">
+          <p className="text-sm text-sl-text-muted">
             Don't have an account?{' '}
             <a
               href="#"
@@ -189,7 +189,10 @@ export default function Login() {
                 e.preventDefault();
                 window.open('https://app.smartloop.ai/signup?mode=native', '_blank');
               }}
-              className="text-pink-500 hover:text-pink-400 font-medium cursor-pointer"
+              className="font-medium cursor-pointer"
+              style={{ color: 'var(--sl-brand-primary)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sl-brand-light)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sl-brand-primary)')}
             >
               Sign up
             </a>
@@ -199,11 +202,11 @@ export default function Login() {
 
       {/* Footer Info */}
       <Box className="mt-8 text-center">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-sl-text-faint">
           {isElectron ? 'Studio Application' : 'Web Application'}
         </p>
         {isElectron && isLoading && (
-          <p className="text-xs text-gray-700 mt-2">
+          <p className="text-xs text-sl-text-faint mt-2">
             Complete the login in your browser, then return to this app
           </p>
         )}

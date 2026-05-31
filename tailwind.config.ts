@@ -8,6 +8,9 @@ const config: Config = {
   important: "#app",
   theme: {
     extend: {
+      borderColor: {
+        DEFAULT: "var(--sl-border-subtle)",
+      },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic":

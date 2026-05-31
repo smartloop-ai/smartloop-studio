@@ -18,7 +18,7 @@ export default function MobileNav({ onMenuClick }: MobileNavProps) {
       <IconButton
         onClick={onMenuClick}
         sx={{
-          color: 'white',
+          color: 'var(--sl-text-primary)',
           padding: '8px',
           '&:hover': {
             color: 'var(--sl-brand-primary)',
