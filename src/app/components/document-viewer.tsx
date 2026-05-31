@@ -75,8 +75,8 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
   if (!content) {
     return (
       <Box className="flex flex-col items-center justify-center h-full text-center px-4">
-        <Box className="text-gray-400 text-sm mb-1">No content available</Box>
-        <Box className="text-gray-500 text-xs">
+        <Box className="text-sl-text-muted text-sm mb-1">No content available</Box>
+        <Box className="text-sl-text-disabled text-xs">
           This document may still be processing
         </Box>
       </Box>
@@ -92,7 +92,7 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
       className="h-full overflow-y-auto"
       sx={{
         borderLeft: '1px solid',
-        borderColor: 'var(--sl-white-alpha-10)',
+        borderColor: 'var(--sl-border-default)',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -113,21 +113,21 @@ export default function DocumentViewer({ document, projectId }: DocumentViewerPr
         >
           <Box
             sx={{
-              bgcolor: '#0a0a0f',
-              border: '1px solid rgba(236, 72, 153, 0.3)',
+              bgcolor: 'var(--sl-bg-surface-1)',
+              border: '1px solid var(--sl-brand-alpha-30)',
               borderRadius: '8px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+              boxShadow: '0 2px 8px var(--sl-black-alpha-30)',
               overflow: 'hidden',
             }}
           >
             {/* Document info bar */}
-            <div className="flex items-center gap-2.5 px-3 md:px-5 py-2.5" style={{ borderBottom: '1px solid rgba(236, 72, 153, 0.3)', background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="flex items-center gap-2 text-[11px] text-gray-400">
+            <div className="flex items-center gap-2.5 px-3 md:px-5 py-2.5" style={{ borderBottom: '1px solid var(--sl-brand-alpha-30)', background: 'var(--sl-bg-surface-2)' }}>
+              <div className="flex items-center gap-2 text-[11px] text-sl-text-muted">
                 <DescriptionOutlinedIcon sx={{ fontSize: 12, color: 'var(--sl-text-muted)' }} />
-                <span className="text-gray-300 font-medium">{filename}</span>
-                <span className="text-gray-600">·</span>
+                <span className="text-sl-text-tertiary font-medium">{filename}</span>
+                <span className="text-sl-text-faint">·</span>
                 <span>{wordCount.toLocaleString()} words</span>
-                <span className="text-gray-600">·</span>
+                <span className="text-sl-text-faint">·</span>
                 <span>{readingTimeMin} min read</span>
               </div>
               <div className="ml-auto">

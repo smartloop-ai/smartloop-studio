@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, IconButton, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress, LinearProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
+import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
 import { getLocalApiEndpoint } from '@/app/constants';
@@ -9,7 +10,9 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 import ViewListIcon from '@mui/icons-material/ViewList';
-import RefreshIcon from '@mui/icons-material/Refresh';
+
+import PaletteIcon from '@mui/icons-material/Palette';
+import { themeList, type ThemeId } from '@/app/theme/themes';
 
 
 
@@ -57,7 +60,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
     const headerH = 15;
 
     const getColor = (val: number) => {
-        if (val === 0) return 'rgba(255,255,255,0.06)';
+        if (val === 0) return 'var(--sl-border-subtle)';
         const ratio = val / maxVal;
         if (ratio < 0.25) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)';
         if (ratio < 0.5) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)';
@@ -87,7 +90,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
     ];
 
     const legendColors = [
-        'rgba(255,255,255,0.06)',
+        'var(--sl-border-subtle)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.7)',
@@ -103,7 +106,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
                             key={m.col}
                             x={labelW + m.col * step}
                             y={10}
-                            fill="var(--sl-white-alpha-30)"
+                            fill="var(--sl-text-faint)"
                             fontSize={10}
                         >
                             {m.label}
@@ -114,7 +117,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
                             key={label}
                             x={labelW - 6}
                             y={headerH + row * step + cell * 0.75}
-                            fill="var(--sl-white-alpha-20)"
+                            fill="var(--sl-text-faint)"
                             fontSize={10}
                             textAnchor="end"
                         >
@@ -147,7 +150,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
                 </svg>
             </div>
             <div className="flex items-center justify-end gap-1">
-                <span style={{ fontSize: 10, color: 'var(--sl-white-alpha-20)' }}>Less</span>
+                <span style={{ fontSize: 10, color: 'var(--sl-text-faint)' }}>Less</span>
                 {legendColors.map((color, i) => (
                     <div
                         key={i}
@@ -159,7 +162,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
                         }}
                     />
                 ))}
-                <span style={{ fontSize: 10, color: 'var(--sl-white-alpha-20)' }}>More</span>
+                <span style={{ fontSize: 10, color: 'var(--sl-text-faint)' }}>More</span>
             </div>
         </div>
     );
@@ -179,6 +182,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
 export default function SettingsPage() {
     const [user, setUser] = useAuthContext();
+    const { themeId, setThemeId } = useThemeContext();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -424,7 +428,7 @@ export default function SettingsPage() {
     const latestTps = tpsHistory.length > 0 ? tpsHistory[tpsHistory.length - 1].tokens_per_second : lastTps;
 
     return (
-        <Box className="min-h-screen bg-black text-white">
+        <Box className="min-h-screen" sx={{ bgcolor: 'var(--sl-bg-base)', color: 'var(--sl-text-primary)' }}>
             <Box className="p-4">
                 {/* Save Indicator */}
                 <Box
@@ -445,7 +449,7 @@ export default function SettingsPage() {
                             gap: 1.5,
                             px: 3,
                             py: 1.5,
-                            bgcolor: 'rgba(26, 26, 26, 0.95)',
+                            bgcolor: 'var(--sl-bg-elevated)',
                             border: '1px solid var(--sl-border-default)',
                             borderRadius: '8px',
                             backdropFilter: 'blur(8px)',
@@ -455,12 +459,12 @@ export default function SettingsPage() {
                         {isSaving ? (
                             <>
                                 <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                <span className="text-sm text-gray-300">Saving...</span>
+                                <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>Saving...</span>
                             </>
                         ) : saveMessage ? (
                             <>
                                 <CheckCircleIcon sx={{ fontSize: 18, color: 'var(--sl-status-success)' }} />
-                                <span className="text-sm text-green-400">{saveMessage}</span>
+                                <span className="text-sm text-sl-status-success">{saveMessage}</span>
                             </>
                         ) : null}
                     </Box>
@@ -469,15 +473,15 @@ export default function SettingsPage() {
                 <Box className="max-w-4xl mx-auto mt-6 md:mt-8">
                     {/* Header */}
                     <Box className="mb-6 md:mb-8">
-                        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">Settings</h1>
-                        <p className="text-gray-400 text-sm md:text-base">Model configuration and default settings</p>
+                        <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--sl-text-primary)' }}>Settings</h1>
+                        <p className="text-sm md:text-base" style={{ color: 'var(--sl-text-muted)' }}>Model configuration and default settings</p>
                     </Box>
 
                     {/* Service */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                             <Box className="flex items-center gap-2 mb-4">
                                 <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                <h2 className="text-lg md:text-xl font-semibold text-white">Service</h2>
+                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Service</h2>
                             </Box>
 
                             {/* Table */}
@@ -489,41 +493,35 @@ export default function SettingsPage() {
                                     borderSpacing: 0,
                                     borderRadius: '10px',
                                     overflow: 'hidden',
-                                    border: '1px solid var(--sl-white-alpha-8)',
+                                    border: '1px solid var(--sl-border-subtle)',
                                     '& th, & td': {
                                         px: 2,
                                         py: 1.5,
                                         textAlign: 'left',
-                                        borderBottom: '1px solid var(--sl-white-alpha-5)',
+                                        borderBottom: '1px solid var(--sl-border-subtle)',
                                     },
                                     '& tr:last-child td': {
                                         borderBottom: 'none',
                                     },
                                     '& tr:hover td': {
-                                        bgcolor: 'var(--sl-white-alpha-3)',
+                                        bgcolor: 'var(--sl-bg-surface-2)',
                                     },
                                 }}
                             >
                                 <tbody>
                                     <tr>
-                                        <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
                                             Status
                                         </Box>
                                         <Box component="td">
                                             <Box
-                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer transition-all duration-150"
-                                                onClick={() => {
-                                                    if (serverHealth?.url) {
-                                                        window.electronAPI?.openExternal(`${serverHealth.url}/docs`);
-                                                    }
-                                                }}
-                                                title={serverHealth?.url ? `${serverHealth.url}/docs` : undefined}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all duration-150"
                                                 sx={{
                                                     border: '1px solid',
-                                                    borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.3)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'var(--sl-white-alpha-8)',
-                                                    bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.08)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.08)' : 'var(--sl-white-alpha-5)',
+                                                    borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.3)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'var(--sl-border-subtle)',
+                                                    bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.08)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.08)' : 'var(--sl-border-subtle)',
                                                     '&:hover': {
-                                                        bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.15)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--sl-white-alpha-8)',
+                                                        bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.15)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--sl-border-subtle)',
                                                     },
                                                 }}
                                             >
@@ -532,7 +530,7 @@ export default function SettingsPage() {
                                                     height: 6,
                                                     borderRadius: '50%',
                                                     flexShrink: 0,
-                                                    bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-20)',
+                                                    bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-faint)',
                                                     ...(serverHealth?.status === 'running' && {
                                                         boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
                                                     }),
@@ -540,7 +538,7 @@ export default function SettingsPage() {
                                                 <span style={{
                                                     fontSize: '12px',
                                                     fontWeight: 600,
-                                                    color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-white-alpha-50)',
+                                                    color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
                                                 }}>
                                                     {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
                                                 </span>
@@ -549,16 +547,16 @@ export default function SettingsPage() {
                                     </tr>
                                     {appVersion && (
                                         <tr>
-                                            <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                            <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
                                                 Version
                                             </Box>
-                                            <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                            <Box component="td" sx={{ color: 'var(--sl-text-secondary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                                                 {appVersion}
                                             </Box>
                                         </tr>
                                     )}
                                     <tr>
-                                        <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
                                             Model
                                         </Box>
                                         <Box component="td">
@@ -596,7 +594,7 @@ export default function SettingsPage() {
                                                         <Box sx={{
                                                             flex: 1,
                                                             height: 8,
-                                                            bgcolor: 'var(--sl-white-alpha-5)',
+                                                            bgcolor: 'var(--sl-border-subtle)',
                                                             borderRadius: '2px',
                                                             overflow: 'hidden',
                                                             minWidth: 80,
@@ -626,10 +624,10 @@ export default function SettingsPage() {
 
                                             return (
                                                 <tr key={key}>
-                                                    <Box component="td" sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '12px', fontWeight: 500, textTransform: 'capitalize' }}>
+                                                    <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, textTransform: 'capitalize' }}>
                                                         {key.replace(/_/g, ' ')}
                                                     </Box>
-                                                    <Box component="td" sx={{ color: 'var(--sl-white-alpha-80)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                    <Box component="td" sx={{ color: 'var(--sl-text-secondary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
                                                         {displayValue}
                                                     </Box>
                                                 </tr>
@@ -657,24 +655,10 @@ export default function SettingsPage() {
 
 
                     {/* Available Models */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
-                            <Box className="flex items-center justify-between mb-4">
-                                <Box className="flex items-center gap-2">
-                                    <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                    <h2 className="text-lg md:text-xl font-semibold text-white">Available Models</h2>
-                                </Box>
-                                <IconButton
-                                    onClick={() => fetchLocalModels(true)}
-                                    disabled={localModelsLoading}
-                                    size="small"
-                                    title="Refresh models"
-                                    sx={{ color: 'var(--sl-text-muted)', '&:hover': { color: 'var(--sl-brand-primary)' } }}
-                                >
-                                    {localModelsLoading
-                                        ? <CircularProgress size={18} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        : <RefreshIcon sx={{ fontSize: 20 }} />
-                                    }
-                                </IconButton>
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                            <Box className="flex items-center gap-2 mb-4">
+                                <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Available Models</h2>
                             </Box>
 
                             {localModels.length > 0 && (
@@ -699,18 +683,19 @@ export default function SettingsPage() {
                                                     : 'cursor-pointer'
                                                 } ${initingModel && !isIniting && canSelect ? 'opacity-50' : ''} ${
                                                     isSelected
-                                                        ? 'bg-pink-500/10 border-pink-500/30 hover:border-pink-500/30'
-                                                        : `bg-black/40 border-white/[0.08] ${canSelect && !initingModel ? 'hover:border-white/15 hover:bg-white/5' : ''}`
+                                                        ? ''
+                                                        : `bg-sl-bg-surface-1 ${canSelect && !initingModel ? 'hover:border-sl-border-hover hover:bg-sl-bg-surface-2' : ''}`
                                                 }`}
+                                                style={isSelected ? { backgroundColor: 'var(--sl-brand-alpha-10)', borderColor: 'var(--sl-brand-alpha-30)' } : undefined}
                                             >
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-sm font-semibold font-mono text-white/80">
+                                                            <span className="text-sm font-semibold font-mono text-sl-text-secondary">
                                                                 {displayName}
                                                             </span>
                                                             {isSelected && !isIniting && (
-                                                                <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
+                                                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ backgroundColor: 'var(--sl-brand-alpha-10)', borderWidth: 1, borderColor: 'var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}>
                                                                     ACTIVE
                                                                 </span>
                                                             )}
@@ -720,7 +705,7 @@ export default function SettingsPage() {
                                                                 </span>
                                                             )}
                                                             {accessLevel === 'pro' && (
-                                                                <span className="px-2 py-0.5 bg-pink-500/10 border border-pink-500/30 rounded text-[10px] font-semibold text-pink-500">
+                                                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ backgroundColor: 'var(--sl-brand-alpha-10)', borderWidth: 1, borderColor: 'var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}>
                                                                     PRO
                                                                 </span>
                                                             )}
@@ -731,12 +716,12 @@ export default function SettingsPage() {
                                                             )}
                                                         </div>
                                                         {description && (
-                                                            <p className="text-xs text-white/40 mt-1 mb-0">
+                                                            <p className="text-xs text-sl-text-muted mt-1 mb-0">
                                                                 {description}
                                                             </p>
                                                         )}
                                                         {size && (
-                                                            <span className="text-[11px] text-white/30 font-mono">
+                                                            <span className="text-[11px] text-sl-text-faint font-mono">
                                                                 {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
                                                             </span>
                                                         )}
@@ -747,11 +732,11 @@ export default function SettingsPage() {
                                                 {isIniting && initProgress && (
                                                     <div className="mt-3">
                                                         <div className="flex items-center justify-between mb-1">
-                                                            <span className="text-[11px] text-white/50">
+                                                            <span className="text-[11px] text-sl-text-disabled">
                                                                 {initProgress.status}
                                                             </span>
                                                             {initProgress.percent > 0 && (
-                                                                <span className="text-[11px] text-pink-500 font-mono font-semibold">
+                                                                <span className="text-[11px] font-mono font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>
                                                                     {initProgress.percent}%
                                                                 </span>
                                                             )}
@@ -762,7 +747,7 @@ export default function SettingsPage() {
                                                             sx={{
                                                                 height: 6,
                                                                 borderRadius: '3px',
-                                                                bgcolor: 'var(--sl-white-alpha-5)',
+                                                                bgcolor: 'var(--sl-border-subtle)',
                                                                 '& .MuiLinearProgress-bar': {
                                                                     bgcolor: 'var(--sl-brand-primary)',
                                                                     borderRadius: '3px',
@@ -779,7 +764,7 @@ export default function SettingsPage() {
 
                             {!localModelsLoading && localModels.length === 0 && (
                                 <div className="p-6 text-center">
-                                    <span className="text-[13px] text-white/30">
+                                    <span className="text-[13px] text-sl-text-faint">
                                         No models available
                                     </span>
                                 </div>
@@ -805,8 +790,8 @@ export default function SettingsPage() {
                                 sx={{
                                     borderRadius: '16px',
                                     overflow: 'hidden',
-                                    border: '1px solid var(--sl-white-alpha-8)',
-                                    background: 'linear-gradient(145deg, rgba(20, 20, 25, 0.95) 0%, rgba(10, 10, 15, 0.98) 100%)',
+                                    border: '1px solid var(--sl-border-subtle)',
+                                    background: 'var(--sl-bg-surface-1)',
                                 }}
                             >
                                 {/* Active model specs */}
@@ -823,16 +808,16 @@ export default function SettingsPage() {
                                                 sx={{
                                                     px: 1.5,
                                                     py: 0.75,
-                                                    bgcolor: 'var(--sl-white-alpha-5)',
-                                                    border: '1px solid var(--sl-white-alpha-5)',
+                                                    bgcolor: 'var(--sl-border-subtle)',
+                                                    border: '1px solid var(--sl-border-subtle)',
                                                     borderRadius: '8px',
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     gap: 0.75,
                                                 }}
                                             >
-                                                <span style={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', fontWeight: 500 }}>{label}</span>
-                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-80)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
+                                                <span style={{ fontSize: '11px', color: 'var(--sl-text-faint)', fontWeight: 500 }}>{label}</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-text-secondary)', fontWeight: 600, fontFamily: 'monospace' }}>{value}</span>
                                             </Box>
                                         ))}
                                     </Box>
@@ -846,12 +831,12 @@ export default function SettingsPage() {
                                         p: 2,
                                         bgcolor: 'var(--sl-black-alpha-40)',
                                         borderRadius: '12px',
-                                        border: '1px solid var(--sl-white-alpha-5)',
+                                        border: '1px solid var(--sl-border-subtle)',
                                     }}>
                                         <Box className="flex items-center justify-between mb-2">
                                             <Box className="flex items-center gap-1.5">
                                                 <SpeedIcon sx={{ fontSize: 16, color: tpsColor }} />
-                                                <span style={{ fontSize: '12px', color: 'var(--sl-white-alpha-50)', fontWeight: 600, letterSpacing: '0.3px' }}>TOKEN PERFORMANCE</span>
+                                                <span style={{ fontSize: '12px', color: 'var(--sl-text-disabled)', fontWeight: 600, letterSpacing: '0.3px' }}>TOKEN PERFORMANCE</span>
                                             </Box>
                                             {latestTps !== null && (
                                                 <Box className="flex items-center gap-1.5">
@@ -873,7 +858,7 @@ export default function SettingsPage() {
                                         )}
                                         {tpsHistory.length === 0 && latestTps !== null && (
                                             <Box sx={{ mt: 1 }}>
-                                                <span style={{ fontSize: '10px', color: 'var(--sl-white-alpha-20)', display: 'block' }}>
+                                                <span style={{ fontSize: '10px', color: 'var(--sl-text-faint)', display: 'block' }}>
                                                     Graph will appear after more conversations...
                                                 </span>
                                             </Box>
@@ -884,20 +869,77 @@ export default function SettingsPage() {
                         );
                     })()}
 
+                    {/* Theme */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-4">
+                            <PaletteIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Theme</h2>
+                        </Box>
+                        <div className="flex gap-4">
+                            {themeList.map((t) => {
+                                const isActive = themeId === t.id;
+                                return (
+                                    <div
+                                        key={t.id}
+                                        onClick={() => setThemeId(t.id as ThemeId)}
+                                        className="rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden"
+                                        style={{
+                                            width: 200,
+                                            borderColor: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
+                                            boxShadow: isActive ? '0 0 0 3px var(--sl-brand-alpha-20)' : 'none',
+                                        }}
+                                    >
+                                        {/* Mini UI preview */}
+                                        <div className="flex rounded-lg overflow-hidden m-2" style={{ height: 100, backgroundColor: t.colors.bg.base, border: `1px solid ${t.colors.border.default}` }}>
+                                            {/* Sidebar */}
+                                            <div className="flex flex-col gap-[5px] p-2 shrink-0" style={{ width: 52, borderRight: `1px solid ${t.colors.border.default}`, backgroundColor: t.colors.bg.surface1 }}>
+                                                <div className="rounded-sm" style={{ height: 5, width: '100%', backgroundColor: t.colors.text.muted, opacity: 0.5 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '75%', backgroundColor: t.colors.brand.primary, opacity: 0.8 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '85%', backgroundColor: t.colors.text.faint, opacity: 0.4 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '65%', backgroundColor: t.colors.text.faint, opacity: 0.3 }} />
+                                                <div className="mt-auto rounded-full" style={{ height: 8, width: 8, backgroundColor: t.colors.brand.primary, opacity: 0.5 }} />
+                                            </div>
+                                            {/* Content */}
+                                            <div className="flex-1 flex flex-col gap-[6px] p-2">
+                                                <div className="rounded-sm" style={{ height: 5, width: '50%', backgroundColor: t.colors.text.primary, opacity: 0.4 }} />
+                                                <div className="flex-1 rounded p-2 flex flex-col gap-[4px]" style={{ backgroundColor: t.colors.bg.surface1 }}>
+                                                    <div className="rounded-sm" style={{ height: 4, width: '90%', backgroundColor: t.colors.text.secondary, opacity: 0.25 }} />
+                                                    <div className="rounded-sm" style={{ height: 4, width: '65%', backgroundColor: t.colors.text.muted, opacity: 0.2 }} />
+                                                    <div className="rounded-sm" style={{ height: 4, width: '75%', backgroundColor: t.colors.text.muted, opacity: 0.15 }} />
+                                                </div>
+                                                <div className="rounded" style={{ height: 12, backgroundColor: t.colors.bg.input, border: `1px solid ${t.colors.border.default}` }} />
+                                            </div>
+                                        </div>
+                                        {/* Label */}
+                                        <div className="px-3 py-2" style={{ backgroundColor: t.colors.bg.surface1, borderTop: `1px solid ${t.colors.border.default}` }}>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold" style={{ color: t.colors.text.primary }}>{t.name}</span>
+                                                {isActive && (
+                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--sl-brand-primary)' }} />
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] mt-0.5 leading-snug" style={{ color: t.colors.text.muted }}>{t.description}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Box>
+
                     {/* AI Model Settings */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
                             <TuneIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold text-white">AI Model Settings</h2>
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>AI Model Settings</h2>
                         </Box>
 
                         {/* Temperature */}
                         <Box>
                             <Box className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-medium text-gray-300">
+                                <label className="text-sm font-medium" style={{ color: 'var(--sl-text-secondary)' }}>
                                     Default Temperature
                                 </label>
-                                <span className="text-sm text-pink-400 font-mono">{settings.default_temperature}</span>
+                                <span className="text-sm font-mono" style={{ color: 'var(--sl-brand-light)' }}>{settings.default_temperature}</span>
                             </Box>
                             <Slider
                                 value={settings.default_temperature}
@@ -912,23 +954,23 @@ export default function SettingsPage() {
                                     '& .MuiSlider-rail': { bgcolor: 'var(--sl-border-code)' },
                                 }}
                             />
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-xs mt-1" style={{ color: 'var(--sl-text-disabled)' }}>
                                 Lower values = more focused and deterministic. Higher values = more creative and random.
                             </p>
                         </Box>
                     </Box>
 
                     {/* Analytics */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 bg-gray-900/50 border border-gray-800 rounded-xl">
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
                             <SpeedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold text-white">Analytics</h2>
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Analytics</h2>
                         </Box>
 
-                        <Box className="flex items-center justify-between p-4 bg-black/50 rounded-lg">
+                        <Box className="flex items-center justify-between p-4" sx={{ bgcolor: 'var(--sl-black-alpha-40)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
                             <Box>
-                                <h3 className="text-sm font-medium text-white mb-1">Enable Analytics</h3>
-                                <p className="text-xs text-gray-500">
+                                <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--sl-text-primary)' }}>Enable Analytics</h3>
+                                <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>
                                     Collect usage data anonymously when logged in to render dashboards in the console
                                 </p>
                             </Box>
@@ -941,7 +983,7 @@ export default function SettingsPage() {
                                 }}
                             />
                         </Box>
-                        <p className="text-xs text-gray-600 mt-3 px-1 leading-relaxed">
+                        <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
                             Includes token usage, model performance metrics, and session activity. No conversation content or personal data is collected.
                         </p>
                     </Box>

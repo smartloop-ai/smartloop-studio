@@ -626,8 +626,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       <Box sx={{
         px: 3,
         py: 2.5,
-        borderBottom: '1px solid var(--sl-white-alpha-5)',
-        bgcolor: 'var(--sl-white-alpha-2)',
+        borderBottom: '1px solid var(--sl-border-subtle)',
+        bgcolor: 'var(--sl-bg-surface-1)',
       }}>
         <Box className="flex items-center justify-between">
           <Box
@@ -637,16 +637,16 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               gap: 0.5
             }}
           >
-            <span className="text-xl font-semibold text-white tracking-tight">smartloop</span>
-            <span className="text-pink-500 text-xl font-semibold">.</span>
+            <span className="text-xl font-semibold tracking-tight" style={{ color: 'var(--sl-text-primary)' }}>smartloop</span>
+            <span className="text-xl font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>.</span>
           </Box>
           {mobileOpen && (
             <IconButton
               onClick={onMobileClose}
               sx={{
                 display: { xs: 'flex', md: 'none' },
-                color: 'var(--sl-white-alpha-50)',
-                '&:hover': { color: 'white', bgcolor: 'var(--sl-white-alpha-8)' },
+                color: 'var(--sl-text-disabled)',
+                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-1)' },
                 padding: '6px',
                 borderRadius: '6px',
               }}
@@ -664,19 +664,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            bgcolor: 'var(--sl-white-alpha-5)',
+            bgcolor: 'var(--sl-bg-surface-1)',
             borderRadius: '7px',
             padding: '7px 11px',
-            border: '1px solid var(--sl-white-alpha-8)',
+            border: '1px solid var(--sl-border-subtle)',
             transition: 'all 0.15s ease',
             '&:focus-within': {
               borderColor: 'var(--sl-brand-alpha-50)',
-              bgcolor: 'var(--sl-white-alpha-7)',
+              bgcolor: 'var(--sl-bg-surface-1)',
               boxShadow: '0 0 0 3px var(--sl-brand-alpha-10)',
             }
           }}
         >
-          <SearchIcon sx={{ fontSize: 17, color: 'var(--sl-white-alpha-40)' }} />
+          <SearchIcon sx={{ fontSize: 17, color: 'var(--sl-text-muted)' }} />
           <input
             ref={searchInputRef}
             type="text"
@@ -684,7 +684,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             value={searchQuery}
             onChange={handleSearchChange}
             onKeyDown={handleKeyDown}
-            className="bg-transparent border-none outline-none text-white text-sm flex-1 placeholder-gray-500"
+            className="bg-transparent border-none outline-none text-sm flex-1"
+            style={{ color: 'var(--sl-text-primary)' }}
           />
           {searchQuery && (
             <IconButton
@@ -692,8 +693,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               onClick={clearSearch}
               sx={{
                 padding: '3px',
-                color: 'var(--sl-white-alpha-40)',
-                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-white-alpha-10)' },
+                color: 'var(--sl-text-muted)',
+                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-2)' },
                 borderRadius: '4px',
               }}
             >
@@ -703,8 +704,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           {!searchQuery && (
             <Box sx={{
               fontSize: '11px',
-              color: 'var(--sl-white-alpha-30)',
-              bgcolor: 'var(--sl-white-alpha-5)',
+              color: 'var(--sl-text-faint)',
+              bgcolor: 'var(--sl-bg-surface-1)',
               px: 0.7,
               py: 0.3,
               borderRadius: '3px',
@@ -741,14 +742,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       borderRadius: '7px',
                       cursor: 'pointer',
                       bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                      color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-60)',
+                      color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-secondary)',
                       fontWeight: isActive ? 600 : 500,
                       fontSize: '13.5px',
                       transition: 'all 0.12s ease',
                       border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                       '&:hover': {
-                        bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
-                        color: isActive ? 'var(--sl-brand-primary)' : 'white',
+                        bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-bg-surface-1)',
+                        color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-primary)',
                       },
                       mb: 0.5,
                     }}
@@ -775,14 +776,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         padding: '9px 11px',
                         borderRadius: '7px',
                         bgcolor: isActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                        color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-60)',
+                        color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-secondary)',
                         fontWeight: isActive ? 600 : 500,
                         fontSize: '13.5px',
                         transition: 'all 0.12s ease',
                         border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
-                          bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
-                          color: isActive ? 'var(--sl-brand-primary)' : 'white',
+                          bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-bg-surface-1)',
+                          color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-primary)',
                         },
                         '&:hover .delete-icon': {
                           opacity: 1,
@@ -827,7 +828,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                           sx={{
                             fontSize: 14,
                             opacity: 0,
-                            color: 'var(--sl-white-alpha-40)',
+                            color: 'var(--sl-text-muted)',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                             '&:hover': {
@@ -856,7 +857,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               borderRadius: '7px',
               cursor: !user?.email ? 'not-allowed' : 'pointer',
               bgcolor: 'transparent',
-              color: 'var(--sl-white-alpha-40)',
+              color: 'var(--sl-text-muted)',
               opacity: !user?.email ? 0.5 : 1,
               fontWeight: 500,
               fontSize: '13.5px',
@@ -864,8 +865,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               border: '1px solid transparent',
               ...(user?.email && {
                 '&:hover': {
-                  bgcolor: 'var(--sl-white-alpha-5)',
-                  color: 'white',
+                  bgcolor: 'var(--sl-bg-surface-1)',
+                  color: 'var(--sl-text-primary)',
                 },
               }),
               mb: 0.5,
@@ -883,13 +884,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         flexDirection: 'column',
         px: 2.5,
         py: 2,
-        borderTop: '1px solid var(--sl-white-alpha-5)',
-        bgcolor: 'var(--sl-white-alpha-2)',
+        borderTop: '1px solid var(--sl-border-subtle)',
+        bgcolor: 'var(--sl-bg-surface-1)',
       }}>
         <Box sx={{
           fontSize: '11px',
           fontWeight: 600,
-          color: 'var(--sl-white-alpha-40)',
+          color: 'var(--sl-text-muted)',
           mb: 1.5,
           px: 1.5,
           letterSpacing: '0.5px',
@@ -919,13 +920,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 gap: 0.5,
                 padding: '8px 11px',
                 cursor: 'pointer',
-                color: 'var(--sl-white-alpha-60)',
+                color: 'var(--sl-text-secondary)',
                 borderRadius: '6px',
                 transition: 'all 0.12s ease',
                 position: 'relative',
                 '&:hover': {
-                  color: 'white',
-                  bgcolor: 'var(--sl-white-alpha-5)',
+                  color: 'var(--sl-text-primary)',
+                  bgcolor: 'var(--sl-bg-surface-1)',
                 },
                 '&:hover .delete-icon': {
                   opacity: 1,
@@ -945,7 +946,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     opacity: 0,
                     transition: 'opacity 0.2s ease',
                     padding: '4px',
-                    color: 'var(--sl-white-alpha-60)',
+                    color: 'var(--sl-text-secondary)',
                     '&:hover': {
                       color: 'var(--sl-brand-primary)',
                       bgcolor: 'var(--sl-brand-alpha-10)',
@@ -955,7 +956,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Box>
-              <span className="text-xs text-gray-600 ml-6 truncate">
+              <span className="text-xs ml-6 truncate" style={{ color: 'var(--sl-text-faint)' }}>
                 {chat.lastMessage
                   ? (chat.lastMessage.length > 50
                     ? chat.lastMessage.substring(0, 50) + '...'
@@ -965,7 +966,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </Box>
           ))
         ) : (
-          <Box className="text-xs text-gray-600 px-2">
+          <Box className="text-xs text-sl-text-faint px-2">
             No conversations yet
           </Box>
         )}
@@ -976,8 +977,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         <>
           <Box sx={{
             p: 2,
-            borderTop: '1px solid var(--sl-white-alpha-5)',
-            bgcolor: 'var(--sl-white-alpha-2)',
+            borderTop: '1px solid var(--sl-border-subtle)',
+            bgcolor: 'var(--sl-bg-surface-1)',
           }}>
             <Box
               onClick={handleMenuClick}
@@ -990,7 +991,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 padding: '8px',
                 transition: 'all 0.12s ease',
                 '&:hover': {
-                  bgcolor: 'var(--sl-white-alpha-5)',
+                  bgcolor: 'var(--sl-bg-surface-1)',
                 },
               }}
             >
@@ -1006,22 +1007,22 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   justifyContent: 'center',
                 }}
               >
-                <span className="text-pink-500 text-xs font-bold">
+                <span className="text-xs font-bold" style={{ color: 'var(--sl-brand-primary)' }}>
                   {authUser.name ? authUser.name.split(' ').map((n: string) => n[0]).join('').toUpperCase() : 'U'}
                 </span>
               </Box>
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{ color: 'white', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <Box sx={{ color: 'var(--sl-text-primary)', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {authUser.name || 'User'}
                 </Box>
-                <Box sx={{ color: 'var(--sl-white-alpha-40)', fontSize: '11px' }}>
+                <Box sx={{ color: 'var(--sl-text-muted)', fontSize: '11px' }}>
                   {authUser.is_paid || authUser.is_premium ? 'Pro' : 'Free'} Plan
                 </Box>
               </Box>
               <ExpandMoreIcon
                 sx={{
                   fontSize: 16,
-                  color: 'var(--sl-white-alpha-40)',
+                  color: 'var(--sl-text-muted)',
                   transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                   transition: 'transform 0.15s ease'
                 }}
@@ -1037,10 +1038,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             anchorOrigin={{ horizontal: 'left', vertical: 'top' }}
             PaperProps={{
               sx: {
-                bgcolor: 'rgba(0, 0, 0, 0.98)',
+                bgcolor: 'var(--sl-bg-elevated)',
                 backdropFilter: 'blur(10px)',
                 WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid var(--sl-white-alpha-10)',
+                border: '1px solid var(--sl-border-default)',
                 borderRadius: '8px',
                 minWidth: '200px',
                 mt: -1,
@@ -1051,12 +1052,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           >
             <MenuItem
               onClick={() => { handleSettings(); handleMenuClose(); }}
-              sx={{ color: 'var(--sl-white-alpha-85)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-white-alpha-8)' } }}
+              sx={{ color: 'var(--sl-text-primary)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' } }}
             >
-              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-white-alpha-50)' }} />
+              <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-text-disabled)' }} />
               Settings
             </MenuItem>
-            <Box sx={{ height: '1px', bgcolor: 'var(--sl-white-alpha-5)', my: 0.5, mx: 1 }} />
+            <Box sx={{ height: '1px', bgcolor: 'var(--sl-bg-surface-1)', my: 0.5, mx: 1 }} />
             <MenuItem
               onClick={handleLogout}
               sx={{ color: 'var(--sl-status-error)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-danger-alpha-10)' } }}
@@ -1070,8 +1071,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         <Box sx={{
           px: 2.5,
           py: 2,
-          borderTop: '1px solid var(--sl-white-alpha-5)',
-          bgcolor: 'var(--sl-white-alpha-2)',
+          borderTop: '1px solid var(--sl-border-subtle)',
+          bgcolor: 'var(--sl-bg-surface-1)',
         }}>
           <Box
             onClick={handleLogin}
@@ -1123,11 +1124,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '12px',
-              color: 'var(--sl-white-alpha-40)',
+              color: 'var(--sl-text-muted)',
               transition: 'all 0.12s ease',
               '&:hover': {
-                color: 'var(--sl-white-alpha-70)',
-                bgcolor: 'var(--sl-white-alpha-5)',
+                color: 'var(--sl-text-secondary)',
+                bgcolor: 'var(--sl-bg-surface-1)',
               },
             }}
           >
@@ -1174,10 +1175,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           {createStep === 'choose' ? (
             <>
               <Box className="mb-5">
-                <h3 className="text-white font-semibold text-lg mb-1">
+                <h3 className="text-sl-text-primary font-semibold text-lg mb-1">
                   Create a new project
                 </h3>
-                <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-40)', lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: '13px', color: 'var(--sl-text-muted)', lineHeight: 1.5 }}>
                   Organize your conversations, documents, and tools in one place.
                 </Typography>
               </Box>
@@ -1201,15 +1202,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     borderRadius: '10px',
                     border: createSource === 'blank'
                       ? '1.5px solid var(--sl-brand-primary)'
-                      : '1.5px solid var(--sl-white-alpha-10)',
+                      : '1.5px solid var(--sl-border-default)',
                     bgcolor: createSource === 'blank'
                       ? 'var(--sl-brand-alpha-10)'
-                      : 'var(--sl-white-alpha-2)',
+                      : 'var(--sl-bg-surface-1)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     '&:hover': {
                       borderColor: 'var(--sl-brand-alpha-40)',
-                      bgcolor: 'var(--sl-white-alpha-5)',
+                      bgcolor: 'var(--sl-bg-surface-1)',
                     },
                   }}
                 >
@@ -1225,10 +1226,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     <AutoAwesomeIcon sx={{ fontSize: 24, color: 'var(--sl-brand-primary)' }} />
                   </Box>
                   <Box className="text-center">
-                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-text-primary)', fontWeight: 500 }}>
                       Blank Template
                     </Typography>
-                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
+                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-text-faint)', mt: 0.5 }}>
                       Start fresh with a new workspace
                     </Typography>
                   </Box>
@@ -1256,17 +1257,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       ? '2px dashed var(--sl-brand-primary)'
                       : createSource === 'existing'
                         ? '1.5px solid var(--sl-brand-primary)'
-                        : '1.5px solid var(--sl-white-alpha-10)',
+                        : '1.5px solid var(--sl-border-default)',
                     bgcolor: isDragOver
                       ? 'var(--sl-brand-alpha-10)'
                       : createSource === 'existing'
                         ? 'var(--sl-brand-alpha-10)'
-                        : 'var(--sl-white-alpha-2)',
+                        : 'var(--sl-bg-surface-1)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     '&:hover': {
                       borderColor: 'var(--sl-brand-alpha-40)',
-                      bgcolor: 'var(--sl-white-alpha-5)',
+                      bgcolor: 'var(--sl-bg-surface-1)',
                     },
                   }}
                 >
@@ -1274,19 +1275,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     width: 48,
                     height: 48,
                     borderRadius: '12px',
-                    bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
+                    bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-bg-surface-1)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     transition: 'all 0.2s ease',
                   }}>
-                    <FileDownloadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-50)' }} />
+                    <FileDownloadIcon sx={{ fontSize: 24, color: isDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-text-disabled)' }} />
                   </Box>
                   <Box className="text-center">
-                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-white-alpha-85)', fontWeight: 500 }}>
+                    <Typography sx={{ fontSize: '13.5px', color: 'var(--sl-text-primary)', fontWeight: 500 }}>
                       {isDragOver ? 'Drop to import' : 'From Existing Project'}
                     </Typography>
-                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-white-alpha-30)', mt: 0.5 }}>
+                    <Typography sx={{ fontSize: '12px', color: 'var(--sl-text-faint)', mt: 0.5 }}>
                       {isDragOver ? 'Release to import your project' : 'Drop or browse a .zip archive'}
                     </Typography>
                   </Box>
@@ -1297,10 +1298,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           ) : (
             <>
               <Box className="mb-5">
-                <h3 className="text-white font-semibold text-lg mb-1">
+                <h3 className="text-sl-text-primary font-semibold text-lg mb-1">
                   Project details
                 </h3>
-                <Typography sx={{ fontSize: '13px', color: 'var(--sl-white-alpha-40)', lineHeight: 1.5 }}>
+                <Typography sx={{ fontSize: '13px', color: 'var(--sl-text-muted)', lineHeight: 1.5 }}>
                   Give your project a name and pick a label color.
                 </Typography>
               </Box>
@@ -1323,9 +1324,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
+                      backgroundColor: 'var(--sl-bg-surface-1)',
                       fontSize: '0.85rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '& fieldset': { borderColor: 'var(--sl-border-default)' },
                       '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
                       '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
@@ -1336,7 +1337,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     },
                   }}
                 />
-                <Typography sx={{ fontSize: '11px', color: 'var(--sl-white-alpha-30)', mt: 0.75, pl: 0.5 }}>
+                <Typography sx={{ fontSize: '11px', color: 'var(--sl-text-faint)', mt: 0.75, pl: 0.5 }}>
                   {createProjectName.trim()
                     ? '~/smartloop/' + createProjectName.trim().toLowerCase().replace(/\s+/g, '_')
                     : '~/smartloop/<project>'}
@@ -1384,7 +1385,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     transition: 'all 0.15s ease',
                     '&:hover': {
                       color: 'var(--sl-text-primary)',
-                      bgcolor: 'var(--sl-white-alpha-5)',
+                      bgcolor: 'var(--sl-bg-surface-1)',
                     },
                   }}
                 >
@@ -1427,8 +1428,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     gap: 1.5,
                     px: 2,
                     py: 1.5,
-                    bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-10)',
-                    border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-white-alpha-8)' : '1px solid var(--sl-brand-alpha-20)',
+                    bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-10)',
+                    border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-20)',
                     borderRadius: '8px',
                     cursor: (isImporting || !createProjectName.trim()) ? 'not-allowed' : 'pointer',
                     fontSize: '13px',
@@ -1436,8 +1437,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     color: (isImporting || !createProjectName.trim()) ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)',
                     transition: 'all 0.15s ease',
                     '&:hover': {
-                      bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-white-alpha-5)' : 'var(--sl-brand-alpha-20)',
-                      border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-white-alpha-8)' : '1px solid var(--sl-brand-alpha-40)',
+                      bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-20)',
+                      border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-40)',
                     },
                   }}
                 >
@@ -1468,7 +1469,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           width: '280px',
           height: '100vh',
           bgcolor: 'var(--sl-bg-base)',
-          borderRight: '1px solid var(--sl-white-alpha-5)',
+          borderRight: '1px solid var(--sl-border-subtle)',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           position: 'fixed',
@@ -1507,7 +1508,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               bottom: 0,
               width: '280px',
               bgcolor: 'var(--sl-bg-base)',
-              borderRight: '1px solid var(--sl-white-alpha-5)',
+              borderRight: '1px solid var(--sl-border-subtle)',
               display: { xs: 'flex', md: 'none' },
               flexDirection: 'column',
               zIndex: 1300,
@@ -1571,17 +1572,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24 }} />
             </Box>
             <Box className="flex-1">
-              <h3 className="text-white font-semibold text-lg mb-1">
+              <h3 className="text-sl-text-primary font-semibold text-lg mb-1">
                 Delete Project
               </h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
-                Are you sure you want to delete <span className="text-white font-medium">{projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
+              <p className="text-sl-text-muted text-sm leading-relaxed">
+                Are you sure you want to delete <span className="text-sl-text-primary font-medium">{projectToDelete?.name}</span>? This will permanently delete all conversations and documents in this project.
               </p>
             </Box>
           </Box>
 
-          <Box className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
-            <Box className="text-red-400 text-sm mb-3">
+          <Box className="rounded-lg p-4 mb-4" style={{ backgroundColor: 'var(--sl-danger-alpha-10)', border: '1px solid var(--sl-danger-alpha-30)' }}>
+            <Box className="text-sl-status-error text-sm mb-3">
               <strong>Warning:</strong> This action cannot be undone. All data will be permanently deleted.
             </Box>
             <TextField
@@ -1594,8 +1595,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               disabled={isDeletingProject}
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  color: 'white',
-                  bgcolor: 'var(--sl-black-alpha-30)',
+                  color: 'var(--sl-text-primary)',
+                  bgcolor: 'var(--sl-bg-surface-1)',
                   '& fieldset': {
                     borderColor: 'var(--sl-danger-alpha-30)',
                   },
@@ -1618,14 +1619,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               type="button"
               onClick={() => setShowDeleteProjectDialog(false)}
               disabled={isDeletingProject}
-              className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+              className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleDeleteProject}
               disabled={isDeletingProject || deleteProjectConfirm !== (projectToDelete?.name)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDeletingProject ? (
                 <>
@@ -1696,18 +1697,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               <DeleteOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: 24 }} />
             </Box>
             <Box className="flex-1">
-              <h3 className="text-white font-semibold text-lg mb-1">
+              <h3 className="text-sl-text-primary font-semibold text-lg mb-1">
                 Delete Conversation
               </h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <p className="text-sl-text-muted text-sm leading-relaxed">
                 Are you sure you want to delete this conversation? This action cannot be undone.
               </p>
             </Box>
           </Box>
 
           {/* Warning */}
-          <Box className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
-            <Box className="text-red-400 text-sm">
+          <Box className="rounded-lg p-4 mb-4" style={{ backgroundColor: 'var(--sl-danger-alpha-10)', border: '1px solid var(--sl-danger-alpha-30)' }}>
+            <Box className="text-sl-status-error text-sm">
               <strong>Warning:</strong> All messages in this conversation will be permanently deleted.
             </Box>
           </Box>
@@ -1718,14 +1719,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               type="button"
               onClick={() => setDeleteDialogOpen(false)}
               disabled={isDeleting}
-              className="flex-1 px-4 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-lg border border-gray-800 transition-colors text-sm font-medium disabled:opacity-50"
+              className="flex-1 px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={confirmDeleteConversation}
               disabled={isDeleting}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDeleting ? (
                 <>
