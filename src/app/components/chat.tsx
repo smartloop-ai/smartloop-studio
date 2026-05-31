@@ -1030,7 +1030,7 @@ export default function Chat(props: {
 
   return (
     <>
-      <Box className="chat__box flex flex-col h-full bg-black overflow-hidden" sx={{ borderLeft: '1px solid rgba(75, 85, 99, 0.3)' }}>
+      <Box className="chat__box flex flex-col h-full bg-sl-bg-base overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-border-subtle)' }}>
         <section className="chat__body flex-1 overflow-hidden">
           <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 scrollbar-thin">
             <div ref={messagesEndRef} />
@@ -1040,8 +1040,8 @@ export default function Chat(props: {
                 <div className="flex-1"></div>
                 <Box
                   sx={{
-                    bgcolor: 'rgba(17, 24, 39, 0.6)',
-                    border: '1px solid rgba(75, 85, 99, 0.3)',
+                    bgcolor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     borderRadius: '16px',
                     padding: { xs: '20px', md: '32px' },
                     maxWidth: '700px',
@@ -1064,8 +1064,8 @@ export default function Chat(props: {
                       <AutoAwesomeIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
                     </Box>
                     <div>
-                      <h2 className="text-lg md:text-xl font-semibold text-white">Bootstrapping Model</h2>
-                      <p className="text-xs text-gray-400 mt-0.5">{modelDownloadProgress.model?.replace(/-/g, ' ')}</p>
+                      <h2 className="text-lg md:text-xl font-semibold text-sl-text-primary">Bootstrapping Model</h2>
+                      <p className="text-xs text-sl-text-muted mt-0.5">{modelDownloadProgress.model?.replace(/-/g, ' ')}</p>
                     </div>
                   </div>
 
@@ -1082,9 +1082,10 @@ export default function Chat(props: {
                       return (
                         <div key={s} className="flex items-center gap-1.5">
                           <div
-                            className={`w-2 h-2 rounded-full ${isDone ? 'bg-green-500' : isActive ? 'bg-pink-500 animate-pulse' : 'bg-gray-600'}`}
+                            className={`w-2 h-2 rounded-full ${isDone ? 'bg-sl-status-success' : isActive ? 'animate-pulse' : 'bg-sl-text-faint'}`}
+                            style={isActive && !isDone ? { backgroundColor: 'var(--sl-brand-primary)' } : undefined}
                           />
-                          <span className={`text-[10px] ${isActive ? 'text-white' : isDone ? 'text-green-400' : 'text-gray-600'}`}>
+                          <span className={`text-[10px] ${isActive ? 'text-sl-text-primary' : isDone ? 'text-sl-status-success' : 'text-sl-text-faint'}`}>
                             {stageLabels[s]}
                           </span>
                         </div>
@@ -1093,7 +1094,7 @@ export default function Chat(props: {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs text-gray-400">
+                    <div className="flex items-center justify-between text-xs text-sl-text-muted">
                       <span>{modelDownloadProgress.status}</span>
                       <span>{modelDownloadProgress.percent > 0 ? `${modelDownloadProgress.percent}%` : ''}</span>
                     </div>
@@ -1102,7 +1103,7 @@ export default function Chat(props: {
                         width: '100%',
                         height: '6px',
                         borderRadius: '3px',
-                        bgcolor: 'rgba(75, 85, 99, 0.4)',
+                        bgcolor: 'var(--sl-bg-surface-2)',
                         overflow: 'hidden',
                       }}
                     >
@@ -1124,7 +1125,7 @@ export default function Chat(props: {
                         }}
                       />
                     </Box>
-                    <p className="text-xs text-gray-500">Please wait as we download and prepare the model...</p>
+                    <p className="text-xs text-sl-text-disabled">Please wait as we download and prepare the model...</p>
                   </div>
                 </Box>
                 <div className="flex-1"></div>
@@ -1135,8 +1136,8 @@ export default function Chat(props: {
                 <div className="flex-1"></div>
                 <Box
                   sx={{
-                    bgcolor: 'rgba(17, 24, 39, 0.6)',
-                    border: '1px solid rgba(75, 85, 99, 0.3)',
+                    bgcolor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     borderRadius: '16px',
                     padding: { xs: '20px', md: '32px' },
                     maxWidth: '700px',
@@ -1158,28 +1159,28 @@ export default function Chat(props: {
                     >
                       <LightbulbIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
                     </Box>
-                    <h2 className="text-lg md:text-xl font-semibold text-white">Tips to Get Started</h2>
+                    <h2 className="text-lg md:text-xl font-semibold text-sl-text-primary">Tips to Get Started</h2>
                   </div>
 
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-gray-700 text-white rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-sl-bg-surface-3 text-sl-text-primary rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
                       </p>
                     </div>
 
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-gray-300 text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-white">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
                       </p>
                     </div>
                   </div>
@@ -1190,9 +1191,9 @@ export default function Chat(props: {
             {(displayMessages || []).length === 0 && searchQuery.trim() !== "" &&
               <div className="flex flex-col gap-2 h-full w-full justify-center">
                 <div className="flex justify-center">
-                  <div className="bg-gray-800 rounded-lg p-8 text-center">
+                  <div className="bg-sl-bg-surface-2 rounded-lg p-8 text-center">
                     <SearchIcon sx={{ fontSize: 48, color: 'var(--sl-text-muted)' }} />
-                    <p className="mt-4 text-gray-400">No messages found matching "{searchQuery}"</p>
+                    <p className="mt-4 text-sl-text-muted">No messages found matching "{searchQuery}"</p>
                   </div>
                 </div>
               </div>
@@ -1204,10 +1205,10 @@ export default function Chat(props: {
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
                         <Box className="flex-1">
-                          <div className="chat-paper rounded-sm p-3 md:p-5 text-white text-sm md:text-base leading-relaxed">
-                            <div className="prose prose-invert max-w-none chat-content">
+                          <div className="chat-paper rounded-sm p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                            <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
-                                <span className="inline-block w-2 h-4 bg-white/80 rounded-sm animate-pulse" />
+                                <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
                               ) : (
                                 <Streamdown
                                   mode={msg.is_new ? "streaming" : "static"}
@@ -1221,8 +1222,8 @@ export default function Chat(props: {
                               )}
                             </div>
                             {msg.citations && msg.citations.length > 0 && !msg.is_new && (
-                              <div className="mt-3 pt-3 border-t border-gray-800/50">
-                                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">References</p>
+                              <div className="mt-3 pt-3 border-t border-sl-border-subtle">
+                                <p className="text-[10px] text-sl-text-disabled uppercase tracking-wider mb-1.5">References</p>
                                 <div className="flex flex-wrap gap-1.5">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
@@ -1231,7 +1232,7 @@ export default function Chat(props: {
                                     return (
                                       <span
                                         key={idx}
-                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-gray-800/80 border border-gray-700/40 text-gray-400 cursor-pointer hover:text-gray-200 hover:border-gray-600 transition-colors"
+                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-sl-bg-surface-2 border border-sl-border-default text-sl-text-muted cursor-pointer hover:text-sl-text-secondary hover:border-sl-border-hover transition-colors"
                                         title={resolvedPath || citation.document_id}
                                         onClick={() => {
                                           if (resolvedPath) {
@@ -1261,7 +1262,7 @@ export default function Chat(props: {
                                     className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
                                     style={{
                                       color: copied === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
-                                      borderColor: 'var(--sl-border-default, #374151)',
+                                      borderColor: 'var(--sl-border-subtle)',
                                       background: 'transparent',
                                     }}
                                   >
@@ -1417,7 +1418,7 @@ export default function Chat(props: {
                                   .map((attachment: any, idx: number) => (
                                     <Box
                                       key={idx}
-                                      className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-gray-800/60 rounded-sm border border-gray-700/50"
+                                      className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-sl-bg-surface-2 rounded-sm border border-sl-border-default"
                                     >
                                       <Box
                                         sx={{
@@ -1432,14 +1433,14 @@ export default function Chat(props: {
                                       >
                                         <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
                                       </Box>
-                                      <span className="text-gray-300 truncate max-w-[150px]">{attachment.name || 'Document'}</span>
+                                      <span className="text-sl-text-tertiary truncate max-w-[150px]">{attachment.name || 'Document'}</span>
                                     </Box>
                                   ))}
                               </Box>
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-gray-800 rounded-sm px-3 md:px-5 py-2 md:py-3 text-white text-sm md:text-base leading-relaxed">
+                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-sl-border-subtle rounded-sm px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
                               <pre className="user-message-content text-wrap break-words py-3 whitespace-pre-wrap font-[inherit]">
                                 {msg.content}
                               </pre>
@@ -1447,7 +1448,7 @@ export default function Chat(props: {
                           </Box>
 
                           <Box className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Box className="w-3 h-3 rounded-full bg-pink-500"></Box>
+                            <Box className="w-3 h-3 rounded-full" sx={{ bgcolor: 'var(--sl-brand-primary)' }}></Box>
                           </Box>
                         </Box>
                       </Box>
@@ -1460,7 +1461,7 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="flex-none px-3 md:px-4 py-4 md:py-6 bg-black border-t border-gray-900">
+        <footer className="flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
           <MessageInput
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
@@ -1491,17 +1492,17 @@ export default function Chat(props: {
             selectedQuote={selectedQuote}
             onQuoteClear={handleQuoteClear}
           />
-          <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-gray-600 leading-none">
+          <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
               <>
                 {indexingProgress ? (
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-yellow-500 animate-pulse flex-shrink-0"></span>
+                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
                     <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-pink-500 flex-shrink-0"></span>
+                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0" style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
                     <span>ready</span>
                   </span>
                 )}
@@ -1516,13 +1517,13 @@ export default function Chat(props: {
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">
-                  <span><span className="text-gray-500">&lt;esc&gt;</span> <span className="text-gray-700">interrupt</span></span>
-                  <span><span className="text-gray-500">&lt;ctrl+tab&gt;</span> <span className="text-gray-700">switch conversation</span></span>
+                  <span><span className="text-sl-text-disabled">&lt;esc&gt;</span> <span className="text-sl-text-faint">interrupt</span></span>
+                  <span><span className="text-sl-text-disabled">&lt;ctrl+tab&gt;</span> <span className="text-sl-text-faint">switch conversation</span></span>
                 </span>
               </>
             ) : (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-yellow-500 animate-pulse flex-shrink-0"></span>
+                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
                 <span>starting</span>
               </span>
             )}

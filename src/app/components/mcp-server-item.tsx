@@ -56,7 +56,7 @@ export default function McpServerItem({
           px: 1,
           py: '6px',
           borderRadius: '6px',
-          border: '1px solid var(--sl-white-alpha-8)',
+          border: '1px solid var(--sl-border-subtle)',
           display: 'flex',
           gap: 0.75,
           transition: 'background 0.1s ease',
@@ -77,7 +77,7 @@ export default function McpServerItem({
         {/* Server Info */}
         <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <span className="text-[11px] text-gray-300 truncate flex-1">
+            <span className="text-[11px] text-sl-text-tertiary truncate flex-1">
               {displayName}
             </span>
 
@@ -118,7 +118,7 @@ export default function McpServerItem({
 
           {/* Description */}
           {server.description && (
-            <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4 }} title={server.description}>
+            <span className="text-[10px] text-sl-text-disabled" style={{ lineHeight: 1.4 }} title={server.description}>
               {server.description}
             </span>
           )}
@@ -136,7 +136,7 @@ export default function McpServerItem({
                 <span style={{ fontSize: '9px', color: 'var(--sl-brand-primary)' }}>Discovering…</span>
               </>
             ) : allTools.length > 0 ? (
-              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-bg-surface-1)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
                 {allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}
               </span>
             ) : null}
@@ -165,7 +165,7 @@ export default function McpServerItem({
               right: 12,
               top: 12,
               color: 'var(--sl-text-muted)',
-              '&:hover': { bgcolor: 'var(--sl-white-alpha-5)' },
+              '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
             }}
           >
             <CloseIcon sx={{ fontSize: 18 }} />
@@ -182,7 +182,7 @@ export default function McpServerItem({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                bgcolor: 'var(--sl-white-alpha-5)',
+                bgcolor: 'var(--sl-bg-surface-1)',
                 overflow: 'hidden',
               }}
             >
@@ -202,21 +202,21 @@ export default function McpServerItem({
               )}
             </Box>
             <Box>
-              <div className="text-sm text-white font-medium">{displayName}</div>
+              <div className="text-sm text-sl-text-primary font-medium">{displayName}</div>
               {serverInfo?.version && (
-                <div className="text-xs text-gray-500">v{serverInfo.version}</div>
+                <div className="text-xs text-sl-text-disabled">v{serverInfo.version}</div>
               )}
             </Box>
           </Box>
 
           {server.description && (
-            <div className="text-xs text-gray-400 mb-4 leading-relaxed">
+            <div className="text-xs text-sl-text-muted mb-4 leading-relaxed">
               {server.description}
             </div>
           )}
 
           {/* Tools List */}
-          <div className="text-xs text-gray-400 font-medium mb-2">
+          <div className="text-xs text-sl-text-muted font-medium mb-2">
             Tools ({allTools.length})
           </div>
 
@@ -236,13 +236,13 @@ export default function McpServerItem({
                   sx={{
                     padding: '8px 10px',
                     borderRadius: '6px',
-                    bgcolor: 'var(--sl-white-alpha-2)',
-                    '&:hover': { bgcolor: 'var(--sl-white-alpha-5)' },
+                    bgcolor: 'var(--sl-bg-surface-1)',
+                    '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
                   }}
                 >
-                  <div className="text-xs text-white font-medium">{tool.name}</div>
+                  <div className="text-xs text-sl-text-primary font-medium">{tool.name}</div>
                   {tool.description && (
-                    <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
+                    <div className="text-[11px] text-sl-text-disabled leading-snug mt-0.5">
                       {tool.description}
                     </div>
                   )}
@@ -250,7 +250,7 @@ export default function McpServerItem({
               ))}
             </Box>
           ) : (
-            <div className="text-xs text-gray-500 py-4 text-center">
+            <div className="text-xs text-sl-text-disabled py-4 text-center">
               No tools available
             </div>
           )}

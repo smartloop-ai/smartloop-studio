@@ -128,14 +128,14 @@ export default function MessageInput({
       <Box
         className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
         sx={{
-          bgcolor: 'rgba(17, 24, 39, 0.5)',
+          bgcolor: 'var(--sl-bg-surface-1)',
           border: isDraggingOver
             ? '1px solid var(--sl-brand-primary)'
             : '1px solid var(--sl-bg-inline-code)',
           '&:focus-within': {
             border: isDraggingOver
               ? '1px solid var(--sl-brand-primary)'
-              : '1px solid var(--sl-white-alpha-30)',
+              : '1px solid var(--sl-border-hover)',
           },
         }}
       >
@@ -227,7 +227,7 @@ export default function MessageInput({
             {/* Selected quote indicator */}
             {selectedQuote && (
               <Box
-                className="flex items-center gap-1.5 px-2 py-1 bg-gray-800/80 text-xs text-gray-300 border border-gray-700/50 max-w-[200px] md:max-w-[300px]"
+                className="flex items-center gap-1.5 px-2 py-1 bg-sl-bg-surface-2 text-xs text-sl-text-tertiary border border-sl-border-default max-w-[200px] md:max-w-[300px]"
                 sx={{ flexShrink: 0 }}
               >
                 <FormatQuoteIcon sx={{ fontSize: 14, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
@@ -242,7 +242,7 @@ export default function MessageInput({
                       onQuoteClear();
                     }
                   }}
-                  className="p-0.5 hover:bg-gray-700 rounded transition-colors flex-shrink-0"
+                  className="p-0.5 hover:bg-sl-bg-surface-3 rounded transition-colors flex-shrink-0"
                   title="Remove quote"
                 >
                   <CloseIcon sx={{ fontSize: 12, color: 'var(--sl-text-muted)' }} />

@@ -1034,7 +1034,7 @@ export default function RightSidebar({
         height: '100%',
         overflow: 'hidden',
         borderLeft: '1px solid',
-        borderColor: 'var(--sl-white-alpha-10)',
+        borderColor: 'var(--sl-border-default)',
       }}
     >
       {/* Resize Handle */}
@@ -1063,8 +1063,8 @@ export default function RightSidebar({
           }}
         >
           {/* Section Title */}
-          <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-white-alpha-8)' }}>
-            <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+          <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
+            <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
               {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
@@ -1097,8 +1097,8 @@ export default function RightSidebar({
                     onClick={() => fileInputRef.current?.click()}
                     sx={{
                       borderRadius: '8px',
-                      border: `1px dashed ${isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-white-alpha-15)'}`,
-                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-2)',
+                      border: `1px dashed ${isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)'}`,
+                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
                       transition: 'border-color 0.15s ease, background 0.15s ease',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1119,7 +1119,7 @@ export default function RightSidebar({
                       fontSize: 24,
                       color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                     }} />
-                    <span className="text-[12px] text-gray-400 font-medium">
+                    <span className="text-[12px] text-sl-text-muted font-medium">
                       {isDragging ? 'Drop files here' : 'Drop files or click to add'}
                     </span>
                     <span className="flex items-center gap-1.5 mt-1">
@@ -1129,8 +1129,8 @@ export default function RightSidebar({
                           className="text-[9px] font-medium tracking-wide px-2 py-0.5 rounded"
                           style={{
                             color: 'var(--sl-text-muted)',
-                            backgroundColor: 'var(--sl-white-alpha-5)',
-                            border: '1px solid var(--sl-white-alpha-10)',
+                            backgroundColor: 'var(--sl-bg-surface-1)',
+                            border: '1px solid var(--sl-border-default)',
                           }}
                         >
                           {type}
@@ -1203,16 +1203,16 @@ export default function RightSidebar({
                                 display: 'flex',
                                 gap: 0.75,
                                 transition: 'background 0.1s ease',
-                                border: '1px solid var(--sl-white-alpha-8)',
+                                border: '1px solid var(--sl-border-subtle)',
                                 borderRadius: '6px',
                                 mb: 0.75,
-                                '&:hover': { bgcolor: 'var(--sl-white-alpha-3)' },
+                                '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
                               }}
                             >
                               <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
                               <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <span className="text-[11px] text-gray-300 truncate flex-1">
+                                  <span className="text-[11px] text-sl-text-tertiary truncate flex-1">
                                     {filename}
                                   </span>
                                   <IconButton
@@ -1228,13 +1228,13 @@ export default function RightSidebar({
                                   </IconButton>
                                 </Box>
                                 {!isProcessing && summary && (
-                                  <span className="text-[10px] text-gray-500" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                                  <span className="text-[10px] text-sl-text-disabled" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
                                     {summary}
                                   </span>
                                 )}
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                                   {ext && (
-                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-white-alpha-5)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-bg-surface-1)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
                                       {ext}
                                     </span>
                                   )}
@@ -1290,7 +1290,7 @@ export default function RightSidebar({
                   )}
                 </div>
               ) : (
-                <Box className="text-gray-500 text-xs py-4 text-center">
+                <Box className="text-sl-text-disabled text-xs py-4 text-center">
                   Select a project to view documents
                 </Box>
               )}
@@ -1305,8 +1305,8 @@ export default function RightSidebar({
                 sx={{
                   padding: '10px',
                   borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-2)',
-                  border: '1px solid var(--sl-white-alpha-8)',
+                  bgcolor: 'var(--sl-bg-surface-1)',
+                  border: '1px solid var(--sl-border-subtle)',
                 }}
               >
                 <TextField
@@ -1330,9 +1330,9 @@ export default function RightSidebar({
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
+                      backgroundColor: 'var(--sl-bg-surface-1)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '& fieldset': { borderColor: 'var(--sl-border-default)' },
                       '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
                       '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
@@ -1343,7 +1343,7 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <Box className="text-gray-500 text-[10px] mt-1 px-1">
+                <Box className="text-sl-text-disabled text-[10px] mt-1 px-1">
                   Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
                 </Box>
               </Box>
@@ -1385,7 +1385,7 @@ export default function RightSidebar({
               )}
 
               {/* Help Text */}
-              <p className="text-gray-500 text-[10px] leading-relaxed mt-4">
+              <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-4">
                 MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
               </p>
             </div>
@@ -1410,7 +1410,7 @@ export default function RightSidebar({
                     >
                       <ArrowBackIcon sx={{ fontSize: 16 }} />
                     </IconButton>
-                    <span className="text-xs text-white font-medium truncate">
+                    <span className="text-xs text-sl-text-primary font-medium truncate">
                       {editingSkillIsNew ? 'New Skill' : (localSkills[editingSkillIndex!]?.name || 'Untitled Skill')}
                     </span>
                     {skillHasUnsavedChanges && (
@@ -1419,8 +1419,8 @@ export default function RightSidebar({
                   </Box>
                   <Box className="markdown-editor-container" sx={{
                     '& .EasyMDEContainer': { border: 'none' },
-                    '& .CodeMirror': { bgcolor: 'var(--sl-white-alpha-2)', border: '1px solid var(--sl-white-alpha-10)', borderRadius: '6px', color: 'var(--sl-text-primary)' },
-                    '& .editor-toolbar': { borderColor: 'var(--sl-white-alpha-10)' },
+                    '& .CodeMirror': { bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)', borderRadius: '6px', color: 'var(--sl-text-primary)' },
+                    '& .editor-toolbar': { borderColor: 'var(--sl-border-default)' },
                   }}>
                     <SimpleMDE
                       value={skillContent}
@@ -1435,7 +1435,7 @@ export default function RightSidebar({
                   {/* Quick-add textarea */}
                   <Box sx={{
                     borderRadius: '6px',
-                    border: '1px solid var(--sl-white-alpha-10)',
+                    border: '1px solid var(--sl-border-default)',
                     overflow: 'hidden',
                     transition: 'border-color 0.15s ease',
                     '&:focus-within': { borderColor: 'var(--sl-brand-primary)' },
@@ -1473,15 +1473,15 @@ export default function RightSidebar({
                         }}
                       />
                       {!skillSearchQuery && (
-                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-50 text-gray-400">
+                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-50 text-sl-text-muted">
                           Write a new skill in Markdown and press{' '}
                           <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle' }} />{' '}
                           to add. Skills are snippets of content that are injected into the assistant's context
                         </div>
                       )}
                     </Box>
-                    <Box className="flex items-center justify-between px-2 py-1.5" sx={{ borderTop: '1px solid var(--sl-white-alpha-5)' }}>
-                      <span className="text-[9px] text-gray-600">Markdown</span>
+                    <Box className="flex items-center justify-between px-2 py-1.5" sx={{ borderTop: '1px solid var(--sl-border-subtle)' }}>
+                      <span className="text-[9px] text-sl-text-faint">Markdown</span>
                       <button
                         onClick={() => {
                           if (onSaveSkills && skillSearchQuery.trim()) {
@@ -1495,7 +1495,9 @@ export default function RightSidebar({
                           }
                         }}
                         disabled={!skillSearchQuery.trim()}
-                        className="text-[10px] px-2.5 py-0.5 rounded text-gray-500 hover:text-pink-400 hover:bg-pink-500/10 disabled:opacity-30 disabled:cursor-default transition-colors"
+                        className="text-[10px] px-2.5 py-0.5 rounded text-sl-text-disabled disabled:opacity-30 disabled:cursor-default transition-colors"
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sl-brand-light)'; e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-10)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = ''; e.currentTarget.style.backgroundColor = ''; }}
                       >
                         Add <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle', ml: '2px' }} />
                       </button>
@@ -1506,7 +1508,7 @@ export default function RightSidebar({
                   {(localSkills.length > 0 || savingSkill) && (
                     <Box sx={{ mt: 3 }}>
                       <Box sx={{
-                        border: '1px solid var(--sl-white-alpha-8)',
+                        border: '1px solid var(--sl-border-subtle)',
                         borderRadius: '6px',
                         overflow: 'hidden',
                       }}>
@@ -1516,11 +1518,11 @@ export default function RightSidebar({
                             display: 'flex',
                             alignItems: 'center',
                             gap: 0.75,
-                            borderBottom: localSkills.length > 0 ? '1px solid var(--sl-white-alpha-5)' : 'none',
+                            borderBottom: localSkills.length > 0 ? '1px solid var(--sl-border-subtle)' : 'none',
                             bgcolor: 'var(--sl-brand-alpha-10)',
                           }}>
                             <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
-                            <span className="text-[11px] text-gray-400">Adding skill…</span>
+                            <span className="text-[11px] text-sl-text-muted">Adding skill…</span>
                           </Box>
                         )}
                         {localSkills.map((skill, index) => (
@@ -1545,7 +1547,7 @@ export default function RightSidebar({
                               alignItems: 'flex-start',
                               gap: 0.75,
                               transition: 'background 0.1s ease, color 0.1s ease',
-                              borderBottom: '1px solid var(--sl-white-alpha-5)',
+                              borderBottom: '1px solid var(--sl-border-subtle)',
                               '&:last-child': { borderBottom: 'none' },
                               '&:hover': {
                                 bgcolor: 'var(--sl-brand-alpha-10)',
@@ -1554,12 +1556,12 @@ export default function RightSidebar({
                           >
                             <ConstructionIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
                             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                              <span className="text-[11px] text-gray-300 truncate">
+                              <span className="text-[11px] text-sl-text-tertiary truncate">
                                 {skill.name || 'Untitled'}
                               </span>
                               {getSkillPreviewText(skill.content || '', skill.description) && (
                                 <span
-                                  className="text-[10px] text-gray-500"
+                                  className="text-[10px] text-sl-text-disabled"
                                   style={{
                                     display: '-webkit-box',
                                     WebkitLineClamp: 3,
@@ -1608,7 +1610,7 @@ export default function RightSidebar({
                       bgcolor: 'var(--sl-brand-alpha-10)',
                       textAlign: 'center',
                     }}>
-                      <span className="text-[10px] text-pink-400">Drop .md file to add as skill</span>
+                      <span className="text-[10px]" style={{ color: 'var(--sl-brand-light)' }}>Drop .md file to add as skill</span>
                     </Box>
                   )}
                 </div>
@@ -1621,7 +1623,7 @@ export default function RightSidebar({
             <div className="space-y-6">
               {/* Project Name */}
               <div>
-                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Project Name</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Project Name</div>
                 <TextField
                   size="small"
                   value={localProjectName}
@@ -1645,9 +1647,9 @@ export default function RightSidebar({
                   fullWidth
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-2)',
+                      backgroundColor: 'var(--sl-bg-surface-1)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-white-alpha-10)' },
+                      '& fieldset': { borderColor: 'var(--sl-border-default)' },
                       '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
                       '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
@@ -1658,12 +1660,12 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <div className="text-[10px] text-gray-600 mt-1">Press Enter to save</div>
+                <div className="text-[10px] text-sl-text-faint mt-1">Press Enter to save</div>
               </div>
 
               {/* Project Color */}
               <div>
-                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Label Color</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Label Color</div>
                 <Box sx={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                   {PROJECT_COLORS.map((color: any) => (
                     <Box
@@ -1691,7 +1693,7 @@ export default function RightSidebar({
 
               {/* Working Directory */}
               <div>
-                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Working Directory</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Working Directory</div>
                 <Box
                   onClick={() => {
                     const path = localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`;
@@ -1703,11 +1705,11 @@ export default function RightSidebar({
                     gap: 1,
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    backgroundColor: 'var(--sl-white-alpha-2)',
-                    border: '1px solid var(--sl-white-alpha-10)',
+                    backgroundColor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     cursor: 'pointer',
                     '&:hover': {
-                      backgroundColor: 'var(--sl-white-alpha-5)',
+                      backgroundColor: 'var(--sl-bg-surface-1)',
                       borderColor: 'var(--sl-brand-alpha-30)',
                     },
                   }}
@@ -1724,14 +1726,14 @@ export default function RightSidebar({
                     {localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
                   </span>
                 </Box>
-                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
                   Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
                 </p>
               </div>
 
               {/* Share Project */}
               <div>
-                <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-2">Share</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Share</div>
                 <Box
                   onClick={async () => {
                     if (exporting || !selectedProject?.id) return;
@@ -1755,13 +1757,13 @@ export default function RightSidebar({
                     gap: 1,
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    backgroundColor: 'var(--sl-white-alpha-2)',
-                    border: '1px solid var(--sl-white-alpha-10)',
+                    backgroundColor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
                     cursor: exporting ? 'default' : 'pointer',
                     opacity: exporting ? 0.6 : 1,
                     '&:hover': {
-                      backgroundColor: exporting ? 'var(--sl-white-alpha-2)' : 'var(--sl-white-alpha-5)',
-                      borderColor: exporting ? 'var(--sl-white-alpha-10)' : 'var(--sl-brand-alpha-30)',
+                      backgroundColor: exporting ? 'var(--sl-bg-surface-1)' : 'var(--sl-bg-surface-1)',
+                      borderColor: exporting ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
                     },
                   }}
                 >
@@ -1774,11 +1776,11 @@ export default function RightSidebar({
                   )}
                   <span className="text-xs text-[var(--sl-text-primary)]">
                     {exporting ? 'Sharing...' : exportDone ? 'Shared' : (
-                      <>Share <span className="text-[var(--sl-text-muted)] bg-[var(--sl-white-alpha-8)] px-1.5 py-0.5 rounded text-[11px]">{selectedProject.name || 'Project'}</span></>
+                      <>Share <span className="text-[var(--sl-text-muted)] bg-[var(--sl-bg-surface-1)] px-1.5 py-0.5 rounded text-[11px]">{selectedProject.name || 'Project'}</span></>
                     )}
                   </span>
                 </Box>
-                <p className="text-gray-500 text-[10px] leading-relaxed mt-1 px-1">
+                <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
                   Share project and all its contents as a zip file.
                 </p>
               </div>

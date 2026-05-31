@@ -86,9 +86,8 @@ export function getMarkdownStyles(): SxProps<Theme> {
     },
 
     '& blockquote': {
-      borderLeft: '4px solid var(--sl-brand-primary)',
-      bgcolor: 'rgba(17, 24, 39, 0.8)',
-      border: '1px solid rgba(75, 85, 99, 0.3)',
+      bgcolor: 'var(--sl-bg-surface-2)',
+      border: '1px solid var(--sl-border-default)',
       borderLeftWidth: '4px',
       borderLeftStyle: 'solid',
       borderLeftColor: 'var(--sl-brand-primary)',
@@ -100,7 +99,7 @@ export function getMarkdownStyles(): SxProps<Theme> {
       mb: 2,
       color: 'var(--sl-text-muted)',
       fontStyle: 'italic',
-      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+      boxShadow: '0 1px 2px var(--sl-black-alpha-20)',
     },
 
     '& ul, & ol': { color: 'var(--sl-text-secondary)', pl: 3, mb: 2 },
