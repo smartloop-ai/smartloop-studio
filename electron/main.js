@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsUpgrade, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -1008,6 +1008,38 @@ ipcMain.handle('slp-switch-version', async (event, version) => {
 // Handles workspace creation, model download, project creation, and model loading
 const { bootstrapProgress } = require('./bootstrap-progress.js');
 
+/**
+ * Determine whether the SLP service needs bootstrapping — i.e. it has no
+ * projects yet or no model loaded. Returns true on any error (assume needed).
+ */
+async function checkNeedsBootstrap(baseUrl) {
+  try {
+    const http = require('http');
+    const getJson = (urlStr) => new Promise((resolve) => {
+      const u = new URL(urlStr);
+      http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+      }).on('error', () => resolve(null));
+    });
+
+    const projectsData = await getJson(`${baseUrl}/v1/projects`);
+    const projects = Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []);
+    const health = (await getJson(`${baseUrl}/health`)) || {};
+
+    const hasProjects = projects.length > 0;
+    const hasModel = health.status === 'healthy';
+
+    if (!hasProjects) console.log('[SLP] No projects found — bootstrap needed');
+    if (!hasModel) console.log('[SLP] Service not healthy — bootstrap needed');
+
+    return !hasProjects || !hasModel;
+  } catch {
+    return true;
+  }
+}
+
 async function bootstrapSlpService(baseUrl) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -1829,50 +1861,20 @@ if (!gotTheLock) {
     });
     refreshTray();
 
-    // ── Upgrade gate ──────────────────────────────────────────────
-    // An older SLP version may still be installed (and possibly running
-    // and healthy on the default port). The health-check flow below would
-    // treat that as "good to go" and never pick up the newer bundled
-    // VERSION. So if an existing install is out of date, upgrade it up
-    // front: download the new version and stop the stale service. The
-    // normal flow then starts the freshly installed binary. (A fresh
-    // install — no version yet — is left to the "first launch" branch.)
-    let upgraded = false;
-    if (needsUpgrade()) {
-      console.log('[SLP] Installed SLP version is out of date — upgrading to', VERSION);
-      createSplashScreen();
-      try {
-        await setupSlpService((progress) => updateSplashProgress(progress));
-
-        // Stop the stale service so it releases the port; the freshly
-        // installed binary issues the stop via the shared pid file.
-        updateSplashProgress({ status: 'preparing', message: 'Finishing update...' });
-        await slpService.stopService();
-
-        if (splashWindow && !splashWindow.isDestroyed()) {
-          splashWindow.close();
-          splashWindow = null;
-        }
-        upgraded = true;
-      } catch (error) {
-        console.error('[SLP] Upgrade failed:', error.message);
-        updateSplashProgress({ status: 'error', message: 'Update failed. Please restart the app.' });
-        return;
-      }
-    }
-
     // ── Startup flow ──────────────────────────────────────────────
-    // 1. Health check → if healthy, skip straight to main window
-    // 2. Not healthy but installed → start service, then go to main
-    // 3. Not installed at all → show splash for installation
+    // 1. Health check FIRST. If the service is already running, adopt it
+    //    as-is and go straight to the main window — never touch the
+    //    download/version-check path while a live service is serving.
+    // 2. Service NOT running → version check. If a fresh install or an
+    //    upgrade is needed, fetch SLP; otherwise reuse the installed
+    //    binary. Then start the service, which is owned by (tied to) this
+    //    main process and stopped when the app quits.
     // ──────────────────────────────────────────────────────────────
-    // After an upgrade, skip the health fast-path so we never re-adopt a
-    // lingering old service — go straight to starting the new binary.
-    const serviceReady = upgraded ? false : await slpService.checkHealth();
+    const serviceReady = await slpService.checkHealth();
 
     if (serviceReady) {
       // Service is already running (local or external) — go straight to main
-      console.log('[SLP] Service healthy — skipping to main window');
+      console.log('[SLP] Service healthy — skipping download/version check, going to main window');
 
       // Ensure DB reflects that install is complete
       if (!database.isFullyInstalled()) {
@@ -1884,62 +1886,16 @@ if (!gotTheLock) {
       const baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
-      // Check if bootstrap is needed (no projects or no model loaded)
-      let needsBootstrap = false;
-      try {
-        const http = require('http');
+      const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 
-        // Check projects
-        const projectsUrl = new URL(`${baseUrl}/v1/projects`);
-        const projects = await new Promise((resolve) => {
-          http.get({ hostname: projectsUrl.hostname, port: projectsUrl.port, path: projectsUrl.pathname }, (res) => {
-            let body = '';
-            res.on('data', (c) => { body += c; });
-            res.on('end', () => {
-              try {
-                const data = JSON.parse(body);
-                resolve(Array.isArray(data) ? data : (data?.projects || []));
-              } catch { resolve([]); }
-            });
-          }).on('error', () => resolve([]));
-        });
-
-        // Check model loaded via health endpoint
-        const healthUrl = new URL(`${baseUrl}/health`);
-        const health = await new Promise((resolve) => {
-          http.get({ hostname: healthUrl.hostname, port: healthUrl.port, path: healthUrl.pathname }, (res) => {
-            let body = '';
-            res.on('data', (c) => { body += c; });
-            res.on('end', () => {
-              try { resolve(JSON.parse(body)); } catch { resolve({}); }
-            });
-          }).on('error', () => resolve({}));
-        });
-
-        const hasProjects = projects.length > 0;
-        const hasModel = !!(health.model_loaded || health.model_name || health.model);
-
-        if (!hasProjects) console.log('[SLP] No projects found — bootstrap needed');
-        if (!hasModel) console.log('[SLP] No model loaded — bootstrap needed');
-
-        needsBootstrap = !hasProjects || !hasModel;
-      } catch {
-        needsBootstrap = true;
-      }
-
-      const showMainWindow = () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow && !mainWindow.isDestroyed()) {
         setAppReady(true);
         mainWindow.show();
         mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-      };
-
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        showMainWindow();
       }
 
       if (needsBootstrap) {
-        console.log('[SLP] No projects — bootstrapping in background');
+        console.log('[SLP] Bootstrapping in background');
         (async () => {
           try {
             await bootstrapSlpService(baseUrl);
@@ -1957,123 +1913,47 @@ if (!gotTheLock) {
         splashWindow.close();
         splashWindow = null;
       }
-    } else if (fs.existsSync(slpService.getSlpBinaryPath())) {
-      // Not healthy but binary is installed — show splash, start service, then show app
-      console.log('[SLP] Service not running but binary found — starting service...');
+    } else {
+      // Service is not running. Do the version check now: fetch/install SLP
+      // only when there's nothing installed or the bundled version is newer
+      // than what's on disk. Otherwise just start the installed binary.
+      const mustInstall = needsInstall();
+      const isFreshInstall = !fs.existsSync(slpService.getSlpBinaryPath());
 
-      if (!database.isFullyInstalled()) {
-        for (let step = 0; step < 4; step++) {
-          database.setInstallStepComplete(step);
+      if (mustInstall) {
+        console.log(
+          isFreshInstall
+            ? '[SLP] First launch — installing SLP ' + VERSION
+            : '[SLP] Service not running and a newer SLP is bundled — upgrading to ' + VERSION
+        );
+        createSplashScreen();
+      } else {
+        console.log('[SLP] Service not running — starting installed binary');
+        if (!database.isFullyInstalled()) {
+          for (let step = 0; step < 4; step++) {
+            database.setInstallStepComplete(step);
+          }
         }
+        createStartingSplash();
       }
-
-      createStartingSplash();
 
       (async () => {
         try {
-          if (splashWindow && !splashWindow.isDestroyed()) {
+          // Step 1: Fetch/install SLP if the version check requires it.
+          if (mustInstall) {
+            await setupSlpService((progress) => updateSplashProgress(progress));
+            if (!database.isFullyInstalled()) {
+              for (let step = 0; step < 4; step++) {
+                database.setInstallStepComplete(step);
+              }
+            }
+          } else if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.webContents.executeJavaScript(`
               document.querySelector('.status-text').textContent = 'Heating things up...';
             `);
           }
-          const serviceStarted = await slpService.startService();
-          if (!serviceStarted) {
-            console.error('[SLP] Service failed to start');
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-            return;
-          }
 
-          const baseUrl = slpService.getLocalBaseUrl();
-          refreshTray();
-
-          // Service is healthy — show main window immediately, bootstrap in background if needed
-          let needsBootstrap = false;
-          try {
-            const http = require('http');
-
-            const projectsUrl = new URL(`${baseUrl}/v1/projects`);
-            const projects = await new Promise((resolve) => {
-              http.get({ hostname: projectsUrl.hostname, port: projectsUrl.port, path: projectsUrl.pathname }, (res) => {
-                let body = '';
-                res.on('data', (c) => { body += c; });
-                res.on('end', () => {
-                  try {
-                    const data = JSON.parse(body);
-                    resolve(Array.isArray(data) ? data : (data?.projects || []));
-                  } catch { resolve([]); }
-                });
-              }).on('error', () => resolve([]));
-            });
-
-            const healthUrl = new URL(`${baseUrl}/health`);
-            const health = await new Promise((resolve) => {
-              http.get({ hostname: healthUrl.hostname, port: healthUrl.port, path: healthUrl.pathname }, (res) => {
-                let body = '';
-                res.on('data', (c) => { body += c; });
-                res.on('end', () => {
-                  try { resolve(JSON.parse(body)); } catch { resolve({}); }
-                });
-              }).on('error', () => resolve({}));
-            });
-
-            const hasProjects = projects.length > 0;
-            const hasModel = !!(health.model_loaded || health.model_name || health.model);
-
-            if (!hasProjects) console.log('[SLP] No projects found — bootstrap needed');
-            if (!hasModel) console.log('[SLP] No model loaded — bootstrap needed');
-
-            needsBootstrap = !hasProjects || !hasModel;
-          } catch {
-            needsBootstrap = true;
-          }
-
-          // Bootstrap happens after the app is visible so startup feels faster.
-          (async () => {
-            if (!needsBootstrap) return;
-            console.log('[SLP] Bootstrap needed — running in background');
-            try {
-              await bootstrapSlpService(baseUrl);
-              refreshTray();
-            } catch (error) {
-              console.error('[SLP] Bootstrap failed:', error.message);
-            }
-          })();
-
-          // Show main window immediately once the service is ready.
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAppReady(true);
-            mainWindow.show();
-            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            fetchModels(); // prime model cache
-          }
-        } catch (error) {
-          console.error('[SLP] Service start failed:', error.message);
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-        }
-      })();
-    } else {
-      // First launch — show splash for installation
-      console.log('[SLP] First launch — showing install splash...');
-      createSplashScreen();
-
-      (async () => {
-        try {
-          // Step 1: Download SLP binary
-          const setupResult = await setupSlpService((progress) => {
-            updateSplashProgress(progress);
-          });
-
-          // Step 2: Start the service
+          // Step 2: Start the service (owned by this main process).
           updateSplashProgress({ status: 'preparing', message: 'Starting service. This might take a while...' });
 
           const serviceStarted = await slpService.startService();
@@ -2086,7 +1966,10 @@ if (!gotTheLock) {
           const baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Show the main window immediately; bootstrap continues after startup.
+          const needsBootstrap = await checkNeedsBootstrap(baseUrl);
+
+          // Show main window immediately once the service is ready; bootstrap
+          // continues in the background so startup feels faster.
           if (splashWindow && !splashWindow.isDestroyed()) {
             splashWindow.close();
             splashWindow = null;
@@ -2098,17 +1981,24 @@ if (!gotTheLock) {
             fetchModels(); // prime model cache
           }
 
-          (async () => {
-            try {
-              await bootstrapSlpService(baseUrl);
-              refreshTray();
-            } catch (error) {
-              console.error('[SLP] Setup bootstrap failed:', error.message);
-            }
-          })();
+          if (needsBootstrap) {
+            console.log('[SLP] Bootstrap needed — running in background');
+            (async () => {
+              try {
+                await bootstrapSlpService(baseUrl);
+                refreshTray();
+              } catch (error) {
+                console.error('[SLP] Bootstrap failed:', error.message);
+              }
+            })();
+          }
         } catch (error) {
-          console.error('[SLP] Setup failed:', error.message);
+          console.error('[SLP] Service start failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });
+          if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.close();
+            splashWindow = null;
+          }
         }
       })();
     }
@@ -2181,10 +2071,28 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', (event) => {
+let shuttingDown = false;
+app.on('before-quit', async (event) => {
   app.isQuitting = true;
-  database.closeDatabase();
-  slpService.stopService();
+
+  // The SLP service is owned by this main process. Hold the quit until it
+  // has been stopped so it never outlives the app as an orphan.
+  if (shuttingDown) return;
+  shuttingDown = true;
+  event.preventDefault();
+
+  try {
+    database.closeDatabase();
+  } catch (error) {
+    console.warn('[App] Error closing database:', error.message);
+  }
+  try {
+    await slpService.stopService();
+  } catch (error) {
+    console.warn('[App] Error stopping SLP service:', error.message);
+  }
+
+  app.quit();
 });
 
 // Handle certificate errors in development

@@ -46,6 +46,21 @@ function semverGte(a, b) {
   return true; // equal
 }
 
+/**
+ * True when a file exists and is non-empty. A zero-byte binary (e.g. from a
+ * truncated download or a bad archive extract) "exists" on disk but cannot
+ * run — execution exits immediately, leaving a stale server.port and a
+ * connection-refused renderer. Treat such a binary as missing so the
+ * install/start paths reinstall it instead of looping on a dead process.
+ */
+function isNonEmptyFile(filePath) {
+  try {
+    return fs.statSync(filePath).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 function getInstalledBinaryPath() {
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
@@ -65,7 +80,7 @@ function needsInstall() {
     const installed = fs.readFileSync(getMarkerFile(), 'utf-8').trim();
     if (!semverGte(installed, VERSION)) return true;
     const installedBinary = getInstalledBinaryPath();
-    if (!fs.existsSync(installedBinary)) return true;
+    if (!isNonEmptyFile(installedBinary)) return true;
     if (fs.existsSync(getHashFile())) {
       const storedHash = fs.readFileSync(getHashFile(), 'utf-8').trim();
       const currentHash = crypto.createHash('sha256').update(fs.readFileSync(installedBinary)).digest('hex');
@@ -133,7 +148,7 @@ function fileSha256(filePath) {
 
 async function installService(onProgress) {
   const slpBinary = getInstalledBinaryPath();
-  if (fs.existsSync(slpBinary)) {
+  if (isNonEmptyFile(slpBinary)) {
     console.log('[SLP Setup] Version', VERSION, 'already installed, skipping');
     if (onProgress) onProgress({ status: 'installing', message: 'Already installed.' });
     return;
@@ -161,8 +176,8 @@ async function installService(onProgress) {
   console.log('[SLP Setup] Verifying installation...');
   if (onProgress) onProgress({ status: 'installing', message: 'Verifying installation...' });
 
-  if (!fs.existsSync(slpBinary)) {
-    throw new Error(`Binary not found at ${slpBinary} after copy`);
+  if (!isNonEmptyFile(slpBinary)) {
+    throw new Error(`Binary missing or empty at ${slpBinary} after copy — bundled binary may be truncated`);
   }
 
   const isWindows = process.platform === 'win32';
@@ -346,6 +361,7 @@ module.exports = {
   uninstallSlpService,
   needsInstall,
   needsUpgrade,
+  isNonEmptyFile,
   getInstalledBinaryPath,
   getInstallDir,
   setInstallDir,

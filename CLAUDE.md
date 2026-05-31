@@ -83,6 +83,7 @@ Set in `.env.local`:
 ```
 VITE_BASE_URL=https://api.smartloop.ai    # Cloud API (used for OAuth)
 VITE_APP_URL=https://app.smartloop.ai     # Cloud frontend (OAuth redirect)
+SLP_BASE_URL=https://dl.smartloop.ai      # SLP download base URL (default)
 ```
 
 In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).

@@ -84,20 +84,22 @@ SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
 
 # Download the SLP binary for the current platform into electron/data/slp/<version>/
 fetch-slp:
-	@if [ -f "$(SLP_DATA_DIR)/slp" ] || [ -f "$(SLP_DATA_DIR)/slp.exe" ]; then \
+	@set -e; \
+	if [ -s "$(SLP_DATA_DIR)/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
 		echo "✅ SLP binary v$(SLP_VERSION) already present at $(SLP_DATA_DIR)/, skipping download"; \
 	else \
 		echo "📥 Fetching SLP binary v$(SLP_VERSION) for bundling..."; \
 		rm -rf $(SLP_DATA_DIR); \
 		mkdir -p $(SLP_DATA_DIR); \
-		TMPDIR=$$(mktemp -d); \
+		TMPDIR=$$(mktemp -d "$(SLP_DATA_DIR)/.fetch-tmp.XXXXXX"); \
+		trap 'rm -rf "$$TMPDIR"' EXIT; \
 		UNAME_S=$$(uname -s); \
 		if echo "$$UNAME_S" | grep -qi "darwin"; then \
-			PLAT=darwin; ARCH=arm64; EXT=tar.gz; \
+			PLAT=darwin; ARCH=arm64; EXT=tar.gz; BIN=slp; \
 		elif echo "$$UNAME_S" | grep -qi "linux"; then \
-			PLAT=linux; ARCH=amd64; EXT=tar.gz; \
+			PLAT=linux; ARCH=amd64; EXT=tar.gz; BIN=slp; \
 		else \
-			PLAT=windows; ARCH=amd64; EXT=zip; \
+			PLAT=windows; ARCH=amd64; EXT=zip; BIN=slp.exe; \
 		fi; \
 		ARCHIVE="$$PLAT-$$ARCH-slp.$$EXT"; \
 		URL="$(SLP_BASE_URL)/$$ARCHIVE"; \
@@ -116,8 +118,12 @@ fetch-slp:
 		else \
 			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
 		fi; \
-		rm -rf "$$TMPDIR"; \
-		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/"; \
+		if [ ! -s "$(SLP_DATA_DIR)/$$BIN" ]; then \
+			rm -rf $(SLP_DATA_DIR); \
+			echo "❌ Staged SLP binary $$BIN is missing or empty — aborting (bad download/extract from $$URL)"; \
+			exit 1; \
+		fi; \
+		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/$$BIN" | cut -f1))"; \
 	fi
 
 # Clean electron build artifacts
@@ -174,7 +180,7 @@ build-electron-mac: clean-electron fetch-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Run Electron app in development mode
-run-electron-dev:
+run-electron-dev: fetch-slp
 	@echo "🚀 Starting Electron app in development mode..."
 	npm run electron-dev
 
