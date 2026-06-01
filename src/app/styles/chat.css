@@ -116,7 +116,7 @@
   padding: 10px 12px;
   color: var(--sl-text-secondary);
   font-weight: 600;
-  border-bottom: 2px solid var(--sl-border-code);
+  border-bottom: 2px solid var(--sl-border-default);
   text-align: left;
 }
 
@@ -137,7 +137,7 @@
 /* ── Horizontal rule ─────────────────────────────────────────────────────── */
 .chat-content [data-streamdown="horizontal-rule"] {
   border: none;
-  border-top: 1px solid var(--sl-border-code);
+  border-top: 1px solid var(--sl-border-default);
   margin: 1.5rem 0;
 }
 
@@ -196,7 +196,7 @@
   border-collapse: collapse;
   margin: 1em 0;
   background-color: var(--sl-bg-surface-1);
-  border: 1px solid var(--sl-border-code);
+  border: 1px solid var(--sl-border-default);
   overflow-x: auto;
   display: block;
 }
@@ -215,8 +215,8 @@
   text-align: left;
   font-weight: 600;
   color: var(--sl-text-secondary);
-  border: 1px solid var(--sl-border-code);
-  border-bottom: 2px solid var(--sl-text-faint);
+  border: 1px solid var(--sl-border-default);
+  border-bottom: 2px solid var(--sl-border-default);
 }
 
 .chat-content table tbody,
@@ -230,7 +230,7 @@
 .chat-content .csv-table td {
   padding: 10px 12px;
   color: var(--sl-text-tertiary);
-  border: 1px solid var(--sl-border-code);
+  border: 1px solid var(--sl-border-default);
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
