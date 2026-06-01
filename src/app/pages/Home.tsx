@@ -17,7 +17,7 @@ import { projectService } from '@/app/services/project.service';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR, getLocalApiEndpoint } from '@/app/constants';
+import { DEFAULT_COLOR, LEGACY_PINK, getLocalApiEndpoint } from '@/app/constants';
 import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
@@ -1382,7 +1382,9 @@ export default function Home() {
   };
 
   const getProjectColor = (project: any) => {
-    return project?.color || DEFAULT_COLOR;
+    const color = project?.color;
+    if (!color || color === LEGACY_PINK) return DEFAULT_COLOR;
+    return color;
   };
 
   const handleOpenDeleteDocDialog = (doc: any) => {

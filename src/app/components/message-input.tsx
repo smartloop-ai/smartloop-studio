@@ -128,10 +128,10 @@ export default function MessageInput({
       <Box
         className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
         sx={{
-          bgcolor: 'var(--sl-bg-surface-1)',
+          bgcolor: 'var(--sl-white-alpha-5)',
           border: isDraggingOver
             ? '1px solid var(--sl-brand-primary)'
-            : '1px solid var(--sl-bg-inline-code)',
+            : '1px solid var(--sl-border-subtle)',
           '&:focus-within': {
             border: isDraggingOver
               ? '1px solid var(--sl-brand-primary)'
@@ -227,7 +227,8 @@ export default function MessageInput({
             {/* Selected quote indicator */}
             {selectedQuote && (
               <Box
-                className="flex items-center gap-1.5 px-2 py-1 bg-sl-bg-surface-2 text-xs text-sl-text-tertiary border border-sl-border-default max-w-[200px] md:max-w-[300px]"
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-sl-text-tertiary border border-sl-border-subtle max-w-[200px] md:max-w-[300px]"
+                style={{ backgroundColor: 'var(--sl-white-alpha-7)' }}
                 sx={{ flexShrink: 0 }}
               >
                 <FormatQuoteIcon sx={{ fontSize: 14, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
@@ -294,7 +295,7 @@ export default function MessageInput({
               disabled={disabled || !message.trim()}
               className="p-2 md:p-3 rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
               style={{
-                backgroundColor: disabled || !message.trim() ? 'var(--sl-bg-surface-2)' : 'var(--sl-brand-alpha-10)',
+                backgroundColor: disabled || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
                 border: `1.5px solid ${disabled || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
               }}
               onMouseEnter={(e) => {

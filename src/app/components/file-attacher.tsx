@@ -177,7 +177,8 @@ export default function FileAttacher({
   if (selectedFile) {
     return (
       <Box
-        className="inline-flex items-center gap-2 px-2 py-1 bg-sl-bg-surface-2 border border-sl-border-default rounded-sm"
+        className="inline-flex items-center gap-2 px-2 py-1 border border-sl-border-subtle rounded-sm"
+        style={{ backgroundColor: 'var(--sl-white-alpha-7)' }}
         sx={{ height: isSmall ? '28px' : '40px' }}
       >
         {isUploading ? (
@@ -233,8 +234,10 @@ export default function FileAttacher({
       )}
       <button
         onClick={() => fileInputRef.current?.click()}
-        className="flex items-center gap-1.5 px-2 py-1 bg-sl-bg-surface-2 border border-sl-border-default rounded-sm hover:bg-sl-bg-surface-3 hover:border-sl-border-hover text-sl-text-muted hover:text-sl-text-tertiary transition-all text-xs"
-        style={{ height: isSmall ? '28px' : '40px' }}
+        className="flex items-center gap-1.5 px-2 py-1 border border-sl-border-subtle rounded-sm hover:border-sl-border-hover text-sl-text-muted hover:text-sl-text-tertiary transition-all text-xs"
+        style={{ backgroundColor: 'var(--sl-white-alpha-7)', height: isSmall ? '28px' : '40px' }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--sl-white-alpha-10)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--sl-white-alpha-7)'; }}
         disabled={disabled || isUploading}
       >
         <AttachFileIcon sx={{ fontSize: isSmall ? 14 : 18 }} />

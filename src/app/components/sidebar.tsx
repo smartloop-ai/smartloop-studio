@@ -16,13 +16,13 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR, PROJECT_COLORS } from '@/app/constants';
+import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-// Get color for project - use project's color if exists, otherwise default to pink
 const getColorForProject = (project: any): string => {
-  if (project && project?.color) {
+  if (project?.color) {
+    if (project.color === LEGACY_PINK) return DEFAULT_COLOR;
     return project.color;
   }
   return DEFAULT_COLOR;
@@ -48,6 +48,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isSidebarDragOver, setIsSidebarDragOver] = useState(false);
+  const sidebarDragCounter = useRef(0);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<any>(null);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
@@ -579,6 +581,55 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setIsDragOver(false);
   };
 
+  const handleSidebarDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sidebarDragCounter.current++;
+    if (sidebarDragCounter.current === 1) {
+      setIsSidebarDragOver(true);
+    }
+  };
+
+  const handleSidebarDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleSidebarDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sidebarDragCounter.current--;
+    if (sidebarDragCounter.current === 0) {
+      setIsSidebarDragOver(false);
+    }
+  };
+
+  const handleSidebarDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sidebarDragCounter.current = 0;
+    setIsSidebarDragOver(false);
+
+    if (!user?.email) return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.name.endsWith('.zip')) return;
+
+    let filePath = (file as any).path;
+    if (!filePath) {
+      const buffer = await file.arrayBuffer();
+      filePath = await window.electronAPI?.saveTempFile(file.name, buffer);
+    }
+    if (!filePath) return;
+
+    const baseName = file.name.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
+    setCreateZipPath(filePath);
+    setCreateProjectName(baseName);
+    setCreateSource('existing');
+    setCreateStep('details');
+    setOpenCreateProjectDialog(true);
+  };
+
   const clearSearch = () => {
     setSearchQuery('');
   };
@@ -627,7 +678,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         px: 3,
         py: 2.5,
         borderBottom: '1px solid var(--sl-border-subtle)',
-        bgcolor: 'var(--sl-bg-surface-1)',
       }}>
         <Box className="flex items-center justify-between">
           <Box
@@ -664,14 +714,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             display: 'flex',
             alignItems: 'center',
             gap: 1,
-            bgcolor: 'var(--sl-bg-surface-1)',
+            bgcolor: 'var(--sl-white-alpha-5)',
             borderRadius: '7px',
             padding: '7px 11px',
             border: '1px solid var(--sl-border-subtle)',
             transition: 'all 0.15s ease',
             '&:focus-within': {
               borderColor: 'var(--sl-brand-alpha-50)',
-              bgcolor: 'var(--sl-bg-surface-1)',
+              bgcolor: 'var(--sl-white-alpha-7)',
               boxShadow: '0 0 0 3px var(--sl-brand-alpha-10)',
             }
           }}
@@ -705,7 +755,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <Box sx={{
               fontSize: '11px',
               color: 'var(--sl-text-faint)',
-              bgcolor: 'var(--sl-bg-surface-1)',
+              bgcolor: 'var(--sl-white-alpha-7)',
               px: 0.7,
               py: 0.3,
               borderRadius: '3px',
@@ -748,7 +798,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       transition: 'all 0.12s ease',
                       border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                       '&:hover': {
-                        bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-bg-surface-1)',
+                        bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                         color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-primary)',
                       },
                       mb: 0.5,
@@ -782,7 +832,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         transition: 'all 0.12s ease',
                         border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
-                          bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-bg-surface-1)',
+                          bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
                           color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-primary)',
                         },
                         '&:hover .delete-icon': {
@@ -865,7 +915,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               border: '1px solid transparent',
               ...(user?.email && {
                 '&:hover': {
-                  bgcolor: 'var(--sl-bg-surface-1)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                   color: 'var(--sl-text-primary)',
                 },
               }),
@@ -885,7 +935,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         px: 2.5,
         py: 2,
         borderTop: '1px solid var(--sl-border-subtle)',
-        bgcolor: 'var(--sl-bg-surface-1)',
       }}>
         <Box sx={{
           fontSize: '11px',
@@ -926,7 +975,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 position: 'relative',
                 '&:hover': {
                   color: 'var(--sl-text-primary)',
-                  bgcolor: 'var(--sl-bg-surface-1)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                 },
                 '&:hover .delete-icon': {
                   opacity: 1,
@@ -978,7 +1027,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           <Box sx={{
             p: 2,
             borderTop: '1px solid var(--sl-border-subtle)',
-            bgcolor: 'var(--sl-bg-surface-1)',
           }}>
             <Box
               onClick={handleMenuClick}
@@ -991,7 +1039,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 padding: '8px',
                 transition: 'all 0.12s ease',
                 '&:hover': {
-                  bgcolor: 'var(--sl-bg-surface-1)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                 },
               }}
             >
@@ -1072,7 +1120,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           px: 2.5,
           py: 2,
           borderTop: '1px solid var(--sl-border-subtle)',
-          bgcolor: 'var(--sl-bg-surface-1)',
         }}>
           <Box
             onClick={handleLogin}
@@ -1128,7 +1175,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               transition: 'all 0.12s ease',
               '&:hover': {
                 color: 'var(--sl-text-secondary)',
-                bgcolor: 'var(--sl-bg-surface-1)',
+                bgcolor: 'var(--sl-white-alpha-5)',
               },
             }}
           >
@@ -1205,12 +1252,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       : '1.5px solid var(--sl-border-default)',
                     bgcolor: createSource === 'blank'
                       ? 'var(--sl-brand-alpha-10)'
-                      : 'var(--sl-bg-surface-1)',
+                      : 'var(--sl-white-alpha-5)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     '&:hover': {
                       borderColor: 'var(--sl-brand-alpha-40)',
-                      bgcolor: 'var(--sl-bg-surface-1)',
+                      bgcolor: 'var(--sl-white-alpha-7)',
                     },
                   }}
                 >
@@ -1262,12 +1309,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                       ? 'var(--sl-brand-alpha-10)'
                       : createSource === 'existing'
                         ? 'var(--sl-brand-alpha-10)'
-                        : 'var(--sl-bg-surface-1)',
+                        : 'var(--sl-white-alpha-5)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                     '&:hover': {
                       borderColor: 'var(--sl-brand-alpha-40)',
-                      bgcolor: 'var(--sl-bg-surface-1)',
+                      bgcolor: 'var(--sl-white-alpha-7)',
                     },
                   }}
                 >
@@ -1275,7 +1322,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     width: 48,
                     height: 48,
                     borderRadius: '12px',
-                    bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-bg-surface-1)',
+                    bgcolor: isDragOver ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-7)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1465,6 +1512,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
       {/* Desktop Sidebar */}
       <Box
+        onDragEnter={handleSidebarDragEnter}
+        onDragOver={handleSidebarDragOver}
+        onDragLeave={handleSidebarDragLeave}
+        onDrop={handleSidebarDrop}
         sx={{
           width: '280px',
           height: '100vh',
@@ -1479,6 +1530,32 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         }}
       >
         {sidebarContent}
+        {isSidebarDragOver && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              border: '2px dashed var(--sl-brand-primary)',
+              borderRadius: '8px',
+              bgcolor: 'var(--sl-brand-alpha-10)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              pointerEvents: 'none',
+            }}
+          >
+            <Box className="text-center">
+              <FileDownloadIcon sx={{ fontSize: 32, color: 'var(--sl-brand-primary)', mb: 1 }} />
+              <Box sx={{ fontSize: '13px', fontWeight: 600, color: 'var(--sl-brand-primary)' }}>
+                Drop to import project
+              </Box>
+              <Box sx={{ fontSize: '11px', color: 'var(--sl-text-muted)', mt: 0.5 }}>
+                .zip archive
+              </Box>
+            </Box>
+          </Box>
+        )}
       </Box>
 
       {/* Mobile Drawer */}
@@ -1501,6 +1578,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
           {/* Drawer */}
           <Box
+            onDragEnter={handleSidebarDragEnter}
+            onDragOver={handleSidebarDragOver}
+            onDragLeave={handleSidebarDragLeave}
+            onDrop={handleSidebarDrop}
             sx={{
               position: 'fixed',
               top: 0,
@@ -1517,6 +1598,32 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             }}
           >
             {sidebarContent}
+            {isSidebarDragOver && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  border: '2px dashed var(--sl-brand-primary)',
+                  borderRadius: '8px',
+                  bgcolor: 'var(--sl-brand-alpha-10)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 10,
+                  pointerEvents: 'none',
+                }}
+              >
+                <Box className="text-center">
+                  <FileDownloadIcon sx={{ fontSize: 32, color: 'var(--sl-brand-primary)', mb: 1 }} />
+                  <Box sx={{ fontSize: '13px', fontWeight: 600, color: 'var(--sl-brand-primary)' }}>
+                    Drop to import project
+                  </Box>
+                  <Box sx={{ fontSize: '11px', color: 'var(--sl-text-muted)', mt: 0.5 }}>
+                    .zip archive
+                  </Box>
+                </Box>
+              </Box>
+            )}
           </Box>
         </>
       )}

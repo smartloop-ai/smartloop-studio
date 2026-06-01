@@ -1097,8 +1097,8 @@ export default function RightSidebar({
                     onClick={() => fileInputRef.current?.click()}
                     sx={{
                       borderRadius: '8px',
-                      border: `1px dashed ${isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)'}`,
-                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
+                      border: `1px dashed ${isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-border-subtle)'}`,
+                      bgcolor: isDragging ? 'var(--sl-brand-alpha-10)' : 'transparent',
                       transition: 'border-color 0.15s ease, background 0.15s ease',
                       cursor: 'pointer',
                       display: 'flex',
@@ -1129,8 +1129,8 @@ export default function RightSidebar({
                           className="text-[9px] font-medium tracking-wide px-2 py-0.5 rounded"
                           style={{
                             color: 'var(--sl-text-muted)',
-                            backgroundColor: 'var(--sl-bg-surface-1)',
-                            border: '1px solid var(--sl-border-default)',
+                            backgroundColor: 'var(--sl-white-alpha-7)',
+                            border: '1px solid var(--sl-border-subtle)',
                           }}
                         >
                           {type}
@@ -1305,7 +1305,7 @@ export default function RightSidebar({
                 sx={{
                   padding: '10px',
                   borderRadius: '6px',
-                  bgcolor: 'var(--sl-bg-surface-1)',
+                  bgcolor: 'var(--sl-white-alpha-5)',
                   border: '1px solid var(--sl-border-subtle)',
                 }}
               >
@@ -1330,9 +1330,9 @@ export default function RightSidebar({
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-bg-surface-1)',
+                      backgroundColor: 'var(--sl-white-alpha-5)',
                       fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-border-default)' },
+                      '& fieldset': { borderColor: 'var(--sl-border-subtle)' },
                       '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
                       '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                     },
@@ -1435,7 +1435,7 @@ export default function RightSidebar({
                   {/* Quick-add textarea */}
                   <Box sx={{
                     borderRadius: '6px',
-                    border: '1px solid var(--sl-border-default)',
+                    border: '1px solid var(--sl-border-subtle)',
                     overflow: 'hidden',
                     transition: 'border-color 0.15s ease',
                     '&:focus-within': { borderColor: 'var(--sl-brand-primary)' },

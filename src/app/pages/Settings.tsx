@@ -12,7 +12,7 @@ import DnsIcon from '@mui/icons-material/Dns';
 import ViewListIcon from '@mui/icons-material/ViewList';
 
 import PaletteIcon from '@mui/icons-material/Palette';
-import { themeList, type ThemeId } from '@/app/theme/themes';
+import { themes, themeList, type ThemeId } from '@/app/theme/themes';
 
 
 
@@ -477,11 +477,81 @@ export default function SettingsPage() {
                         <p className="text-sm md:text-base" style={{ color: 'var(--sl-text-muted)' }}>Model configuration and default settings</p>
                     </Box>
 
-                    {/* Service */}
+                    {/* 1. Theme */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-4">
+                            <PaletteIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Theme</h2>
+                        </Box>
+                        <div className="flex gap-4">
+                            {themeList.map((t) => {
+                                const isActive = themeId === t.id;
+                                const activeMode = themes[themeId]?.mode ?? 'dark';
+                                const mismatch = t.mode !== activeMode;
+                                const overlay = mismatch
+                                    ? activeMode === 'dark' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)'
+                                    : undefined;
+                                return (
+                                    <div
+                                        key={t.id}
+                                        onClick={() => setThemeId(t.id as ThemeId)}
+                                        className="rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden"
+                                        style={{
+                                            width: 200,
+                                            borderColor: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
+                                            boxShadow: isActive ? '0 0 0 3px var(--sl-brand-alpha-20)' : 'none',
+                                        }}
+                                    >
+                                        {/* Mini UI preview */}
+                                        <div className="relative flex rounded-lg overflow-hidden m-2" style={{ height: 100, backgroundColor: t.colors.bg.base, border: `1px solid ${t.colors.border.default}` }}>
+                                            {overlay && (
+                                                <div className="absolute inset-0 rounded-lg pointer-events-none" style={{ backgroundColor: overlay }} />
+                                            )}
+                                            {/* Sidebar */}
+                                            <div className="relative flex flex-col gap-[5px] p-2 shrink-0" style={{ width: 52, borderRight: `1px solid ${t.colors.border.default}`, backgroundColor: t.colors.bg.surface1 }}>
+                                                <div className="rounded-sm" style={{ height: 5, width: '100%', backgroundColor: t.colors.text.muted, opacity: 0.5 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '75%', backgroundColor: t.colors.brand.primary, opacity: 0.8 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '85%', backgroundColor: t.colors.text.faint, opacity: 0.4 }} />
+                                                <div className="rounded-sm" style={{ height: 5, width: '65%', backgroundColor: t.colors.text.faint, opacity: 0.3 }} />
+                                                <div className="mt-auto rounded-full" style={{ height: 8, width: 8, backgroundColor: t.colors.brand.primary, opacity: 0.5 }} />
+                                            </div>
+                                            {/* Content */}
+                                            <div className="relative flex-1 flex flex-col gap-[6px] p-2">
+                                                <div className="rounded-sm" style={{ height: 5, width: '50%', backgroundColor: t.colors.text.primary, opacity: 0.4 }} />
+                                                <div className="flex-1 rounded p-2 flex flex-col gap-[4px]" style={{ backgroundColor: t.colors.bg.surface1 }}>
+                                                    <div className="rounded-sm" style={{ height: 4, width: '90%', backgroundColor: t.colors.text.secondary, opacity: 0.25 }} />
+                                                    <div className="rounded-sm" style={{ height: 4, width: '65%', backgroundColor: t.colors.text.muted, opacity: 0.2 }} />
+                                                    <div className="rounded-sm" style={{ height: 4, width: '75%', backgroundColor: t.colors.text.muted, opacity: 0.15 }} />
+                                                </div>
+                                                <div className="rounded" style={{ height: 12, backgroundColor: t.colors.bg.input, border: `1px solid ${t.colors.border.default}` }} />
+                                            </div>
+                                        </div>
+                                        {/* Label */}
+                                        <div className="px-3 py-2" style={{ backgroundColor: mismatch ? 'var(--sl-bg-surface-1)' : t.colors.bg.surface1, borderTop: `1px solid ${mismatch ? 'var(--sl-border-default)' : t.colors.border.default}` }}>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-semibold" style={{ color: mismatch ? 'var(--sl-text-primary)' : t.colors.text.primary }}>{t.name}</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: mismatch ? 'var(--sl-text-muted)' : t.colors.text.muted, backgroundColor: mismatch ? 'var(--sl-bg-surface-2)' : t.colors.bg.surface2 }}>
+                                                        {t.mode}
+                                                    </span>
+                                                    {isActive && (
+                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--sl-brand-primary)' }} />
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] mt-0.5 leading-snug" style={{ color: mismatch ? 'var(--sl-text-muted)' : t.colors.text.muted }}>{t.description}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Box>
+
+                    {/* 2. Agent */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                             <Box className="flex items-center gap-2 mb-4">
                                 <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Service</h2>
+                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Agent</h2>
                             </Box>
 
                             {/* Table */}
@@ -493,18 +563,21 @@ export default function SettingsPage() {
                                     borderSpacing: 0,
                                     borderRadius: '10px',
                                     overflow: 'hidden',
-                                    border: '1px solid var(--sl-border-subtle)',
+                                    border: '1px solid var(--sl-white-alpha-7)',
                                     '& th, & td': {
                                         px: 2,
                                         py: 1.5,
                                         textAlign: 'left',
-                                        borderBottom: '1px solid var(--sl-border-subtle)',
+                                        borderBottom: '1px solid var(--sl-white-alpha-7)',
+                                    },
+                                    '& td:first-of-type': {
+                                        borderRight: '1px solid var(--sl-white-alpha-7)',
                                     },
                                     '& tr:last-child td': {
                                         borderBottom: 'none',
                                     },
                                     '& tr:hover td': {
-                                        bgcolor: 'var(--sl-bg-surface-2)',
+                                        bgcolor: 'var(--sl-white-alpha-5)',
                                     },
                                 }}
                             >
@@ -514,35 +587,13 @@ export default function SettingsPage() {
                                             Status
                                         </Box>
                                         <Box component="td">
-                                            <Box
-                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all duration-150"
-                                                sx={{
-                                                    border: '1px solid',
-                                                    borderColor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.3)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.3)' : 'var(--sl-border-subtle)',
-                                                    bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.08)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.08)' : 'var(--sl-border-subtle)',
-                                                    '&:hover': {
-                                                        bgcolor: serverHealth?.status === 'running' ? 'rgba(34, 197, 94, 0.15)' : serverHealth?.status === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'var(--sl-border-subtle)',
-                                                    },
-                                                }}
-                                            >
-                                                <Box sx={{
-                                                    width: 6,
-                                                    height: 6,
-                                                    borderRadius: '50%',
-                                                    flexShrink: 0,
-                                                    bgcolor: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-faint)',
-                                                    ...(serverHealth?.status === 'running' && {
-                                                        boxShadow: '0 0 6px rgba(34, 197, 94, 0.4)',
-                                                    }),
-                                                }} />
-                                                <span style={{
-                                                    fontSize: '12px',
-                                                    fontWeight: 600,
-                                                    color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
-                                                }}>
-                                                    {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
-                                                </span>
-                                            </Box>
+                                            <span style={{
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
+                                            }}>
+                                                {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
+                                            </span>
                                         </Box>
                                     </tr>
                                     {appVersion && (
@@ -602,7 +653,7 @@ export default function SettingsPage() {
                                                             <Box sx={{
                                                                 height: '100%',
                                                                 width: `${value}%`,
-                                                                bgcolor: value > 90 ? 'var(--sl-status-error)' : value > 70 ? '#f59e0b' : 'var(--sl-brand-primary)',
+                                                                bgcolor: value > 90 ? 'var(--sl-status-error)' : value > 70 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)',
                                                                 borderRadius: '2px',
                                                                 transition: 'width 0.3s ease',
                                                             }} />
@@ -653,8 +704,7 @@ export default function SettingsPage() {
                             )}
                         </Box>
 
-
-                    {/* Available Models */}
+                    {/* 3. Available Models */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                             <Box className="flex items-center gap-2 mb-4">
                                 <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -771,7 +821,7 @@ export default function SettingsPage() {
                             )}
                         </Box>
 
-                    {/* Active Model Card — specs + performance graph */}
+                    {/* 4. Active Model Card — specs + performance graph */}
                     {slpConfig && (() => {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
                         if (!activeModel) return null;
@@ -808,7 +858,7 @@ export default function SettingsPage() {
                                                 sx={{
                                                     px: 1.5,
                                                     py: 0.75,
-                                                    bgcolor: 'var(--sl-border-subtle)',
+                                                    bgcolor: 'var(--sl-white-alpha-7)',
                                                     border: '1px solid var(--sl-border-subtle)',
                                                     borderRadius: '8px',
                                                     display: 'flex',
@@ -829,7 +879,7 @@ export default function SettingsPage() {
                                         mx: { xs: 2.5, md: 3 },
                                         mb: { xs: 2.5, md: 3 },
                                         p: 2,
-                                        bgcolor: 'var(--sl-black-alpha-40)',
+                                        bgcolor: 'var(--sl-white-alpha-5)',
                                         borderRadius: '12px',
                                         border: '1px solid var(--sl-border-subtle)',
                                     }}>
@@ -869,64 +919,7 @@ export default function SettingsPage() {
                         );
                     })()}
 
-                    {/* Theme */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                        <Box className="flex items-center gap-2 mb-4">
-                            <PaletteIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Theme</h2>
-                        </Box>
-                        <div className="flex gap-4">
-                            {themeList.map((t) => {
-                                const isActive = themeId === t.id;
-                                return (
-                                    <div
-                                        key={t.id}
-                                        onClick={() => setThemeId(t.id as ThemeId)}
-                                        className="rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden"
-                                        style={{
-                                            width: 200,
-                                            borderColor: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
-                                            boxShadow: isActive ? '0 0 0 3px var(--sl-brand-alpha-20)' : 'none',
-                                        }}
-                                    >
-                                        {/* Mini UI preview */}
-                                        <div className="flex rounded-lg overflow-hidden m-2" style={{ height: 100, backgroundColor: t.colors.bg.base, border: `1px solid ${t.colors.border.default}` }}>
-                                            {/* Sidebar */}
-                                            <div className="flex flex-col gap-[5px] p-2 shrink-0" style={{ width: 52, borderRight: `1px solid ${t.colors.border.default}`, backgroundColor: t.colors.bg.surface1 }}>
-                                                <div className="rounded-sm" style={{ height: 5, width: '100%', backgroundColor: t.colors.text.muted, opacity: 0.5 }} />
-                                                <div className="rounded-sm" style={{ height: 5, width: '75%', backgroundColor: t.colors.brand.primary, opacity: 0.8 }} />
-                                                <div className="rounded-sm" style={{ height: 5, width: '85%', backgroundColor: t.colors.text.faint, opacity: 0.4 }} />
-                                                <div className="rounded-sm" style={{ height: 5, width: '65%', backgroundColor: t.colors.text.faint, opacity: 0.3 }} />
-                                                <div className="mt-auto rounded-full" style={{ height: 8, width: 8, backgroundColor: t.colors.brand.primary, opacity: 0.5 }} />
-                                            </div>
-                                            {/* Content */}
-                                            <div className="flex-1 flex flex-col gap-[6px] p-2">
-                                                <div className="rounded-sm" style={{ height: 5, width: '50%', backgroundColor: t.colors.text.primary, opacity: 0.4 }} />
-                                                <div className="flex-1 rounded p-2 flex flex-col gap-[4px]" style={{ backgroundColor: t.colors.bg.surface1 }}>
-                                                    <div className="rounded-sm" style={{ height: 4, width: '90%', backgroundColor: t.colors.text.secondary, opacity: 0.25 }} />
-                                                    <div className="rounded-sm" style={{ height: 4, width: '65%', backgroundColor: t.colors.text.muted, opacity: 0.2 }} />
-                                                    <div className="rounded-sm" style={{ height: 4, width: '75%', backgroundColor: t.colors.text.muted, opacity: 0.15 }} />
-                                                </div>
-                                                <div className="rounded" style={{ height: 12, backgroundColor: t.colors.bg.input, border: `1px solid ${t.colors.border.default}` }} />
-                                            </div>
-                                        </div>
-                                        {/* Label */}
-                                        <div className="px-3 py-2" style={{ backgroundColor: t.colors.bg.surface1, borderTop: `1px solid ${t.colors.border.default}` }}>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs font-semibold" style={{ color: t.colors.text.primary }}>{t.name}</span>
-                                                {isActive && (
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--sl-brand-primary)' }} />
-                                                )}
-                                            </div>
-                                            <p className="text-[10px] mt-0.5 leading-snug" style={{ color: t.colors.text.muted }}>{t.description}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </Box>
-
-                    {/* AI Model Settings */}
+                    {/* 5. AI Model Settings */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
                             <TuneIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -960,14 +953,14 @@ export default function SettingsPage() {
                         </Box>
                     </Box>
 
-                    {/* Analytics */}
+                    {/* 6. Analytics */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
                             <SpeedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                             <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Analytics</h2>
                         </Box>
 
-                        <Box className="flex items-center justify-between p-4" sx={{ bgcolor: 'var(--sl-black-alpha-40)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
+                        <Box className="flex items-center justify-between p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
                             <Box>
                                 <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--sl-text-primary)' }}>Enable Analytics</h3>
                                 <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>

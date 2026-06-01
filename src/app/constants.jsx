@@ -79,7 +79,7 @@ export const APP_DESCRIPTION = (
 export const PROJECT_COLORS = [
   { name: 'Red', value: '#EC999999' },      // Critical
   { name: 'Orange', value: '#FB923C99' },    // High priority
-  { name: 'Pink', value: '#F472B699' },     // High priority
+  { name: 'Brand', value: 'var(--sl-brand-alpha-60)' }, // Theme default
   { name: 'Yellow', value: '#FBBF2499' },    // Medium priority
   { name: 'Amber', value: '#FCD34D99' },     // Medium priority
   { name: 'Purple', value: '#C4B5FD99' },   // Normal
@@ -89,5 +89,6 @@ export const PROJECT_COLORS = [
   { name: 'Green', value: '#A7F3D099' },    // Low priority
 ];
 
-// Default color (pink)
-export const DEFAULT_COLOR = '#F472B699';
+// Default color — uses theme brand; old pink hex kept for backwards-compat mapping
+export const DEFAULT_COLOR = 'var(--sl-brand-alpha-60)';
+export const LEGACY_PINK = '#F472B699';
