@@ -51,6 +51,7 @@
   --sl-brand-alpha-35: rgba(236, 72, 153, 0.35);
   --sl-brand-alpha-40: rgba(236, 72, 153, 0.4);
   --sl-brand-alpha-50: rgba(236, 72, 153, 0.5);
+  --sl-brand-alpha-60: rgba(236, 72, 153, 0.6);
 
   /* ── Danger alpha ──────────────────────────────────────── */
   --sl-danger-alpha-10: rgba(239, 68, 68, 0.1);

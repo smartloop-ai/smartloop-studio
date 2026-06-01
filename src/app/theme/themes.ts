@@ -40,9 +40,9 @@ const smartloopLight: ThemeDefinition = {
   colors: {
     bg: { base: '#ffffff', surface1: '#f5f5f5', surface2: '#ebebeb', surface3: '#e0e0e0', input: '#f0f0f0', elevated: '#fafafa' },
     brand: { primary: '#db2777', hover: '#be185d', active: '#9d174d', light: '#ec4899' },
-    text: { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#9ca3af', faint: '#d1d5db' },
+    text: { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#8b95a3', faint: '#9ca3af' },
     status: { error: '#dc2626', success: '#059669', online: '#16a34a', warning: '#d97706', info: '#2563eb', purple: '#7c3aed' },
-    border: { subtle: '#f0f0f0', default: '#e5e5e5', hover: '#d4d4d4', code: '#d1d5db' },
+    border: { subtle: '#e5e5e5', default: '#d4d4d4', hover: '#c0c0c0', code: '#c7ccd3' },
     table: { head: '#f9fafb', hover: '#f3f4f6', stripe: '#fafafa', inlineCode: '#f3f4f6' },
   },
 };
@@ -112,7 +112,7 @@ export function applyThemeCssVars(theme: ThemeDefinition) {
 
   const brandRgb = hexToRgb(c.brand.primary);
   s.setProperty('--sl-brand-primary-rgb', brandRgb);
-  for (const a of [10, 15, 18, 20, 30, 35, 40, 50]) {
+  for (const a of [10, 15, 18, 20, 30, 35, 40, 50, 60]) {
     s.setProperty(`--sl-brand-alpha-${a}`, `rgba(${brandRgb}, ${a / 100})`);
   }
 
