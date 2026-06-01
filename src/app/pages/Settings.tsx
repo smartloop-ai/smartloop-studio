@@ -587,12 +587,13 @@ export default function SettingsPage() {
                                             Status
                                         </Box>
                                         <Box component="td">
-                                            <span style={{
-                                                fontSize: '12px',
-                                                fontWeight: 600,
-                                                color: serverHealth?.status === 'running' ? 'var(--sl-status-success)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
+                                            <span className="px-2.5 py-1.5 rounded text-[10px] font-semibold" style={{
+                                                backgroundColor: serverHealth?.status === 'running' ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
+                                                borderWidth: 1,
+                                                borderColor: serverHealth?.status === 'running' ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-subtle)',
+                                                color: serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
                                             }}>
-                                                {serverHealth?.status === 'running' ? 'Healthy' : serverHealth?.status === 'error' ? 'Error' : serverHealth?.status === 'unreachable' ? 'Unreachable' : 'Unknown'}
+                                                {serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
                                             </span>
                                         </Box>
                                     </tr>
@@ -611,21 +612,15 @@ export default function SettingsPage() {
                                             Model
                                         </Box>
                                         <Box component="td">
-                                            <Box component="span" sx={{
-                                                display: 'inline-block',
-                                                px: 1.5,
-                                                py: 0.5,
-                                                bgcolor: 'transparent',
-                                                border: '1px solid var(--sl-brand-alpha-40)',
-                                                borderRadius: '6px',
+                                            <span className="px-2.5 py-1.5 rounded text-[10px] font-semibold" style={{
+                                                backgroundColor: 'var(--sl-brand-alpha-10)',
+                                                borderWidth: 1,
+                                                borderColor: 'var(--sl-brand-alpha-30)',
                                                 color: 'var(--sl-brand-primary)',
-                                                fontSize: '13px',
                                                 fontFamily: 'monospace',
-                                                fontWeight: 700,
-                                                textTransform: 'lowercase',
                                             }}>
                                                 {selectedModel || serverHealth?.details?.model_name || serverHealth?.details?.model || 'Not loaded'}
-                                            </Box>
+                                            </span>
                                         </Box>
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
