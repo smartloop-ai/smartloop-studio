@@ -34,7 +34,7 @@ const smartloop: ThemeDefinition = {
 
 const smartloopLight: ThemeDefinition = {
   id: 'smartloop-light',
-  name: 'Smartloop Light',
+  name: 'Smartloop',
   description: 'Clean and bright with Smartloop pink accents',
   mode: 'light',
   colors: {
