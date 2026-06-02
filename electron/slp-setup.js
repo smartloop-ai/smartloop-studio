@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.25';
+const VERSION = '1.0.26';
 const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
