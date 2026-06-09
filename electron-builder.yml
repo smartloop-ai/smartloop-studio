@@ -34,7 +34,7 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   signIgnore:
-    - "python/lib"
+    - "data/slp"
   notarize: true
   target:
     - target: dmg
