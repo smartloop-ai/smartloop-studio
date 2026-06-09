@@ -78,9 +78,14 @@ jobs:
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
+      - name: Raise file descriptor limit
+        run: |
+          sudo sysctl -w kern.maxfiles=524288
+          sudo sysctl -w kern.maxfilesperproc=524288
+
       - name: Build for macOS
         run: |
-          ulimit -n 10240
+          ulimit -Sn 524288
           make build-electron-mac
         env:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
