@@ -79,7 +79,9 @@ jobs:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
       - name: Build for macOS
-        run: make build-electron-mac
+        run: |
+          ulimit -n 10240
+          make build-electron-mac
         env:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
           VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
