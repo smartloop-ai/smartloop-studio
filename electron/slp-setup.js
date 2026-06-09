@@ -5,11 +5,11 @@ const crypto = require('crypto');
 const { spawn, execSync } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.26';
+const VERSION = '1.0.1';
 const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
-function getVersionDir() { return path.join(INSTALL_DIR, VERSION, 'bin'); }
+function getVersionDir() { return path.join(INSTALL_DIR, VERSION); }
 function getMarkerFile() { return path.join(INSTALL_DIR, '.installed-version'); }
 function getHashFile()   { return path.join(INSTALL_DIR, '.binary-hash'); }
 
@@ -71,7 +71,7 @@ function getInstalledBinaryPath() {
       }
     }
   } catch {}
-  return path.join(getVersionDir(), binaryName);
+  return path.join(getVersionDir(), 'bin', binaryName);
 }
 
 function needsInstall() {
