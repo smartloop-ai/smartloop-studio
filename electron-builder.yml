@@ -33,6 +33,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  signIgnore:
+    - "python/lib"
   notarize: true
   target:
     - target: dmg
