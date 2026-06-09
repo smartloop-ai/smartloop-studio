@@ -170,7 +170,7 @@ build-electron-windows: clean-electron fetch-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron fetch-slp
+build-electron-mac: clean-electron $(if $(SKIP_FETCH_SLP),,fetch-slp)
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."

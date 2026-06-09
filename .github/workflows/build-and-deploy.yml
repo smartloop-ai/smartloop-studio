@@ -78,15 +78,27 @@ jobs:
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
-      - name: Raise file descriptor limit
+      - name: Fetch SLP binary
+        run: make fetch-slp
+
+      - name: Sign SLP Mach-O binaries
+        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
         run: |
-          sudo sysctl -w kern.maxfiles=524288
-          sudo sysctl -w kern.maxfilesperproc=524288
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "Signing SLP binaries with: $IDENTITY"
+          find electron/data/slp -type f -print0 | xargs -0 file | grep "Mach-O" | cut -d: -f1 | sort > /tmp/macho-files.txt
+          echo "Found $(wc -l < /tmp/macho-files.txt) Mach-O binaries to sign"
+          while IFS= read -r f; do
+            codesign --force --options runtime --timestamp \
+              --entitlements build/entitlements.mac.plist \
+              --sign "$IDENTITY" "$f"
+          done < /tmp/macho-files.txt
+          echo "All SLP Mach-O binaries signed"
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
       - name: Build for macOS
-        run: |
-          ulimit -Sn 524288
-          make build-electron-mac
+        run: make build-electron-mac SKIP_FETCH_SLP=1
         env:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
           VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
