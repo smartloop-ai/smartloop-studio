@@ -69,7 +69,7 @@ export default function RightSidebar({
   onSaveSkills,
   onRefreshSkills,
 }: RightSidebarProps) {
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>('documents');
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(selectedProject?.system ? null : 'documents');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
@@ -93,6 +93,12 @@ export default function RightSidebar({
   const savingSkill = pendingSkill !== null;
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+
+  useEffect(() => {
+    if (selectedProject?.system && (activeSection === 'documents' || activeSection === 'settings')) {
+      setActiveSection(null);
+    }
+  }, [selectedProject?.id]);
 
   // Skills loaded from the API
   const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);

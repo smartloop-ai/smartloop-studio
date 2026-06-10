@@ -1182,9 +1182,9 @@ function updateSplashProgress(data) {
   }
 
   if (data.status === 'preparing') {
-    const msg = data.message || 'Starting service. This might take a while...';
+    const msg = data.message || 'Starting agent. This might take a while...';
     splashWindow.webContents.executeJavaScript(`
-      document.getElementById('status-text').textContent = 'Starting service...';
+      document.getElementById('status-text').textContent = 'Starting agent...';
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
     `).catch(() => { });
@@ -1568,100 +1568,7 @@ function createSplashScreen() {
     }
   });
 
-  const splashHTML = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <style>
-          body {
-            margin: 0;
-            padding: 0;
-            background: transparent;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          }
-          .splash-container {
-            background: #000000;
-            border-radius: 8px;
-            border: 1px solid #2a2a2a;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            box-sizing: border-box;
-            overflow: hidden;
-            padding: 0 24px;
-          }
-          .splash-body {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            width: 100%;
-          }
-          .logo {
-            font-size: 32px;
-            font-weight: bold;
-            text-align: center;
-            margin-bottom: 24px;
-          }
-          .logo-text { color: white; }
-          .logo-dot { color: #ec4899; }
-          .progress-track {
-            width: 100%;
-            height: 6px;
-            background: #1a1a1a;
-            border-radius: 0;
-            overflow: hidden;
-            position: relative;
-          }
-          .progress-fill {
-            height: 100%;
-            background: #ec4899;
-            border-radius: 0;
-            width: 0%;
-            transition: width 0.3s ease;
-          }
-          .progress-fill.indeterminate {
-            width: 40% !important;
-            animation: slide 1.5s ease-in-out infinite;
-          }
-          @keyframes slide {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(350%); }
-          }
-          .status-text {
-            color: #6b7280;
-            font-size: 13px;
-            text-align: center;
-            margin-top: 12px;
-            min-height: 18px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="splash-container">
-          <div class="splash-body">
-            <div class="logo">
-              <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-fill" id="progress-fill"></div>
-            </div>
-            <div class="status-text" id="status-text">Getting things ready...</div>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  splashWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHTML)}`);
+  splashWindow.loadFile(path.join(__dirname, 'splash-starting.html'));
 }
 
 
@@ -1954,7 +1861,7 @@ if (!gotTheLock) {
           }
 
           // Step 2: Start the service (owned by this main process).
-          updateSplashProgress({ status: 'preparing', message: 'Starting service. This might take a while...' });
+          updateSplashProgress({ status: 'preparing', message: 'Starting agent. This might take a while...' });
 
           const serviceStarted = await slpService.startService();
           if (!serviceStarted) {
@@ -2071,28 +1978,18 @@ app.on('window-all-closed', () => {
   }
 });
 
-let shuttingDown = false;
-app.on('before-quit', async (event) => {
+app.on('before-quit', () => {
   app.isQuitting = true;
-
-  // The SLP service is owned by this main process. Hold the quit until it
-  // has been stopped so it never outlives the app as an orphan.
-  if (shuttingDown) return;
-  shuttingDown = true;
-  event.preventDefault();
 
   try {
     database.closeDatabase();
   } catch (error) {
     console.warn('[App] Error closing database:', error.message);
   }
-  try {
-    await slpService.stopService();
-  } catch (error) {
-    console.warn('[App] Error stopping SLP service:', error.message);
-  }
 
-  app.quit();
+  slpService.stopService().catch((error) => {
+    console.warn('[App] Error stopping SLP service:', error.message);
+  });
 });
 
 // Handle certificate errors in development

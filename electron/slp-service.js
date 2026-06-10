@@ -112,7 +112,7 @@ async function startService() {
     // Not running yet
   }
 
-  console.log('[SLP] Starting service from:', slpBinary, 'on port', targetPort);
+  console.log('[SLP] Starting agent from:', slpBinary, 'on port', targetPort);
 
   // Open log file for stdout/stderr — append mode so logs persist across restarts
   const logFile = getLogPath();
@@ -124,7 +124,7 @@ async function startService() {
   console.log('[SLP] Server logs writing to:', logFile);
 
   // Start as a child process — use pipe and manually redirect output to log file
-  const proc = spawn(slpBinary, ['agent', 'start', '--port', String(targetPort)], {
+  const proc = spawn(slpBinary, ['start', '--port', String(targetPort)], {
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -212,7 +212,7 @@ async function stopService() {
   if (fs.existsSync(slpBinary)) {
     try {
       await new Promise((resolve, reject) => {
-        execFile(slpBinary, ['agent', 'stop'], {
+        execFile(slpBinary, ['stop'], {
           env: { ...process.env },
           timeout: 10000,
           windowsHide: true,
