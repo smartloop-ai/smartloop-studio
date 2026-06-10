@@ -31,7 +31,7 @@ function bootstrapProgress(data) {
             status = data.message || 'Checking workspace...';
             stage = 'checking';
         } else if (rawStatus === 'starting' || rawStatus === 'preparing') {
-            status = data.message || 'Starting service...';
+            status = data.message || 'Starting agent...';
             stage = 'preparing';
         } else if (rawStatus === 'extracting') {
             status = data.message || 'Extracting...';

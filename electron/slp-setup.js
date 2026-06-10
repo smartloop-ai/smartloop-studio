@@ -173,8 +173,8 @@ async function installService(onProgress) {
   copyDirRecursive(bundledDir, getVersionDir());
 
   // ── Step 2: Verify binary ────────────────────────────────────────────────
-  console.log('[SLP Setup] Verifying installation...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Verifying installation...' });
+  console.log('[SLP Setup] Preparing for first use...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Preparing for first use...' });
 
   if (!isNonEmptyFile(slpBinary)) {
     throw new Error(`Binary missing or empty at ${slpBinary} after copy — bundled binary may be truncated`);

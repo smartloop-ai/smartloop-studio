@@ -3,6 +3,19 @@
 
 <head>
   <style>
+    :root {
+      --sl-bg-base: #000000;
+      --sl-bg-surface-1: #1a1a1a;
+      --sl-bg-surface-2: #2a2a2a;
+      --sl-bg-surface-3: #3a3a3a;
+      --sl-brand-primary: #ec4899;
+      --sl-text-primary: #ffffff;
+      --sl-text-secondary: #e5e7eb;
+      --sl-text-disabled: #6b7280;
+      --sl-text-faint: #4b5563;
+      --sl-border-default: #2a2a2a;
+    }
+
     body {
       margin: 0;
       padding: 0;
@@ -15,94 +28,205 @@
     }
 
     .splash-container {
-      background: #000000;
+      background: var(--sl-bg-base);
       border-radius: 8px;
-      border: 1px solid #2a2a2a;
       width: 100%;
       height: 100%;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      align-items: center;
       box-sizing: border-box;
       overflow: hidden;
+      padding: 16px;
+      gap: 16px;
     }
 
-    .splash-body {
+    .splash-card {
       flex: 1;
+      background: var(--sl-bg-base);
+      border-radius: 12px;
       display: flex;
       flex-direction: column;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
+      padding: 28px 24px 20px;
+      position: relative;
     }
 
     .logo {
-      font-size: 32px;
+      font-size: 26px;
       font-weight: bold;
       text-align: center;
+      margin-bottom: 20px;
     }
 
     .logo-text {
-      color: white;
+      color: var(--sl-text-primary);
     }
 
     .logo-dot {
-      color: #ec4899;
+      color: var(--sl-brand-primary);
+    }
+
+    .card-content {
+      width: 100%;
+      position: relative;
+      height: 80px;
+    }
+
+    .card-slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 8px;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .card-slide.active {
+      opacity: 1;
+    }
+
+    .card-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .card-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .card-title {
+      color: var(--sl-text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .card-desc {
+      color: var(--sl-text-disabled);
+      font-size: 11px;
+      line-height: 1.6;
+      max-width: 280px;
+    }
+
+    .dots {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 16px;
+    }
+
+    .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--sl-bg-surface-3);
+      transition: background 0.3s ease;
+    }
+
+    .dot.active {
+      background: var(--sl-brand-primary);
+    }
+
+    .splash-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 8px 4px;
     }
 
     .status-text {
-      color: #6b7280;
-      font-size: 13px;
+      color: var(--sl-text-disabled);
+      font-size: 11px;
       text-align: center;
-      margin-top: 12px;
-      min-height: 18px;
     }
 
     .progress-bar {
       width: 100%;
       height: 3px;
-      background: #1a1a1a;
-      position: relative;
+      background: var(--sl-bg-surface-2);
+      border-radius: 2px;
       overflow: hidden;
-      flex-shrink: 0;
-      border-radius: 0 0 8px 8px;
+      position: relative;
     }
 
-    .progress-bar .slider {
-      position: absolute;
-      top: 0;
-      left: 0;
+    .progress-fill {
       height: 100%;
-      width: 40%;
-      background: linear-gradient(90deg, transparent, #ec4899, transparent);
+      background: var(--sl-brand-primary);
       border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-fill.indeterminate {
+      width: 40% !important;
       animation: slide 1.5s ease-in-out infinite;
     }
 
     @keyframes slide {
-      0% {
-        left: -40%;
-      }
-
-      100% {
-        left: 100%;
-      }
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
     }
   </style>
 </head>
 
 <body>
   <div class="splash-container">
-    <div class="splash-body">
+    <div class="splash-card">
       <div class="logo">
         <span class="logo-text">smartloop</span><span class="logo-dot">.</span>
       </div>
-      <div class="status-text">Heating things up...</div>
+
+      <div class="card-content">
+        <div class="card-slide active" data-step="0">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--sl-brand-primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="card-title">Agent Harness</div>
+          <div class="card-desc">Your local agent harness that runs AI models on your machine — private, fast, and always available.</div>
+        </div>
+        <div class="card-slide" data-step="1">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--sl-brand-primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+          <div class="card-title">Extract Information</div>
+          <div class="card-desc">Upload documents and extract information across all of them at once.</div>
+        </div>
+        <div class="card-slide" data-step="2">
+          <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--sl-brand-primary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+          <div class="card-title">Generate New Content</div>
+          <div class="card-desc">Use skills to get the most out of your local models.</div>
+        </div>
+      </div>
+
+      <div class="dots">
+        <div class="dot active" data-dot="0"></div>
+        <div class="dot" data-dot="1"></div>
+        <div class="dot" data-dot="2"></div>
+      </div>
     </div>
-    <div class="progress-bar">
-      <div class="slider"></div>
+
+    <div class="splash-footer">
+      <div class="status-text" id="status-text">Heating things up...</div>
+      <div class="progress-bar">
+        <div class="progress-fill indeterminate" id="progress-fill"></div>
+      </div>
     </div>
   </div>
+
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('.card-slide');
+    const dots = document.querySelectorAll('.dot');
+
+    setInterval(function () {
+      slides[current].classList.remove('active');
+      dots[current].classList.remove('active');
+      current = (current + 1) % 3;
+      slides[current].classList.add('active');
+      dots[current].classList.add('active');
+    }, 3000);
+  </script>
 </body>
 
 </html>
