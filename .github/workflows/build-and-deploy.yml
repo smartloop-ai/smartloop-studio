@@ -78,32 +78,8 @@ jobs:
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
-      - name: Fetch SLP binary
-        run: make fetch-slp
-
-      - name: Sign SLP Mach-O binaries
-        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
-        run: |
-          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
-          echo "Signing SLP binaries with: $IDENTITY"
-          find electron/data/slp -type f -print0 | xargs -0 file | grep "Mach-O" | cut -d: -f1 | sort > /tmp/macho-files.txt
-          echo "Found $(wc -l < /tmp/macho-files.txt) Mach-O binaries to sign"
-          FAILED=0
-          while IFS= read -r f; do
-            # Break hardlinks so codesign can replace the signature in place
-            if [ "$(stat -f %l "$f")" -gt 1 ]; then
-              cp "$f" "$f.tmp" && mv "$f.tmp" "$f"
-            fi
-            codesign --force --options runtime --timestamp \
-              --entitlements build/entitlements.mac.plist \
-              --sign "$IDENTITY" "$f" 2>&1 || { echo "Warning: failed to sign $f"; FAILED=$((FAILED + 1)); }
-          done < /tmp/macho-files.txt
-          echo "Signing complete ($(wc -l < /tmp/macho-files.txt) total, $FAILED failed)"
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-
       - name: Build for macOS
-        run: make build-electron-mac SKIP_FETCH_SLP=1
+        run: make build-electron-mac
         env:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
           VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
