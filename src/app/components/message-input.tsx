@@ -49,6 +49,7 @@ export default function MessageInput({
   onQuoteClear,
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isAttaching, setIsAttaching] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [droppedFile, setDroppedFile] = useState<{ file: File; id: number } | null>(null);
   const dragCounterRef = useRef(0);
@@ -81,7 +82,7 @@ export default function MessageInput({
   const handleKeyDownInternal = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && !isLoading && message.trim()) {
+      if (!disabled && !isLoading && !isAttaching && message.trim()) {
         onSend();
       }
     }
@@ -217,6 +218,7 @@ export default function MessageInput({
                 onError={(error) => {
                   console.error('File attach error:', error);
                 }}
+                onUploadingChange={setIsAttaching}
                 disabled={disabled || isLoading}
                 size="small"
                 showDragDrop={showDragDrop}
@@ -292,27 +294,27 @@ export default function MessageInput({
             </button>
           ) : (
             <button
-              disabled={disabled || !message.trim()}
+              disabled={disabled || isAttaching || !message.trim()}
               className="p-2 md:p-3 rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
               style={{
-                backgroundColor: disabled || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
-                border: `1.5px solid ${disabled || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
+                backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
+                border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
               }}
               onMouseEnter={(e) => {
-                if (!disabled && message.trim()) {
+                if (!disabled && !isAttaching && message.trim()) {
                   e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-20)';
                   e.currentTarget.style.borderColor = 'var(--sl-brand-alpha-40)';
                 }
               }}
               onMouseLeave={(e) => {
-                if (!disabled && message.trim()) {
+                if (!disabled && !isAttaching && message.trim()) {
                   e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-10)';
                   e.currentTarget.style.borderColor = 'var(--sl-brand-alpha-20)';
                 }
               }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: disabled || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: { xs: 18, md: 20 } }} />
+              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: { xs: 18, md: 20 } }} />
             </button>
           )}
         </Box>
