@@ -11,6 +11,7 @@ interface FileAttacherProps {
   onSuccess: (documentId: string, fileName: string) => void;
   onError?: (error: string) => void;
   onClear?: () => void;
+  onUploadingChange?: (uploading: boolean) => void;
   disabled?: boolean;
   size?: 'small' | 'medium';
   showDragDrop?: boolean;
@@ -24,6 +25,7 @@ export default function FileAttacher({
   onSuccess,
   onError,
   onClear,
+  onUploadingChange,
   disabled = false,
   size = 'small',
   showDragDrop = false,
@@ -32,7 +34,11 @@ export default function FileAttacher({
   externalDrop = null,
 }: FileAttacherProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isUploading, setIsUploadingRaw] = useState(false);
+  const setIsUploading = (val: boolean) => {
+    setIsUploadingRaw(val);
+    onUploadingChange?.(val);
+  };
   const [attachError, setAttachError] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
