@@ -78,14 +78,14 @@ test: stop
 	@$(MAKE) run-electron-dev
 
 # SLP version (must match VERSION in electron/slp-setup.js)
-SLP_VERSION=1.0.28
+SLP_VERSION=1.0.1
 SLP_BASE_URL=https://dl.smartloop.ai/slp/$(SLP_VERSION)
 SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
 
 # Download the SLP binary for the current platform into electron/data/slp/<version>/
 fetch-slp:
 	@set -e; \
-	if [ -s "$(SLP_DATA_DIR)/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
+	if [ -s "$(SLP_DATA_DIR)/bin/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
 		echo "✅ SLP binary v$(SLP_VERSION) already present at $(SLP_DATA_DIR)/, skipping download"; \
 	else \
 		echo "📥 Fetching SLP binary v$(SLP_VERSION) for bundling..."; \
@@ -114,16 +114,28 @@ fetch-slp:
 			tar -xzf "$$TMPDIR/$$ARCHIVE" -C "$$EXTRACT"; \
 		fi; \
 		if [ -d "$$EXTRACT/slp" ]; then \
-			cp -R "$$EXTRACT/slp/"* $(SLP_DATA_DIR)/; \
-		else \
+			mkdir -p $(SLP_DATA_DIR)/bin; \
+			if [ -f "$$EXTRACT/slp/$$BIN" ]; then \
+				cp "$$EXTRACT/slp/$$BIN" $(SLP_DATA_DIR)/bin/; \
+			fi; \
+			for item in "$$EXTRACT/slp/"*; do \
+				base=$$(basename "$$item"); \
+				if [ "$$base" != "$$BIN" ]; then \
+					cp -R "$$item" $(SLP_DATA_DIR)/; \
+				fi; \
+			done; \
+		elif [ -d "$$EXTRACT/bin" ]; then \
 			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
+		else \
+			mkdir -p $(SLP_DATA_DIR)/bin; \
+			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/bin/; \
 		fi; \
-		if [ ! -s "$(SLP_DATA_DIR)/$$BIN" ]; then \
+		if [ ! -s "$(SLP_DATA_DIR)/bin/$$BIN" ]; then \
 			rm -rf $(SLP_DATA_DIR); \
 			echo "❌ Staged SLP binary $$BIN is missing or empty — aborting (bad download/extract from $$URL)"; \
 			exit 1; \
 		fi; \
-		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/$$BIN" | cut -f1))"; \
+		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/bin/$$BIN" | cut -f1))"; \
 	fi
 
 # Clean electron build artifacts

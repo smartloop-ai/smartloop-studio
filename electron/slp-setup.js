@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.28';
+const VERSION = '1.0.1';
 const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
@@ -165,12 +165,13 @@ async function installService(onProgress) {
     throw new Error(`Bundled SLP binary not found at ${bundledDir}`);
   }
 
-  fs.mkdirSync(getVersionDir(), { recursive: true });
-  const existing = fs.readdirSync(getVersionDir());
+  const versionRoot = path.join(INSTALL_DIR, VERSION);
+  fs.mkdirSync(versionRoot, { recursive: true });
+  const existing = fs.readdirSync(versionRoot);
   for (const f of existing) {
-    fs.rmSync(path.join(getVersionDir(), f), { recursive: true, force: true });
+    fs.rmSync(path.join(versionRoot, f), { recursive: true, force: true });
   }
-  copyDirRecursive(bundledDir, getVersionDir());
+  copyDirRecursive(bundledDir, versionRoot);
 
   // ── Step 2: Verify binary ────────────────────────────────────────────────
   console.log('[SLP Setup] Preparing for first use...');
@@ -203,12 +204,6 @@ async function installService(onProgress) {
   try { installedVersions = fs.readFileSync(installedFile, 'utf-8'); } catch {}
   if (!installedVersions.split('\n').includes(VERSION)) {
     fs.appendFileSync(installedFile, VERSION + '\n');
-  }
-
-  if (process.platform === 'darwin') {
-    try {
-      execSync(`xattr -dr com.apple.quarantine "${getVersionDir()}"`, { stdio: 'pipe' });
-    } catch {}
   }
 
   console.log('[SLP Setup] Install complete — binary at', slpBinary);
