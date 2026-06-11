@@ -9,7 +9,7 @@ const VERSION = '1.0.1';
 const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
-function getVersionDir() { return path.join(INSTALL_DIR, VERSION, 'bin'); }
+function getVersionDir() { return path.join(INSTALL_DIR, VERSION); }
 function getMarkerFile() { return path.join(INSTALL_DIR, '.installed-version'); }
 function getHashFile()   { return path.join(INSTALL_DIR, '.binary-hash'); }
 
@@ -67,7 +67,7 @@ function getInstalledBinaryPath() {
     if (fs.existsSync(getMarkerFile())) {
       const installed = fs.readFileSync(getMarkerFile(), 'utf-8').trim();
       if (semverGte(installed, VERSION)) {
-        return path.join(INSTALL_DIR, installed, 'bin', binaryName);
+        return path.join(INSTALL_DIR, installed, binaryName);
       }
     }
   } catch {}
@@ -314,7 +314,7 @@ function listInstalledVersions() {
     .filter(v => v.length > 0);
 
   return versions.filter(v => {
-    const binaryPath = path.join(INSTALL_DIR, v, 'bin', binaryName);
+    const binaryPath = path.join(INSTALL_DIR, v, binaryName);
     return fs.existsSync(binaryPath);
   });
 }
@@ -325,7 +325,7 @@ function listInstalledVersions() {
  */
 function switchVersion(version) {
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
-  const binaryPath = path.join(INSTALL_DIR, version, 'bin', binaryName);
+  const binaryPath = path.join(INSTALL_DIR, version, binaryName);
 
   if (!fs.existsSync(binaryPath)) {
     return { success: false, error: `Binary not found for version ${version}` };
