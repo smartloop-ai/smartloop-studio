@@ -199,6 +199,8 @@ const registerMcpServer = async (projectId: string, options: {
   server_type: 'remote' | 'local';
   server_url?: string;
   name?: string;
+  command?: string;
+  args?: string[];
   token?: string;
   env?: Record<string, string>;
   return_url?: string;
@@ -212,8 +214,8 @@ const registerMcpServer = async (projectId: string, options: {
       return { success: false, error: 'Server URL is required for remote servers' };
     }
 
-    if (options.server_type === 'local' && !options.name?.trim()) {
-      return { success: false, error: 'Server name is required for local servers' };
+    if (options.server_type === 'local' && !options.command?.trim()) {
+      return { success: false, error: 'Command is required for local servers' };
     }
 
     const localBase = await getLocalApiEndpoint();
@@ -222,6 +224,8 @@ const registerMcpServer = async (projectId: string, options: {
 
     if (options.server_url) body.server_url = options.server_url.trim();
     if (options.name) body.name = options.name.trim();
+    if (options.command) body.command = options.command.trim();
+    if (options.args && options.args.length > 0) body.args = options.args;
     if (options.token) body.token = options.token.trim();
     if (options.env && Object.keys(options.env).length > 0) body.env = options.env;
     if (options.return_url) body.return_url = options.return_url;

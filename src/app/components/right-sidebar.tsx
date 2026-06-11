@@ -747,11 +747,23 @@ export default function RightSidebar({
           }
         }
 
+        // Split the input into command + args on whitespace. A bare package
+        // name like "yfmcp" defaults to `uvx yfmcp` since uvx is the common
+        // launcher for Python-packaged MCP servers.
+        const parts = input.split(/\s+/).filter(Boolean);
+        const command = parts.length > 1 ? parts[0] : 'uvx';
+        const args = parts.length > 1 ? parts.slice(1) : parts;
+        // Derive a display name from the first non-flag arg, falling back to
+        // the command itself — mirrors how SLP derives the name server-side.
+        const name = (args.find(a => !a.startsWith('-')) || command).split('/').pop()!;
+
         const result = await mcpServerService.registerMcpServer(
           selectedProject.id,
           {
             server_type: 'local',
-            name: input,
+            name,
+            command,
+            args,
             env: Object.keys(env).length > 0 ? env : undefined,
           }
         );
@@ -1317,7 +1329,7 @@ export default function RightSidebar({
               >
                 <TextField
                   size="small"
-                  placeholder="URL or package name"
+                  placeholder="URL"
                   value={newMcpInput}
                   onChange={(e) => setNewMcpInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -1350,7 +1362,7 @@ export default function RightSidebar({
                   }}
                 />
                 <Box className="text-sl-text-disabled text-[10px] mt-1 px-1">
-                  Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
+                  Enter the URL of the MCP server <br />(e.g., https://mcp.example.com) <br />— Press Enter to add
                 </Box>
               </Box>
 
