@@ -85,7 +85,7 @@ SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
 # Download the SLP binary for the current platform into electron/data/slp/<version>/
 fetch-slp:
 	@set -e; \
-	if [ -s "$(SLP_DATA_DIR)/bin/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
+	if [ -s "$(SLP_DATA_DIR)/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
 		echo "✅ SLP binary v$(SLP_VERSION) already present at $(SLP_DATA_DIR)/, skipping download"; \
 	else \
 		echo "📥 Fetching SLP binary v$(SLP_VERSION) for bundling..."; \
@@ -114,28 +114,18 @@ fetch-slp:
 			tar -xzf "$$TMPDIR/$$ARCHIVE" -C "$$EXTRACT"; \
 		fi; \
 		if [ -d "$$EXTRACT/slp" ]; then \
-			mkdir -p $(SLP_DATA_DIR)/bin; \
-			if [ -f "$$EXTRACT/slp/$$BIN" ]; then \
-				cp "$$EXTRACT/slp/$$BIN" $(SLP_DATA_DIR)/bin/; \
-			fi; \
-			for item in "$$EXTRACT/slp/"*; do \
-				base=$$(basename "$$item"); \
-				if [ "$$base" != "$$BIN" ]; then \
-					cp -R "$$item" $(SLP_DATA_DIR)/; \
-				fi; \
-			done; \
+			cp -R "$$EXTRACT/slp/"* $(SLP_DATA_DIR)/; \
 		elif [ -d "$$EXTRACT/bin" ]; then \
 			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
 		else \
-			mkdir -p $(SLP_DATA_DIR)/bin; \
-			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/bin/; \
+			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
 		fi; \
-		if [ ! -s "$(SLP_DATA_DIR)/bin/$$BIN" ]; then \
+		if [ ! -s "$(SLP_DATA_DIR)/$$BIN" ]; then \
 			rm -rf $(SLP_DATA_DIR); \
 			echo "❌ Staged SLP binary $$BIN is missing or empty — aborting (bad download/extract from $$URL)"; \
 			exit 1; \
 		fi; \
-		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/bin/$$BIN" | cut -f1))"; \
+		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/$$BIN" | cut -f1))"; \
 	fi
 
 # Clean electron build artifacts
@@ -146,10 +136,10 @@ clean-electron:
 # Stop the running SLP service
 stop:
 	@echo "🛑 Stopping SLP service..."
-	@if [ -f "$(HOME)/.smartloop/$(SLP_VERSION)/bin/slp" ]; then \
-		$(HOME)/.smartloop/$(SLP_VERSION)/bin/slp agent stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
+	@if [ -f "$(HOME)/.smartloop/$(SLP_VERSION)/slp" ]; then \
+		$(HOME)/.smartloop/$(SLP_VERSION)/slp agent stop 2>/dev/null && echo "✅ SLP service stopped" || echo "⚠️  SLP service was not running"; \
 	else \
-		echo "⚠️  SLP binary not found at ~/.smartloop/$(SLP_VERSION)/bin/slp"; \
+		echo "⚠️  SLP binary not found at ~/.smartloop/$(SLP_VERSION)/slp"; \
 	fi
 
 # Build Electron app for current platform
