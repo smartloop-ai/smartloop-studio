@@ -124,6 +124,48 @@ function runAsync(command, args, options = {}) {
   });
 }
 
+/**
+ * Run a command and invoke onLine(count) as lines arrive on stdout (verbose
+ * output). Used to turn `tar -v` per-entry output into deterministic progress.
+ * Reports are throttled to ~10/sec to avoid flooding the renderer.
+ */
+function runWithLineProgress(command, args, onLine, options = {}) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let count = 0;
+    let lastReport = 0;
+
+    // GNU tar (Linux) prints the verbose file list to stdout; BSD tar (macOS)
+    // prints it to stderr. Count newlines on whichever stream carries them so
+    // progress works on both. stderr text is still kept for error reporting.
+    const countNewlines = (chunk) => {
+      const str = chunk.toString();
+      for (let i = 0; i < str.length; i++) {
+        if (str[i] === '\n') count++;
+      }
+      const now = Date.now();
+      if (now - lastReport >= 100) {
+        lastReport = now;
+        onLine(count);
+      }
+    };
+
+    proc.stdout.on('data', countNewlines);
+    proc.stderr.on('data', (data) => { stderr += data.toString(); countNewlines(data); });
+
+    proc.on('error', (err) => reject(err));
+    proc.on('close', (code) => {
+      onLine(count);
+      if (code !== 0) {
+        reject(new Error(`Command "${command} ${args.join(' ')}" exited with code ${code}: ${stderr}`));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Platform detection
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,15 +366,21 @@ async function installService(onProgress) {
   // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
   const listFlag = isWindows ? '-tf' : '-tzf';
   const listing = await runAsync('tar', [listFlag, cachedArchive]);
-  const topLevel = new Set(
-    listing.split('\n').map((l) => l.trim().split('/')[0]).filter(Boolean)
-  );
+  const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
+  const totalEntries = entries.length;
+  const topLevel = new Set(entries.map((l) => l.split('/')[0]));
   const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
 
-  const extractArgs = [isWindows ? '-xf' : '-xzf', cachedArchive, '-C', versionRoot];
+  // Extract with -v so tar prints one line per entry; counting those lines
+  // against the known total gives a deterministic extraction percentage.
+  const extractArgs = [isWindows ? '-xvf' : '-xvzf', cachedArchive, '-C', versionRoot];
   if (stripWrapper) extractArgs.push('--strip-components=1');
   try {
-    await runAsync('tar', extractArgs);
+    await runWithLineProgress('tar', extractArgs, (done) => {
+      if (!onProgress || totalEntries === 0) return;
+      const pct = Math.min(100, Math.round((done / totalEntries) * 100));
+      onProgress({ status: 'installing', percent: pct, message: `Extracting Framework... ${pct}%` });
+    });
   } finally {
     try { fs.unlinkSync(cachedArchive); } catch {}
   }
