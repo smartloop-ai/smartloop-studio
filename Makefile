@@ -78,55 +78,9 @@ test: stop
 	@$(MAKE) run-electron-dev
 
 # SLP version (must match VERSION in electron/slp-setup.js)
+# The SLP framework is no longer bundled — it is downloaded at runtime by
+# electron/slp-setup.js (mirroring https://smartloop.ai/install.sh).
 SLP_VERSION=1.0.1
-SLP_BASE_URL=https://dl.smartloop.ai/slp/$(SLP_VERSION)
-SLP_DATA_DIR=electron/data/slp/$(SLP_VERSION)
-
-# Download the SLP binary for the current platform into electron/data/slp/<version>/
-fetch-slp:
-	@set -e; \
-	if [ -s "$(SLP_DATA_DIR)/slp" ] || [ -s "$(SLP_DATA_DIR)/slp.exe" ]; then \
-		echo "✅ SLP binary v$(SLP_VERSION) already present at $(SLP_DATA_DIR)/, skipping download"; \
-	else \
-		echo "📥 Fetching SLP binary v$(SLP_VERSION) for bundling..."; \
-		rm -rf $(SLP_DATA_DIR); \
-		mkdir -p $(SLP_DATA_DIR); \
-		TMPDIR=$$(mktemp -d "$(SLP_DATA_DIR)/.fetch-tmp.XXXXXX"); \
-		trap 'rm -rf "$$TMPDIR"' EXIT; \
-		UNAME_S=$$(uname -s); \
-		if echo "$$UNAME_S" | grep -qi "darwin"; then \
-			PLAT=darwin; ARCH=arm64; EXT=tar.gz; BIN=slp; \
-		elif echo "$$UNAME_S" | grep -qi "linux"; then \
-			PLAT=linux; ARCH=amd64; EXT=tar.gz; BIN=slp; \
-		else \
-			PLAT=windows; ARCH=amd64; EXT=zip; BIN=slp.exe; \
-		fi; \
-		ARCHIVE="$$PLAT-$$ARCH-slp.$$EXT"; \
-		URL="$(SLP_BASE_URL)/$$ARCHIVE"; \
-		echo "  Downloading $$URL ..."; \
-		curl -fSL "$$URL" -o "$$TMPDIR/$$ARCHIVE"; \
-		echo "  Extracting to $(SLP_DATA_DIR)/ ..."; \
-		EXTRACT="$$TMPDIR/extract"; \
-		mkdir -p "$$EXTRACT"; \
-		if [ "$$EXT" = "zip" ]; then \
-			unzip -o "$$TMPDIR/$$ARCHIVE" -d "$$EXTRACT"; \
-		else \
-			tar -xzf "$$TMPDIR/$$ARCHIVE" -C "$$EXTRACT"; \
-		fi; \
-		if [ -d "$$EXTRACT/slp" ]; then \
-			cp -R "$$EXTRACT/slp/"* $(SLP_DATA_DIR)/; \
-		elif [ -d "$$EXTRACT/bin" ]; then \
-			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
-		else \
-			cp -R "$$EXTRACT/"* $(SLP_DATA_DIR)/; \
-		fi; \
-		if [ ! -s "$(SLP_DATA_DIR)/$$BIN" ]; then \
-			rm -rf $(SLP_DATA_DIR); \
-			echo "❌ Staged SLP binary $$BIN is missing or empty — aborting (bad download/extract from $$URL)"; \
-			exit 1; \
-		fi; \
-		echo "✅ SLP binary staged at $(SLP_DATA_DIR)/ ($$(du -h "$(SLP_DATA_DIR)/$$BIN" | cut -f1))"; \
-	fi
 
 # Clean electron build artifacts
 clean-electron:
@@ -143,7 +97,7 @@ stop:
 	fi
 
 # Build Electron app for current platform
-build-electron: clean-electron fetch-slp
+build-electron: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -152,7 +106,7 @@ build-electron: clean-electron fetch-slp
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron fetch-slp
+build-electron-linux: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -162,7 +116,7 @@ build-electron-linux: clean-electron fetch-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron fetch-slp
+build-electron-windows: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -172,7 +126,7 @@ build-electron-windows: clean-electron fetch-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for macOS
-build-electron-mac: clean-electron fetch-slp
+build-electron-mac: clean-electron
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -182,7 +136,7 @@ build-electron-mac: clean-electron fetch-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Run Electron app in development mode
-run-electron-dev: fetch-slp
+run-electron-dev:
 	@echo "🚀 Starting Electron app in development mode..."
 	npm run electron-dev
 

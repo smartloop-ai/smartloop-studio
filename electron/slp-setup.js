@@ -1,26 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const https = require('https');
+const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
 
 const VERSION = '1.0.1';
+// SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
+//   https://dl.smartloop.ai/slp/<version>/<plat>-<arch>-slp.<ext>
+const SLP_BASE_URL = (process.env.SLP_BASE_URL || 'https://dl.smartloop.ai').replace(/\/+$/, '');
+function getDownloadBaseUrl() { return `${SLP_BASE_URL}/slp/${VERSION}`; }
+
 const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
 function getVersionDir() { return path.join(INSTALL_DIR, VERSION); }
+function getCacheDir()   { return path.join(INSTALL_DIR, 'cache'); }
 function getMarkerFile() { return path.join(INSTALL_DIR, '.installed-version'); }
 function getHashFile()   { return path.join(INSTALL_DIR, '.binary-hash'); }
-
-function getBundledBinaryDir() {
-  const { app } = require('electron');
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    return path.join(__dirname, 'data', 'slp', VERSION);
-  }
-  return path.join(process.resourcesPath, 'data', 'slp', VERSION);
-}
 
 function setInstallDir(dir) {
   INSTALL_DIR = dir || DEFAULT_INSTALL_DIR;
@@ -126,8 +125,146 @@ function runAsync(command, args, options = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Platform detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+function detectPlatform() {
+  let plat, arch;
+
+  if (process.platform === 'darwin') plat = 'darwin';
+  else if (process.platform === 'linux') plat = 'linux';
+  else if (process.platform === 'win32') plat = 'windows';
+  else throw new Error(`Unsupported platform: ${process.platform}`);
+
+  if (os.arch() === 'arm64') arch = 'arm64';
+  else if (os.arch() === 'x64') arch = 'amd64';
+  else throw new Error(`Unsupported architecture: ${os.arch()}`);
+
+  if (plat === 'darwin' && arch !== 'arm64') {
+    throw new Error('Only Apple Silicon (arm64) is supported on macOS');
+  }
+  if (plat === 'linux' && arch !== 'amd64') {
+    throw new Error('Only x86_64 (amd64) is supported on Linux');
+  }
+
+  return { plat, arch };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Download a file from `url` to `destPath`, reporting progress via onProgress.
+ * Follows up to 10 redirects (needed for CDN/object-store redirects).
+ */
+function downloadFile(url, destPath, onProgress, maxRedirects = 10) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+
+    function doRequest(currentUrl, redirectsLeft) {
+      const mod = currentUrl.startsWith('https') ? https : http;
+      mod.get(currentUrl, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          if (redirectsLeft <= 0) {
+            file.close();
+            try { fs.unlinkSync(destPath); } catch {}
+            reject(new Error('Too many redirects'));
+            return;
+          }
+          doRequest(response.headers.location, redirectsLeft - 1);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          file.close();
+          try { fs.unlinkSync(destPath); } catch {}
+          reject(new Error(`Download failed with HTTP ${response.statusCode}`));
+          return;
+        }
+
+        const total = parseInt(response.headers['content-length'], 10) || 0;
+        let downloaded = 0;
+
+        response.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (onProgress) onProgress({ downloaded, total });
+        });
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close(() => resolve());
+        });
+
+        file.on('error', (err) => {
+          try { fs.unlinkSync(destPath); } catch {}
+          reject(err);
+        });
+      }).on('error', (err) => {
+        file.close();
+        try { fs.unlinkSync(destPath); } catch {}
+        reject(err);
+      });
+    }
+
+    doRequest(url, maxRedirects);
+  });
+}
+
+/**
+ * Create a throttled version of onProgress that fires at most once every intervalMs.
+ * Always fires the first call immediately and flushes the last pending update on dispose.
+ */
+function throttleProgress(onProgress, intervalMs = 200) {
+  if (!onProgress) return { fire: () => {}, dispose: () => {} };
+  let lastFired = 0;
+  let pending = null;
+  let timer = null;
+
+  function fire(data) {
+    const now = Date.now();
+    if (now - lastFired >= intervalMs) {
+      lastFired = now;
+      if (timer) { clearTimeout(timer); timer = null; }
+      pending = null;
+      onProgress(data);
+    } else {
+      pending = data;
+      if (!timer) {
+        timer = setTimeout(() => {
+          timer = null;
+          if (pending) {
+            lastFired = Date.now();
+            onProgress(pending);
+            pending = null;
+          }
+        }, intervalMs - (now - lastFired));
+      }
+    }
+  }
+
+  function dispose() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (pending) { onProgress(pending); pending = null; }
+  }
+
+  return { fire, dispose };
+}
+
+/**
+ * Download the framework archive with throttled progress reporting.
+ */
+async function doDownload(url, destPath, onProgress) {
+  console.log('[SLP Setup] Downloading from', url);
+  if (onProgress) onProgress({ status: 'downloading', downloaded: 0, total: 0, message: 'Downloading Framework... ' });
+
+  const throttled = throttleProgress(onProgress);
+  await downloadFile(url, destPath, (p) => {
+    throttled.fire({ status: 'downloading', ...p, message: 'Downloading Framework... ' });
+  });
+  throttled.dispose();
+}
 
 /**
  * Compute SHA-256 hash of a local file.
@@ -147,41 +284,67 @@ function fileSha256(filePath) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function installService(onProgress) {
+  const { plat, arch } = detectPlatform();
+
   const slpBinary = getInstalledBinaryPath();
   if (isNonEmptyFile(slpBinary)) {
-    console.log('[SLP Setup] Version', VERSION, 'already installed, skipping');
+    console.log('[SLP Setup] Version', VERSION, 'already installed, skipping download');
     if (onProgress) onProgress({ status: 'installing', message: 'Already installed.' });
+    linkBinary(slpBinary);
     return;
   }
 
-  fs.mkdirSync(INSTALL_DIR, { recursive: true });
-
-  // ── Step 1: Copy bundled binary to version dir ───────────────────────────
-  console.log('[SLP Setup] Installing bundled binary...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Installing...' });
-
-  const bundledDir = getBundledBinaryDir();
-  if (!fs.existsSync(bundledDir)) {
-    throw new Error(`Bundled SLP binary not found at ${bundledDir}`);
+  for (const dir of [INSTALL_DIR, getCacheDir()]) {
+    fs.mkdirSync(dir, { recursive: true });
   }
+
+  // ── Step 1: Determine archive name & URL ─────────────────────────────────
+  const isWindows = plat === 'windows';
+  const ext = isWindows ? 'zip' : 'tar.gz';
+  const archiveName = `${plat}-${arch}-slp.${ext}`;
+  const archiveUrl = `${getDownloadBaseUrl()}/${archiveName}`;
+  const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
+
+  // ── Step 2: Download archive ─────────────────────────────────────────────
+  await doDownload(archiveUrl, cachedArchive, onProgress);
+
+  // ── Step 3: Extract to version dir ───────────────────────────────────────
+  console.log('[SLP Setup] Extracting...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Extracting...' });
 
   const versionRoot = path.join(INSTALL_DIR, VERSION);
   fs.mkdirSync(versionRoot, { recursive: true });
-  const existing = fs.readdirSync(versionRoot);
-  for (const f of existing) {
+  for (const f of fs.readdirSync(versionRoot)) {
     fs.rmSync(path.join(versionRoot, f), { recursive: true, force: true });
   }
-  copyDirRecursive(bundledDir, versionRoot);
 
-  // ── Step 2: Verify binary ────────────────────────────────────────────────
+  // Extract straight into the version dir — no temp copy. The SLP bundle is
+  // large (hundreds of MB), so a temp dir on a small tmpfs would overflow
+  // ("Disk quota exceeded"). If the archive wraps everything in a top-level
+  // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
+  const listFlag = isWindows ? '-tf' : '-tzf';
+  const listing = await runAsync('tar', [listFlag, cachedArchive]);
+  const topLevel = new Set(
+    listing.split('\n').map((l) => l.trim().split('/')[0]).filter(Boolean)
+  );
+  const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
+
+  const extractArgs = [isWindows ? '-xf' : '-xzf', cachedArchive, '-C', versionRoot];
+  if (stripWrapper) extractArgs.push('--strip-components=1');
+  try {
+    await runAsync('tar', extractArgs);
+  } finally {
+    try { fs.unlinkSync(cachedArchive); } catch {}
+  }
+
+  // ── Step 4: Verify binary ────────────────────────────────────────────────
   console.log('[SLP Setup] Preparing for first use...');
   if (onProgress) onProgress({ status: 'installing', message: 'Preparing for first use...' });
 
   if (!isNonEmptyFile(slpBinary)) {
-    throw new Error(`Binary missing or empty at ${slpBinary} after copy — bundled binary may be truncated`);
+    throw new Error(`Binary missing or empty at ${slpBinary} after extraction — download may be truncated`);
   }
 
-  const isWindows = process.platform === 'win32';
   if (!isWindows) {
     fs.chmodSync(slpBinary, 0o755);
   }
@@ -195,7 +358,12 @@ async function installService(onProgress) {
   const binaryHash = await fileSha256(slpBinary);
   fs.writeFileSync(getHashFile(), binaryHash);
 
-  // ── Step 3: Write version tracking files ─────────────────────────────────
+  // macOS: strip quarantine attributes so the binary can run
+  if (process.platform === 'darwin') {
+    try { require('child_process').execSync(`xattr -dr com.apple.quarantine "${versionRoot}"`, { stdio: 'pipe' }); } catch {}
+  }
+
+  // ── Step 5: Write version tracking files ─────────────────────────────────
   if (onProgress) onProgress({ status: 'installing', message: 'Configuring...' });
 
   fs.writeFileSync(path.join(INSTALL_DIR, 'version'), VERSION);
@@ -206,25 +374,72 @@ async function installService(onProgress) {
     fs.appendFileSync(installedFile, VERSION + '\n');
   }
 
+  // ── Step 6: Expose `slp` on the command line (mirrors install.sh) ─────────
+  linkBinary(slpBinary);
+
   console.log('[SLP Setup] Install complete — binary at', slpBinary);
 }
 
 /**
- * Recursively copy contents of srcDir into destDir.
+ * Make the installed `slp` binary reachable from a shell, mirroring what
+ * `curl https://smartloop.ai/install.sh` does:
+ *   - symlink ~/.smartloop/slp        → the versioned binary (stable path)
+ *   - symlink ~/.local/bin/slp        → the versioned binary (on most distros' PATH)
+ *   - ensure ~/.local/bin is on PATH via the user's shell rc files
+ * Windows has no symlink convention here; users add ~/.smartloop to PATH manually.
  */
-function copyDirRecursive(srcDir, destDir) {
-  fs.mkdirSync(destDir, { recursive: true });
-  for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
-    const srcPath = path.join(srcDir, entry.name);
-    const destPath = path.join(destDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else if (entry.isSymbolicLink()) {
-      const linkTarget = fs.readlinkSync(srcPath);
-      try { fs.unlinkSync(destPath); } catch {}
-      fs.symlinkSync(linkTarget, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
+function linkBinary(slpBinary) {
+  if (process.platform === 'win32') return;
+
+  try {
+    // Stable, version-independent path inside the install dir
+    const stableLink = path.join(INSTALL_DIR, 'slp');
+    forceSymlink(slpBinary, stableLink);
+
+    // ~/.local/bin is on PATH for most modern distros / shells
+    const localBin = path.join(os.homedir(), '.local', 'bin');
+    fs.mkdirSync(localBin, { recursive: true });
+    forceSymlink(slpBinary, path.join(localBin, 'slp'));
+
+    ensureLocalBinOnPath(localBin);
+    console.log('[SLP Setup] Linked `slp` into', localBin);
+  } catch (err) {
+    // Command-line access is a convenience; never fail the install over it
+    console.warn('[SLP Setup] Could not link `slp` onto PATH:', err.message);
+  }
+}
+
+/**
+ * Create (or replace) a symlink at linkPath pointing to target.
+ */
+function forceSymlink(target, linkPath) {
+  try { fs.unlinkSync(linkPath); } catch {}
+  fs.symlinkSync(target, linkPath);
+}
+
+/**
+ * Append a PATH export for ~/.local/bin to the user's shell rc files if it
+ * isn't already covered. Idempotent — guarded by a marker comment.
+ */
+function ensureLocalBinOnPath(localBin) {
+  // Already reachable in the current environment — nothing to add.
+  const currentPath = process.env.PATH || '';
+  if (currentPath.split(path.delimiter).includes(localBin)) return;
+
+  const marker = '# Added by Smartloop Studio (slp)';
+  const line = `\n${marker}\nexport PATH="$HOME/.local/bin:$PATH"\n`;
+  const home = os.homedir();
+  const rcFiles = ['.bashrc', '.zshrc', '.profile'];
+
+  for (const rc of rcFiles) {
+    const rcPath = path.join(home, rc);
+    try {
+      let contents = '';
+      try { contents = fs.readFileSync(rcPath, 'utf-8'); } catch {}
+      if (contents.includes(marker)) continue;
+      fs.appendFileSync(rcPath, line);
+    } catch {
+      // Skip rc files we can't write
     }
   }
 }
@@ -286,6 +501,12 @@ function uninstallSlpService() {
       require('child_process').execSync(`launchctl unload "${plistPath}"`, { stdio: 'pipe' });
       fs.unlinkSync(plistPath);
     } catch {}
+  }
+
+  // Remove the command-line symlink (the stable ~/.smartloop/slp link goes
+  // away with INSTALL_DIR below, but ~/.local/bin/slp lives outside it).
+  if (process.platform !== 'win32') {
+    try { fs.unlinkSync(path.join(os.homedir(), '.local', 'bin', 'slp')); } catch {}
   }
 
   // Remove install directory

@@ -7,10 +7,13 @@ directories:
   buildResources: build
 asar: true
 extraResources:
+  # Bundle data assets (e.g. the blank-project template) but NOT the SLP
+  # framework — that is downloaded at runtime by slp-setup.js.
   - from: electron/data/
     to: data/
     filter:
       - "**/*"
+      - "!slp/**"
 protocols:
   name: smartloop
   schemes:
