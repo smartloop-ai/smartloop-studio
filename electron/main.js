@@ -1173,10 +1173,14 @@ function updateSplashProgress(data) {
 
   if (data.status === 'installing') {
     const msg = data.message || 'Installing...';
+    // When a deterministic percent is provided (e.g. archive extraction),
+    // drive the bar fill; otherwise fall back to the indeterminate animation.
+    const hasPct = data.percent !== undefined && data.percent !== null;
+    const pct = hasPct ? Math.min(100, Math.max(0, Math.round(Number(data.percent)))) : 0;
     splashWindow.webContents.executeJavaScript(`
       document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
-      document.getElementById('progress-fill').style.width = '0%';
-      document.getElementById('progress-fill').classList.add('indeterminate');
+      document.getElementById('progress-fill').style.width = '${pct}%';
+      document.getElementById('progress-fill').classList.${hasPct ? 'remove' : 'add'}('indeterminate');
     `).catch(() => { });
     return;
   }
