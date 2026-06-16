@@ -1304,20 +1304,22 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
     if (wsRes.ok) {
       const wsData = await wsRes.json();
       const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
+      const wsNames = wsList.map(wm => wm.model_name || wm.name);
       existsInWorkspace = wsList.some(wm => wm.model_name === modelName || wm.name === modelName);
+      console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
+    } else {
+      console.log(`[Models] set-model-enabled: workspace fetch failed: HTTP ${wsRes.status}`);
     }
-  } catch {}
+  } catch (err) {
+    console.log(`[Models] set-model-enabled: workspace fetch error: ${err.message}`);
+  }
 
   if (!existsInWorkspace && enabled) {
-    // Resolve model_id for the download endpoint
-    const models = cachedModels || [];
-    const modelEntry = models.find(m => (m.name || m.id || m.model) === modelName || m.model_name === modelName);
-    const downloadId = modelEntry?.model_id || modelEntry?.id || modelName;
-    console.log(`[Models] ${modelName} not in workspace, downloading as ${downloadId}...`);
+    console.log(`[Models] ${modelName} not in workspace, downloading...`);
     try {
       const http = require('http');
       const dlUrl = new URL(`${baseUrl}/v1/models/download`);
-      const postData = JSON.stringify({ model: downloadId });
+      const postData = JSON.stringify({ model: modelName });
       await new Promise((resolve, reject) => {
         const req = http.request({
           hostname: dlUrl.hostname,
