@@ -1291,6 +1291,125 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
   });
 });
 
+// IPC: enable/disable a model for orchestrator selection
+// If the model is not in workspace yet, downloads it first, then enables.
+ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Check if model exists in workspace
+  let existsInWorkspace = false;
+  try {
+    const wsRes = await fetch(`${baseUrl}/v1/models/workspace`);
+    if (wsRes.ok) {
+      const wsData = await wsRes.json();
+      const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
+      existsInWorkspace = wsList.some(wm => wm.model_name === modelName || wm.name === modelName);
+    }
+  } catch {}
+
+  if (!existsInWorkspace && enabled) {
+    console.log(`[Models] ${modelName} not in workspace, downloading...`);
+    try {
+      const http = require('http');
+      const dlUrl = new URL(`${baseUrl}/v1/models/download`);
+      const postData = JSON.stringify({ model_name: modelName });
+      await new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: dlUrl.hostname,
+          port: dlUrl.port,
+          path: dlUrl.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+        }, (res) => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          let buffer = '';
+          res.on('data', (chunk) => {
+            buffer += chunk.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  const progress = bootstrapProgress(data);
+                  if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName });
+                  }
+                } catch {}
+              }
+            }
+          });
+          res.on('end', () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('model-download-progress', { model: modelName, percent: 100, status: 'Complete' });
+            }
+            resolve(true);
+          });
+          res.on('error', reject);
+        });
+        req.on('error', reject);
+        req.write(postData);
+        req.end();
+      });
+      console.log(`[Models] Download complete for ${modelName}`);
+    } catch (err) {
+      console.error('[Models] Download error:', err.message);
+      return { success: false, error: err.message };
+    }
+
+    // Re-check workspace for the new name
+    try {
+      const wsRes2 = await fetch(`${baseUrl}/v1/models/workspace`);
+      if (wsRes2.ok) {
+        const wsData2 = await wsRes2.json();
+        const wsList2 = Array.isArray(wsData2) ? wsData2 : (wsData2.data || wsData2.models || []);
+        const wsModel = wsList2.find(wm => (wm.name || wm.model_name || wm.model) === modelName);
+        if (wsModel) {
+          modelName = wsModel.name || wsModel.model_name || modelName;
+        }
+      }
+    } catch {}
+  }
+
+  try {
+    const url = `${baseUrl}/v1/models/workspace/${modelName}`;
+    console.log(`[Models] PATCH ${url} enabled=${enabled}`);
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const text = await res.text();
+    console.log(`[Models] PATCH response: ${res.status} ${text}`);
+    if (res.ok) {
+      try {
+        return { success: true, ...JSON.parse(text) };
+      } catch {
+        return { success: true };
+      }
+    }
+    return { success: false, error: `HTTP ${res.status}: ${text}` };
+  } catch (err) {
+    console.error('[Models] PATCH error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: check if a command exists on the system
+ipcMain.handle('command-exists', async (event, cmd) => {
+  const { execFile } = require('child_process');
+  return new Promise((resolve) => {
+    const shell = process.platform === 'win32' ? 'where' : 'which';
+    execFile(shell, [cmd], (err) => {
+      resolve({ exists: !err });
+    });
+  });
+});
+
 // IPC: unload model (called from renderer)
 ipcMain.handle('unload-model', async () => {
   await slpService.unloadModel();
@@ -1469,14 +1588,47 @@ async function fetchModels(force = false) {
 // IPC: Fetch available models from local SLP service (cached)
 ipcMain.handle('slp-list-models', async (event, force) => {
   const models = await fetchModels(force);
-  if (models) {
-    return { success: true, models };
+  if (!models) return { success: false, error: 'No local service' };
+
+  // Merge enabled state from workspace endpoint
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (baseUrl) {
+    try {
+      const wsRes = await fetch(`${baseUrl}/v1/models/workspace`);
+      if (wsRes.ok) {
+        const wsData = await wsRes.json();
+        const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
+        const wsMap = new Map();
+        for (const wm of wsList) {
+          wsMap.set(wm.model_name, wm);
+          if (wm.name && wm.name !== wm.model_name) wsMap.set(wm.name, wm);
+          if (wm.model_id) wsMap.set(wm.model_id, wm);
+        }
+        for (const model of models) {
+          const key = model.name || model.id || model.model;
+          const ws = wsMap.get(key) || wsMap.get(model.model_name) || wsMap.get(model.id);
+          if (ws) {
+            model.enabled = ws.enabled === true;
+            model.downloaded = ws.downloaded === true;
+            model.capabilities = ws.capabilities || ws.effective_capabilities || model.capabilities || [];
+            model.workspace_name = ws.model_name;
+          } else {
+            model.enabled = false;
+            model.downloaded = false;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Models] Error fetching workspace models:', err.message);
+    }
   }
-  return { success: false, error: 'No local service' };
+
+  return { success: true, models };
 });
 
 // IPC: Download a model via local SLP service (SSE streaming progress)
 ipcMain.handle('slp-download-model', async (event, modelName) => {
+  console.log(`[Models] Download requested: ${modelName}`);
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
