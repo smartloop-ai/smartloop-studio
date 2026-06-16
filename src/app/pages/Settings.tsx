@@ -12,6 +12,7 @@ import DnsIcon from '@mui/icons-material/Dns';
 import ViewListIcon from '@mui/icons-material/ViewList';
 
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
 import PaletteIcon from '@mui/icons-material/Palette';
 import { themes, themeList, type ThemeId } from '@/app/theme/themes';
 
@@ -792,9 +793,9 @@ export default function SettingsPage() {
                                                                 toggling === name ? (
                                                                     <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }} />
                                                                 ) : (
-                                                                    <span
-                                                                        className="model-checkbox flex items-center justify-center rounded text-[11px] font-mono select-none"
-                                                                        style={{ width: 20, height: 20, border: '1px solid var(--sl-border-default)' }}
+                                                                    <CloudDownloadOutlinedIcon
+                                                                        className="model-checkbox"
+                                                                        sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto', cursor: 'pointer', '&:hover': { color: 'var(--sl-brand-primary)' } }}
                                                                     />
                                                                 )
                                                             ) : (
