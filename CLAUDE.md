@@ -105,3 +105,16 @@ In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).
 -  use main.js electron APIs instead of using `useeffect` react hook to keep things centralize
 -  Use consistent margin ,padding when possible, utilize flex at all times
 -  Use theme color, instead of random colors that does not go with overall look and feed
+
+## Label / badge style guide
+
+All labels, badges, and tags across the app must use the same outlined style for consistency:
+
+- **Size**: `text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase`
+- **Style**: border-only (no background fill), use `border: 1px solid <color>`
+- **Brand labels** (model names, status badges): `border: var(--sl-brand-alpha-30)`, `color: var(--sl-brand-primary)`, `opacity: 0.7`
+- **Neutral labels** (FREE, GENERAL): `border: var(--sl-border-default)`, `color: var(--sl-text-faint)`
+- **Colored capability labels**: use distinct colors per type — vision=blue `rgb(96,165,250)`, skills=green `rgb(52,211,153)`, general=muted — with border at 30% opacity of the text color
+- **Table key labels** (left column): `fontSize: 11px`, `fontWeight: 500`, `color: var(--sl-text-muted)`
+- **Table value labels** (right column): `fontSize: 11px`, `fontFamily: monospace`, `color: var(--sl-text-muted)`
+- Never use filled/solid background badges — always outlined
