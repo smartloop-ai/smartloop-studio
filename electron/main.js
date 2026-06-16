@@ -1307,6 +1307,10 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
       const wsNames = wsList.map(wm => wm.model_name || wm.name);
       existsInWorkspace = wsList.some(wm => wm.model_name === modelName || wm.name === modelName);
       console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
+      if (!existsInWorkspace && cachedModels) {
+        const entry = cachedModels.find(m => (m.name || m.id || m.model) === modelName);
+        if (entry) console.log(`[Models] model entry from /v1/models:`, JSON.stringify(entry));
+      }
     } else {
       console.log(`[Models] set-model-enabled: workspace fetch failed: HTTP ${wsRes.status}`);
     }
