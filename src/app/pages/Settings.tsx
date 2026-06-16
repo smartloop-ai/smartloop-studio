@@ -699,6 +699,9 @@ export default function SettingsPage() {
                                             '& tr:hover td': {
                                                 bgcolor: 'var(--sl-brand-alpha-10)',
                                             },
+                                            '& tr:hover .model-checkbox': {
+                                                borderColor: 'var(--sl-brand-primary) !important',
+                                            },
                                         }}
                                     >
                                         <tbody>
@@ -790,13 +793,13 @@ export default function SettingsPage() {
                                                                     <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }} />
                                                                 ) : (
                                                                     <span
-                                                                        className="flex items-center justify-center rounded text-[11px] font-mono select-none"
+                                                                        className="model-checkbox flex items-center justify-center rounded text-[11px] font-mono select-none"
                                                                         style={{ width: 20, height: 20, border: '1px solid var(--sl-border-default)' }}
                                                                     />
                                                                 )
                                                             ) : (
                                                                 <span
-                                                                    className="flex items-center justify-center rounded text-[11px] font-mono select-none"
+                                                                    className="model-checkbox flex items-center justify-center rounded text-[11px] font-mono select-none"
                                                                     style={{
                                                                         width: 20, height: 20,
                                                                         border: isEnabled ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
