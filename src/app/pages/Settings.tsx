@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
@@ -770,27 +770,28 @@ export default function SettingsPage() {
                                                             {description && (
                                                                 <p className="text-xs mt-0.5 mb-0 p-1" style={{ color: 'var(--sl-text-muted)' }}>{description}</p>
                                                             )}
-                                                            {toggling === name && downloadProgress && (
-                                                                <div className="mt-2 max-w-sm">
-                                                                    <div className="flex items-center gap-2 mb-1">
-                                                                        <LinearProgress
-                                                                            variant={downloadProgress.percent > 0 ? 'determinate' : 'indeterminate'}
-                                                                            value={downloadProgress.percent}
-                                                                            sx={{ flex: 1, height: 3, borderRadius: '2px', bgcolor: 'var(--sl-border-subtle)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--sl-brand-primary)', borderRadius: '2px' } }}
-                                                                        />
-                                                                        <span className="text-[9px] font-mono shrink-0" style={{ color: 'var(--sl-text-faint)' }}>
-                                                                            {downloadProgress.percent > 0 ? `${downloadProgress.percent}%` : downloadProgress.status}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            )}
                                                         </Box>
                                                         <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 50, pr: 3 }}>
                                                             {!model.is_accessible && accessLevel !== 'free' ? (
                                                                 <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
                                                             ) : !model.downloaded ? (
                                                                 toggling === name ? (
-                                                                    <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }} />
+                                                                    <Box sx={{ position: 'relative', display: 'inline-flex', mx: 'auto' }}>
+                                                                        <CircularProgress
+                                                                            variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
+                                                                            value={downloadProgress?.percent || 0}
+                                                                            size={28}
+                                                                            thickness={4}
+                                                                            sx={{ color: 'var(--sl-brand-primary)' }}
+                                                                        />
+                                                                        {downloadProgress?.percent ? (
+                                                                            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                <span className="text-[7px] font-mono font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>
+                                                                                    {downloadProgress.percent}
+                                                                                </span>
+                                                                            </Box>
+                                                                        ) : null}
+                                                                    </Box>
                                                                 ) : (
                                                                     <CloudDownloadOutlinedIcon
                                                                         className="model-checkbox"
