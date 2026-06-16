@@ -776,22 +776,13 @@ export default function SettingsPage() {
                                                                 <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
                                                             ) : !model.downloaded ? (
                                                                 toggling === name ? (
-                                                                    <Box sx={{ position: 'relative', display: 'inline-flex', mx: 'auto' }}>
-                                                                        <CircularProgress
-                                                                            variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
-                                                                            value={downloadProgress?.percent || 0}
-                                                                            size={28}
-                                                                            thickness={4}
-                                                                            sx={{ color: 'var(--sl-brand-primary)' }}
-                                                                        />
-                                                                        {downloadProgress?.percent ? (
-                                                                            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <span className="text-[7px] font-mono font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>
-                                                                                    {downloadProgress.percent}
-                                                                                </span>
-                                                                            </Box>
-                                                                        ) : null}
-                                                                    </Box>
+                                                                    <CircularProgress
+                                                                        variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
+                                                                        value={downloadProgress?.percent || 0}
+                                                                        size={20}
+                                                                        thickness={5}
+                                                                        sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }}
+                                                                    />
                                                                 ) : (
                                                                     <CloudDownloadOutlinedIcon
                                                                         className="model-checkbox"
