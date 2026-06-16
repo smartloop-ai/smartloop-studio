@@ -1309,11 +1309,15 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
   } catch {}
 
   if (!existsInWorkspace && enabled) {
-    console.log(`[Models] ${modelName} not in workspace, downloading...`);
+    // Resolve model_id for the download endpoint
+    const models = cachedModels || [];
+    const modelEntry = models.find(m => (m.name || m.id || m.model) === modelName || m.model_name === modelName);
+    const downloadId = modelEntry?.model_id || modelEntry?.id || modelName;
+    console.log(`[Models] ${modelName} not in workspace, downloading as ${downloadId}...`);
     try {
       const http = require('http');
       const dlUrl = new URL(`${baseUrl}/v1/models/download`);
-      const postData = JSON.stringify({ model: modelName });
+      const postData = JSON.stringify({ model: downloadId });
       await new Promise((resolve, reject) => {
         const req = http.request({
           hostname: dlUrl.hostname,
