@@ -1313,7 +1313,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
     try {
       const http = require('http');
       const dlUrl = new URL(`${baseUrl}/v1/models/download`);
-      const postData = JSON.stringify({ model_name: modelName });
+      const postData = JSON.stringify({ model: modelName });
       await new Promise((resolve, reject) => {
         const req = http.request({
           hostname: dlUrl.hostname,
