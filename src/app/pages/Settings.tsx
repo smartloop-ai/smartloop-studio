@@ -771,18 +771,17 @@ export default function SettingsPage() {
                                                                 <p className="text-xs mt-0.5 mb-0 p-1" style={{ color: 'var(--sl-text-muted)' }}>{description}</p>
                                                             )}
                                                             {toggling === name && downloadProgress && (
-                                                                <div className="mt-2">
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <span className="text-[11px] text-sl-text-disabled">{downloadProgress.status}</span>
-                                                                        {downloadProgress.percent > 0 && (
-                                                                            <span className="text-[11px] font-mono font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>{downloadProgress.percent}%</span>
-                                                                        )}
+                                                                <div className="mt-2 max-w-sm">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <LinearProgress
+                                                                            variant={downloadProgress.percent > 0 ? 'determinate' : 'indeterminate'}
+                                                                            value={downloadProgress.percent}
+                                                                            sx={{ flex: 1, height: 3, borderRadius: '2px', bgcolor: 'var(--sl-border-subtle)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--sl-brand-primary)', borderRadius: '2px' } }}
+                                                                        />
+                                                                        <span className="text-[9px] font-mono shrink-0" style={{ color: 'var(--sl-text-faint)' }}>
+                                                                            {downloadProgress.percent > 0 ? `${downloadProgress.percent}%` : downloadProgress.status}
+                                                                        </span>
                                                                     </div>
-                                                                    <LinearProgress
-                                                                        variant={downloadProgress.percent > 0 ? 'determinate' : 'indeterminate'}
-                                                                        value={downloadProgress.percent}
-                                                                        sx={{ height: 4, borderRadius: '2px', bgcolor: 'var(--sl-border-subtle)', '& .MuiLinearProgress-bar': { bgcolor: 'var(--sl-brand-primary)', borderRadius: '2px' } }}
-                                                                    />
                                                                 </div>
                                                             )}
                                                         </Box>
