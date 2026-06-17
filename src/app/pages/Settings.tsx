@@ -703,6 +703,15 @@ export default function SettingsPage() {
                                             '& tr:hover .model-checkbox': {
                                                 borderColor: 'var(--sl-brand-primary) !important',
                                             },
+                                            '& tr:hover .cap-neutral': {
+                                                color: 'var(--sl-text-secondary) !important',
+                                                borderColor: 'var(--sl-border-strong) !important',
+                                            },
+                                            '& tr:hover .cap-brand': {
+                                                opacity: '1 !important',
+                                                backgroundColor: 'var(--sl-bg-surface-1) !important',
+                                                borderColor: 'var(--sl-brand-primary) !important',
+                                            },
                                         }}
                                     >
                                         <tbody>
@@ -732,16 +741,16 @@ export default function SettingsPage() {
                                                     >
                                                         <Box component="td">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
                                                                     {displayName}
                                                                 </span>
                                                                 {accessLevel === 'pro' && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
                                                                         PRO
                                                                     </span>
                                                                 )}
                                                                 {accessLevel === 'free' && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid var(--sl-white-alpha-7)', color: 'var(--sl-text-faint)' }}>
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-neutral" style={{ border: '1px solid var(--sl-white-alpha-7)', color: 'var(--sl-text-faint)' }}>
                                                                         FREE
                                                                     </span>
                                                                 )}
@@ -753,10 +762,11 @@ export default function SettingsPage() {
                                                                 {(model.capabilities || []).map((cap: string) => {
                                                                     const isVision = cap === 'vision';
                                                                     const isSkills = cap === 'skills';
+                                                                    const isNeutral = !isVision && !isSkills;
                                                                     const capColor = isVision ? 'rgb(96,165,250)' : isSkills ? 'rgb(52,211,153)' : 'var(--sl-text-muted)';
                                                                     const borderColor = isVision ? 'rgba(96,165,250,0.3)' : isSkills ? 'rgba(52,211,153,0.3)' : 'var(--sl-border-default)';
                                                                     return (
-                                                                        <span key={cap} className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{ border: `1px solid ${borderColor}`, color: capColor }}>
+                                                                        <span key={cap} className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase${isNeutral ? ' cap-neutral' : ''}`} style={{ border: `1px solid ${borderColor}`, color: capColor }}>
                                                                             {cap}
                                                                         </span>
                                                                     );
@@ -791,15 +801,16 @@ export default function SettingsPage() {
                                                                 )
                                                             ) : (
                                                                 <span
-                                                                    className="model-checkbox flex items-center justify-center rounded text-[11px] font-mono select-none"
+                                                                    className="model-checkbox flex items-center justify-center rounded select-none"
                                                                     style={{
                                                                         width: 20, height: 20,
                                                                         border: isEnabled ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
                                                                         backgroundColor: isEnabled ? 'var(--sl-brand-alpha-10)' : 'transparent',
-                                                                        color: isEnabled ? 'var(--sl-brand-primary)' : 'transparent',
                                                                     }}
                                                                 >
-                                                                    {isEnabled ? '×' : ''}
+                                                                    {isEnabled && (
+                                                                        <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: 'var(--sl-brand-primary)' }} />
+                                                                    )}
                                                                 </span>
                                                             )}
                                                         </Box>
