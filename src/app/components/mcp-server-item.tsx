@@ -1,4 +1,4 @@
-import { Box, IconButton, CircularProgress, Dialog } from '@mui/material';
+import { Box, IconButton, CircularProgress, Dialog, Tooltip } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -16,6 +16,7 @@ interface McpServerItemProps {
   autoConnect?: boolean;
   discovering?: boolean;
   isSystem?: boolean;
+  deleteError?: string;
 }
 
 export default function McpServerItem({
@@ -23,6 +24,7 @@ export default function McpServerItem({
   onDelete,
   discovering = false,
   isSystem = false,
+  deleteError = '',
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -50,20 +52,22 @@ export default function McpServerItem({
 
   return (
     <>
+      <Tooltip title={deleteError || ''} arrow placement="top">
       <Box
         onClick={() => setModalOpen(true)}
         sx={{
           px: 1,
           py: '6px',
           borderRadius: '6px',
-          border: '1px solid var(--sl-border-subtle)',
+          border: deleteError ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
+          bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : undefined,
           display: 'flex',
           gap: 0.75,
           transition: 'background 0.1s ease',
           mb: 0.75,
           cursor: 'pointer',
           '&:hover': {
-            bgcolor: 'var(--sl-brand-alpha-10)',
+            bgcolor: deleteError ? 'rgba(248,113,113,0.12)' : 'var(--sl-brand-alpha-10)',
           },
         }}
       >
@@ -143,6 +147,7 @@ export default function McpServerItem({
           </Box>
         </Box>
       </Box>
+      </Tooltip>
 
       {/* Tools Detail Modal */}
       <Dialog
