@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Switch, Slider, CircularProgress, LinearProgress } from '@mui/material';
+import { Box, Switch, Slider, CircularProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
@@ -11,6 +11,8 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 import ViewListIcon from '@mui/icons-material/ViewList';
 
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
 import PaletteIcon from '@mui/icons-material/Palette';
 import { themes, themeList, type ThemeId } from '@/app/theme/themes';
 
@@ -197,9 +199,11 @@ export default function SettingsPage() {
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
     const [localModels, setLocalModels] = useState<any[]>([]);
     const [localModelsLoading, setLocalModelsLoading] = useState(false);
-    const [selectedModel, setSelectedModel] = useState<string>('');
-    const [initingModel, setInitingModel] = useState<string | null>(null);
-    const [initProgress, setInitProgress] = useState<{ percent: number; status: string } | null>(null);
+    const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
+    const enabledModels = new Set(localModels.filter((m: any) => {
+        const name = m.name || m.id || m.model;
+        return enabledOverrides.has(name) ? enabledOverrides.get(name) : m.enabled;
+    }).map((m: any) => m.name || m.id || m.model));
     const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
     const [appVersion, setAppVersion] = useState<string | null>(null);
 
@@ -244,43 +248,42 @@ export default function SettingsPage() {
         }
     }, []);
 
-    // Listen for model init progress events (with cleanup to prevent leaks)
+
+
+    const [toggling, setToggling] = useState<string | null>(null);
+    const [downloadProgress, setDownloadProgress] = useState<{ percent: number; status: string } | null>(null);
+    const togglingRef = useRef<string | null>(null);
+
     useEffect(() => {
         const api = window.electronAPI;
-        if (!api?.onModelInitProgress) return;
-
-        api.onModelInitProgress((data: any) => {
-            setInitingModel((current) => {
-                if (current && data.model === current) {
-                    setInitProgress({ percent: data.percent, status: data.status });
-                }
-                return current;
-            });
-        });
-
-        return () => {
-            api.removeModelInitProgressListener?.();
+        const handleProgress = (data: any) => {
+            if (togglingRef.current && data.model === togglingRef.current) {
+                setDownloadProgress({ percent: data.percent, status: data.status });
+            }
         };
+        api?.onModelDownloadProgress?.(handleProgress);
+        return () => { api?.removeModelDownloadProgressListener?.(); };
     }, []);
 
-    // Select a model — triggers /v1/init which downloads + sets up if needed
-    const handleSelectModel = useCallback(async (modelName: string) => {
+    const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
         const api = window.electronAPI;
-        if (!api?.slpInitModel) return;
+        if (!api?.slpSetModelEnabled || togglingRef.current) return;
 
-        setSelectedModel(modelName);
-        setInitingModel(modelName);
-        setInitProgress({ percent: 0, status: 'Initializing...' });
+        togglingRef.current = name;
+        setToggling(name);
+        setDownloadProgress(null);
+        setEnabledOverrides(prev => new Map(prev).set(name, enabled));
 
         try {
-            await api.slpInitModel(modelName);
-        } catch (err) {
-            console.error('Model init error:', err);
+            await api.slpSetModelEnabled(workspaceName, enabled);
+            await fetchLocalModels(true);
         } finally {
-            setInitingModel(null);
-            setInitProgress(null);
+            togglingRef.current = null;
+            setToggling(null);
+            setDownloadProgress(null);
+            setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
         }
-    }, []);
+    }, [fetchLocalModels]);
 
     useEffect(() => {
         fetchLocalModels();
@@ -290,33 +293,6 @@ export default function SettingsPage() {
         window.addEventListener('authStateChanged', handleAuthChange);
         return () => window.removeEventListener('authStateChanged', handleAuthChange);
     }, []);
-
-    // Set selected model: load from storage first, fallback to local config
-    // Validates stored model still exists in SLP config to avoid showing stale/deleted models
-    useEffect(() => {
-        const loadSelectedModel = async () => {
-            const stored = await storageService.getItem('selected_model');
-            const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
-            const configModelNames = new Set(
-                (slpConfig?.workspace?.models || []).map((m: any) => m.model_name).filter(Boolean)
-            );
-
-            if (stored && configModelNames.has(stored)) {
-                setSelectedModel(stored);
-            } else {
-                // Stored model not in config (deleted/stale) — fall back to active model
-                if (stored) {
-                    await storageService.removeItem('selected_model');
-                }
-                if (activeModel?.model_name) {
-                    setSelectedModel(activeModel.model_name);
-                    await storageService.setItem('selected_model', activeModel.model_name);
-                    await storageService.setSetting('selected_model', activeModel.model_name);
-                }
-            }
-        };
-        loadSelectedModel();
-    }, [slpConfig]);
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -363,10 +339,6 @@ export default function SettingsPage() {
             const analytics = saved.analytics_enabled ?? DEFAULT_SETTINGS.analytics_enabled;
             setSettings({ default_temperature: temp, default_memory: memory, analytics_enabled: analytics });
 
-            // Restore selected model from SQLite settings
-            if (saved.selected_model && !selectedModel) {
-                setSelectedModel(saved.selected_model);
-            }
             // Restore cached service health
             if (saved.service_health && !serverHealth) {
                 setServerHealth(saved.service_health);
@@ -583,15 +555,14 @@ export default function SettingsPage() {
                             >
                                 <tbody>
                                     <tr>
-                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '11px', fontWeight: 500, width: '40%' }}>
                                             Status
                                         </Box>
                                         <Box component="td">
-                                            <span className="px-2.5 py-1.5 rounded text-[10px] font-semibold" style={{
-                                                backgroundColor: serverHealth?.status === 'running' ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
-                                                borderWidth: 1,
-                                                borderColor: serverHealth?.status === 'running' ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-subtle)',
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{
+                                                border: serverHealth?.status === 'running' ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
                                                 color: serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
+                                                opacity: 0.7,
                                             }}>
                                                 {serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
                                             </span>
@@ -599,42 +570,42 @@ export default function SettingsPage() {
                                     </tr>
                                     {appVersion && (
                                         <tr>
-                                            <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                            <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '11px', fontWeight: 500, width: '40%' }}>
                                                 Version
                                             </Box>
-                                            <Box component="td" sx={{ color: 'var(--sl-text-secondary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
-                                                {appVersion}
+                                            <Box component="td">
+                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-muted)', fontFamily: 'monospace' }}>
+                                                    {appVersion}
+                                                </span>
                                             </Box>
                                         </tr>
                                     )}
                                     <tr>
-                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, width: '40%' }}>
+                                        <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '11px', fontWeight: 500, width: '40%' }}>
                                             Model
                                         </Box>
                                         <Box component="td">
-                                            <span className="px-2.5 py-1.5 rounded text-[10px] font-semibold" style={{
-                                                backgroundColor: 'var(--sl-brand-alpha-10)',
-                                                borderWidth: 1,
-                                                borderColor: 'var(--sl-brand-alpha-30)',
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{
+                                                border: '1px solid var(--sl-brand-alpha-30)',
                                                 color: 'var(--sl-brand-primary)',
-                                                fontFamily: 'monospace',
+                                                opacity: 0.7,
                                             }}>
-                                                {selectedModel || serverHealth?.details?.model_name || serverHealth?.details?.model || 'Not loaded'}
+                                                {serverHealth?.details?.model_name || serverHealth?.details?.model || 'Not loaded'}
                                             </span>
                                         </Box>
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
                                     {serverHealth?.details && Object.entries(serverHealth.details)
-                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded', 'ctx_size', 'n_ctx', 'model_size'].includes(key))
+                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded', 'ctx_size', 'n_ctx'].includes(key))
                                         .map(([key, value]) => {
-                                            // Format value for display
                                             let displayValue: React.ReactNode;
-                                            const isMemoryPercent = key.toLowerCase().includes('memory') && typeof value === 'number' && value >= 0 && value <= 100;
-                                            const isSizeBytes = key.toLowerCase().includes('size') && typeof value === 'number' && value > 1024 * 1024;
+                                            const keyLower = key.toLowerCase();
+                                            const isLargeBytes = typeof value === 'number' && value > 1024 * 1024 && (keyLower.includes('size') || keyLower.includes('memory'));
+                                            const isPercent = typeof value === 'number' && value >= 0 && value <= 100 && keyLower.includes('percent');
 
                                             if (typeof value === 'boolean') {
                                                 displayValue = value ? 'Yes' : 'No';
-                                            } else if (isMemoryPercent) {
+                                            } else if (isPercent) {
                                                 displayValue = (
                                                     <Box className="flex items-center gap-2" sx={{ width: '100%' }}>
                                                         <Box sx={{
@@ -648,7 +619,7 @@ export default function SettingsPage() {
                                                             <Box sx={{
                                                                 height: '100%',
                                                                 width: `${value}%`,
-                                                                bgcolor: value > 90 ? 'var(--sl-status-error)' : value > 70 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)',
+                                                                bgcolor: (value as number) > 90 ? 'var(--sl-status-error)' : (value as number) > 70 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)',
                                                                 borderRadius: '2px',
                                                                 transition: 'width 0.3s ease',
                                                             }} />
@@ -656,8 +627,8 @@ export default function SettingsPage() {
                                                         <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, minWidth: 36 }}>{value}%</span>
                                                     </Box>
                                                 );
-                                            } else if (isSizeBytes) {
-                                                displayValue = `${(value as number / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+                                            } else if (isLargeBytes) {
+                                                displayValue = `${((value as number) / (1024 * 1024 * 1024)).toFixed(2)} GB`;
                                             } else if (typeof value === 'object') {
                                                 displayValue = JSON.stringify(value);
                                             } else if (String(value) === 'true') {
@@ -673,7 +644,7 @@ export default function SettingsPage() {
                                                     <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '12px', fontWeight: 500, textTransform: 'capitalize' }}>
                                                         {key.replace(/_/g, ' ')}
                                                     </Box>
-                                                    <Box component="td" sx={{ color: 'var(--sl-text-secondary)', fontSize: '13px', fontFamily: 'monospace', fontWeight: 600 }}>
+                                                    <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '11px', fontFamily: 'monospace' }}>
                                                         {displayValue}
                                                     </Box>
                                                 </tr>
@@ -707,104 +678,149 @@ export default function SettingsPage() {
                             </Box>
 
                             {localModels.length > 0 && (
-                                <div className="flex flex-col gap-3">
-                                    {localModels.map((model: any) => {
-                                        const name = model.name || model.id || model.model;
-                                        const displayName = model.display_name || name;
-                                        const description = model.description || '';
-                                        const size = model.size || model.file_size;
-                                        const accessLevel = model.access_level || 'free';
-                                        const isSelected = selectedModel === name;
-                                        const isIniting = initingModel === name;
-                                        const canSelect = model.is_accessible !== false;
+                                <>
+                                    <Box
+                                        component="table"
+                                        sx={{
+                                            width: '100%',
+                                            borderCollapse: 'separate',
+                                            borderSpacing: 0,
+                                            borderRadius: '10px',
+                                            overflow: 'hidden',
+                                            border: '1px solid var(--sl-white-alpha-7)',
+                                            '& th, & td': {
+                                                px: 2,
+                                                py: 1.5,
+                                                textAlign: 'left',
+                                                borderBottom: '1px solid var(--sl-white-alpha-7)',
+                                            },
+                                            '& tr:last-child td': {
+                                                borderBottom: 'none',
+                                            },
+                                            '& tr:hover td': {
+                                                bgcolor: 'var(--sl-brand-alpha-10)',
+                                            },
+                                            '& tr:hover .model-checkbox': {
+                                                borderColor: 'var(--sl-brand-primary) !important',
+                                            },
+                                            '& tr:hover .cap-neutral': {
+                                                color: 'var(--sl-text-secondary) !important',
+                                                borderColor: 'var(--sl-border-strong) !important',
+                                            },
+                                            '& tr:hover .cap-brand': {
+                                                opacity: '1 !important',
+                                                backgroundColor: 'var(--sl-bg-surface-1) !important',
+                                                borderColor: 'var(--sl-brand-primary) !important',
+                                            },
+                                        }}
+                                    >
+                                        <tbody>
+                                            {localModels.map((model: any) => {
+                                                const name = model.name || model.id || model.model;
+                                                const workspaceName = model.workspace_name || name;
+                                                const displayName = model.display_name || name;
+                                                const description = model.description || '';
+                                                const size = model.size || model.file_size;
+                                                const accessLevel = model.access_level || 'free';
+                                                const isEnabled = enabledModels.has(name);
+                                                const isLastEnabled = isEnabled && enabledModels.size <= 1;
 
-                                        return (
-                                            <div
-                                                key={name}
-                                                onClick={() => canSelect && !initingModel && handleSelectModel(name)}
-                                                className={`p-4 rounded-[10px] border transition-all duration-200 ${
-                                                    !canSelect ? 'opacity-50 cursor-not-allowed'
-                                                    : initingModel ? 'cursor-default'
-                                                    : 'cursor-pointer'
-                                                } ${initingModel && !isIniting && canSelect ? 'opacity-50' : ''} ${
-                                                    isSelected
-                                                        ? ''
-                                                        : `bg-sl-bg-surface-1 ${canSelect && !initingModel ? 'hover:border-sl-border-hover hover:bg-sl-bg-surface-2' : ''}`
-                                                }`}
-                                                style={isSelected ? { backgroundColor: 'var(--sl-brand-alpha-10)', borderColor: 'var(--sl-brand-alpha-30)' } : undefined}
-                                            >
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-sm font-semibold font-mono text-sl-text-secondary">
-                                                                {displayName}
-                                                            </span>
-                                                            {isSelected && !isIniting && (
-                                                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ backgroundColor: 'var(--sl-brand-alpha-10)', borderWidth: 1, borderColor: 'var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}>
-                                                                    ACTIVE
+                                                return (
+                                                    <tr
+                                                        key={name}
+                                                        onClick={() => {
+                                                            if (toggling) return;
+                                                            if (!model.is_accessible && accessLevel !== 'free') return;
+                                                            if (!model.downloaded) {
+                                                                handleToggleModel(name, workspaceName, true);
+                                                            } else if (!isLastEnabled) {
+                                                                handleToggleModel(name, workspaceName, !isEnabled);
+                                                            }
+                                                        }}
+                                                        style={{ cursor: toggling || isLastEnabled ? 'default' : 'pointer' }}
+                                                    >
+                                                        <Box component="td">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
+                                                                    {displayName}
+                                                                </span>
+                                                                {accessLevel === 'pro' && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
+                                                                        PRO
+                                                                    </span>
+                                                                )}
+                                                                {accessLevel === 'free' && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-neutral" style={{ border: '1px solid var(--sl-white-alpha-7)', color: 'var(--sl-text-faint)' }}>
+                                                                        FREE
+                                                                    </span>
+                                                                )}
+                                                                {accessLevel === 'internal' && (
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid rgba(168,85,247,0.3)', color: 'rgb(168,85,247)' }}>
+                                                                        INTERNAL
+                                                                    </span>
+                                                                )}
+                                                                {(model.capabilities || []).map((cap: string) => {
+                                                                    const isVision = cap === 'vision';
+                                                                    const isSkills = cap === 'skills';
+                                                                    const isNeutral = !isVision && !isSkills;
+                                                                    const capColor = isVision ? 'rgb(96,165,250)' : isSkills ? 'rgb(52,211,153)' : 'var(--sl-text-muted)';
+                                                                    const borderColor = isVision ? 'rgba(96,165,250,0.3)' : isSkills ? 'rgba(52,211,153,0.3)' : 'var(--sl-border-default)';
+                                                                    return (
+                                                                        <span key={cap} className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase${isNeutral ? ' cap-neutral' : ''}`} style={{ border: `1px solid ${borderColor}`, color: capColor }}>
+                                                                            {cap}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                                {size && (
+                                                                    <span className="text-[9px]" style={{ color: 'var(--sl-text-faint)', fontFamily: 'monospace' }}>
+                                                                        {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {description && (
+                                                                <p className="text-xs mt-0.5 mb-0 p-1" style={{ color: 'var(--sl-text-muted)' }}>{description}</p>
+                                                            )}
+                                                        </Box>
+                                                        <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 50, pr: 3 }}>
+                                                            {!model.is_accessible && accessLevel !== 'free' ? (
+                                                                <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
+                                                            ) : !model.downloaded ? (
+                                                                toggling === name ? (
+                                                                    <CircularProgress
+                                                                        variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
+                                                                        value={downloadProgress?.percent || 0}
+                                                                        size={20}
+                                                                        thickness={5}
+                                                                        sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }}
+                                                                    />
+                                                                ) : (
+                                                                    <CloudDownloadOutlinedIcon
+                                                                        className="model-checkbox"
+                                                                        sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto', cursor: 'pointer', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                                                    />
+                                                                )
+                                                            ) : (
+                                                                <span
+                                                                    className="model-checkbox flex items-center justify-center rounded select-none"
+                                                                    style={{
+                                                                        width: 20, height: 20,
+                                                                        border: isEnabled ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
+                                                                        backgroundColor: isEnabled ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                                                                    }}
+                                                                >
+                                                                    {isEnabled && (
+                                                                        <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: 'var(--sl-brand-primary)' }} />
+                                                                    )}
                                                                 </span>
                                                             )}
-                                                            {accessLevel === 'free' && (
-                                                                <span className="px-2 py-0.5 bg-sl-bg-surface-2 border border-sl-text-faint rounded text-[10px] font-semibold text-sl-text-muted">
-                                                                    FREE
-                                                                </span>
-                                                            )}
-                                                            {accessLevel === 'pro' && (
-                                                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold" style={{ backgroundColor: 'var(--sl-brand-alpha-10)', borderWidth: 1, borderColor: 'var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}>
-                                                                    PRO
-                                                                </span>
-                                                            )}
-                                                            {accessLevel === 'internal' && (
-                                                                <span className="px-2 py-0.5 bg-purple-500/10 border border-purple-500/30 rounded text-[10px] font-semibold text-purple-500">
-                                                                    INTERNAL
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {description && (
-                                                            <p className="text-xs text-sl-text-muted mt-1 mb-0">
-                                                                {description}
-                                                            </p>
-                                                        )}
-                                                        {size && (
-                                                            <span className="text-[11px] text-sl-text-faint font-mono">
-                                                                {typeof size === 'number' ? `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB` : size}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                                        </Box>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </Box>
 
-                                                {/* Init progress bar */}
-                                                {isIniting && initProgress && (
-                                                    <div className="mt-3">
-                                                        <div className="flex items-center justify-between mb-1">
-                                                            <span className="text-[11px] text-sl-text-disabled">
-                                                                {initProgress.status}
-                                                            </span>
-                                                            {initProgress.percent > 0 && (
-                                                                <span className="text-[11px] font-mono font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>
-                                                                    {initProgress.percent}%
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <LinearProgress
-                                                            variant={initProgress.percent > 0 ? 'determinate' : 'indeterminate'}
-                                                            value={initProgress.percent}
-                                                            sx={{
-                                                                height: 6,
-                                                                borderRadius: '3px',
-                                                                bgcolor: 'var(--sl-border-subtle)',
-                                                                '& .MuiLinearProgress-bar': {
-                                                                    bgcolor: 'var(--sl-brand-primary)',
-                                                                    borderRadius: '3px',
-                                                                },
-                                                            }}
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                </>
                             )}
 
                             {!localModelsLoading && localModels.length === 0 && (
@@ -821,8 +837,8 @@ export default function SettingsPage() {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
                         if (!activeModel) return null;
 
-                        // Show specs for the selected model, not just the is_active one
-                        const displayModel = slpConfig?.workspace?.models?.find((m: any) => m.model_name === selectedModel) || activeModel;
+                        const healthModelName = serverHealth?.details?.model_name || serverHealth?.details?.model;
+                        const displayModel = (healthModelName && slpConfig?.workspace?.models?.find((m: any) => m.model_name === healthModelName)) || activeModel;
                         // Use health endpoint quantization (reflects what's actually running)
                         const healthQuantize = serverHealth?.details?.quantization;
                         const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel.config?.quantize?.toUpperCase()) || '—';

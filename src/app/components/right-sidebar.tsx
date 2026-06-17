@@ -735,6 +735,16 @@ export default function RightSidebar({
       } else {
         console.log('[MCP] Registering local server:', input);
 
+        // Check if uvx is available
+        const api = window.electronAPI;
+        if (api?.commandExists) {
+          const { exists } = await api.commandExists('uvx');
+          if (!exists) {
+            setMcpError('uvx is not installed. Install it with: pip install uv');
+            return;
+          }
+        }
+
         const env: Record<string, string> = {};
         if (newMcpEnv.trim()) {
           for (const line of newMcpEnv.split('\n')) {
@@ -751,8 +761,10 @@ export default function RightSidebar({
           selectedProject.id,
           {
             server_type: 'local',
+            command: 'uvx',
+            args: [input],
             name: input,
-            env: Object.keys(env).length > 0 ? env : undefined,
+            env,
           }
         );
 
