@@ -292,6 +292,8 @@ export default function RightSidebar({
   const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
+  // Delete errors are scoped to the server row that failed (not the add form)
+  const [mcpDeleteError, setMcpDeleteError] = useState<{ id: string; message: string } | null>(null);
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
 
@@ -684,6 +686,22 @@ export default function RightSidebar({
     return trimmed.startsWith('http://') || trimmed.startsWith('https://');
   };
 
+  // Persist a registered MCP server to SQLite (best-effort — registration with
+  // the service is the source of truth, this keeps a local record).
+  const persistMcpServerToDb = async (server: {
+    id: string;
+    project_id: string;
+    name: string;
+    server_type: 'local' | 'remote';
+    config: Record<string, any>;
+  }) => {
+    try {
+      await (window as any).electronAPI?.db?.addMcpServer(server);
+    } catch (e) {
+      console.error('[MCP] Failed to persist server to SQLite:', e);
+    }
+  };
+
   const handleAddMcpServer = async () => {
     const input = newMcpInput.trim();
     if (!selectedProject?.id || !input) return;
@@ -726,6 +744,15 @@ export default function RightSidebar({
         } else {
           console.log('[MCP] Server registered successfully');
           const serverId = data.id || data.server_id;
+          if (serverId) {
+            await persistMcpServerToDb({
+              id: serverId,
+              project_id: selectedProject.id,
+              name: data.name || input,
+              server_type: 'remote',
+              config: { server_url: input },
+            });
+          }
           setNewMcpInput('');
           await loadMcpServers();
           if (serverId) {
@@ -734,16 +761,6 @@ export default function RightSidebar({
         }
       } else {
         console.log('[MCP] Registering local server:', input);
-
-        // Check if uvx is available
-        const api = window.electronAPI;
-        if (api?.commandExists) {
-          const { exists } = await api.commandExists('uvx');
-          if (!exists) {
-            setMcpError('uvx is not installed. Install it with: pip install uv');
-            return;
-          }
-        }
 
         const env: Record<string, string> = {};
         if (newMcpEnv.trim()) {
@@ -771,6 +788,15 @@ export default function RightSidebar({
         if (result.success) {
           const resData = result.data as Record<string, any>;
           const serverId = resData?.id || resData?.server_id;
+          if (serverId) {
+            await persistMcpServerToDb({
+              id: serverId,
+              project_id: selectedProject.id,
+              name: input,
+              server_type: 'local',
+              config: { command: 'uvx', args: [input], env },
+            });
+          }
           setNewMcpInput('');
           setNewMcpEnv('');
           await loadMcpServers();
@@ -792,18 +818,24 @@ export default function RightSidebar({
   const handleDeleteMcpServer = async (server: McpServer) => {
     if (!selectedProject?.id || !server.id) return;
 
+    setMcpDeleteError(null);
     try {
       const result = await mcpServerService.deleteMcpServer(selectedProject.id, server.id);
       if (result.success) {
         setMcpServers(prev => prev.filter(s => s.id !== server.id));
         setMcpToDelete(null);
-        // Remove from local storage
+        // Remove from local storage + SQLite
         await mcpServerService.removeMcpServerFromStorage(selectedProject.id, server.id);
+        try {
+          await (window as any).electronAPI?.db?.deleteMcpServer(server.id);
+        } catch (e) {
+          console.error('[MCP] Failed to remove server from SQLite:', e);
+        }
       } else {
-        setMcpError(result.error || 'Failed to delete MCP server');
+        setMcpDeleteError({ id: server.id, message: result.error || 'Failed to delete MCP server' });
       }
     } catch (error: any) {
-      setMcpError(error.message || 'An error occurred');
+      setMcpDeleteError({ id: server.id, message: error.message || 'An error occurred' });
     }
   };
 
@@ -1331,7 +1363,10 @@ export default function RightSidebar({
                   size="small"
                   placeholder="URL or package name"
                   value={newMcpInput}
-                  onChange={(e) => setNewMcpInput(e.target.value)}
+                  onChange={(e) => {
+                    setNewMcpInput(e.target.value);
+                    if (mcpError) setMcpError('');
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !isAddingMcp && newMcpInput.trim()) {
                       handleAddMcpServer();
@@ -1361,17 +1396,17 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                <Box className="text-sl-text-disabled text-[10px] mt-1 px-1">
-                  Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
+                {/* Fixed-height slot so swapping hint ↔ error never shifts the UI */}
+                <Box className="text-[10px] mt-1 px-1" sx={{ minHeight: '58px' }}>
+                  {mcpError ? (
+                    <span className="text-red-400 whitespace-pre-line break-words">{mcpError}</span>
+                  ) : (
+                    <span className="text-sl-text-disabled">
+                      Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
+                    </span>
+                  )}
                 </Box>
               </Box>
-
-              {/* Error Message */}
-              {mcpError && (
-                <Box className="text-red-400 text-xs text-center py-2">
-                  {mcpError}
-                </Box>
-              )}
 
               {mcpServers.length > 0 && (
                 <Box sx={{ mt: 0 }}>
@@ -1385,6 +1420,7 @@ export default function RightSidebar({
                         onDelete={handleDeleteMcpServer}
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
+                        deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
                           setMcpServers(prev => {
                             const newServers = prev.map(s =>

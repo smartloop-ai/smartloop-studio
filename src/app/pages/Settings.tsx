@@ -712,6 +712,14 @@ export default function SettingsPage() {
                                                 backgroundColor: 'var(--sl-bg-surface-1) !important',
                                                 borderColor: 'var(--sl-brand-primary) !important',
                                             },
+                                            '& tr:hover .cap-vision': {
+                                                backgroundColor: 'rgba(96,165,250,0.15) !important',
+                                                borderColor: 'rgb(96,165,250) !important',
+                                            },
+                                            '& tr:hover .cap-skills': {
+                                                backgroundColor: 'rgba(52,211,153,0.15) !important',
+                                                borderColor: 'rgb(52,211,153) !important',
+                                            },
                                         }}
                                     >
                                         <tbody>
@@ -762,11 +770,11 @@ export default function SettingsPage() {
                                                                 {(model.capabilities || []).map((cap: string) => {
                                                                     const isVision = cap === 'vision';
                                                                     const isSkills = cap === 'skills';
-                                                                    const isNeutral = !isVision && !isSkills;
                                                                     const capColor = isVision ? 'rgb(96,165,250)' : isSkills ? 'rgb(52,211,153)' : 'var(--sl-text-muted)';
                                                                     const borderColor = isVision ? 'rgba(96,165,250,0.3)' : isSkills ? 'rgba(52,211,153,0.3)' : 'var(--sl-border-default)';
+                                                                    const capClass = isVision ? 'cap-vision' : isSkills ? 'cap-skills' : 'cap-neutral';
                                                                     return (
-                                                                        <span key={cap} className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase${isNeutral ? ' cap-neutral' : ''}`} style={{ border: `1px solid ${borderColor}`, color: capColor }}>
+                                                                        <span key={cap} className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${capClass}`} style={{ border: `1px solid ${borderColor}`, color: capColor }}>
                                                                             {cap}
                                                                         </span>
                                                                     );
