@@ -99,9 +99,40 @@ jobs:
             dist/*.zip
           retention-days: 1
 
+  build-linux:
+    needs: [notify-start]
+    name: Build for Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Build for Linux
+        run: make build-electron-linux
+        env:
+          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 1
+
   upload-to-gcp:
     name: Upload to GCP Bucket
-    needs: [build-macos]
+    needs: [build-macos, build-linux]
     runs-on: ubuntu-latest
     outputs:
       download_urls: ${{ steps.urls.outputs.download_urls }}
@@ -113,6 +144,12 @@ jobs:
         with:
           name: macos-build
           path: artifacts/macos
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: artifacts/linux
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -137,9 +174,14 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p release/$VERSION/macos
+          mkdir -p release/$VERSION/linux
 
           if [ -d "artifacts/macos" ]; then
             mv artifacts/macos/* release/$VERSION/macos/ 2>/dev/null || true
+          fi
+
+          if [ -d "artifacts/linux" ]; then
+            mv artifacts/linux/* release/$VERSION/linux/ 2>/dev/null || true
           fi
 
           # Create latest symlinks
@@ -173,6 +215,13 @@ jobs:
               URLS="${URLS} • <${BASE_URL}/${VERSION}/macos/${fname}|${fname}>\n"
             done
           fi
+          if [ -d "release/$VERSION/linux" ]; then
+            URLS="${URLS}*Linux:*\n"
+            for f in release/$VERSION/linux/*; do
+              fname=$(basename "$f")
+              URLS="${URLS} • <${BASE_URL}/${VERSION}/linux/${fname}|${fname}>\n"
+            done
+          fi
           # Write as single line with literal \n so it's safe inside JSON strings
           echo "download_urls=${URLS}" >> $GITHUB_OUTPUT
 
@@ -188,6 +237,9 @@ jobs:
             "files": {
               "macos": [
                 $(cd release/$VERSION/macos 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
+              ],
+              "linux": [
+                $(cd release/$VERSION/linux 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
               ]
             }
           }
@@ -209,6 +261,11 @@ jobs:
           echo "**macOS:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/macos/ || echo "No macOS builds" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Linux:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/linux/ || echo "No Linux builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
