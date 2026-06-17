@@ -200,6 +200,7 @@ const registerMcpServer = async (projectId: string, options: {
   server_url?: string;
   name?: string;
   command?: string;
+  args?: string[];
   token?: string;
   env?: Record<string, string>;
   return_url?: string;
@@ -224,8 +225,11 @@ const registerMcpServer = async (projectId: string, options: {
     if (options.server_url) body.server_url = options.server_url.trim();
     if (options.name) body.name = options.name.trim();
     if (options.command) body.command = options.command;
+    if (options.server_type === 'local') {
+      body.args = options.args || [];
+      body.env = options.env || {};
+    }
     if (options.token) body.token = options.token.trim();
-    if (options.env && Object.keys(options.env).length > 0) body.env = options.env;
     if (options.return_url) body.return_url = options.return_url;
 
     const response = await fetch(apiUrl, {

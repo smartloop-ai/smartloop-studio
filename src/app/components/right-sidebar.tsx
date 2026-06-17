@@ -762,8 +762,9 @@ export default function RightSidebar({
           {
             server_type: 'local',
             command: 'uvx',
+            args: [input],
             name: input,
-            env: Object.keys(env).length > 0 ? env : undefined,
+            env,
           }
         );
 
