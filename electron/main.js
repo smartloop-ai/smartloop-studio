@@ -5,7 +5,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -1191,7 +1191,7 @@ function updateSplashProgress(data) {
   if (data.status === 'preparing') {
     const msg = data.message || 'Starting agent. This might take a while...';
     splashWindow.webContents.executeJavaScript(`
-      document.getElementById('status-text').textContent = 'Starting agent...';
+      document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.add('indeterminate');
     `).catch(() => { });
@@ -2139,9 +2139,22 @@ if (!gotTheLock) {
               }
             }
           } else if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.webContents.executeJavaScript(`
-              document.querySelector('.status-text').textContent = 'Heating things up...';
-            `);
+            const currentVersion = getCurrentVersion();
+            updateSplashProgress({ status: 'preparing', message: `Checking for updates (${currentVersion})...` });
+            const hasRemoteUpdate = await checkRemoteArchiveHash();
+            if (hasRemoteUpdate) {
+              console.log('[SLP] Remote archive changed — reinstalling');
+              await slpService.stopService();
+              const versionDir = path.join(getInstallDir(), VERSION);
+              try { fs.rmSync(versionDir, { recursive: true, force: true }); } catch {}
+              database.resetInstallStatus();
+              await setupSlpService((progress) => updateSplashProgress(progress));
+              if (!database.isFullyInstalled()) {
+                for (let step = 0; step < 4; step++) {
+                  database.setInstallStepComplete(step);
+                }
+              }
+            }
           }
 
           // Step 2: Start the service (owned by this main process).

@@ -20,6 +20,7 @@ function getVersionDir() { return path.join(INSTALL_DIR, VERSION); }
 function getCacheDir()   { return path.join(INSTALL_DIR, 'cache'); }
 function getMarkerFile() { return path.join(INSTALL_DIR, '.installed-version'); }
 function getHashFile()   { return path.join(INSTALL_DIR, '.binary-hash'); }
+function getEtagFile()   { return path.join(INSTALL_DIR, '.archive-etag'); }
 
 function setInstallDir(dir) {
   INSTALL_DIR = dir || DEFAULT_INSTALL_DIR;
@@ -321,6 +322,86 @@ function fileSha256(filePath) {
   });
 }
 
+function getArchiveUrl() {
+  const { plat, arch } = detectPlatform();
+  const ext = plat === 'windows' ? 'zip' : 'tar.gz';
+  return `${getDownloadBaseUrl()}/${plat}-${arch}-slp.${ext}`;
+}
+
+/**
+ * HEAD the remote archive and compare its ETag with the one stored at install
+ * time. Returns true when the remote archive has changed (or no local ETag
+ * exists yet).
+ */
+function checkRemoteArchiveHash() {
+  const archiveUrl = getArchiveUrl();
+  return new Promise((resolve) => {
+    const mod = archiveUrl.startsWith('https') ? https : http;
+    const req = mod.request(archiveUrl, { method: 'HEAD' }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirect = res.headers.location;
+        const rmod = redirect.startsWith('https') ? https : http;
+        const rreq = rmod.request(redirect, { method: 'HEAD' }, (rres) => {
+          resolve(compareEtag(rres));
+        });
+        rreq.on('error', () => resolve(false));
+        rreq.end();
+        return;
+      }
+      resolve(compareEtag(res));
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(10000, () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
+function storeRemoteEtag() {
+  const archiveUrl = getArchiveUrl();
+  return new Promise((resolve) => {
+    const mod = archiveUrl.startsWith('https') ? https : http;
+    const req = mod.request(archiveUrl, { method: 'HEAD' }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirect = res.headers.location;
+        const rmod = redirect.startsWith('https') ? https : http;
+        const rreq = rmod.request(redirect, { method: 'HEAD' }, (rres) => {
+          saveEtag(rres);
+          resolve();
+        });
+        rreq.on('error', () => resolve());
+        rreq.end();
+        return;
+      }
+      saveEtag(res);
+      resolve();
+    });
+    req.on('error', () => resolve());
+    req.setTimeout(10000, () => { req.destroy(); resolve(); });
+    req.end();
+  });
+}
+
+function saveEtag(res) {
+  if (res.statusCode !== 200) return;
+  const etag = (res.headers['etag'] || '').replace(/"/g, '');
+  if (etag) {
+    try { fs.writeFileSync(getEtagFile(), etag); } catch {}
+  }
+}
+
+function compareEtag(res) {
+  if (res.statusCode !== 200) return false;
+  const remoteEtag = (res.headers['etag'] || '').replace(/"/g, '');
+  if (!remoteEtag) return false;
+  try {
+    if (!fs.existsSync(getEtagFile())) return true;
+    const storedEtag = fs.readFileSync(getEtagFile(), 'utf-8').trim();
+    return storedEtag !== remoteEtag;
+  } catch {
+    return true;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Install steps
 // ─────────────────────────────────────────────────────────────────────────────
@@ -343,12 +424,12 @@ async function installService(onProgress) {
   // ── Step 1: Determine archive name & URL ─────────────────────────────────
   const isWindows = plat === 'windows';
   const ext = isWindows ? 'zip' : 'tar.gz';
-  const archiveName = `${plat}-${arch}-slp.${ext}`;
-  const archiveUrl = `${getDownloadBaseUrl()}/${archiveName}`;
+  const archiveUrl = getArchiveUrl();
   const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
 
   // ── Step 2: Download archive ─────────────────────────────────────────────
   await doDownload(archiveUrl, cachedArchive, onProgress);
+  await storeRemoteEtag();
 
   // ── Step 3: Extract to version dir ───────────────────────────────────────
   console.log('[SLP Setup] Extracting...');
@@ -632,6 +713,7 @@ module.exports = {
   listInstalledVersions,
   switchVersion,
   getCurrentVersion,
+  checkRemoteArchiveHash,
   DEFAULT_INSTALL_DIR,
   get INSTALL_DIR() { return INSTALL_DIR; },
   VERSION,
