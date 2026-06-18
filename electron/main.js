@@ -1136,7 +1136,10 @@ function updateSplashProgress(data) {
   if (data.status === 'error') {
     const msg = data.message || 'An error occurred.';
     splashWindow.webContents.executeJavaScript(`
-      document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
+      var st = document.getElementById('status-text');
+      st.textContent = ${JSON.stringify(msg)};
+      st.style.color = 'rgb(248,113,113)';
+      st.style.fontWeight = '600';
       document.getElementById('progress-fill').style.width = '0%';
       document.getElementById('progress-fill').classList.remove('indeterminate');
     `).catch(() => { });
@@ -1194,6 +1197,29 @@ function updateSplashProgress(data) {
     `).catch(() => { });
     return;
   }
+
+  if (data.status === 'verifying') {
+    const msg = data.message || 'Verifying system requirements…';
+    splashWindow.webContents.executeJavaScript(`
+      document.getElementById('status-text').textContent = ${JSON.stringify(msg)};
+      document.getElementById('progress-fill').style.width = '0%';
+      document.getElementById('progress-fill').classList.add('indeterminate');
+    `).catch(() => { });
+    return;
+  }
+}
+
+/**
+ * First-launch step: show a visible "verifying system requirements" phase and
+ * surface the detected accelerator before the initial download begins.
+ */
+async function verifyRequirementsOnSplash() {
+  const cap = detectSystemCapability();
+  if (!splashWindow || splashWindow.isDestroyed()) return cap;
+  updateSplashProgress({ status: 'verifying', message: 'Verifying system requirements…' });
+  // Brief pause so the verifying step is visible before download / block.
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  return cap;
 }
 
 // IPC: load model (called from renderer)
@@ -1746,10 +1772,70 @@ function applySplashTheme() {
   splashWindow.webContents.executeJavaScript(css).catch(() => {});
 }
 
+let cachedSystemCapability = null;
+
+/**
+ * Analyze the machine against the recommended specs for running local models.
+ * Best performance: Apple Silicon (M1+) or an NVIDIA GPU with >= 4 GB VRAM (CUDA 12.4+).
+ * Anything else falls back to CPU, which only runs the smaller 1B-class models.
+ * See https://www.smartloop.ai/docs/getting-started/
+ */
+function detectSystemCapability() {
+  if (cachedSystemCapability) return cachedSystemCapability;
+
+  // Test override: SLP_FORCE_TIER=accelerated|limited|cpu forces the result so
+  // every splash/verify branch can be exercised regardless of real hardware.
+  const forced = process.env.SLP_FORCE_TIER;
+  if (forced === 'accelerated' || forced === 'limited' || forced === 'cpu') {
+    const samples = {
+      accelerated: { tier: 'accelerated', label: 'NVIDIA GPU · 8 GB', detail: 'CUDA acceleration ready' },
+      limited: { tier: 'limited', label: 'NVIDIA GPU · 2.0 GB', detail: 'Low VRAM — smaller models only' },
+      cpu: { tier: 'cpu', label: 'No GPU detected', detail: 'Below recommended specs — smaller models only' },
+    };
+    cachedSystemCapability = samples[forced];
+    return cachedSystemCapability;
+  }
+
+  const platform = process.platform;
+  const arch = process.arch;
+  let result;
+
+  if (platform === 'darwin' && arch === 'arm64') {
+    // Apple Silicon (M1 or newer) — Metal GPU acceleration.
+    result = { tier: 'accelerated', label: 'Apple Silicon', detail: 'GPU acceleration ready' };
+  } else {
+    // Probe for an NVIDIA GPU + CUDA via nvidia-smi.
+    try {
+      const out = execFileSync(
+        'nvidia-smi',
+        ['--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+        { encoding: 'utf8', timeout: 4000 }
+      ).trim();
+      const memMb = parseInt(out.split('\n')[0].trim(), 10);
+      const memGb = memMb / 1024;
+      if (Number.isFinite(memGb) && memGb >= 4) {
+        result = { tier: 'accelerated', label: `NVIDIA GPU · ${Math.round(memGb)} GB`, detail: 'CUDA acceleration ready' };
+      } else if (Number.isFinite(memGb)) {
+        result = { tier: 'limited', label: `NVIDIA GPU · ${memGb.toFixed(1)} GB`, detail: 'Low VRAM — smaller models only' };
+      } else {
+        throw new Error('unparsable nvidia-smi output');
+      }
+    } catch (e) {
+      // No usable NVIDIA GPU — CPU fallback.
+      result = platform === 'darwin'
+        ? { tier: 'cpu', label: 'Intel Mac · CPU', detail: 'Below recommended specs — smaller models only' }
+        : { tier: 'cpu', label: 'No GPU detected', detail: 'Below recommended specs — smaller models only' };
+    }
+  }
+
+  cachedSystemCapability = result;
+  return result;
+}
+
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 400,
-    height: 300,
+    height: 340,
     transparent: true,
     frame: false,
     resizable: false,
@@ -2031,6 +2117,21 @@ if (!gotTheLock) {
         try {
           // Step 1: Fetch/install SLP if the version check requires it.
           if (mustInstall) {
+            // Verify the machine against recommended specs first. A machine with
+            // no GPU acceleration can't run the models usefully, so stop here
+            // rather than downloading anything.
+            const cap = await verifyRequirementsOnSplash();
+            if (cap.tier === 'cpu') {
+              console.warn('[SLP] System requirements not met — aborting install:', cap.label);
+              updateSplashProgress({
+                status: 'error',
+                message: 'This machine doesn’t meet the requirements. A supported GPU (Apple Silicon, or NVIDIA with CUDA) is needed to run Smartloop. You can quit from the tray menu.',
+              });
+              return;
+            }
+            // Requirements met — move off the "verifying" message immediately so
+            // it doesn't linger while the first network request is in flight.
+            updateSplashProgress({ status: 'installing', message: 'Downloading components…' });
             await setupSlpService((progress) => updateSplashProgress(progress));
             if (!database.isFullyInstalled()) {
               for (let step = 0; step < 4; step++) {
