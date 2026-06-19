@@ -26,6 +26,7 @@ import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
 
 import { getLocalApiEndpoint } from '@/app/constants';
+import { useAppStatus } from '@/app/contexts/AppStatusContext';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -90,9 +91,9 @@ export default function Chat(props: {
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
-  const [statusInfo, setStatusInfo] = useState<{ model: string; memory: number | null }>({ model: '', memory: null });
+  const [model, setModel] = useState<string>('');
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
-  const [indexingProgress, setIndexingProgress] = useState<{ total: number; indexed: number; pending: number } | null>(null);
+  const { indexingProgress } = useAppStatus();
 
   // Load last tok/s value from storage
   useEffect(() => {
@@ -119,60 +120,18 @@ export default function Chat(props: {
     return () => { cancelled = true; window.removeEventListener('slpServiceReady', handler); };
   }, []);
 
-  // Fetch status info (model, memory) when service is ready and periodically
+  // Derive the model name for the status footer from project + stored selection.
+  // /health polling lives in AppStatusContext.
   useEffect(() => {
-    if (!isServiceReady) return;
     let cancelled = false;
-    const fetchStatus = async () => {
-      try {
-        const model = props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
-        const baseUrl = await getLocalApiEndpoint();
-        let memPct: number | null = null;
-        if (baseUrl) {
-          try {
-            const res = await fetch(`${baseUrl}/health`);
-            if (res.ok) {
-              const health = await res.json();
-              memPct = health?.memory_percent ?? health?.memory ?? null;
-
-              // Sync indexing status to SQLite and broadcast to sidebar
-              const indexingDocs = health?.indexing?.documents;
-              if (Array.isArray(indexingDocs) && props.project?.id) {
-                const projectId = props.project.id;
-                const indexingMap: Record<string, string> = {};
-                let indexedCount = 0;
-                let pendingCount = 0;
-                for (const d of indexingDocs) {
-                  if (!d.id) continue;
-                  indexingMap[d.id] = d.status || 'unknown';
-                  if (d.status === 'indexed') {
-                    indexedCount++;
-                    storageService.setDocumentProcessed(d.id, projectId);
-                  } else {
-                    pendingCount++;
-                  }
-                }
-                if (pendingCount > 0) {
-                  setIndexingProgress({ total: indexingDocs.length, indexed: indexedCount, pending: pendingCount });
-                } else {
-                  setIndexingProgress(null);
-                }
-                window.dispatchEvent(new CustomEvent('indexingStatusUpdate', {
-                  detail: { projectId, documents: indexingMap },
-                }));
-              } else {
-                setIndexingProgress(null);
-              }
-            }
-          } catch { }
-        }
-        if (!cancelled) setStatusInfo({ model, memory: memPct });
-      } catch { }
-    };
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [isServiceReady, props.project]);
+    (async () => {
+      const m = props.project?.model_name
+        || await storageService.getItem('selected_model')
+        || 'gemma3-1b';
+      if (!cancelled) setModel(m);
+    })();
+    return () => { cancelled = true; };
+  }, [props.project]);
 
   // Track model init status from Settings and sync status bar
   useEffect(() => {
@@ -185,8 +144,8 @@ export default function Chat(props: {
       } else {
         // Model finished loading — clear progress
         setModelDownloadProgress(null);
-        const model = e.detail?.model || props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
-        setStatusInfo(prev => ({ ...prev, model }));
+        const next = e.detail?.model || props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
+        setModel(next);
       }
     };
     const progressHandler = (e: any) => {
@@ -1506,14 +1465,14 @@ export default function Chat(props: {
                     <span>ready</span>
                   </span>
                 )}
-                {statusInfo.model && (
+                {model && (
                   <span className="flex items-center gap-1 font-mono">
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
                       <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
                       <path d="M8 6.5v8" stroke="var(--sl-text-faint)" strokeWidth="0.5" />
                       <path d="M2 4l6 2.5L14 4" stroke="var(--sl-text-faint)" strokeWidth="0.5" fill="none" />
                     </svg>
-                    <span>{statusInfo.model}</span>
+                    <span>{model}</span>
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">

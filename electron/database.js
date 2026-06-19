@@ -668,10 +668,13 @@ function getDocumentFoldersByProject(projectId) {
 function setDocumentProcessed(documentId, projectId) {
   const d = openDatabase();
   const now = new Date().toISOString();
+  // First-time-only: preserve the original processed_at across repeated calls
+  // (the /health poll re-emits 'indexed' docs every tick). Callers that need
+  // to record a re-indexing should deleteDocumentStatus first.
   d.prepare(`
     INSERT INTO document_status (document_id, project_id, processed_at)
     VALUES (?, ?, ?)
-    ON CONFLICT(document_id) DO UPDATE SET processed_at = excluded.processed_at
+    ON CONFLICT(document_id) DO NOTHING
   `).run(documentId, projectId, now);
 }
 
