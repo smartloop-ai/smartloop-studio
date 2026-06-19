@@ -13,6 +13,7 @@ import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
 import { storageService } from '@/app/services/storage.service';
+import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -69,6 +70,7 @@ export default function RightSidebar({
   onSaveSkills,
   onRefreshSkills,
 }: RightSidebarProps) {
+  const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
   const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(selectedProject?.system ? null : 'documents');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
@@ -349,18 +351,7 @@ export default function RightSidebar({
 
   // Local state for documents being uploaded/processed (not yet in currentProjectData)
   const [uploadingDocs, setUploadingDocs] = useState<any[]>([]);
-  const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
   const [directoryFiles, setDirectoryFiles] = useState<any[]>([]);
-
-  // Load processed dates when project changes
-  useEffect(() => {
-    if (!selectedProject?.id) { setProcessedDates({}); return; }
-    const load = async () => {
-      const dates = await storageService.getDocumentStatusByProject(selectedProject.id);
-      setProcessedDates(dates);
-    };
-    load();
-  }, [selectedProject?.id]);
 
   // Load pending/processing uploads from SQLite when project changes so they survive navigation
   useEffect(() => {
@@ -380,16 +371,23 @@ export default function RightSidebar({
   const [apiDocuments, setApiDocuments] = useState<any[]>([]);
   // Tracks fs file path → API doc ID for files submitted for processing
   const [fsToApiMap, setFsToApiMap] = useState<Map<string, string>>(new Map());
-  // Per-document indexing status: doc id → status string
-  // Populated from SQLite (persisted) + live indexing events from chat.tsx health poll
-  const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
 
-  // Scan project directory and refresh API documents
+  // Keep refs to context methods so refreshApi (a stable closure within the
+  // useEffect below) can call them without putting them in the dep array.
+  const setDocumentStatusRef = useRef(setDocumentStatus);
+  setDocumentStatusRef.current = setDocumentStatus;
+  const removeProcessedRef = useRef(removeProcessed);
+  removeProcessedRef.current = removeProcessed;
+  const processedDatesRef = useRef(processedDates);
+  processedDatesRef.current = processedDates;
+
+  // Scan project directory and refresh API documents.
+  // Per-document indexing status and processed_at timestamps live in
+  // AppStatusContext — it owns the /health-driven updates and SQLite writes.
   useEffect(() => {
     const folderPath = currentProjectData?.folder_path;
     const projectId = selectedProject?.id;
-    if (!projectId) { setApiDocuments([]); setDirectoryFiles([]); setIndexingStatus({}); setFsToApiMap(new Map()); return; }
-    setIndexingStatus({});
+    if (!projectId) { setApiDocuments([]); setDirectoryFiles([]); setFsToApiMap(new Map()); return; }
     setFsToApiMap(new Map());
 
     let cancelled = false;
@@ -407,92 +405,35 @@ export default function RightSidebar({
 
       const docs = Array.isArray(result.data) ? result.data : (result.data.documents || []);
       setApiDocuments(docs);
-      const apiStatus: Record<string, string> = {};
       const apiDocIds = new Set<string>();
       for (const doc of docs) {
         if (!doc.id) continue;
         apiDocIds.add(doc.id);
         const status = doc.status ?? doc.indexing_status ?? doc.state ?? '';
-        if (status === 'indexed') {
-          apiStatus[doc.id] = 'indexed';
-        } else if (status) {
-          apiStatus[doc.id] = status;
-        }
-      }
-      if (Object.keys(apiStatus).length > 0) {
-        setIndexingStatus(prev => ({ ...prev, ...apiStatus }));
+        if (status) setDocumentStatusRef.current(doc.id, status);
       }
 
-      // Remove SQLite records for documents that no longer exist in the API
-      const storedDates = await storageService.getDocumentStatusByProject(projectId);
-      for (const docId of Object.keys(storedDates)) {
+      // Cleanup: any doc the context still tracks but that's no longer in the
+      // API has been removed — drop its processed_at and folder mapping.
+      for (const docId of Object.keys(processedDatesRef.current)) {
         if (!apiDocIds.has(docId)) {
-          await storageService.deleteDocumentStatus(docId);
-          await storageService.clearDocumentFolder(docId);
+          removeProcessedRef.current(docId);
+          storageService.clearDocumentFolder(docId);
         }
-      }
-      // Refresh processed dates after cleanup
-      if (!cancelled) {
-        const updatedDates = await storageService.getDocumentStatusByProject(projectId);
-        setProcessedDates(updatedDates);
-      }
-    };
-
-    // Load indexed status from SQLite
-    const loadIndexedFromDb = async () => {
-      const dates = await storageService.getDocumentStatusByProject(projectId);
-      if (!cancelled) {
-        const statusMap: Record<string, string> = {};
-        for (const docId of Object.keys(dates)) {
-          statusMap[docId] = 'indexed';
-        }
-        setIndexingStatus(statusMap);
-        setProcessedDates(dates);
       }
     };
 
     // Initial load
     scanDir();
     refreshApi();
-    loadIndexedFromDb();
-
-    // Listen for live indexing status updates from chat.tsx health poll
-    const onIndexingUpdate = (e: any) => {
-      const detail = e.detail;
-      if (detail?.projectId !== projectId) return;
-      const docs: Record<string, string> = detail.documents || {};
-      if (!cancelled) {
-        setIndexingStatus((prev) => {
-          const newlyIndexedIds: string[] = [];
-          for (const [id, status] of Object.entries(docs)) {
-            if (status === 'indexed' && prev[id] !== 'indexed') {
-              newlyIndexedIds.push(id);
-              storageService.setDocumentProcessed(id, projectId);
-            }
-          }
-          if (newlyIndexedIds.length > 0) {
-            const now = new Date().toISOString();
-            setProcessedDates(prev => {
-              const next = { ...prev };
-              for (const id of newlyIndexedIds) next[id] = now;
-              return next;
-            });
-            refreshApi();
-          }
-          return { ...prev, ...docs };
-        });
-      }
-    };
-    window.addEventListener('indexingStatusUpdate', onIndexingUpdate);
 
     // Refresh on explicit events (upload, delete, processing complete)
-    const handler = () => { scanDir(); refreshApi(); loadIndexedFromDb(); };
+    const handler = () => { scanDir(); refreshApi(); };
     window.addEventListener('documentProcessingComplete', handler);
     window.addEventListener('documentUploaded', handler);
 
     return () => {
       cancelled = true;
-      window.removeEventListener('indexingStatusUpdate', onIndexingUpdate);
       window.removeEventListener('documentProcessingComplete', handler);
       window.removeEventListener('documentUploaded', handler);
     };
@@ -890,15 +831,12 @@ export default function RightSidebar({
 
           if (finalDocId && doc) {
             const docStatus = doc.status || 'indexed';
-            setIndexingStatus(prev => ({ ...prev, [finalDocId]: docStatus }));
+            setDocumentStatus(finalDocId, docStatus);
             setApiDocuments(prev => {
               const idx = prev.findIndex((d: any) => d.id === finalDocId);
               if (idx >= 0) { const next = [...prev]; next[idx] = doc; return next; }
               return [...prev, doc];
             });
-            if (docStatus === 'indexed') {
-              storageService.setDocumentProcessed(finalDocId, projectId);
-            }
           }
           window.dispatchEvent(new Event('documentUploaded'));
           return;
@@ -925,7 +863,7 @@ export default function RightSidebar({
             storageService.updateDocumentStatus(apiDocId, docStatus);
             setProcessingDocs(prev => new Map(prev).set(apiDocId, docStatus));
           }
-          setIndexingStatus(prev => ({ ...prev, [apiDocId]: docStatus }));
+          setDocumentStatus(apiDocId, docStatus);
         } else {
           const currentId = realDocId || placeholderId;
           const currentStatus = progress.status || 'processing';
@@ -965,15 +903,12 @@ export default function RightSidebar({
       storageService.deleteDocument(realDocId || placeholderId);
       if (docId) {
         const docStatus = uploadedDocument?.status || 'indexed';
-        setIndexingStatus(prev => ({ ...prev, [docId]: docStatus }));
+        setDocumentStatus(docId, docStatus);
         setApiDocuments(prev => {
           const idx = prev.findIndex((d: any) => d.id === docId);
           if (idx >= 0) { const next = [...prev]; next[idx] = uploadedDocument; return next; }
           return [...prev, uploadedDocument];
         });
-        if (docStatus === 'indexed') {
-          storageService.setDocumentProcessed(docId, projectId);
-        }
       }
       window.dispatchEvent(new Event('documentUploaded'));
     }
