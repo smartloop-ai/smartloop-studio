@@ -9,6 +9,7 @@ const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstall
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
+const healthMonitor = require('./health-monitor');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -2068,6 +2069,7 @@ if (!gotTheLock) {
         setAppReady(true);
         mainWindow.show();
         mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+        healthMonitor.start(() => mainWindow);
       }
 
       if (needsBootstrap) {
@@ -2182,6 +2184,7 @@ if (!gotTheLock) {
             setAppReady(true);
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+            healthMonitor.start(() => mainWindow);
             fetchModels(); // prime model cache
           }
 
@@ -2277,6 +2280,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+
+  healthMonitor.stop();
 
   try {
     database.closeDatabase();

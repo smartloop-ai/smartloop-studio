@@ -98,6 +98,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeSlpServiceReadyListener: () => {
     ipcRenderer.removeAllListeners('slp-service-ready');
   },
+  onHealthUpdate: (callback) => {
+    ipcRenderer.on('health-update', (event, data) => callback(data));
+  },
+  removeHealthUpdateListener: () => {
+    ipcRenderer.removeAllListeners('health-update');
+  },
   onNavigateToProject: (callback) => {
     ipcRenderer.on('navigate-to-project', (event, projectId) => callback(projectId));
   },
