@@ -1,4 +1,13 @@
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { createTitlebarOnDOMContentLoaded, TitlebarColor } = require('custom-electron-titlebar');
+
+let titlebarInstance = null;
+createTitlebarOnDOMContentLoaded({
+  removeMenuBar: true,
+  backgroundColor: TitlebarColor.fromHex('#000000'),
+}).then((titlebar) => {
+  titlebarInstance = titlebar;
+});
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -43,6 +52,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storageClear: () => ipcRenderer.invoke('storage-clear'),
   storageHas: (key) => ipcRenderer.invoke('storage-has', key),
   storageGetAll: () => ipcRenderer.invoke('storage-get-all'),
+  // Native theme
+  setNativeTheme: (mode, bgColor) => {
+    ipcRenderer.invoke('set-native-theme', mode, bgColor);
+    if (titlebarInstance && bgColor) {
+      titlebarInstance.updateBackground(TitlebarColor.fromHex(bgColor));
+    }
+  },
   // Machine ID
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Local SLP service
