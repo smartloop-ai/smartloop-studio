@@ -30,7 +30,9 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    applyThemeCssVars(themes[themeId]);
+    const t = themes[themeId];
+    applyThemeCssVars(t);
+    (window as any).electronAPI?.setNativeTheme?.(t.mode, t.colors.bg.base);
   }, [themeId]);
 
   const setThemeId = (id: ThemeId) => {

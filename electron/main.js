@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } = require('electron');
+const { setupTitlebarAndAttachToWindow } = require('custom-electron-titlebar/main');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -120,6 +121,13 @@ ipcMain.handle('storage-has', (event, key) => {
 
 ipcMain.handle('storage-get-all', () => {
   return store.store;
+});
+
+ipcMain.handle('set-native-theme', (event, mode, bgColor) => {
+  nativeTheme.themeSource = mode === 'light' ? 'light' : 'dark';
+  if (mainWindow && bgColor) {
+    mainWindow.setBackgroundColor(bgColor);
+  }
 });
 
 // IPC: save a file buffer to a temp directory so the local SLP service can read it by path
@@ -1866,13 +1874,17 @@ function createWindow() {
     minWidth: 920,
     minHeight: 600,
     show: false, // Don't show until ready
+    titleBarStyle: 'hidden',
     webPreferences: {
+      sandbox: false,
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../public/img/logo.png')
   });
+
+  setupTitlebarAndAttachToWindow(mainWindow);
 
   // Remove default menu or create custom menu
   if (process.platform !== 'darwin') {
