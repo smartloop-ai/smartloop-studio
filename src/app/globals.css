@@ -137,6 +137,15 @@
     min-width: 320px
   }
 
+  .cet-container .h-screen {
+    height: calc(100vh - 31px) !important;
+  }
+
+  .cet-container .min-h-screen {
+    min-height: calc(100vh - 31px) !important;
+  }
+
+
   body {
     font-family: Poppins;
     color: var(--sl-text-primary);

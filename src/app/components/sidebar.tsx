@@ -676,7 +676,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       {/* Logo with Mobile Close Button */}
       <Box sx={{
         px: 3,
-        py: 2.5,
+        pt: 4,
+        pb: 2.5,
         borderBottom: '1px solid var(--sl-border-subtle)',
       }}>
         <Box className="flex items-center justify-between">

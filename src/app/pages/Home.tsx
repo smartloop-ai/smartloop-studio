@@ -1798,7 +1798,7 @@ export default function Home() {
             <Box className="h-screen flex flex-col bg-sl-bg-base">
               <>
                 {/* Chat Header - matches project page style */}
-                <Box className="flex-none p-4">
+                <Box className="flex-none px-4 pb-4 pt-0">
                   <Box className="flex items-center justify-between gap-4">
                     <Box className="flex items-center gap-4 flex-1 min-w-0">
                       <Box
