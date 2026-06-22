@@ -311,7 +311,7 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
   }
 });
 
-// IPC: extract conversations from a zip file (reads conversations/*.jsonl entries)
+// IPC: extract conversations from a zip file (reads workspace.json or falls back to conversations/*.jsonl)
 ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
   try {
     const resolved = zipPath.startsWith('~')
@@ -319,9 +319,35 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
       : zipPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
 
-    // List files in the zip matching conversations/*.jsonl
     const { execFileSync } = require('child_process');
     const isWin = process.platform === 'win32';
+
+    // Try reading workspace.json (v3+), project.json (v2), or manifest.json (SLP template) from the zip
+    // Use wildcard to handle zips with a top-level directory wrapper
+    for (const manifestName of ['workspace.json', 'project.json', 'manifest.json']) {
+      try {
+        const content = isWin
+          ? execFileSync('tar', ['-xOf', resolved, '--wildcards', `*/${manifestName}`, manifestName], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString()
+          : execFileSync('unzip', ['-p', resolved, manifestName, `*/${manifestName}`], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString();
+        if (content.trim()) {
+          const manifest = JSON.parse(content);
+          if (manifest.conversations && manifest.conversations.length > 0) {
+            const conversations = manifest.conversations.map((conv, i) => {
+              const firstUserMsg = (conv.messages || []).find(m => m.role === 'user');
+              const title = conv.title || (firstUserMsg?.content
+                ? (firstUserMsg.content.length > 60 ? firstUserMsg.content.substring(0, 60) + '...' : firstUserMsg.content)
+                : 'Imported Conversation');
+              return { id: conv.id || `conv_preview_${i}`, title, messages: conv.messages || [] };
+            });
+            return { success: true, conversations };
+          }
+        }
+      } catch {
+        // manifest not found in zip, try next
+      }
+    }
+
+    // Legacy fallback: read conversations/*.jsonl entries
     const listOutput = isWin
       ? execFileSync('tar', ['-tf', resolved], { timeout: 10000 }).toString()
       : execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
@@ -344,9 +370,7 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
           : execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
         const lines = content.split('\n').filter(l => l.trim());
         const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        // Derive conversation ID from filename
         const convId = path.basename(filePath, '.jsonl');
-        // Use first user message as title
         const firstUserMsg = messages.find(m => m.role === 'user');
         const title = firstUserMsg?.content
           ? (firstUserMsg.content.length > 60 ? firstUserMsg.content.substring(0, 60) + '...' : firstUserMsg.content)
@@ -440,27 +464,40 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const documentStatus = database.getDocumentStatusByProject(projectId);
     const tabState = database.getSetting(`openTabs_${projectId}`);
 
-    const manifest = {
-      version: 2,
+    const workspace = {
+      version: 3,
       exported_at: new Date().toISOString(),
-      project,
-      conversations: conversationsWithMessages,
-      mcp_servers: mcpServers,
-      folders,
+      project: {
+        name: project.name,
+        color: project.color,
+        temperature: project.temperature,
+      },
+      conversations: conversationsWithMessages.map(conv => ({
+        title: conv.title,
+        messages: conv.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          citations: m.citations || null,
+          created_at: m.created_at,
+        })),
+        created_at: conv.created_at,
+        updated_at: conv.updated_at,
+      })),
+      mcp_servers: mcpServers.map(s => ({
+        name: s.name,
+        server_type: s.server_type,
+        config: s.config,
+      })),
+      folders: folders.map(f => ({
+        id: f.id,
+        name: f.name,
+      })),
       document_folders: documentFolders,
       document_status: documentStatus,
       tab_state: tabState || null,
     };
 
-    fs.writeFileSync(path.join(exportDir, 'project.json'), JSON.stringify(manifest, null, 2));
-
-    // Write conversations as individual JSONL files for backwards compatibility
-    const convDir = path.join(exportDir, 'conversations');
-    fs.mkdirSync(convDir, { recursive: true });
-    for (const conv of conversationsWithMessages) {
-      const lines = conv.messages.map(m => JSON.stringify(m)).join('\n');
-      fs.writeFileSync(path.join(convDir, `${conv.id}.jsonl`), lines);
-    }
+    fs.writeFileSync(path.join(exportDir, 'workspace.json'), JSON.stringify(workspace, null, 2));
 
     const slugName = (project.name || 'project').replace(/\s+/g, '_').toLowerCase();
     const zipFileName = `${slugName}.zip`;
@@ -507,13 +544,23 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
       execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
     }
 
-    const manifestPath = path.join(tmpDir, 'project.json');
+    // If the zip contains a single top-level directory, unwrap it
+    let contentDir = tmpDir;
+    const topEntries = fs.readdirSync(tmpDir).filter(e => e !== '__MACOSX' && e !== '.DS_Store');
+    if (topEntries.length === 1 && fs.statSync(path.join(tmpDir, topEntries[0])).isDirectory()) {
+      contentDir = path.join(tmpDir, topEntries[0]);
+    }
+
+    const workspacePath = path.join(contentDir, 'workspace.json');
+    const legacyProjectPath = path.join(contentDir, 'project.json');
+    const legacyManifestPath = path.join(contentDir, 'manifest.json');
     let manifest = null;
-    if (fs.existsSync(manifestPath)) {
+    const manifestFile = [workspacePath, legacyProjectPath, legacyManifestPath].find(p => fs.existsSync(p)) || null;
+    if (manifestFile) {
       try {
-        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
       } catch (e) {
-        console.warn('[Import] Failed to parse project.json:', e.message);
+        console.warn('[Import] Failed to parse workspace manifest:', e.message);
       }
     }
 
@@ -531,7 +578,14 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
       return { success: false, error: 'Local service is not running' };
     }
 
-    const fileBuffer = fs.readFileSync(resolved);
+    // If the zip had a nested top-level directory, repack from contentDir so backend sees files at root
+    let importZipPath = resolved;
+    if (contentDir !== tmpDir) {
+      importZipPath = path.join(tmpDir, 'repacked-import.zip');
+      execFileSync('zip', ['-r', importZipPath, '.'], { cwd: contentDir, timeout: 120000 });
+    }
+
+    const fileBuffer = fs.readFileSync(importZipPath);
     const fileName = path.basename(resolved);
     const file = new File([fileBuffer], fileName, { type: 'application/zip' });
     const formData = new FormData();
@@ -681,13 +735,48 @@ ipcMain.handle('select-folder', async () => {
 // IPC: get the OS home directory
 ipcMain.handle('get-home-dir', () => os.homedir());
 
-// Get the path to the bundled blank project template zip
-ipcMain.handle('get-template-zip-path', () => {
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    return path.join(__dirname, 'data', 'project_1.zip');
+// Blank project template — downloaded from GitHub releases and cached locally
+const TEMPLATE_VERSION = 'v1.0.0';
+const TEMPLATE_RELEASE_URL = `https://github.com/smartloop-ai/blank-project-template/archive/refs/tags/${TEMPLATE_VERSION}.zip`;
+const TEMPLATE_CACHE_DIR = path.join(os.homedir(), '.smartloop', 'templates');
+const TEMPLATE_CACHE_PATH = path.join(TEMPLATE_CACHE_DIR, 'project_1.zip');
+
+async function downloadBlankTemplate() {
+  if (fs.existsSync(TEMPLATE_CACHE_PATH)) return TEMPLATE_CACHE_PATH;
+
+  console.log('[Template] Downloading blank project template...');
+  updateSplashProgress({ status: 'downloading', message: 'Downloading latest artifacts...', downloaded: 0, total: 0 });
+
+  fs.mkdirSync(TEMPLATE_CACHE_DIR, { recursive: true });
+
+  const res = await fetch(TEMPLATE_RELEASE_URL);
+  if (!res.ok) {
+    console.warn(`[Template] Failed to download template (${res.status})`);
+    return null;
   }
-  return path.join(process.resourcesPath, 'data', 'project_1.zip');
+
+  const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
+  const reader = res.body.getReader();
+  const chunks = [];
+  let downloaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    downloaded += value.length;
+    updateSplashProgress({ status: 'downloading', message: 'Downloading latest artifacts...', downloaded, total: contentLength });
+  }
+
+  const buffer = Buffer.concat(chunks);
+  fs.writeFileSync(TEMPLATE_CACHE_PATH, buffer);
+  console.log('[Template] Template cached at', TEMPLATE_CACHE_PATH);
+  return TEMPLATE_CACHE_PATH;
+}
+
+ipcMain.handle('get-template-zip-path', async () => {
+  if (fs.existsSync(TEMPLATE_CACHE_PATH)) return TEMPLATE_CACHE_PATH;
+  return downloadBlankTemplate();
 });
 
 // --- SQLite database IPC handlers ---
@@ -2084,6 +2173,9 @@ if (!gotTheLock) {
         healthMonitor.start(() => mainWindow);
       }
 
+      // Download blank project template in the background
+      downloadBlankTemplate().catch(err => console.warn('[Template] Background download failed:', err.message));
+
       if (needsBootstrap) {
         console.log('[SLP] Bootstrapping in background');
         (async () => {
@@ -2185,6 +2277,9 @@ if (!gotTheLock) {
           refreshTray();
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
+
+          // Download blank project template while splash is still visible
+          await downloadBlankTemplate().catch(err => console.warn('[Template] Download failed:', err.message));
 
           // Show main window immediately once the service is ready; bootstrap
           // continues in the background so startup feels faster.
