@@ -791,18 +791,27 @@ export default function SettingsPage() {
                                                                 <p className="text-xs mt-0.5 mb-0 p-1" style={{ color: 'var(--sl-text-muted)' }}>{description}</p>
                                                             )}
                                                         </Box>
-                                                        <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 50, pr: 3 }}>
+                                                        <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 90, pr: 3 }}>
                                                             {(accessLevel === 'pro' && !(user?.is_paid || user?.is_premium)) || (!model.is_accessible && accessLevel !== 'free') ? (
                                                                 <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
                                                             ) : !model.downloaded ? (
                                                                 toggling === name ? (
-                                                                    <CircularProgress
-                                                                        variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
-                                                                        value={downloadProgress?.percent || 0}
-                                                                        size={20}
-                                                                        thickness={5}
-                                                                        sx={{ color: 'var(--sl-brand-primary)', display: 'block', mx: 'auto' }}
-                                                                    />
+                                                                    <Box sx={{ position: 'relative', display: 'inline-flex', mx: 'auto' }}>
+                                                                        <CircularProgress
+                                                                            variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
+                                                                            value={downloadProgress?.percent || 0}
+                                                                            size={36}
+                                                                            thickness={4}
+                                                                            sx={{ color: 'var(--sl-brand-primary)' }}
+                                                                        />
+                                                                        {!!downloadProgress?.percent && (
+                                                                            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                <span className="text-[8px]" style={{ color: 'var(--sl-text-muted)', fontFamily: 'monospace' }}>
+                                                                                    {Math.round(downloadProgress.percent)}%
+                                                                                </span>
+                                                                            </Box>
+                                                                        )}
+                                                                    </Box>
                                                                 ) : (
                                                                     <CloudDownloadOutlinedIcon
                                                                         className="model-checkbox"
@@ -811,7 +820,7 @@ export default function SettingsPage() {
                                                                 )
                                                             ) : (
                                                                 <span
-                                                                    className="model-checkbox flex items-center justify-center rounded select-none"
+                                                                    className="model-checkbox flex items-center justify-center rounded select-none mx-auto"
                                                                     style={{
                                                                         width: 20, height: 20,
                                                                         border: isEnabled ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
