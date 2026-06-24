@@ -1415,6 +1415,20 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
   });
 });
 
+const activeModelDownloads = new Map();
+
+// IPC: cancel an in-progress model download
+ipcMain.handle('slp-cancel-model-download', async (event, modelName) => {
+  const req = activeModelDownloads.get(modelName);
+  if (req) {
+    console.log(`[Models] Cancelling download for ${modelName}`);
+    req.destroy();
+    activeModelDownloads.delete(modelName);
+    return { success: true };
+  }
+  return { success: false, error: 'No active download' };
+});
+
 // IPC: enable/disable a model for orchestrator selection
 // If the model is not in workspace yet, downloads it first, then enables.
 ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
@@ -1458,6 +1472,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
         }, (res) => {
           if (res.statusCode !== 200) {
+            activeModelDownloads.delete(modelName);
             reject(new Error(`HTTP ${res.statusCode}`));
             return;
           }
@@ -1479,14 +1494,22 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
             }
           });
           res.on('end', () => {
+            activeModelDownloads.delete(modelName);
             if (mainWindow && !mainWindow.isDestroyed()) {
               mainWindow.webContents.send('model-download-progress', { model: modelName, percent: 100, status: 'Complete' });
             }
             resolve(true);
           });
-          res.on('error', reject);
+          res.on('error', (err) => {
+            activeModelDownloads.delete(modelName);
+            reject(err);
+          });
         });
-        req.on('error', reject);
+        activeModelDownloads.set(modelName, req);
+        req.on('error', (err) => {
+          activeModelDownloads.delete(modelName);
+          reject(err);
+        });
         req.write(postData);
         req.end();
       });
@@ -1784,6 +1807,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
+        activeModelDownloads.delete(modelName);
         resolve({ success: false, error: `HTTP ${res.statusCode}` });
         return;
       }
@@ -1801,7 +1825,6 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
 
-              // Send download progress to renderer
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send('model-download-progress', {
                   model: modelName,
@@ -1816,7 +1839,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       });
 
       res.on('end', () => {
-        // Send completion event
+        activeModelDownloads.delete(modelName);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('model-download-progress', {
             model: modelName,
@@ -1829,11 +1852,15 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       });
 
       res.on('error', (err) => {
+        activeModelDownloads.delete(modelName);
         resolve({ success: false, error: err.message });
       });
     });
 
+    activeModelDownloads.set(modelName, req);
+
     req.on('error', (err) => {
+      activeModelDownloads.delete(modelName);
       resolve({ success: false, error: err.message });
     });
 

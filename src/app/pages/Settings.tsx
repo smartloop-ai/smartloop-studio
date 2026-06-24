@@ -265,6 +265,18 @@ export default function SettingsPage() {
         return () => { api?.removeModelDownloadProgressListener?.(); };
     }, []);
 
+    const handleCancelDownload = useCallback(async () => {
+        const api = window.electronAPI;
+        const modelName = togglingRef.current;
+        if (!modelName || !api?.slpCancelModelDownload) return;
+        await api.slpCancelModelDownload(modelName);
+        togglingRef.current = null;
+        setToggling(null);
+        setDownloadProgress(null);
+        setEnabledOverrides(prev => { const next = new Map(prev); next.delete(modelName); return next; });
+        await fetchLocalModels(true);
+    }, [fetchLocalModels]);
+
     const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
         const api = window.electronAPI;
         if (!api?.slpSetModelEnabled || togglingRef.current) return;
@@ -796,22 +808,41 @@ export default function SettingsPage() {
                                                                 <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
                                                             ) : !model.downloaded ? (
                                                                 toggling === name ? (
-                                                                    <Box sx={{ position: 'relative', display: 'inline-flex', mx: 'auto' }}>
-                                                                        <CircularProgress
-                                                                            variant={downloadProgress?.percent ? 'determinate' : 'indeterminate'}
-                                                                            value={downloadProgress?.percent || 0}
-                                                                            size={36}
-                                                                            thickness={4}
-                                                                            sx={{ color: 'var(--sl-brand-primary)' }}
-                                                                        />
-                                                                        {!!downloadProgress?.percent && (
-                                                                            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                                <span className="text-[8px]" style={{ color: 'var(--sl-text-muted)', fontFamily: 'monospace' }}>
-                                                                                    {Math.round(downloadProgress.percent)}%
-                                                                                </span>
-                                                                            </Box>
-                                                                        )}
-                                                                    </Box>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); handleCancelDownload(); }}
+                                                                        className="flex items-center justify-center mx-auto"
+                                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, width: 24, height: 24 }}
+                                                                    >
+                                                                        <svg width="24" height="24" viewBox="0 0 24 24">
+                                                                            <circle cx="12" cy="12" r="10.5" fill="none" stroke="var(--sl-brand-primary)" strokeWidth="2" opacity="0.15" />
+                                                                            {downloadProgress?.percent ? (
+                                                                                <circle
+                                                                                    cx="12" cy="12" r="10.5"
+                                                                                    fill="none"
+                                                                                    stroke="var(--sl-brand-primary)"
+                                                                                    strokeWidth="2"
+                                                                                    strokeLinecap="round"
+                                                                                    strokeDasharray={2 * Math.PI * 10.5}
+                                                                                    strokeDashoffset={2 * Math.PI * 10.5 * (1 - downloadProgress.percent / 100)}
+                                                                                    transform="rotate(-90 12 12)"
+                                                                                    style={{ transition: 'stroke-dashoffset 0.3s ease' }}
+                                                                                />
+                                                                            ) : (
+                                                                                <circle
+                                                                                    cx="12" cy="12" r="10.5"
+                                                                                    fill="none"
+                                                                                    stroke="var(--sl-brand-primary)"
+                                                                                    strokeWidth="2"
+                                                                                    strokeLinecap="round"
+                                                                                    strokeDasharray="16.5 49.5"
+                                                                                    transform="rotate(-90 12 12)"
+                                                                                >
+                                                                                    <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
+                                                                                </circle>
+                                                                            )}
+                                                                            <rect x="9" y="9" width="6" height="6" rx="1" fill="var(--sl-brand-primary)" />
+                                                                        </svg>
+                                                                    </button>
                                                                 ) : (
                                                                     <CloudDownloadOutlinedIcon
                                                                         className="model-checkbox"
