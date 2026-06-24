@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('model-init-progress');
   },
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
+  slpCancelModelDownload: (modelName) => ipcRenderer.invoke('slp-cancel-model-download', modelName),
   onModelDownloadProgress: (callback) => {
     ipcRenderer.on('model-download-progress', (event, data) => callback(data));
   },
