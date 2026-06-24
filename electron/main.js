@@ -1429,7 +1429,8 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
       const wsData = await wsRes.json();
       const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
       const wsNames = wsList.map(wm => wm.model_name || wm.name);
-      existsInWorkspace = wsList.some(wm => wm.model_name === modelName || wm.name === modelName);
+      const wsMatch = wsList.find(wm => wm.model_name === modelName || wm.name === modelName);
+      existsInWorkspace = wsMatch && wsMatch.downloaded;
       console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
       if (!existsInWorkspace && cachedModels) {
         const entry = cachedModels.find(m => (m.name || m.id || m.model) === modelName);
