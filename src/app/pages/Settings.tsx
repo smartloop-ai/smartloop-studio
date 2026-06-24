@@ -732,6 +732,10 @@ export default function SettingsPage() {
                                                 backgroundColor: 'rgba(52,211,153,0.15) !important',
                                                 borderColor: 'rgb(52,211,153) !important',
                                             },
+                                            '& tr:hover .cap-dp': {
+                                                backgroundColor: 'rgba(251,146,60,0.15) !important',
+                                                borderColor: 'rgb(251,146,60) !important',
+                                            },
                                         }}
                                     >
                                         <tbody>
@@ -767,7 +771,7 @@ export default function SettingsPage() {
                                                                     {displayName}
                                                                 </span>
                                                                 {accessLevel === 'pro' && (
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid rgba(234,179,8,0.3)', color: 'rgb(234,179,8)' }}>
                                                                         PRO
                                                                     </span>
                                                                 )}
@@ -784,9 +788,10 @@ export default function SettingsPage() {
                                                                 {(model.capabilities || []).map((cap: string) => {
                                                                     const isVision = cap === 'vision';
                                                                     const isSkills = cap === 'skills';
-                                                                    const capColor = isVision ? 'rgb(96,165,250)' : isSkills ? 'rgb(52,211,153)' : 'var(--sl-text-muted)';
-                                                                    const borderColor = isVision ? 'rgba(96,165,250,0.3)' : isSkills ? 'rgba(52,211,153,0.3)' : 'var(--sl-border-default)';
-                                                                    const capClass = isVision ? 'cap-vision' : isSkills ? 'cap-skills' : 'cap-neutral';
+                                                                    const isDp = cap === 'dp';
+                                                                    const capColor = isVision ? 'rgb(96,165,250)' : isSkills ? 'rgb(52,211,153)' : isDp ? 'rgb(251,146,60)' : 'var(--sl-text-muted)';
+                                                                    const borderColor = isVision ? 'rgba(96,165,250,0.3)' : isSkills ? 'rgba(52,211,153,0.3)' : isDp ? 'rgba(251,146,60,0.3)' : 'var(--sl-border-default)';
+                                                                    const capClass = isVision ? 'cap-vision' : isSkills ? 'cap-skills' : isDp ? 'cap-dp' : 'cap-neutral';
                                                                     return (
                                                                         <span key={cap} className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${capClass}`} style={{ border: `1px solid ${borderColor}`, color: capColor }}>
                                                                             {cap}
