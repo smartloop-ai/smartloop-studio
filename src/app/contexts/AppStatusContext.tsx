@@ -103,7 +103,6 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
           indexedCount++;
           if (!processedDatesRef.current[d.id]) {
             newlyIndexedIds.push(d.id);
-            storageService.setDocumentProcessed(d.id, currentProjectId);
           }
         } else {
           pendingCount++;
@@ -112,11 +111,20 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
 
       setIndexingStatus(prev => ({ ...prev, ...nextStatuses }));
       if (newlyIndexedIds.length > 0) {
-        const now = new Date().toISOString();
-        setProcessedDates(prev => {
-          const next = { ...prev };
-          for (const id of newlyIndexedIds) next[id] = now;
-          return next;
+        // Resolve each timestamp from SQLite — preserves the original
+        // processed_at when the DB already has a row (via ON CONFLICT).
+        Promise.all(
+          newlyIndexedIds.map(id =>
+            storageService.setDocumentProcessed(id, currentProjectId).then(stored => ({ id, stored }))
+          )
+        ).then(results => {
+          setProcessedDates(prev => {
+            const next = { ...prev };
+            for (const { id, stored } of results) {
+              if (stored) next[id] = stored;
+            }
+            return next;
+          });
         });
       }
       setIndexingProgress(
@@ -138,9 +146,13 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     if (status === 'indexed') {
       const pid = projectIdRef.current;
       if (pid && !processedDatesRef.current[docId]) {
-        storageService.setDocumentProcessed(docId, pid);
-        const now = new Date().toISOString();
-        setProcessedDates(prev => ({ ...prev, [docId]: now }));
+        // Trust the DB's value, not `now`: ON CONFLICT preserves the original
+        // processed_at, so a doc indexed in a previous session keeps its real
+        // timestamp even after a remount or in-memory wipe.
+        storageService.setDocumentProcessed(docId, pid).then(stored => {
+          if (!stored) return;
+          setProcessedDates(prev => ({ ...prev, [docId]: stored }));
+        });
       }
     }
   }, []);
