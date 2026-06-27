@@ -7,6 +7,11 @@ createTitlebarOnDOMContentLoaded({
   backgroundColor: TitlebarColor.fromHex('#000000'),
 }).then((titlebar) => {
   titlebarInstance = titlebar;
+  // On Linux, keep the left side of the titlebar blank instead of rendering
+  // the favicon (which previously showed as a broken image).
+  if (process.platform === 'linux') {
+    document.querySelector('.cet-titlebar .cet-icon')?.remove();
+  }
 });
 
 // Expose protected methods that allow the renderer process to use
