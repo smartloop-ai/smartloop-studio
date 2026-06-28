@@ -49,11 +49,22 @@ export default function Login() {
         if (!window.electronAPI?.slpAuthStatus) return;
         const status = await window.electronAPI.slpAuthStatus();
         if (status?.success && status?.has_access_token) {
-          // Authenticated! Stop polling and navigate home
+          // Authenticated! Stop polling.
           if (pollRef.current) {
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
+          // Broadcast the auth change so views (e.g. Settings) force-refresh
+          // per-user model entitlement (is_accessible) instead of showing the
+          // stale, pre-login cache. Fetch the full profile first (includes
+          // is_paid) to match the sidebar's login flow.
+          try {
+            const profileResult = await window.electronAPI?.slpFetchUser?.({ force: true });
+            const fullUser = profileResult?.success && profileResult.user
+              ? { ...status.user, ...profileResult.user }
+              : status?.user;
+            window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
+          } catch { /* non-fatal — navigation still proceeds */ }
           setStatusMessage("Success! Redirecting...");
           setTimeout(() => {
             navigate('/', { replace: true });

@@ -676,6 +676,11 @@ function setDocumentProcessed(documentId, projectId) {
     VALUES (?, ?, ?)
     ON CONFLICT(document_id) DO NOTHING
   `).run(documentId, projectId, now);
+  // Read back the stored value so callers can use it (preserved original on
+  // conflict, freshly inserted `now` otherwise). Prevents in-memory state
+  // from drifting to `now` when DB still holds the original timestamp.
+  const row = d.prepare('SELECT processed_at FROM document_status WHERE document_id = ?').get(documentId);
+  return row?.processed_at ?? now;
 }
 
 function getDocumentStatusByProject(projectId) {
