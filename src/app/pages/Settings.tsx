@@ -754,16 +754,14 @@ export default function SettingsPage() {
                                                         key={name}
                                                         onClick={() => {
                                                             if (toggling) return;
-                                                            const userIsFree = !(user?.is_paid || user?.is_premium);
-                                                            if (accessLevel === 'pro' && userIsFree) return;
-                                                            if (!model.is_accessible && accessLevel !== 'free') return;
+                                                            if (model.is_accessible === false) return;
                                                             if (!model.downloaded) {
                                                                 handleToggleModel(name, workspaceName, true);
                                                             } else if (!isLastEnabled) {
                                                                 handleToggleModel(name, workspaceName, !isEnabled);
                                                             }
                                                         }}
-                                                        style={{ cursor: toggling || isLastEnabled || (accessLevel === 'pro' && !(user?.is_paid || user?.is_premium)) ? 'default' : 'pointer' }}
+                                                        style={{ cursor: toggling || isLastEnabled || model.is_accessible === false ? 'default' : 'pointer' }}
                                                     >
                                                         <Box component="td">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -809,7 +807,7 @@ export default function SettingsPage() {
                                                             )}
                                                         </Box>
                                                         <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 90, pr: 3 }}>
-                                                            {(accessLevel === 'pro' && !(user?.is_paid || user?.is_premium)) || (!model.is_accessible && accessLevel !== 'free') ? (
+                                                            {model.is_accessible === false ? (
                                                                 <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
                                                             ) : !model.downloaded ? (
                                                                 toggling === name ? (
