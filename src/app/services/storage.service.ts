@@ -449,12 +449,14 @@ class StorageService {
 
   // --- Document Status (SQLite) ---
 
-  async setDocumentProcessed(documentId: string, projectId: string): Promise<void> {
-    if (!this.db) return;
+  async setDocumentProcessed(documentId: string, projectId: string): Promise<string | null> {
+    if (!this.db) return null;
     try {
-      await this.db.setDocumentProcessed(documentId, projectId);
+      const stored = await this.db.setDocumentProcessed(documentId, projectId);
+      return typeof stored === 'string' ? stored : null;
     } catch (error) {
       console.error('Error setting document processed:', error);
+      return null;
     }
   }
 
