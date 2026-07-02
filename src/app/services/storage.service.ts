@@ -182,6 +182,7 @@ class StorageService {
         role: m.role,
         content: m.content,
         citations: m.citations || null,
+        attachments: m.attachments || null,
         created_at: m.created_at || m.timestamp,
       }));
       await this.db.addMessages(conversationId, msgsWithIds);
