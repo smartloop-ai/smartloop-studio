@@ -161,6 +161,12 @@ function openDatabase() {
     console.log('[DB] Added message_id column to messages');
   }
 
+  // Migration: add attachments column to messages (JSON array)
+  if (!msgCols.find(c => c.name === 'attachments')) {
+    db.exec("ALTER TABLE messages ADD COLUMN attachments TEXT");
+    console.log('[DB] Added attachments column to messages');
+  }
+
   // Migration: add folder_path column to projects
   const projectCols = db.prepare("PRAGMA table_info(projects)").all();
   if (!projectCols.find(c => c.name === 'folder_path')) {
@@ -389,14 +395,15 @@ function addMessages(conversation_id, messages) {
   const d = openDatabase();
   const now = new Date().toISOString();
   const insert = d.prepare(`
-    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, citations, message_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO messages (id, conversation_id, role, content, citations, message_id, attachments, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const tx = d.transaction((msgs) => {
     for (const msg of msgs) {
       const citations = msg.citations ? JSON.stringify(msg.citations) : null;
-      insert.run(msg.id, conversation_id, msg.role, msg.content, citations, msg.message_id || null, msg.created_at || now);
+      const attachments = msg.attachments && msg.attachments.length > 0 ? JSON.stringify(msg.attachments) : null;
+      insert.run(msg.id, conversation_id, msg.role, msg.content, citations, msg.message_id || null, attachments, msg.created_at || now);
     }
     d.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(now, conversation_id);
   });
@@ -428,6 +435,9 @@ function formatMessage(row) {
   }
   if (row.citations) {
     try { msg.citations = JSON.parse(row.citations); } catch {}
+  }
+  if (row.attachments) {
+    try { msg.attachments = JSON.parse(row.attachments); } catch {}
   }
   return msg;
 }
