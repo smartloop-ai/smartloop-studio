@@ -118,7 +118,6 @@ export default function FileAttacher({
       setAttachError(errorMessage);
       setIsUploading(false);
       if (onError) onError(errorMessage);
-      setSelectedFile(null);
     }
   };
 
@@ -197,7 +196,10 @@ export default function FileAttacher({
         ) : attachError ? (
           <>
             <CloseIcon sx={{ color: 'var(--sl-status-error)', fontSize: isSmall ? 14 : 24 }} />
-            <Box className={`text-sl-status-error ${isSmall ? 'text-xs' : 'text-sm'} truncate ${isSmall ? 'max-w-[200px]' : 'max-w-[300px]'}`}>
+            <Box
+              className={`text-sl-status-error ${isSmall ? 'text-xs' : 'text-sm'} whitespace-nowrap`}
+              title={attachError}
+            >
               {attachError}
             </Box>
           </>

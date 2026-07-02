@@ -109,17 +109,62 @@ const uploadAsset = async (file: File): Promise<DocumentServiceResponse> => {
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: errorData.detail || errorData.message || 'Failed to upload asset'
-    };
+    const rawError = errorData.detail || errorData.message || 'Failed to upload asset';
+    const normalized = normalizeAssetUploadError(rawError, response.status, errorData);
+    return { success: false, error: normalized };
   } catch (error: any) {
     console.error('Error uploading asset:', error);
     return {
       success: false,
-      error: error.message || 'An error occurred while uploading the asset'
+      error: normalizeAssetUploadError(error.message, undefined, undefined) || 'An error occurred while uploading the asset'
     };
   }
+};
+
+/**
+ * Translate backend asset-upload errors into friendly, user-facing messages.
+ * The SLP service raises a ValueError when a file exceeds the configured
+ * size limit — surface that as "Size limit exceeded for attachment" and
+ * append the token count when the backend returns one.
+ */
+const normalizeAssetUploadError = (
+  message: string | undefined,
+  status: number | undefined,
+  errorData: any
+): string => {
+  const msg = (message || '').toString();
+  const isSizeError =
+    status === 413 ||
+    /valueerror/i.test(msg) ||
+    /size limit/i.test(msg) ||
+    /too large/i.test(msg) ||
+    /exceeds?/i.test(msg);
+  if (!isSizeError) return msg;
+
+  const tokens = extractTokenCount(errorData, msg);
+  return tokens != null
+    ? `Size limit exceeded (${tokens.toLocaleString()} tokens)`
+    : 'Size limit exceeded';
+};
+
+const extractTokenCount = (errorData: any, msg: string): number | null => {
+  const candidates = [
+    errorData?.tokens,
+    errorData?.token_count,
+    errorData?.tokenCount,
+    errorData?.detail?.tokens,
+    errorData?.detail?.token_count,
+  ];
+  for (const c of candidates) {
+    const n = typeof c === 'number' ? c : typeof c === 'string' ? parseInt(c, 10) : NaN;
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const match = msg.match(/([\d,]+)\s*tokens?/i);
+  if (match) {
+    const n = parseInt(match[1].replace(/,/g, ''), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
 };
 
 /**
