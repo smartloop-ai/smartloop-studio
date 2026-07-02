@@ -8,8 +8,18 @@ export interface IndexingProgress {
   pending: number;
 }
 
+export interface ServerHealth {
+  url?: string;
+  status: string;
+  details?: Record<string, any>;
+  error?: string;
+}
+
 export interface AppStatus {
   memory: number | null;
+  // Latest local SLP service health, driven by the central health-monitor poll.
+  // Consumers (e.g. Settings) read this instead of fetching /health themselves.
+  serverHealth: ServerHealth | null;
   indexingProgress: IndexingProgress | null;
   // Per-document live status. Seeded from SQLite on project change,
   // updated by the /health poll and by callers (e.g. upload progress).
@@ -25,7 +35,7 @@ export interface AppStatus {
   removeProcessed: (docId: string) => void;
 }
 
-interface HealthPayload {
+interface HealthDetails {
   memory_percent?: number;
   memory?: number;
   indexing?: {
@@ -33,8 +43,13 @@ interface HealthPayload {
   };
 }
 
+interface HealthPayload extends ServerHealth {
+  details?: HealthDetails;
+}
+
 const DEFAULT_STATUS: AppStatus = {
   memory: null,
+  serverHealth: null,
   indexingProgress: null,
   indexingStatus: {},
   processedDates: {},
@@ -46,6 +61,7 @@ const AppStatusContext = createContext<AppStatus>(DEFAULT_STATUS);
 
 export function AppStatusProvider({ children }: { children: ReactNode }) {
   const [memory, setMemory] = useState<number | null>(null);
+  const [serverHealth, setServerHealth] = useState<ServerHealth | null>(null);
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
   const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
@@ -76,14 +92,38 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [projectId]);
 
+  // Seed last-known health from SQLite so a cold start (before the first poll)
+  // paints immediately; the live health-monitor push then keeps it current.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const saved = await storageService.getAllSettings();
+      if (cancelled) return;
+      const cached = saved?.service_health as ServerHealth | undefined;
+      if (!cached) return;
+      setServerHealth(prev => prev ?? cached);
+      const d = cached.details;
+      setMemory(prev => prev ?? (d?.memory_percent ?? d?.memory ?? null));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     const api = (window as any).electronAPI;
     if (!api?.onHealthUpdate) return;
 
-    const handler = (health: HealthPayload) => {
-      setMemory(health?.memory_percent ?? health?.memory ?? null);
+    const handler = (payload: HealthPayload) => {
+      setServerHealth(payload);
+      // Persist the last good snapshot so any consumer can paint instantly on a
+      // cold start before the first poll completes.
+      if (payload?.status === 'running') {
+        storageService.setSetting('service_health', payload);
+      }
 
-      const indexingDocs = health?.indexing?.documents;
+      const details = payload?.details;
+      setMemory(details?.memory_percent ?? details?.memory ?? null);
+
+      const indexingDocs = details?.indexing?.documents;
       const currentProjectId = projectIdRef.current;
       if (!Array.isArray(indexingDocs) || !currentProjectId) {
         setIndexingProgress(null);
@@ -176,6 +216,7 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
 
   const value: AppStatus = {
     memory,
+    serverHealth,
     indexingProgress,
     indexingStatus,
     processedDates,
