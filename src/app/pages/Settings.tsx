@@ -747,7 +747,6 @@ export default function SettingsPage() {
                                                 const size = model.size || model.file_size;
                                                 const accessLevel = model.access_level || 'free';
                                                 const isEnabled = enabledModels.has(name);
-                                                const isLastEnabled = isEnabled && enabledModels.size <= 1;
 
                                                 return (
                                                     <tr
@@ -757,11 +756,12 @@ export default function SettingsPage() {
                                                             if (model.is_accessible === false) return;
                                                             if (!model.downloaded) {
                                                                 handleToggleModel(name, workspaceName, true);
-                                                            } else if (!isLastEnabled) {
+                                                            } else {
+                                                                // Enable/disable is independent per model; orchestra is always available.
                                                                 handleToggleModel(name, workspaceName, !isEnabled);
                                                             }
                                                         }}
-                                                        style={{ cursor: toggling || isLastEnabled || model.is_accessible === false ? 'default' : 'pointer' }}
+                                                        style={{ cursor: toggling || model.is_accessible === false ? 'default' : 'pointer' }}
                                                     >
                                                         <Box component="td">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
