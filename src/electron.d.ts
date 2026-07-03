@@ -72,7 +72,6 @@ export interface ElectronAPI {
   // Model management (additional)
   loadModel: () => Promise<any>;
   // SLP auth and model management
-  slpSetAuth: (params: { type: string; token: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
   slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; user?: any; error?: string }>;
   slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
   slpFetchUser: () => Promise<{ success: boolean; user?: any }>;

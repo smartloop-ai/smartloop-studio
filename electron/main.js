@@ -1570,34 +1570,6 @@ ipcMain.handle('unload-model', async () => {
   return { success: true };
 });
 
-// IPC: Set auth token on local SLP service
-ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
-  try {
-    const res = await fetch(`${baseUrl}/v1/auth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: type || 'access_token' })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log('[SLP] Auth token set successfully');
-      // Refresh the user profile (broadcasts to renderer) and model catalog
-      // now that we have a token.
-      fetchUserProfile();
-      fetchModels();
-      return { success: true, data };
-    } else {
-      console.error('[SLP] Failed to set auth token:', res.status);
-      return { success: false, error: `HTTP ${res.status}` };
-    }
-  } catch (err) {
-    console.error('[SLP] Error setting auth token:', err.message);
-    return { success: false, error: err.message };
-  }
-});
-
 // IPC: Check auth status on local SLP service
 ipcMain.handle('slp-auth-status', async () => {
   const baseUrl = slpService.getLocalBaseUrl();
