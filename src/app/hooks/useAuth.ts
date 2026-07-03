@@ -43,7 +43,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
           let profile = authUser;
           if (window.electronAPI?.slpFetchUser) {
             try {
-              const result = await window.electronAPI.slpFetchUser({ force: true });
+              const result = await window.electronAPI.slpFetchUser();
               if (result?.success && result.user) {
                 profile = { ...authUser, ...result.user };
               }
