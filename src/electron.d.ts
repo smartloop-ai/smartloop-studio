@@ -85,6 +85,8 @@ export interface ElectronAPI {
   slpCancelModelDownload: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
   removeModelDownloadProgressListener: () => void;
+  onModelsUpdated: (callback: (data: { models: any[] }) => void) => void;
+  removeModelsUpdatedListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // System hardware info
