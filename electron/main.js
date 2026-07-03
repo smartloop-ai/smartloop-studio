@@ -1446,10 +1446,6 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
       const wsMatch = wsList.find(wm => wm.model_name === modelName || wm.name === modelName);
       existsInWorkspace = wsMatch && wsMatch.downloaded;
       console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
-      if (!existsInWorkspace && cachedModels) {
-        const entry = cachedModels.find(m => (m.name || m.id || m.model) === modelName);
-        if (entry) console.log(`[Models] model entry from /v1/models:`, JSON.stringify(entry));
-      }
     } else {
       console.log(`[Models] set-model-enabled: workspace fetch failed: HTTP ${wsRes.status}`);
     }
@@ -1574,33 +1570,6 @@ ipcMain.handle('unload-model', async () => {
   return { success: true };
 });
 
-// IPC: Set auth token on local SLP service
-ipcMain.handle('slp-set-auth', async (event, { type, token }) => {
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
-  try {
-    const res = await fetch(`${baseUrl}/v1/auth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: type || 'access_token' })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log('[SLP] Auth token set successfully');
-      // Fetch user profile and models now that we have a token
-      fetchUserProfile(true);
-      fetchModels(true);
-      return { success: true, data };
-    } else {
-      console.error('[SLP] Failed to set auth token:', res.status);
-      return { success: false, error: `HTTP ${res.status}` };
-    }
-  } catch (err) {
-    console.error('[SLP] Error setting auth token:', err.message);
-    return { success: false, error: err.message };
-  }
-});
-
 // IPC: Check auth status on local SLP service
 ipcMain.handle('slp-auth-status', async () => {
   const baseUrl = slpService.getLocalBaseUrl();
@@ -1622,7 +1591,6 @@ ipcMain.handle('slp-auth-status', async () => {
 ipcMain.handle('slp-auth-logout', async () => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
-  clearCachedUser();
   try {
     const res = await fetch(`${baseUrl}/v1/auth/token?type=access_token`, { method: 'DELETE' });
     if (res.ok) {
@@ -1635,23 +1603,15 @@ ipcMain.handle('slp-auth-logout', async () => {
   }
 });
 
-// --- Centralized user profile management ---
-let cachedUserProfile = null;
-let lastUserFetchTime = 0;
-const USER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-async function fetchUserProfile(force = false) {
-  const now = Date.now();
-  if (!force && cachedUserProfile && now - lastUserFetchTime < USER_CACHE_TTL) {
-    return cachedUserProfile;
-  }
+// Fetch the user profile from the backend and broadcast it to the renderer.
+async function fetchUserProfile() {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
   try {
     const res = await fetch(`${baseUrl}/v1/users/me`);
     if (res.ok) {
       const result = await res.json();
-      cachedUserProfile = {
+      const profile = {
         email: result.email,
         name: result.name,
         verified: result.is_verified,
@@ -1667,12 +1627,10 @@ async function fetchUserProfile(force = false) {
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
-      lastUserFetchTime = now;
-      // Broadcast to renderer
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('user-profile-updated', cachedUserProfile);
+        mainWindow.webContents.send('user-profile-updated', profile);
       }
-      return cachedUserProfile;
+      return profile;
     }
     return null;
   } catch (err) {
@@ -1681,17 +1639,9 @@ async function fetchUserProfile(force = false) {
   }
 }
 
-function clearCachedUser() {
-  cachedUserProfile = null;
-  lastUserFetchTime = 0;
-  cachedModels = null;
-  lastModelsFetchTime = 0;
-}
-
-// IPC: Renderer requests user profile (throttled)
-ipcMain.handle('slp-fetch-user', async (event, opts) => {
-  const force = opts?.force || false;
-  const profile = await fetchUserProfile(force);
+// IPC: Renderer requests the user profile.
+ipcMain.handle('slp-fetch-user', async () => {
+  const profile = await fetchUserProfile();
   return { success: !!profile, user: profile };
 });
 
@@ -1706,7 +1656,7 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
       body: JSON.stringify(settings),
     });
     if (res.ok) {
-      const profile = await fetchUserProfile(true);
+      const profile = await fetchUserProfile();
       return { success: true, user: profile };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
@@ -1716,36 +1666,26 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
-// --- Centralized model list management ---
-let cachedModels = null;
-let lastModelsFetchTime = 0;
-const MODELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-async function fetchModels(force = false) {
-  const now = Date.now();
-  if (!force && cachedModels && now - lastModelsFetchTime < MODELS_CACHE_TTL) {
-    return cachedModels;
-  }
+// Fetch the model catalog from the backend.
+async function fetchModels() {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
   try {
     const res = await fetch(`${baseUrl}/v1/models`);
     if (res.ok) {
       const data = await res.json();
-      cachedModels = Array.isArray(data) ? data : (data.data || data.models || []);
-      lastModelsFetchTime = now;
-      return cachedModels;
+      return Array.isArray(data) ? data : (data.data || data.models || []);
     }
-    return cachedModels; // return stale cache on HTTP error
+    return null;
   } catch (err) {
     console.warn('[Models] Error fetching models:', err.message);
-    return cachedModels; // return stale cache on network error
+    return null;
   }
 }
 
 // IPC: Fetch available models from local SLP service (cached)
-ipcMain.handle('slp-list-models', async (event, force) => {
-  const models = await fetchModels(force);
+ipcMain.handle('slp-list-models', async () => {
+  const models = await fetchModels();
   if (!models) return { success: false, error: 'No local service' };
 
   // Merge enabled state from workspace endpoint
@@ -2041,7 +1981,7 @@ function createWindow() {
       if (res.ok) {
         const data = await res.json();
         if (data.has_access_token) {
-          fetchUserProfile(); // throttled by TTL
+          fetchUserProfile();
         }
       }
     } catch { }
@@ -2320,7 +2260,7 @@ if (!gotTheLock) {
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             healthMonitor.start(() => mainWindow);
-            fetchModels(); // prime model cache
+            fetchModels();
           }
 
           if (needsBootstrap) {

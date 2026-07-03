@@ -54,12 +54,10 @@ export default function Login() {
             clearInterval(pollRef.current);
             pollRef.current = null;
           }
-          // Broadcast the auth change so views (e.g. Settings) force-refresh
-          // per-user model entitlement (is_accessible) instead of showing the
-          // stale, pre-login cache. Fetch the full profile first (includes
-          // is_paid) to match the sidebar's login flow.
+          // Fetch the full profile (includes is_paid), then broadcast the auth
+          // change so views like Settings reload per-user model entitlement.
           try {
-            const profileResult = await window.electronAPI?.slpFetchUser?.({ force: true });
+            const profileResult = await window.electronAPI?.slpFetchUser?.();
             const fullUser = profileResult?.success && profileResult.user
               ? { ...status.user, ...profileResult.user }
               : status?.user;

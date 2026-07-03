@@ -83,12 +83,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
   // SLP auth and model management
-  slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
   slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
-  slpFetchUser: (opts) => ipcRenderer.invoke('slp-fetch-user', opts),
+  slpFetchUser: () => ipcRenderer.invoke('slp-fetch-user'),
   slpUpdateUserSettings: (settings) => ipcRenderer.invoke('slp-update-user-settings', settings),
-  slpListModels: (force) => ipcRenderer.invoke('slp-list-models', force),
+  slpListModels: () => ipcRenderer.invoke('slp-list-models'),
   slpInitModel: (modelName) => ipcRenderer.invoke('slp-init-model', modelName),
   slpSetModelEnabled: (modelName, enabled) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled),
   onModelInitProgress: (callback) => {
