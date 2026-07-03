@@ -83,7 +83,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
   // SLP auth and model management
-  slpSetAuth: (params) => ipcRenderer.invoke('slp-set-auth', params),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
   slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
   slpFetchUser: () => ipcRenderer.invoke('slp-fetch-user'),
