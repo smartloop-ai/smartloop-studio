@@ -75,9 +75,9 @@ export interface ElectronAPI {
   slpSetAuth: (params: { type: string; token: string }) => Promise<{ success: boolean; data?: any; error?: string }>;
   slpAuthStatus: () => Promise<{ success: boolean; has_access_token?: boolean; has_developer_token?: boolean; user?: any; error?: string }>;
   slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
-  slpFetchUser: (opts?: { force?: boolean }) => Promise<{ success: boolean; user?: any }>;
+  slpFetchUser: () => Promise<{ success: boolean; user?: any }>;
   slpUpdateUserSettings: (settings: Record<string, any>) => Promise<{ success: boolean; user?: any; error?: string }>;
-  slpListModels: (force?: boolean) => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
   slpInitModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
   slpSetModelEnabled: (modelName: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
   onModelInitProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean; stage?: string }) => void) => void;
