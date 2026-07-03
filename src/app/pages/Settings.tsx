@@ -231,12 +231,12 @@ export default function SettingsPage() {
     }, []);
 
     // Fetch models from local SLP service via IPC
-    const fetchLocalModels = useCallback(async (force = false) => {
+    const fetchLocalModels = useCallback(async () => {
         setLocalModelsLoading(true);
         try {
             const api = window.electronAPI;
             if (api?.slpListModels) {
-                const result = await api.slpListModels(force);
+                const result = await api.slpListModels();
                 if (result?.success && result.models) {
                     setLocalModels(result.models);
                 }
@@ -274,7 +274,7 @@ export default function SettingsPage() {
         setToggling(null);
         setDownloadProgress(null);
         setEnabledOverrides(prev => { const next = new Map(prev); next.delete(modelName); return next; });
-        await fetchLocalModels(true);
+        await fetchLocalModels();
     }, [fetchLocalModels]);
 
     const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
@@ -288,7 +288,7 @@ export default function SettingsPage() {
 
         try {
             await api.slpSetModelEnabled(workspaceName, enabled);
-            await fetchLocalModels(true);
+            await fetchLocalModels();
         } finally {
             togglingRef.current = null;
             setToggling(null);
@@ -301,7 +301,7 @@ export default function SettingsPage() {
         fetchLocalModels();
         fetchServerHealth();
 
-        const handleAuthChange = () => fetchLocalModels(true);
+        const handleAuthChange = () => fetchLocalModels();
         window.addEventListener('authStateChanged', handleAuthChange);
         return () => window.removeEventListener('authStateChanged', handleAuthChange);
     }, []);

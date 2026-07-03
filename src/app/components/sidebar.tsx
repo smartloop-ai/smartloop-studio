@@ -74,7 +74,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           const status = await window.electronAPI.slpAuthStatus();
           if (status?.success && status?.has_access_token && status?.user) {
             // Fetch full profile so we have is_paid before rendering
-            const result = await window.electronAPI.slpFetchUser({ force: false });
+            const result = await window.electronAPI.slpFetchUser();
             const fullUser = result?.success && result.user
               ? { ...status.user, ...result.user }
               : status.user;
@@ -126,7 +126,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                 loginPollRef.current = null;
               }
               // Fetch full profile before showing user to avoid "Free" flash
-              const profileResult = await window.electronAPI!.slpFetchUser({ force: true });
+              const profileResult = await window.electronAPI!.slpFetchUser();
               const fullUser = profileResult?.success && profileResult.user
                 ? { ...status.user, ...profileResult.user }
                 : status.user;
