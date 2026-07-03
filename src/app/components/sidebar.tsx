@@ -897,36 +897,49 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         })()}
 
         {/* New Project button */}
-        <Tooltip title={!user?.email ? "Login to create a new project" : ""} placement="right">
-          <Box
-            onClick={!user?.email ? undefined : handleOpenCreateProjectDialog}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              padding: '9px 11px',
-              borderRadius: '7px',
-              cursor: !user?.email ? 'not-allowed' : 'pointer',
-              bgcolor: 'transparent',
-              color: 'var(--sl-text-muted)',
-              opacity: !user?.email ? 0.5 : 1,
-              fontWeight: 500,
-              fontSize: '13.5px',
-              transition: 'all 0.12s ease',
-              border: '1px solid transparent',
-              ...(user?.email && {
-                '&:hover': {
-                  bgcolor: 'var(--sl-white-alpha-5)',
-                  color: 'var(--sl-text-primary)',
-                },
-              }),
-              mb: 0.5,
-            }}
-          >
-            <AddIcon sx={{ fontSize: 18 }} />
-            <span style={{ flex: 1 }}>new project</span>
-          </Box>
-        </Tooltip>
+        {(() => {
+          const isFreePlan = !!authUser && !(authUser.is_paid || authUser.is_premium);
+          const nonSystemProjectCount = localProjects.filter((p: any) => !p.system).length;
+          const overFreeLimit = isFreePlan && nonSystemProjectCount >= 1;
+          const disabled = !user?.email || overFreeLimit;
+          const tooltip = !user?.email
+            ? 'Login to create a new project'
+            : overFreeLimit
+              ? 'Upgrade to Pro to create more than one project'
+              : '';
+          return (
+            <Tooltip title={tooltip} placement="right">
+              <Box
+                onClick={disabled ? undefined : handleOpenCreateProjectDialog}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  padding: '9px 11px',
+                  borderRadius: '7px',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  bgcolor: 'transparent',
+                  color: 'var(--sl-text-muted)',
+                  opacity: disabled ? 0.5 : 1,
+                  fontWeight: 500,
+                  fontSize: '13.5px',
+                  transition: 'all 0.12s ease',
+                  border: '1px solid transparent',
+                  ...(!disabled && {
+                    '&:hover': {
+                      bgcolor: 'var(--sl-white-alpha-5)',
+                      color: 'var(--sl-text-primary)',
+                    },
+                  }),
+                  mb: 0.5,
+                }}
+              >
+                <AddIcon sx={{ fontSize: 18 }} />
+                <span style={{ flex: 1 }}>new project</span>
+              </Box>
+            </Tooltip>
+          );
+        })()}
       </Box>
 
       {/* Recent Conversations Section */}

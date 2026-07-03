@@ -104,6 +104,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeModelDownloadProgressListener: () => {
     ipcRenderer.removeAllListeners('model-download-progress');
   },
+  onModelsUpdated: (callback) => {
+    ipcRenderer.on('models-updated', (event, data) => callback(data));
+  },
+  removeModelsUpdatedListener: () => {
+    ipcRenderer.removeAllListeners('models-updated');
+  },
   // SLP version management
   slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
   slpSwitchVersion: (version) => ipcRenderer.invoke('slp-switch-version', version),

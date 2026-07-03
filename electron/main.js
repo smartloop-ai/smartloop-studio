@@ -1424,6 +1424,7 @@ ipcMain.handle('slp-cancel-model-download', async (event, modelName) => {
     console.log(`[Models] Cancelling download for ${modelName}`);
     req.destroy();
     activeModelDownloads.delete(modelName);
+    invalidateModelsCache();
     return { success: true };
   }
   return { success: false, error: 'No active download' };
@@ -1540,6 +1541,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
     const text = await res.text();
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
+      invalidateModelsCache();
       try {
         return { success: true, ...JSON.parse(text) };
       } catch {
@@ -1594,6 +1596,9 @@ ipcMain.handle('slp-auth-logout', async () => {
   try {
     const res = await fetch(`${baseUrl}/v1/auth/token?type=access_token`, { method: 'DELETE' });
     if (res.ok) {
+      lastUserProfileEmail = null;
+      invalidateModelsCache();
+      refreshModelsCache();
       return { success: true };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
@@ -1602,6 +1607,9 @@ ipcMain.handle('slp-auth-logout', async () => {
     return { success: false, error: err.message };
   }
 });
+
+// Track the last known identity so we can bust the models cache on user change.
+let lastUserProfileEmail = null;
 
 // Fetch the user profile from the backend and broadcast it to the renderer.
 async function fetchUserProfile() {
@@ -1627,6 +1635,11 @@ async function fetchUserProfile() {
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
+      if (lastUserProfileEmail !== profile.email) {
+        lastUserProfileEmail = profile.email;
+        invalidateModelsCache();
+        refreshModelsCache();
+      }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('user-profile-updated', profile);
       }
@@ -1666,61 +1679,99 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
-// Fetch the model catalog from the backend.
-async function fetchModels() {
+// Fetch catalog + workspace state in parallel and merge into a single model list.
+async function fetchModelsWithMerge() {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
-  try {
-    const res = await fetch(`${baseUrl}/v1/models`);
-    if (res.ok) {
-      const data = await res.json();
-      return Array.isArray(data) ? data : (data.data || data.models || []);
+
+  const [modelsRes, wsRes] = await Promise.all([
+    fetch(`${baseUrl}/v1/models`).catch((err) => {
+      console.warn('[Models] Error fetching catalog:', err.message);
+      return null;
+    }),
+    fetch(`${baseUrl}/v1/models/workspace`).catch((err) => {
+      console.warn('[Models] Error fetching workspace:', err.message);
+      return null;
+    }),
+  ]);
+
+  if (!modelsRes || !modelsRes.ok) return null;
+  const catalog = await modelsRes.json();
+  const models = Array.isArray(catalog) ? catalog : (catalog.data || catalog.models || []);
+
+  const wsMap = new Map();
+  if (wsRes && wsRes.ok) {
+    const wsData = await wsRes.json();
+    const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
+    for (const wm of wsList) {
+      wsMap.set(wm.model_name, wm);
+      if (wm.name && wm.name !== wm.model_name) wsMap.set(wm.name, wm);
+      if (wm.model_id) wsMap.set(wm.model_id, wm);
     }
-    return null;
-  } catch (err) {
-    console.warn('[Models] Error fetching models:', err.message);
-    return null;
   }
+
+  for (const model of models) {
+    const key = model.name || model.id || model.model;
+    const ws = wsMap.get(key) || wsMap.get(model.model_name) || wsMap.get(model.id);
+    if (ws) {
+      model.enabled = ws.enabled === true;
+      model.downloaded = ws.downloaded === true;
+      model.capabilities = ws.capabilities || ws.effective_capabilities || model.capabilities || [];
+      model.workspace_name = ws.model_name;
+    } else {
+      model.enabled = false;
+      model.downloaded = false;
+    }
+  }
+  return models;
 }
 
-// IPC: Fetch available models from local SLP service (cached)
-ipcMain.handle('slp-list-models', async () => {
-  const models = await fetchModels();
-  if (!models) return { success: false, error: 'No local service' };
+// Stale-while-revalidate cache for the merged model list.
+let modelsCache = null; // { data, timestamp }
+let modelsRefreshPromise = null;
+const MODELS_FRESH_TTL_MS = 30_000;
 
-  // Merge enabled state from workspace endpoint
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (baseUrl) {
+function refreshModelsCache() {
+  if (modelsRefreshPromise) return modelsRefreshPromise;
+  modelsRefreshPromise = (async () => {
     try {
-      const wsRes = await fetch(`${baseUrl}/v1/models/workspace`);
-      if (wsRes.ok) {
-        const wsData = await wsRes.json();
-        const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
-        const wsMap = new Map();
-        for (const wm of wsList) {
-          wsMap.set(wm.model_name, wm);
-          if (wm.name && wm.name !== wm.model_name) wsMap.set(wm.name, wm);
-          if (wm.model_id) wsMap.set(wm.model_id, wm);
-        }
-        for (const model of models) {
-          const key = model.name || model.id || model.model;
-          const ws = wsMap.get(key) || wsMap.get(model.model_name) || wsMap.get(model.id);
-          if (ws) {
-            model.enabled = ws.enabled === true;
-            model.downloaded = ws.downloaded === true;
-            model.capabilities = ws.capabilities || ws.effective_capabilities || model.capabilities || [];
-            model.workspace_name = ws.model_name;
-          } else {
-            model.enabled = false;
-            model.downloaded = false;
-          }
+      const models = await fetchModelsWithMerge();
+      if (models) {
+        modelsCache = { data: models, timestamp: Date.now() };
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('models-updated', { models });
         }
       }
-    } catch (err) {
-      console.warn('[Models] Error fetching workspace models:', err.message);
+      return models;
+    } finally {
+      modelsRefreshPromise = null;
     }
-  }
+  })();
+  return modelsRefreshPromise;
+}
 
+function invalidateModelsCache() {
+  modelsCache = null;
+}
+
+// Kept for backwards-compatible startup warmup.
+async function fetchModels() {
+  return refreshModelsCache();
+}
+
+// IPC: Fetch available models — fresh cache returns instantly, stale cache
+// returns immediately while a background refresh emits `models-updated`.
+ipcMain.handle('slp-list-models', async () => {
+  const now = Date.now();
+  if (modelsCache && now - modelsCache.timestamp < MODELS_FRESH_TTL_MS) {
+    return { success: true, models: modelsCache.data };
+  }
+  if (modelsCache) {
+    refreshModelsCache();
+    return { success: true, models: modelsCache.data };
+  }
+  const models = await refreshModelsCache();
+  if (!models) return { success: false, error: 'No local service' };
   return { success: true, models };
 });
 
