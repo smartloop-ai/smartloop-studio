@@ -191,16 +191,6 @@ export default function AvailableModels() {
                                                     </span>
                                                 );
                                             })}
-                                            {accessLevel === 'pro' && (
-                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid rgba(234,179,8,0.3)', color: 'rgb(234,179,8)' }}>
-                                                    PRO
-                                                </span>
-                                            )}
-                                            {accessLevel === 'free' && (
-                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold cap-neutral" style={{ border: '1px solid var(--sl-white-alpha-7)', color: 'var(--sl-text-faint)' }}>
-                                                    FREE
-                                                </span>
-                                            )}
                                             {accessLevel === 'internal' && (
                                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid rgba(168,85,247,0.3)', color: 'rgb(168,85,247)' }}>
                                                     INTERNAL
