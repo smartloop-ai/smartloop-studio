@@ -78,7 +78,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   getFrameworkVersion: () => ipcRenderer.invoke('get-framework-version'),
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   commandExists: (cmd) => ipcRenderer.invoke('command-exists', cmd),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
