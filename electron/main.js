@@ -852,9 +852,6 @@ ipcMain.handle('db-delete-documents-by-project', (event, projectId) => database.
 // IPC: get framework version
 ipcMain.handle('get-framework-version', () => VERSION);
 
-// IPC: get app (package) version
-ipcMain.handle('get-app-version', () => app.getVersion());
-
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {
   return slpService.getLocalBaseUrl();
@@ -991,39 +988,46 @@ ipcMain.handle('get-slp-config', async () => {
   }
 });
 
+// GPU name doesn't change during a session — probe once and cache the promise
+let gpuNamePromise = null;
+function getGpuName() {
+  if (gpuNamePromise) return gpuNamePromise;
+  gpuNamePromise = (async () => {
+    try {
+      const result = execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits'], { timeout: 3000 }).toString().trim();
+      const name = result.split('\n')[0].trim();
+      if (name) return name;
+    } catch { }
+
+    if (process.platform === 'linux') {
+      try {
+        const { execSync } = require('child_process');
+        const result = execSync("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display'", { timeout: 3000, shell: true }).toString();
+        const match = result.match(/:\s+(.+)$/m);
+        if (match) return match[1].trim();
+      } catch { }
+    }
+
+    if (process.platform === 'darwin') {
+      try {
+        const { execSync } = require('child_process');
+        const result = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model'", { timeout: 3000, shell: true }).toString();
+        const match = result.match(/Chipset Model:\s+(.+)$/m);
+        if (match) return match[1].trim();
+      } catch { }
+    }
+
+    return null;
+  })();
+  return gpuNamePromise;
+}
+
 // IPC: get system hardware info (CPU, RAM, GPU)
 ipcMain.handle('get-system-info', async () => {
   const cpus = os.cpus();
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
-
-  let gpuName = null;
-
-  // Try nvidia-smi first
-  try {
-    const result = execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits'], { timeout: 3000 }).toString().trim();
-    gpuName = result.split('\n')[0].trim() || null;
-  } catch { }
-
-  // Fallback: lspci on Linux
-  if (!gpuName && process.platform === 'linux') {
-    try {
-      const { execSync } = require('child_process');
-      const result = execSync("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display'", { timeout: 3000, shell: true }).toString();
-      const match = result.match(/:\s+(.+)$/m);
-      if (match) gpuName = match[1].trim();
-    } catch { }
-  }
-
-  // Fallback: system_profiler on macOS
-  if (!gpuName && process.platform === 'darwin') {
-    try {
-      const { execSync } = require('child_process');
-      const result = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model'", { timeout: 3000, shell: true }).toString();
-      const match = result.match(/Chipset Model:\s+(.+)$/m);
-      if (match) gpuName = match[1].trim();
-    } catch { }
-  }
+  const gpuName = await getGpuName();
 
   return {
     cpu: cpus[0]?.model?.replace(/\s+/g, ' ').trim() || 'Unknown CPU',
@@ -1606,6 +1610,13 @@ ipcMain.handle('slp-auth-logout', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+// Force an immediate health poll (e.g. after login/logout) so the UI reflects
+// model gating changes without waiting for the next scheduled poll.
+ipcMain.handle('slp-health-poke', () => {
+  healthMonitor.poke();
+  return { success: true };
 });
 
 // Track the last known identity so we can bust the models cache on user change.
