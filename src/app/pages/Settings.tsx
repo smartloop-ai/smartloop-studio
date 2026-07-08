@@ -198,7 +198,7 @@ export default function SettingsPage() {
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [lastTps, setLastTps] = useState<number | null>(null);
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
-    const [appVersion, setAppVersion] = useState<string | null>(null);
+    const appVersion = __APP_VERSION__;
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -214,26 +214,9 @@ export default function SettingsPage() {
     }, []);
 
     useEffect(() => {
-        const load = async () => {
-            const api = window.electronAPI;
-            if (api?.getSlpConfig) {
-                const cfg = await api.getSlpConfig();
-                setSlpConfig(cfg);
-            }
-            if (api?.getSystemInfo) {
-                try {
-                    const info = await api.getSystemInfo();
-                    setSystemInfo(info);
-                } catch {}
-            }
-            if (api?.getAppVersion) {
-                try {
-                    const ver = await api.getAppVersion();
-                    setAppVersion(ver);
-                } catch {}
-            }
-        };
-        load();
+        const api = window.electronAPI;
+        api?.getSlpConfig?.().then(setSlpConfig).catch(() => {});
+        api?.getSystemInfo?.().then(setSystemInfo).catch(() => {});
     }, []);
 
     // Load settings from SQLite first, then fall back to user object
