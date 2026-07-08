@@ -16,11 +16,17 @@ function send(channel, data) {
 
 async function pollOnce() {
   const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return IDLE_INTERVAL_MS;
+  if (!baseUrl) {
+    send('health-update', { status: 'unknown' });
+    return IDLE_INTERVAL_MS;
+  }
 
   try {
     const res = await fetch(`${baseUrl}/health`);
-    if (!res.ok) return IDLE_INTERVAL_MS;
+    if (!res.ok) {
+      send('health-update', { status: 'error', url: baseUrl, error: `HTTP ${res.status}` });
+      return IDLE_INTERVAL_MS;
+    }
 
     const health = await res.json();
 
@@ -36,10 +42,11 @@ async function pollOnce() {
       }
     }
 
-    send('health-update', health);
+    send('health-update', { status: 'running', url: baseUrl, details: health });
     return nextDelay;
-  } catch {
-    // Network or parse error — back off to idle cadence and retry.
+  } catch (err) {
+    // Network or parse error — surface as unreachable, back off to idle cadence.
+    send('health-update', { status: 'unreachable', url: baseUrl, error: err?.message });
     return IDLE_INTERVAL_MS;
   }
 }

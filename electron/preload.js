@@ -78,7 +78,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   getFrameworkVersion: () => ipcRenderer.invoke('get-framework-version'),
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   commandExists: (cmd) => ipcRenderer.invoke('command-exists', cmd),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
@@ -125,6 +124,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeSlpServiceReadyListener: () => {
     ipcRenderer.removeAllListeners('slp-service-ready');
   },
+  pokeHealth: () => ipcRenderer.invoke('slp-health-poke'),
   onHealthUpdate: (callback) => {
     ipcRenderer.on('health-update', (event, data) => callback(data));
   },

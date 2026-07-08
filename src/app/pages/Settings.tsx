@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Box, Switch, Slider, CircularProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
-import { getLocalApiEndpoint } from '@/app/constants';
+import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -183,6 +183,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 export default function SettingsPage() {
     const [user, setUser] = useAuthContext();
     const { themeId, setThemeId } = useThemeContext();
+    // Local SLP health comes from the central health-monitor via AppStatusContext —
+    // the page never fetches /health itself.
+    const { serverHealth } = useAppStatus();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -195,35 +198,7 @@ export default function SettingsPage() {
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [lastTps, setLastTps] = useState<number | null>(null);
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
-    const [serverHealth, setServerHealth] = useState<{ url: string; status: string; details?: Record<string, any>; error?: string } | null>(null);
-    const [appVersion, setAppVersion] = useState<string | null>(null);
-
-    // Fetch server health info
-    const fetchServerHealth = useCallback(async () => {
-        try {
-            const baseUrl = await getLocalApiEndpoint();
-            if (!baseUrl) { setServerHealth(null); return; }
-            try {
-                const res = await fetch(`${baseUrl}/health`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const health = { url: baseUrl, status: 'running', details: data };
-                    setServerHealth(health);
-                    await storageService.setSetting('service_health', health);
-                } else {
-                    setServerHealth({ url: baseUrl, status: 'error', error: `HTTP ${res.status}` });
-                }
-            } catch (err: any) {
-                setServerHealth({ url: baseUrl, status: 'unreachable', error: err.message });
-            }
-        } catch {
-            setServerHealth(null);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchServerHealth();
-    }, [fetchServerHealth]);
+    const appVersion = __APP_VERSION__;
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -239,26 +214,9 @@ export default function SettingsPage() {
     }, []);
 
     useEffect(() => {
-        const load = async () => {
-            const api = window.electronAPI;
-            if (api?.getSlpConfig) {
-                const cfg = await api.getSlpConfig();
-                setSlpConfig(cfg);
-            }
-            if (api?.getSystemInfo) {
-                try {
-                    const info = await api.getSystemInfo();
-                    setSystemInfo(info);
-                } catch {}
-            }
-            if (api?.getAppVersion) {
-                try {
-                    const ver = await api.getAppVersion();
-                    setAppVersion(ver);
-                } catch {}
-            }
-        };
-        load();
+        const api = window.electronAPI;
+        api?.getSlpConfig?.().then(setSlpConfig).catch(() => {});
+        api?.getSystemInfo?.().then(setSystemInfo).catch(() => {});
     }, []);
 
     // Load settings from SQLite first, then fall back to user object
@@ -269,11 +227,6 @@ export default function SettingsPage() {
             const memory = saved.default_memory ?? user?.default_memory ?? DEFAULT_SETTINGS.default_memory;
             const analytics = saved.analytics_enabled ?? DEFAULT_SETTINGS.analytics_enabled;
             setSettings({ default_temperature: temp, default_memory: memory, analytics_enabled: analytics });
-
-            // Restore cached service health
-            if (saved.service_health && !serverHealth) {
-                setServerHealth(saved.service_health);
-            }
         };
         loadSettings();
     }, [user]);
