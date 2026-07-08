@@ -82,6 +82,9 @@ export function useAuth(): [any, (user: any) => void, boolean] {
       } else {
         setUser((prev: any) => prev ? { ...prev, email: undefined, guest: true } : prev);
       }
+      // Model gating depends on login state; force an immediate health poll so
+      // the UI (e.g. Settings memory widget) reflects the change promptly.
+      (window as any).electronAPI?.pokeHealth?.();
     };
 
     window.addEventListener('userUpdated', handleUserUpdated as EventListener);

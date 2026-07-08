@@ -1608,6 +1608,13 @@ ipcMain.handle('slp-auth-logout', async () => {
   }
 });
 
+// Force an immediate health poll (e.g. after login/logout) so the UI reflects
+// model gating changes without waiting for the next scheduled poll.
+ipcMain.handle('slp-health-poke', () => {
+  healthMonitor.poke();
+  return { success: true };
+});
+
 // Track the last known identity so we can bust the models cache on user change.
 let lastUserProfileEmail = null;
 

@@ -125,6 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeSlpServiceReadyListener: () => {
     ipcRenderer.removeAllListeners('slp-service-ready');
   },
+  pokeHealth: () => ipcRenderer.invoke('slp-health-poke'),
   onHealthUpdate: (callback) => {
     ipcRenderer.on('health-update', (event, data) => callback(data));
   },
