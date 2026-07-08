@@ -6,6 +6,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import FolderIcon from '@mui/icons-material/Folder';
 import { documentService } from '@/app/services/document.service';
+import { useProjectContext } from '@/app/contexts/ProjectContext';
 import { dialogStyles } from '@/app/shared/utils';
 
 interface DocumentUploadDialogProps {
@@ -23,11 +24,11 @@ export default function DocumentUploadDialog({
   open,
   onClose,
   onSuccess,
-  user,
   preselectedProjectId,
   disableProjectSelection = false,
   folderPath,
 }: DocumentUploadDialogProps) {
+  const { projects } = useProjectContext();
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [projectInputValue, setProjectInputValue] = useState('');
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -38,14 +39,14 @@ export default function DocumentUploadDialog({
 
   // Set preselected project when dialog opens
   useEffect(() => {
-    if (open && preselectedProjectId && user?.projects) {
-      const project = user.projects.find((p: any) => p.id === preselectedProjectId);
+    if (open && preselectedProjectId && projects.length > 0) {
+      const project = projects.find((p: any) => p.id === preselectedProjectId);
       if (project) {
         setSelectedProject(project);
         setProjectInputValue(project.title || project.name);
       }
     }
-  }, [open, preselectedProjectId, user?.projects]);
+  }, [open, preselectedProjectId, projects]);
 
   const handleClose = () => {
     setSelectedProject(null);
@@ -214,7 +215,7 @@ export default function DocumentUploadDialog({
                 onInputChange={(_, newInputValue) => {
                   setProjectInputValue(newInputValue);
                 }}
-                options={user?.projects || []}
+                options={projects}
                 getOptionLabel={(option) => option.title || option.name}
                 renderOption={(props, option) => (
                   <Box component="li" {...props} sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>

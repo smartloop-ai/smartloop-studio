@@ -795,6 +795,193 @@ ipcMain.handle('db-get-all-projects', () => database.getAllProjects());
 ipcMain.handle('db-update-project', (event, id, updates) => database.updateProject(id, updates));
 ipcMain.handle('db-delete-project', (event, id) => database.deleteProject(id));
 
+// --- Projects: centralized /v1/projects access (source of truth for the
+// projects list + CRUD). The renderer talks to these via electronAPI.projects.*
+// and refreshes off the `projects-changed` broadcast. UI-only metadata
+// (display name, color, folder_path) lives in the SQLite `projects` table. ---
+
+// Broadcast a single "something changed" signal; the renderer refetches once.
+function broadcastProjectsChanged() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('projects-changed');
+  }
+}
+
+// Merge the API's project list with local UI metadata from SQLite.
+function enrichProjects(apiProjects) {
+  const localMeta = database.getAllProjects();
+  const metaMap = new Map(localMeta.map((m) => [m.id, m]));
+
+  const enriched = apiProjects.map((p) => {
+    const meta = metaMap.get(p.id);
+    const folderPath = p.cwd || meta?.folder_path || null;
+    return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
+  });
+
+  // Persist folder_path from the API response when SQLite lacks it.
+  for (const p of enriched) {
+    if (p.folder_path && !metaMap.get(p.id)?.folder_path) {
+      database.updateProject(p.id, { folder_path: p.folder_path });
+    }
+  }
+
+  return enriched;
+}
+
+// Delete every document belonging to a project via the SLP API before the
+// project itself is removed.
+async function deleteProjectDocuments(baseUrl, projectId) {
+  try {
+    const res = await fetch(`${baseUrl}/v1/projects/${projectId}/documents`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const docs = Array.isArray(data) ? data : (Array.isArray(data?.documents) ? data.documents : []);
+    for (const doc of docs) {
+      if (doc?.id) {
+        await fetch(`${baseUrl}/v1/projects/${projectId}/documents/${doc.id}`, { method: 'DELETE' }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('[Projects] Error cleaning up documents during delete:', err.message);
+  }
+}
+
+// GET /v1/projects, enriched. Tolerant: returns [] rather than erroring so the
+// renderer can render an empty state.
+ipcMain.handle('projects-list', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: true, data: [] };
+  try {
+    const res = await fetch(`${baseUrl}/v1/projects`);
+    if (!res.ok) return { success: true, data: [] };
+    const data = await res.json();
+    const projects = Array.isArray(data) ? data : (Array.isArray(data?.projects) ? data.projects : []);
+    return { success: true, data: enrichProjects(projects) };
+  } catch (err) {
+    console.error('[Projects] Error listing projects:', err.message);
+    return { success: true, data: [] };
+  }
+});
+
+// POST /v1/projects, then save UI metadata + auto-register a local MCP server.
+ipcMain.handle('projects-create', async (event, params) => {
+  try {
+    const { name, color, system = false, model_name } = params || {};
+    if (!name || !name.trim()) {
+      return { success: false, error: 'Project name is required' };
+    }
+
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const trimmedName = name.trim();
+    const slug = trimmedName.toLowerCase().replace(/\s+/g, '_');
+    const body = { name: slug, description: '', system };
+    if (model_name) body.model_name = model_name;
+
+    const res = await fetch(`${baseUrl}/v1/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 200 || res.status === 201) {
+      const project = await res.json();
+      const folderPath = project.cwd || params.folder_path;
+
+      database.upsertProject({ id: project.id, name: trimmedName, color, system, folder_path: folderPath });
+      database.addMcpServer({
+        id: `mcp_local_${project.id}`,
+        project_id: project.id,
+        name: slug,
+        server_type: 'local',
+        config: { name: slug },
+      });
+
+      broadcastProjectsChanged();
+      return { success: true, data: { ...project, name: trimmedName, color, folder_path: folderPath } };
+    }
+
+    const errorData = await res.json().catch(() => ({}));
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to create project' };
+  } catch (err) {
+    console.error('[Projects] Error creating project:', err.message);
+    return { success: false, error: err.message || 'An error occurred while creating the project' };
+  }
+});
+
+// PATCH /v1/projects/{id}, then sync UI metadata.
+ipcMain.handle('projects-update', async (event, projectId, updates) => {
+  try {
+    if (!projectId) return { success: false, error: 'Project ID is required' };
+
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const trimmedName = updates?.name?.trim();
+    const apiUpdates = { ...updates };
+    if (trimmedName) apiUpdates.name = trimmedName.toLowerCase().replace(/\s+/g, '_');
+
+    const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(apiUpdates),
+    });
+
+    if (res.status === 200) {
+      const project = await res.json();
+
+      const metaUpdates = {};
+      if (trimmedName) metaUpdates.name = trimmedName;
+      if (updates.color !== undefined) metaUpdates.color = updates.color;
+      if (project.cwd) metaUpdates.folder_path = project.cwd;
+      if (Object.keys(metaUpdates).length > 0) {
+        database.updateProject(projectId, metaUpdates);
+      }
+
+      broadcastProjectsChanged();
+      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color, folder_path: project.cwd } };
+    }
+
+    const errorData = await res.json().catch(() => ({}));
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to update project' };
+  } catch (err) {
+    console.error('[Projects] Error updating project:', err.message);
+    return { success: false, error: err.message || 'An error occurred while updating the project' };
+  }
+});
+
+// DELETE /v1/projects/{id}, cascading local SQLite cleanup. Atomic, off-renderer.
+ipcMain.handle('projects-delete', async (event, projectId) => {
+  try {
+    if (!projectId) return { success: false, error: 'Project ID is required' };
+
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    await deleteProjectDocuments(baseUrl, projectId);
+
+    const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, { method: 'DELETE' });
+
+    if (res.status === 200 || res.status === 204) {
+      database.deleteConversationsByProject(projectId);
+      database.deleteMcpServersByProject(projectId);
+      database.deleteDocumentStatusByProject(projectId);
+      database.deleteFoldersByProject(projectId);
+      database.deleteProject(projectId);
+
+      broadcastProjectsChanged();
+      return { success: true, data: { projectId } };
+    }
+
+    const errorData = await res.json().catch(() => ({}));
+    return { success: false, error: errorData.detail || errorData.message || 'Failed to delete project' };
+  } catch (err) {
+    console.error('[Projects] Error deleting project:', err.message);
+    return { success: false, error: err.message || 'An error occurred while deleting the project' };
+  }
+});
+
 // Conversations
 ipcMain.handle('db-create-conversation', (event, conv) => database.createConversation(conv));
 ipcMain.handle('db-get-conversation', (event, id) => database.getConversation(id));
@@ -1647,7 +1834,9 @@ async function fetchUserProfile() {
         selected_model: result.selected_model || null,
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
-        projects: result.projects,
+        // NOTE: `projects` is intentionally NOT copied from /users/me — that
+        // embedded field is deprecated. Projects come only from /v1/projects
+        // via the `projects-*` IPC handlers / ProjectContext.
         conversations: result.conversations || [],
         default_temperature: result.default_temperature !== undefined ? result.default_temperature : 0.3,
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
