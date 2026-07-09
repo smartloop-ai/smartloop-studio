@@ -57,6 +57,24 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const api = () => (window as any).electronAPI;
 
+  // Retry backoff for when the SLP service isn't ready to answer yet (see refresh()).
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef(400);
+  // Latest reconcile-inclusive refresher, so timers/health events that register once
+  // still call through to the current closure without needing to re-subscribe.
+  const refreshAndReconcileRef = useRef<() => void>(() => {});
+  const lastHealthStatusRef = useRef<string | undefined>(undefined);
+
+  const scheduleRetry = useCallback(() => {
+    if (retryTimerRef.current) return; // one pending retry at a time
+    const delay = retryDelayRef.current;
+    retryDelayRef.current = Math.min(delay * 2, 2000);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      refreshAndReconcileRef.current();
+    }, delay);
+  }, []);
+
   const refresh = useCallback(async (): Promise<any[]> => {
     if (refreshingRef.current) {
       pendingRefreshRef.current = true;
@@ -65,12 +83,23 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     refreshingRef.current = true;
     try {
       const res = await api()?.projects?.list();
-      const list = res?.success && Array.isArray(res.data) ? res.data : [];
-      setProjects(list);
-      return list;
+      if (res?.success && Array.isArray(res.data)) {
+        // A genuine answer from the service — including a legitimately empty list
+        // (e.g. before bootstrap creates the default project). Safe to commit.
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+        retryDelayRef.current = 400;
+        setProjects(res.data);
+        return res.data;
+      }
+      // Service isn't ready (notReady) or errored. Do NOT overwrite the current list
+      // with an empty one — that's the blank-sidebar race. Keep what we have and retry
+      // until the service can answer (the health-update listener also nudges recovery).
+      scheduleRetry();
+      return projects;
     } catch (err) {
       console.error('ProjectContext: refresh failed', err);
-      return [];
+      scheduleRetry();
+      return projects;
     } finally {
       refreshingRef.current = false;
       if (pendingRefreshRef.current) {
@@ -79,7 +108,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         refresh();
       }
     }
-  }, [projects]);
+  }, [projects, scheduleRetry]);
 
   const createProject = useCallback(async (params: any): Promise<ProjectResult> => {
     const res = await api()?.projects?.create(params);
@@ -128,6 +157,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     await reconcile(list);
   }, [refresh, reconcile]);
 
+  // Keep the ref pointed at the current closure so once-registered timers/listeners
+  // (scheduleRetry, the health-update subscription) always call the latest version.
+  refreshAndReconcileRef.current = refreshAndReconcile;
+
   // Initial load.
   useEffect(() => {
     (async () => {
@@ -159,6 +192,32 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     return () => electron.removeBootstrapCompleteListener?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshAndReconcile]);
+
+  // Recover off the central health-monitor poll. This is the repeated, self-healing
+  // signal (unlike the one-shot slp-service-ready, which can be dropped if it fires
+  // before the renderer is listening). Refresh when the service (re)enters a running
+  // state — covering a missed ready signal at startup and mid-session restarts.
+  useEffect(() => {
+    const electron = api();
+    if (!electron?.onHealthUpdate) return;
+    electron.onHealthUpdate((payload: any) => {
+      const status = payload?.status;
+      const prev = lastHealthStatusRef.current;
+      lastHealthStatusRef.current = status;
+      if (status === 'running' && prev !== 'running') {
+        refreshAndReconcileRef.current();
+      }
+    });
+    // Deliberately no cleanup: preload's removeHealthUpdateListener is
+    // removeAllListeners('health-update'), shared with AppStatusContext, and this
+    // provider lives for the app's lifetime. Register once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clear any pending retry timer on unmount.
+  useEffect(() => () => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+  }, []);
 
   // Persist the selected project whenever the URL project param changes.
   useEffect(() => {

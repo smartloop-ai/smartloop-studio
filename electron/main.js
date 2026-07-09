@@ -846,20 +846,22 @@ async function deleteProjectDocuments(baseUrl, projectId) {
   }
 }
 
-// GET /v1/projects, enriched. Tolerant: returns [] rather than erroring so the
-// renderer can render an empty state.
+// GET /v1/projects, enriched. Returns { success: true, data } on a real answer, or
+// { success: false, notReady: true } when the service can't answer yet.
 ipcMain.handle('projects-list', async () => {
+  // `notReady` distinguishes "the service can't answer yet" from a genuine empty list, so
+  // the renderer never mistakes a startup race for "zero projects" and blanks the sidebar.
   const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: true, data: [] };
+  if (!baseUrl) return { success: false, notReady: true };
   try {
     const res = await fetch(`${baseUrl}/v1/projects`);
-    if (!res.ok) return { success: true, data: [] };
+    if (!res.ok) return { success: false, notReady: true };
     const data = await res.json();
     const projects = Array.isArray(data) ? data : (Array.isArray(data?.projects) ? data.projects : []);
     return { success: true, data: enrichProjects(projects) };
   } catch (err) {
     console.error('[Projects] Error listing projects:', err.message);
-    return { success: true, data: [] };
+    return { success: false, notReady: true };
   }
 });
 
