@@ -1,0 +1,133 @@
+name: Release Prod
+
+# One target that drives a production release end-to-end:
+#   1. Manual dispatch → bump the electron (package.json) and agent
+#      (electron/slp-setup.js + Makefile) versions and open a PR to main.
+#   2. When that PR merges into main (version in package.json changes),
+#      tag main and automatically run build-and-deploy.
+#
+# Both versions default to a patch bump; pass explicit values to override.
+
+on:
+  workflow_dispatch:
+    inputs:
+      electron_version:
+        description: 'Electron app version (package.json). Blank = patch bump.'
+        required: false
+        type: string
+      agent_version:
+        description: 'Agent version (electron/slp-setup.js + Makefile). Blank = patch bump.'
+        required: false
+        type: string
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  # ── Step 1: open the release PR ────────────────────────────────────────────
+  open-pr:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compute versions
+        id: ver
+        run: |
+          patch() { echo "$1" | awk -F. '{print $1"."$2"."$3+1}'; }
+
+          AGENT_CURRENT=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+          AGENT_NEXT="${{ inputs.agent_version }}"
+          [ -z "$AGENT_NEXT" ] && AGENT_NEXT=$(patch "$AGENT_CURRENT")
+
+          APP_CURRENT=$(node -p "require('./package.json').version")
+          APP_NEXT="${{ inputs.electron_version }}"
+          [ -z "$APP_NEXT" ] && APP_NEXT=$(patch "$APP_CURRENT")
+
+          echo "agent_current=$AGENT_CURRENT" >> $GITHUB_OUTPUT
+          echo "agent_next=$AGENT_NEXT" >> $GITHUB_OUTPUT
+          echo "app_current=$APP_CURRENT" >> $GITHUB_OUTPUT
+          echo "app_next=$APP_NEXT" >> $GITHUB_OUTPUT
+          echo "Electron: $APP_CURRENT → $APP_NEXT"
+          echo "Agent:    $AGENT_CURRENT → $AGENT_NEXT"
+
+      - name: Apply version bumps
+        run: |
+          sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ steps.ver.outputs.agent_next }}';/" electron/slp-setup.js
+          sed -i "s/^SLP_VERSION=.*$/SLP_VERSION=${{ steps.ver.outputs.agent_next }}/" Makefile
+          npm version ${{ steps.ver.outputs.app_next }} --no-git-tag-version
+          grep "const VERSION" electron/slp-setup.js
+          grep "^SLP_VERSION" Makefile
+          node -p "require('./package.json').version"
+
+      - name: Create release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AGENT_NEXT="${{ steps.ver.outputs.agent_next }}"
+          APP_NEXT="${{ steps.ver.outputs.app_next }}"
+          BRANCH="release-prod-$APP_NEXT"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add electron/slp-setup.js Makefile package.json
+          git commit -m "release-prod: electron $APP_NEXT, agent $AGENT_NEXT"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "Release prod: electron $APP_NEXT, agent $AGENT_NEXT" \
+            --base main \
+            --head "$BRANCH" \
+            --body "$(printf 'Production release bump. Merging this PR tags main and automatically runs build & deploy.\n\n- Electron (`package.json`): `%s` → `%s`\n- Agent (`electron/slp-setup.js`, `Makefile`): `%s` → `%s`\n' \
+              "${{ steps.ver.outputs.app_current }}" "$APP_NEXT" \
+              "${{ steps.ver.outputs.agent_current }}" "$AGENT_NEXT")"
+
+  # ── Step 2a: detect the release merge and tag main ─────────────────────────
+  detect-release:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: check
+        run: |
+          NEW=$(jq -r .version package.json)
+          OLD=$(git show HEAD^:package.json 2>/dev/null | jq -r .version || echo "")
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          if [ -n "$OLD" ] && [ "$NEW" != "$OLD" ]; then
+            echo "Release detected: $OLD → $NEW"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "No version change ($NEW); skipping build & deploy."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Tag release
+        if: ${{ steps.check.outputs.changed == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.check.outputs.version }}"
+          git push origin "v${{ steps.check.outputs.version }}"
+
+  # ── Step 2b: build & deploy (reuses build-and-deploy.yml) ──────────────────
+  build-and-deploy:
+    needs: [detect-release]
+    if: ${{ github.event_name == 'push' && needs.detect-release.outputs.changed == 'true' }}
+    uses: ./.github/workflows/build-and-deploy.yml
+    with:
+      version: ${{ needs.detect-release.outputs.version }}
+    secrets: inherit
