@@ -83,6 +83,8 @@ export default function Chat(props: {
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
+  const statusQueueRef = useRef<string[]>([]);       // Pending SSE status messages to display
+  const statusTimerRef = useRef<any>(null);          // Timer draining the status queue
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
@@ -424,6 +426,22 @@ export default function Chat(props: {
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
+    // Show queued SSE status messages one at a time (min ~600ms each) so the
+    // user can actually read the progression instead of it snapping to the last.
+    const STATUS_DWELL_MS = 600;
+    const drainStatusQueue = () => {
+      const next = statusQueueRef.current.shift();
+      if (next === undefined) { statusTimerRef.current = null; return; }
+      setMessages((prev: any) =>
+        prev.map((m: any) => (m.id === responseId ? { ...m, status: next } : m))
+      );
+      statusTimerRef.current = setTimeout(drainStatusQueue, STATUS_DWELL_MS);
+    };
+    const clearStatusQueue = () => {
+      statusQueueRef.current = [];
+      if (statusTimerRef.current) { clearTimeout(statusTimerRef.current); statusTimerRef.current = null; }
+    };
+
     let message_id: string | null = null;
     try {
       // Initialize OpenAI client pointing to local SLP service
@@ -605,6 +623,21 @@ export default function Chat(props: {
           continue;
         }
 
+        // Surface SLP progress events (chat.status) so the user sees what's
+        // happening while the model spins up (Analyzing → Searching → Planning
+        // → Generating…). These arrive in a rapid burst, so we queue them and
+        // show each for a minimum dwell time — otherwise only the last one
+        // ("Generating response…") ever paints and looks fixed.
+        // The queue is flushed as soon as the first content token arrives (below).
+        if (chunk.object === 'chat.status') {
+          // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
+          // "Searching documents...", "Processing..." stays as-is)
+          const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
+          statusQueueRef.current.push(statusText);
+          if (!statusTimerRef.current) drainStatusQueue();
+          continue;
+        }
+
         // Skip status/non-standard chunks from local SLP server
         if (!chunk.choices || !chunk.choices[0]) continue;
 
@@ -613,6 +646,9 @@ export default function Chat(props: {
         if (content) {
           fullText += content;
           streamTokenCountRef.current++;
+
+          // First real token — stop the status ticker and drop any pending statuses
+          if (statusTimerRef.current || statusQueueRef.current.length) clearStatusQueue();
 
           // Check if the response contains a memory/context limit error
           if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
@@ -637,6 +673,7 @@ export default function Chat(props: {
               msg.id === responseId ? {
                 ...msg,
                 is_new: true,
+                status: undefined,
                 content: fullText
               } : msg
             )
@@ -649,6 +686,9 @@ export default function Chat(props: {
           break;
         }
       }
+
+      // Stream ended — make sure the status ticker is stopped
+      clearStatusQueue();
 
       // Calculate tok/s
       const elapsedSec = (Date.now() - streamStartRef.current) / 1000;
@@ -693,6 +733,7 @@ export default function Chat(props: {
       }
 
     } catch (error: any) {
+      clearStatusQueue();
       if (error.message === 'AbortError' || error.name === 'AbortError') {
         console.log('Request aborted by user');
         // Keep the partial response as-is, just mark it as complete
@@ -1167,7 +1208,12 @@ export default function Chat(props: {
                           <div className="chat-paper rounded-sm p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
                             <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
-                                <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
+                                <span className="inline-flex items-center gap-2">
+                                  <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
+                                  {msg.status && (
+                                    <span className="text-sm md:text-base text-sl-text-muted">{msg.status}</span>
+                                  )}
+                                </span>
                               ) : (
                                 <Streamdown
                                   mode={msg.is_new ? "streaming" : "static"}
