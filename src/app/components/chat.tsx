@@ -1483,8 +1483,8 @@ export default function Chat(props: {
               <span>Generating response…</span>
             ) : (
               <span className="flex items-center gap-2.5">
-                <span><span className="text-sl-text-disabled">&lt;enter&gt;</span> <span className="text-sl-text-faint">send</span></span>
-                <span><span className="text-sl-text-disabled">&lt;shift+enter&gt;</span> <span className="text-sl-text-faint">new line</span></span>
+                <span><span className="text-sl-text-disabled">[enter]</span> <span className="text-sl-text-faint">send</span></span>
+                <span><span className="text-sl-text-disabled">[shift+enter]</span> <span className="text-sl-text-faint">new line</span></span>
               </span>
             )}
           </div>
@@ -1543,8 +1543,8 @@ export default function Chat(props: {
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">
-                  <span><span className="text-sl-text-disabled">&lt;esc&gt;</span> <span className="text-sl-text-faint">interrupt</span></span>
-                  <span><span className="text-sl-text-disabled">&lt;ctrl+tab&gt;</span> <span className="text-sl-text-faint">switch conversation</span></span>
+                  <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
+                  <span><span className="text-sl-text-disabled">[ctrl+tab]</span> <span className="text-sl-text-faint">switch conversation</span></span>
                 </span>
               </>
             ) : (
