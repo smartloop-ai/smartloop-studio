@@ -271,7 +271,7 @@ export default function MessageInput({
           {/* Right side - Send / Stop button */}
           {isLoading ? (
             <button
-              className="p-2 md:p-3 rounded-lg transition-colors shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors shadow-lg"
               style={{
                 backgroundColor: 'var(--sl-brand-alpha-15)',
                 border: '1.5px solid var(--sl-brand-alpha-30)',
@@ -282,11 +282,10 @@ export default function MessageInput({
               <Box
                 component="span"
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: { xs: 18, md: 20 },
-                  height: { xs: 18, md: 20 },
+                  width: 12,
+                  height: 12,
+                  borderRadius: '3px',
+                  bgcolor: 'var(--sl-brand-primary)',
                   animation: 'pulseStop 1.5s ease-in-out infinite',
                   '@keyframes pulseStop': {
                     '0%': { opacity: 1, transform: 'scale(1)' },
@@ -294,22 +293,12 @@ export default function MessageInput({
                     '100%': { opacity: 1, transform: 'scale(1)' },
                   },
                 }}
-              >
-                <Box
-                  component="span"
-                  sx={{
-                    width: { xs: 12, md: 14 },
-                    height: { xs: 12, md: 14 },
-                    borderRadius: '3px',
-                    bgcolor: 'var(--sl-brand-primary)',
-                  }}
-                />
-              </Box>
+              />
             </button>
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="p-2 md:p-3 rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
               style={{
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
                 border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
@@ -328,7 +317,7 @@ export default function MessageInput({
               }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: { xs: 18, md: 20 } }} />
+              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 18 }} />
             </button>
           )}
         </Box>
