@@ -54,6 +54,16 @@ export default function MessageInput({
   const [droppedFile, setDroppedFile] = useState<{ file: File; id: number } | null>(null);
   const dragCounterRef = useRef(0);
 
+  // Elapsed seconds while the model works — shown as a Claude-style "Thinking… 5s"
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isLoading) { setElapsed(0); return; }
+    setElapsed(0);
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [isLoading]);
+
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);
   useEffect(() => {
@@ -157,7 +167,7 @@ export default function MessageInput({
           inputRef={inputRef}
           name="message"
           autoComplete="off"
-          placeholder={isLoading ? "Generating response..." : placeholder}
+          placeholder={isLoading ? `Thinking… (${elapsed}s)` : placeholder}
           type="text"
           multiline={true}
           minRows={minRows}
@@ -171,7 +181,11 @@ export default function MessageInput({
           startAdornment={
             isLoading ? (
               <InputAdornment position="start">
-                <AutoAwesomeIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 18, mr: 0.5 }} />
+                {/* Claude-style thinking indicator while the model works (input disabled) */}
+                <AutoAwesomeIcon
+                  className="animate-pulse"
+                  sx={{ color: 'var(--sl-brand-primary)', fontSize: 16, mr: 0.5 }}
+                />
               </InputAdornment>
             ) : null
           }
@@ -192,9 +206,9 @@ export default function MessageInput({
               opacity: 1
             },
             '& .MuiInputBase-input.Mui-disabled::placeholder': {
-              color: 'var(--sl-text-muted) !important',
+              color: 'var(--sl-text-faint) !important',
               opacity: '1 !important',
-              WebkitTextFillColor: 'var(--sl-text-muted) !important',
+              WebkitTextFillColor: 'var(--sl-text-faint) !important',
             },
           }}
         />
