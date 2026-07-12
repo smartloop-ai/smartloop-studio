@@ -76,6 +76,7 @@ export default function Chat(props: {
   const [searchQuery] = useState("");
   const [filteredMessages, setFilteredMessages]: any = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);  // Current SSE chat.status shown beside the input box
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
   const [saved, setSaved]: any = useState("");
@@ -432,14 +433,13 @@ export default function Chat(props: {
     const drainStatusQueue = () => {
       const next = statusQueueRef.current.shift();
       if (next === undefined) { statusTimerRef.current = null; return; }
-      setMessages((prev: any) =>
-        prev.map((m: any) => (m.id === responseId ? { ...m, status: next } : m))
-      );
+      setStatusText(next);
       statusTimerRef.current = setTimeout(drainStatusQueue, STATUS_DWELL_MS);
     };
     const clearStatusQueue = () => {
       statusQueueRef.current = [];
       if (statusTimerRef.current) { clearTimeout(statusTimerRef.current); statusTimerRef.current = null; }
+      setStatusText(null);
     };
 
     let message_id: string | null = null;
@@ -673,7 +673,6 @@ export default function Chat(props: {
               msg.id === responseId ? {
                 ...msg,
                 is_new: true,
-                status: undefined,
                 content: fullText
               } : msg
             )
@@ -891,6 +890,17 @@ export default function Chat(props: {
       return;
     }
 
+    // Only (re)load when genuinely switching to a different conversation.
+    // If the incoming id matches the conversation we're already on, skip: this
+    // effect also re-runs when isLoading toggles after a send, and for a
+    // just-created conversation the parent's props.conversation can momentarily
+    // carry empty messages — reloading here would wipe the freshly streamed
+    // messages and clobber the session id, breaking history on the next turn.
+    const incomingConversationId = props.conversation?.id ?? null;
+    if (incomingConversationId && incomingConversationId === currentConversationIdRef.current) {
+      return;
+    }
+
     const conversationMessages = props.conversation?.messages || [];
 
     console.log('[Chat] Conversation changed:', {
@@ -903,7 +913,7 @@ export default function Chat(props: {
     setShowTips(conversationMessages.length === 0);
 
     // Update conversation ref
-    currentConversationIdRef.current = props.conversation?.id || null;
+    currentConversationIdRef.current = incomingConversationId;
 
     // Load feedback state for this conversation
     const convId = props.conversation?.id;
@@ -1208,12 +1218,7 @@ export default function Chat(props: {
                           <div className="chat-paper rounded-sm p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
                             <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
-                                <span className="inline-flex items-center gap-2">
-                                  <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
-                                  {msg.status && (
-                                    <span className="text-sm md:text-base text-sl-text-muted">{msg.status}</span>
-                                  )}
-                                </span>
+                                <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
                               ) : (
                                 <Streamdown
                                   mode={msg.is_new ? "streaming" : "static"}
@@ -1466,7 +1471,23 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
+        <footer className="relative flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
+          {/* Overlays the footer's top padding so it uses existing space instead of
+              pushing the input down. Muted so focus stays on input. Shows the live SSE
+              status while generating; when idle the spot shows a faint input hint so it
+              isn't empty. */}
+          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center px-1 text-[10px] text-sl-text-faint pointer-events-none">
+            {statusText ? (
+              <span>{statusText}</span>
+            ) : isLoading ? (
+              <span>Generating response…</span>
+            ) : (
+              <span className="flex items-center gap-2.5">
+                <span><span className="text-sl-text-disabled">&lt;enter&gt;</span> <span className="text-sl-text-faint">send</span></span>
+                <span><span className="text-sl-text-disabled">&lt;shift+enter&gt;</span> <span className="text-sl-text-faint">new line</span></span>
+              </span>
+            )}
+          </div>
           <MessageInput
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
