@@ -99,9 +99,10 @@ export default function Chat(props: {
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
   const { indexingProgress } = useAppStatus();
 
-  // Load last tok/s value from storage
+  // Load last tok/s value from SQLite (tps_history is the single source of truth)
   useEffect(() => {
-    storageService.getItem('last_tokens_per_second').then((val: any) => {
+    storageService.getTpsHistory(1).then((history) => {
+      const val = history[history.length - 1]?.tokens_per_second;
       if (val) {
         lastTpsRef.current = val;
         setLastRunTps(prev => prev ?? val);
@@ -699,10 +700,9 @@ export default function Chat(props: {
         ? Math.round(streamTokenCountRef.current / elapsedSec)
         : undefined;
 
-      // Persist last tok/s for display
+      // Persist last tok/s for display (single source of truth: SQLite tps_history)
       if (tps) {
         lastTpsRef.current = tps;
-        storageService.setItem('last_tokens_per_second', tps);
         storageService.addTpsEntry(tps);
         setLastRunTps(tps);
       }
