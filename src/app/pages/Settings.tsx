@@ -208,9 +208,8 @@ export default function SettingsPage() {
             const history = await storageService.getTpsHistory(10000);
             if (history.length > 0) {
                 setTpsHistory(history);
+                setLastTps(history[history.length - 1].tokens_per_second);
             }
-            const lastTpsVal = await storageService.getItem('last_tokens_per_second');
-            if (lastTpsVal) setLastTps(lastTpsVal);
         };
         loadHistory();
     }, []);
