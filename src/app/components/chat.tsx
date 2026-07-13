@@ -634,9 +634,9 @@ export default function Chat(props: {
         // ("Generating response…") ever paints and looks fixed.
         // The queue is flushed as soon as the first content token arrives (below).
         if (chunk.object === 'chat.status') {
-          // Normalize to lowercase (matching the footer status style) and a single
-          // trailing ellipsis (e.g. "Searching documents" → "searching documents...")
-          const statusText = (chunk.message || 'working').replace(/[.…\s]+$/, '').toLowerCase() + '...';
+          // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
+          // "Searching documents...", "Processing..." stays as-is)
+          const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
           statusQueueRef.current.push(statusText);
           if (!statusTimerRef.current) drainStatusQueue();
           continue;
@@ -1482,15 +1482,17 @@ export default function Chat(props: {
               status while generating; when idle, the last known token throughput
               ("unknown" until a first-ever response has been generated). */}
           <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none">
-            {statusText ? (
-              <span>{statusText}</span>
-            ) : isLoading ? (
-              <span>generating response…</span>
+            {statusText || isLoading ? (
+              <span className="flex items-center gap-1 text-sl-text-disabled">
+                <span className="font-mono">&gt;</span>
+                <span>{statusText || 'Generating response…'}</span>
+              </span>
             ) : (
-              <>
-                <span className="text-sl-text-disabled">throughput</span>
-                <span className="font-mono text-sl-text-disabled">{lastRunTps ?? 0} tok/s</span>
-              </>
+              <span className="flex items-center gap-1 text-sl-text-disabled">
+                <span className="font-mono">&gt;</span>
+                <span>Token Performance</span>
+                <span className="font-mono">{lastRunTps ?? 0} tok/s</span>
+              </span>
             )}
           </div>
           <MessageInput
