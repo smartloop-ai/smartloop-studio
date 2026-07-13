@@ -92,6 +92,7 @@ export default function Chat(props: {
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
+  const [lastRunTps, setLastRunTps] = useState<number | null>(null);  // Last known tok/s shown in the idle status slot; seeded from storage, null until first-ever response
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
@@ -101,7 +102,10 @@ export default function Chat(props: {
   // Load last tok/s value from storage
   useEffect(() => {
     storageService.getItem('last_tokens_per_second').then((val: any) => {
-      if (val) lastTpsRef.current = val;
+      if (val) {
+        lastTpsRef.current = val;
+        setLastRunTps(prev => prev ?? val);
+      }
     });
   }, []);
 
@@ -630,9 +634,9 @@ export default function Chat(props: {
         // ("Generating response…") ever paints and looks fixed.
         // The queue is flushed as soon as the first content token arrives (below).
         if (chunk.object === 'chat.status') {
-          // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
-          // "Searching documents...", "Processing..." stays as-is)
-          const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
+          // Normalize to lowercase (matching the footer status style) and a single
+          // trailing ellipsis (e.g. "Searching documents" → "searching documents...")
+          const statusText = (chunk.message || 'working').replace(/[.…\s]+$/, '').toLowerCase() + '...';
           statusQueueRef.current.push(statusText);
           if (!statusTimerRef.current) drainStatusQueue();
           continue;
@@ -700,6 +704,7 @@ export default function Chat(props: {
         lastTpsRef.current = tps;
         storageService.setItem('last_tokens_per_second', tps);
         storageService.addTpsEntry(tps);
+        setLastRunTps(tps);
       }
 
       // Mark response as complete
@@ -1474,18 +1479,18 @@ export default function Chat(props: {
         <footer className="relative flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
           {/* Overlays the footer's top padding so it uses existing space instead of
               pushing the input down. Muted so focus stays on input. Shows the live SSE
-              status while generating; when idle the spot shows a faint input hint so it
-              isn't empty. */}
-          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center px-1 text-[10px] text-sl-text-faint pointer-events-none">
+              status while generating; when idle, the last known token throughput
+              ("unknown" until a first-ever response has been generated). */}
+          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none">
             {statusText ? (
               <span>{statusText}</span>
             ) : isLoading ? (
-              <span>Generating response…</span>
+              <span>generating response…</span>
             ) : (
-              <span className="flex items-center gap-2.5">
-                <span><span className="text-sl-text-disabled">[enter]</span> <span className="text-sl-text-faint">send</span></span>
-                <span><span className="text-sl-text-disabled">[shift+enter]</span> <span className="text-sl-text-faint">new line</span></span>
-              </span>
+              <>
+                <span className="text-sl-text-disabled">throughput</span>
+                <span className="font-mono text-sl-text-disabled">{lastRunTps ?? 0} tok/s</span>
+              </>
             )}
           </div>
           <MessageInput
