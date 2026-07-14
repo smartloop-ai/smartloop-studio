@@ -316,29 +316,19 @@ export default function Home() {
         setConversation(null);
       })();
     } else {
-      // No URL params — if conversations exist, auto-select the most recent one
-      const autoSelect = async () => {
-        const allConversations = await storageService.getConversations();
-        if (allConversations.length > 0) {
-          const sorted = allConversations.sort((a: any, b: any) =>
-            new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
-          );
-          const mostRecent = sorted[0];
-          const projectId = mostRecent.project_id;
-          if (projectId) {
-            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
-          } else {
-            navigate(`/?conversation=${mostRecent.id}`, { replace: true });
-          }
-        } else {
-          // No conversations — auto-select system project so Chat has a valid project context
-          setConversation(null);
-          setChatMessage(null);
-          const fallbackProject = projectsList.find((p: any) => p.system === true) || projectsList[0] || null;
-          if (fallbackProject) selectProject(fallbackProject.id, { replace: true });
-        }
+      // No URL params — restore the last-viewed project (fallback: system, then
+      // first). Keyed on selected_project_id, not conversation recency. Selecting
+      // ?project=X then auto-selects X's latest conversation via the branch above.
+      // ProjectContext.reconcile mirrors this on its own triggers.
+      const restoreProject = async () => {
+        const savedId = await storageService.getSetting('selected_project_id');
+        const target = (savedId && projectsList.find((p: any) => p.id === savedId))
+          ?? projectsList.find((p: any) => p.system === true)
+          ?? projectsList[0];
+        if (target) selectProject(target.id, { replace: true });
+        else { setConversation(null); setChatMessage(null); } // list not ready; reconcile will select
       };
-      autoSelect();
+      restoreProject();
     }
   }, [searchParams]);
 
