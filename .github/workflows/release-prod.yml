@@ -63,9 +63,11 @@ jobs:
         run: |
           sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ steps.ver.outputs.agent_next }}';/" electron/slp-setup.js
           sed -i "s/^SLP_VERSION=.*$/SLP_VERSION=${{ steps.ver.outputs.agent_next }}/" Makefile
+          sed -i "s/^\$DEFAULT_VERSION = '.*'$/\$DEFAULT_VERSION = '${{ steps.ver.outputs.agent_next }}'/" build/install-slp.ps1
           npm version ${{ steps.ver.outputs.app_next }} --no-git-tag-version
           grep "const VERSION" electron/slp-setup.js
           grep "^SLP_VERSION" Makefile
+          grep "^\$DEFAULT_VERSION" build/install-slp.ps1
           node -p "require('./package.json').version"
 
       - name: Create release PR
@@ -78,14 +80,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add electron/slp-setup.js Makefile package.json
+          git add electron/slp-setup.js Makefile build/install-slp.ps1 package.json
           git commit -m "release-prod: electron $APP_NEXT, agent $AGENT_NEXT"
           git push -u origin "$BRANCH"
           gh pr create \
             --title "Release prod: electron $APP_NEXT, agent $AGENT_NEXT" \
             --base main \
             --head "$BRANCH" \
-            --body "$(printf 'Production release bump. Merging this PR tags main and automatically runs build & deploy.\n\n- Electron (`package.json`): `%s` → `%s`\n- Agent (`electron/slp-setup.js`, `Makefile`): `%s` → `%s`\n' \
+            --body "$(printf 'Production release bump. Merging this PR tags main and automatically runs build & deploy.\n\n- Electron (`package.json`): `%s` → `%s`\n- Agent (`electron/slp-setup.js`, `Makefile`, `build/install-slp.ps1`): `%s` → `%s`\n' \
               "${{ steps.ver.outputs.app_current }}" "$APP_NEXT" \
               "${{ steps.ver.outputs.agent_current }}" "$AGENT_NEXT")"
 

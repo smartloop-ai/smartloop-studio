@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { Box, Dialog, TextField, Typography, CircularProgress, IconButton, Autocomplete } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -330,8 +330,8 @@ export default function DocumentUploadDialog({
                     : 'border-sl-border-default bg-sl-bg-surface-1'
                 }`}
                 style={isDragging ? { borderColor: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' } : undefined}
-                onMouseEnter={(e) => { if (!isDragging) e.currentTarget.style.borderColor = 'var(--sl-brand-hover)'; }}
-                onMouseLeave={(e) => { if (!isDragging) e.currentTarget.style.borderColor = ''; }}
+                onMouseEnter={(e: MouseEvent<HTMLDivElement>) => { if (!isDragging) e.currentTarget.style.borderColor = 'var(--sl-brand-hover)'; }}
+                onMouseLeave={(e: MouseEvent<HTMLDivElement>) => { if (!isDragging) e.currentTarget.style.borderColor = ''; }}
                 onClick={() => document.getElementById('file-upload-input')?.click()}
               >
                 <CloudUploadIcon sx={{ fontSize: 48, color: 'var(--sl-text-disabled)', mb: 2 }} />

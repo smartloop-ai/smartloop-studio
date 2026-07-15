@@ -59,7 +59,7 @@ help-electron:
 	@echo "📱 Electron App Build Targets:"
 	@echo ""
 	@echo "  make build-electron-linux    - Build Electron app for Linux (AppImage, deb)"
-	@echo "  make build-electron-windows  - Build Electron app for Windows (NSIS, portable)"
+	@echo "  make build-electron-windows  - Build Electron app for Windows (NSIS setup)"
 	@echo "  make build-electron-mac      - Build Electron app for macOS (DMG, zip)"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
@@ -80,7 +80,7 @@ test: stop
 # SLP version (must match VERSION in electron/slp-setup.js)
 # The SLP framework is no longer bundled — it is downloaded at runtime by
 # electron/slp-setup.js (mirroring https://smartloop.ai/install.sh).
-SLP_VERSION=1.0.2
+SLP_VERSION=1.0.3
 
 # Clean electron build artifacts
 clean-electron:
