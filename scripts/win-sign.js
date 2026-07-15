@@ -34,7 +34,17 @@ exports.default = async function sign(configuration) {
     return;
   }
 
+  // CI runners preset the PSModulePath env var with PowerShell 7 paths, which
+  // hides modules installed for Windows PowerShell 5.1 (CurrentUser scope) —
+  // import explicitly, falling back to the 5.1 user module directory.
+  const importModule =
+    "if (-not (Get-Command Invoke-TrustedSigning -ErrorAction SilentlyContinue)) { " +
+    "Import-Module TrustedSigning -ErrorAction SilentlyContinue; " +
+    "if (-not (Get-Command Invoke-TrustedSigning -ErrorAction SilentlyContinue)) { " +
+    "Import-Module (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\\Modules\\TrustedSigning') -ErrorAction Stop } }";
+
   const command = [
+    importModule + ';',
     'Invoke-TrustedSigning',
     '-Endpoint', psQuote(endpoint),
     '-CodeSigningAccountName', psQuote(account),
