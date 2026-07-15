@@ -176,11 +176,44 @@ jobs:
       # Modules): the runner presets the PSModulePath env var with PowerShell 7
       # paths only, so a CurrentUser install (Documents\WindowsPowerShell\
       # Modules) is invisible to the powershell.exe the hook spawns.
+      # The version is pinned because the dependency prewarm step below must
+      # match the exact package versions this module release expects.
       - name: Install TrustedSigning PowerShell module
         shell: powershell
         run: |
           try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction Stop } catch {}
-          Install-Module -Name TrustedSigning -MinimumVersion 0.5.0 -Force -Repository PSGallery -Scope AllUsers
+          Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Force -Repository PSGallery -Scope AllUsers
+
+      # Invoke-TrustedSigning bootstraps its NuGet dependencies (signtool from
+      # the SDK BuildTools + the Trusted Signing dlib) on first use through
+      # PackageManagement, which fails in the bare powershell.exe session the
+      # sign hook spawns (empty package source on the hosted runner). Download
+      # the exact pinned versions into the layout the module probes
+      # (%LOCALAPPDATA%\TrustedSigning\<name>\<name>.<version>\) so it treats
+      # them as installed and skips that bootstrap. A .nupkg is a plain zip.
+      # The optional "sign" CLI package is not prewarmed — exe files go
+      # through the SignTool path and its bootstrap failure is non-fatal.
+      - name: Prewarm Trusted Signing dependencies
+        shell: powershell
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $root = Join-Path $env:LOCALAPPDATA 'TrustedSigning'
+          $packages = @(
+            @{ Name = 'Microsoft.Windows.SDK.BuildTools'; Version = '10.0.26100.4188'; Probe = 'bin\10.0.26100.0\x64\signtool.exe' },
+            @{ Name = 'Microsoft.Trusted.Signing.Client'; Version = '1.0.95'; Probe = 'bin\x64\Azure.CodeSigning.Dlib.dll' }
+          )
+          foreach ($p in $packages) {
+            $dir = Join-Path (Join-Path $root $p.Name) "$($p.Name).$($p.Version)"
+            if (-not (Test-Path (Join-Path $dir $p.Probe))) {
+              New-Item -ItemType Directory -Force -Path $dir | Out-Null
+              $zip = Join-Path $env:TEMP "$($p.Name).zip"
+              Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/$($p.Name)/$($p.Version)" -OutFile $zip
+              Expand-Archive -Path $zip -DestinationPath $dir -Force
+              Remove-Item $zip -Force
+            }
+            if (-not (Test-Path (Join-Path $dir $p.Probe))) { throw "$($p.Name) prewarm failed: $($p.Probe) not found" }
+            Write-Host "$($p.Name) $($p.Version) ready"
+          }
 
       - name: Build for Windows
         run: npm run electron-build-win
