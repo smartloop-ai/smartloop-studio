@@ -63,11 +63,11 @@ jobs:
         run: |
           sed -i "s/^const VERSION = '.*';$/const VERSION = '${{ steps.ver.outputs.agent_next }}';/" electron/slp-setup.js
           sed -i "s/^SLP_VERSION=.*$/SLP_VERSION=${{ steps.ver.outputs.agent_next }}/" Makefile
-          sed -i "s/^\$VERSION = '.*'$/\$VERSION = '${{ steps.ver.outputs.agent_next }}'/" build/install-slp.ps1
+          sed -i "s/^\$DEFAULT_VERSION = '.*'$/\$DEFAULT_VERSION = '${{ steps.ver.outputs.agent_next }}'/" build/install-slp.ps1
           npm version ${{ steps.ver.outputs.app_next }} --no-git-tag-version
           grep "const VERSION" electron/slp-setup.js
           grep "^SLP_VERSION" Makefile
-          grep "^\$VERSION" build/install-slp.ps1
+          grep "^\$DEFAULT_VERSION" build/install-slp.ps1
           node -p "require('./package.json').version"
 
       - name: Create release PR
