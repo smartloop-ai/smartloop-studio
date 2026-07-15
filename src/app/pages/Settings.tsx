@@ -60,7 +60,9 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
     const headerH = 15;
 
     const getColor = (val: number) => {
-        if (val === 0) return 'var(--sl-border-subtle)';
+        // Translucent overlay rather than a bg token — the panel sits on a lightened
+        // surface, so solid surface colors blend in and empty cells disappear
+        if (val === 0) return 'var(--sl-white-alpha-8)';
         const ratio = val / maxVal;
         if (ratio < 0.25) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)';
         if (ratio < 0.5) return 'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)';
@@ -90,7 +92,7 @@ function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; cr
     ];
 
     const legendColors = [
-        'var(--sl-border-subtle)',
+        'var(--sl-white-alpha-8)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.25)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.45)',
         'rgba(var(--sl-brand-primary-rgb, 236,72,153), 0.7)',
@@ -206,9 +208,8 @@ export default function SettingsPage() {
             const history = await storageService.getTpsHistory(10000);
             if (history.length > 0) {
                 setTpsHistory(history);
+                setLastTps(history[history.length - 1].tokens_per_second);
             }
-            const lastTpsVal = await storageService.getItem('last_tokens_per_second');
-            if (lastTpsVal) setLastTps(lastTpsVal);
         };
         loadHistory();
     }, []);
