@@ -16,6 +16,13 @@
 ; steps in electron/slp-setup.js, which remains the runtime fallback whenever
 ; any of this fails (offline install, blocked download, etc.).
 !macro customInstall
+  ; electron-builder's install section runs with `SetDetailsPrint none`
+  ; (templates/nsis/installSection.nsh), which hides the status text above the
+  ; progress bar — so none of the DetailPrint lines below were visible.
+  ; Re-enable it here so the (long) SLP download/install phase shows what it
+  ; is doing, matching the uninstaller's behavior.
+  SetDetailsPrint both
+
   File "/oname=$PLUGINSDIR\install-slp.ps1" "${BUILD_RESOURCES_DIR}\install-slp.ps1"
 
   ; Skip the (large) download when a usable SLP is already installed.

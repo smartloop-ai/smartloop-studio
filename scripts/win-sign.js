@@ -59,6 +59,10 @@ exports.default = async function sign(configuration) {
     '-FileDigest', psQuote('SHA256'),
     '-TimestampRfc3161', psQuote('http://timestamp.acs.microsoft.com'),
     '-TimestampDigest', psQuote('SHA256'),
+    // The module's default signtool timeout is 300s; the Trusted Signing
+    // endpoint sometimes takes longer to return a signature, which killed
+    // otherwise-healthy builds. Give it real headroom.
+    '-Timeout', '1200',
     '-Files', psQuote(configuration.path),
   ].join(' ');
 
