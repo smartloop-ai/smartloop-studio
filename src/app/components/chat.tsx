@@ -76,6 +76,7 @@ export default function Chat(props: {
   const [searchQuery] = useState("");
   const [filteredMessages, setFilteredMessages]: any = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);  // Current SSE chat.status shown beside the input box
   const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
   const [saved, setSaved]: any = useState("");
@@ -83,22 +84,29 @@ export default function Chat(props: {
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
+  const statusQueueRef = useRef<string[]>([]);       // Pending SSE status messages to display
+  const statusTimerRef = useRef<any>(null);          // Timer draining the status queue
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
   const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
+  const [lastRunTps, setLastRunTps] = useState<number | null>(null);  // Last known tok/s shown in the idle status slot; seeded from storage, null until first-ever response
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
   const { indexingProgress } = useAppStatus();
 
-  // Load last tok/s value from storage
+  // Load last tok/s value from SQLite (tps_history is the single source of truth)
   useEffect(() => {
-    storageService.getItem('last_tokens_per_second').then((val: any) => {
-      if (val) lastTpsRef.current = val;
+    storageService.getTpsHistory(1).then((history) => {
+      const val = history[history.length - 1]?.tokens_per_second;
+      if (val) {
+        lastTpsRef.current = val;
+        setLastRunTps(prev => prev ?? val);
+      }
     });
   }, []);
 
@@ -424,6 +432,21 @@ export default function Chat(props: {
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
+    // Show queued SSE status messages one at a time (min ~600ms each) so the
+    // user can actually read the progression instead of it snapping to the last.
+    const STATUS_DWELL_MS = 600;
+    const drainStatusQueue = () => {
+      const next = statusQueueRef.current.shift();
+      if (next === undefined) { statusTimerRef.current = null; return; }
+      setStatusText(next);
+      statusTimerRef.current = setTimeout(drainStatusQueue, STATUS_DWELL_MS);
+    };
+    const clearStatusQueue = () => {
+      statusQueueRef.current = [];
+      if (statusTimerRef.current) { clearTimeout(statusTimerRef.current); statusTimerRef.current = null; }
+      setStatusText(null);
+    };
+
     let message_id: string | null = null;
     try {
       // Initialize OpenAI client pointing to local SLP service
@@ -605,6 +628,21 @@ export default function Chat(props: {
           continue;
         }
 
+        // Surface SLP progress events (chat.status) so the user sees what's
+        // happening while the model spins up (Analyzing → Searching → Planning
+        // → Generating…). These arrive in a rapid burst, so we queue them and
+        // show each for a minimum dwell time — otherwise only the last one
+        // ("Generating response…") ever paints and looks fixed.
+        // The queue is flushed as soon as the first content token arrives (below).
+        if (chunk.object === 'chat.status') {
+          // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
+          // "Searching documents...", "Processing..." stays as-is)
+          const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
+          statusQueueRef.current.push(statusText);
+          if (!statusTimerRef.current) drainStatusQueue();
+          continue;
+        }
+
         // Skip status/non-standard chunks from local SLP server
         if (!chunk.choices || !chunk.choices[0]) continue;
 
@@ -613,6 +651,9 @@ export default function Chat(props: {
         if (content) {
           fullText += content;
           streamTokenCountRef.current++;
+
+          // First real token — stop the status ticker and drop any pending statuses
+          if (statusTimerRef.current || statusQueueRef.current.length) clearStatusQueue();
 
           // Check if the response contains a memory/context limit error
           if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
@@ -650,17 +691,20 @@ export default function Chat(props: {
         }
       }
 
+      // Stream ended — make sure the status ticker is stopped
+      clearStatusQueue();
+
       // Calculate tok/s
       const elapsedSec = (Date.now() - streamStartRef.current) / 1000;
       const tps = elapsedSec > 0 && streamTokenCountRef.current > 0
         ? Math.round(streamTokenCountRef.current / elapsedSec)
         : undefined;
 
-      // Persist last tok/s for display
+      // Persist last tok/s for display (single source of truth: SQLite tps_history)
       if (tps) {
         lastTpsRef.current = tps;
-        storageService.setItem('last_tokens_per_second', tps);
         storageService.addTpsEntry(tps);
+        setLastRunTps(tps);
       }
 
       // Mark response as complete
@@ -693,6 +737,7 @@ export default function Chat(props: {
       }
 
     } catch (error: any) {
+      clearStatusQueue();
       if (error.message === 'AbortError' || error.name === 'AbortError') {
         console.log('Request aborted by user');
         // Keep the partial response as-is, just mark it as complete
@@ -850,6 +895,17 @@ export default function Chat(props: {
       return;
     }
 
+    // Only (re)load when genuinely switching to a different conversation.
+    // If the incoming id matches the conversation we're already on, skip: this
+    // effect also re-runs when isLoading toggles after a send, and for a
+    // just-created conversation the parent's props.conversation can momentarily
+    // carry empty messages — reloading here would wipe the freshly streamed
+    // messages and clobber the session id, breaking history on the next turn.
+    const incomingConversationId = props.conversation?.id ?? null;
+    if (incomingConversationId && incomingConversationId === currentConversationIdRef.current) {
+      return;
+    }
+
     const conversationMessages = props.conversation?.messages || [];
 
     console.log('[Chat] Conversation changed:', {
@@ -862,7 +918,7 @@ export default function Chat(props: {
     setShowTips(conversationMessages.length === 0);
 
     // Update conversation ref
-    currentConversationIdRef.current = props.conversation?.id || null;
+    currentConversationIdRef.current = incomingConversationId;
 
     // Load feedback state for this conversation
     const convId = props.conversation?.id;
@@ -1420,7 +1476,25 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
+        <footer className="relative flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
+          {/* Overlays the footer's top padding so it uses existing space instead of
+              pushing the input down. Muted so focus stays on input. Shows the live SSE
+              status while generating; when idle, the last known token throughput
+              ("unknown" until a first-ever response has been generated). */}
+          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none">
+            {statusText || isLoading ? (
+              <span className="flex items-center gap-1 text-sl-text-disabled">
+                <span className="font-mono">&gt;</span>
+                <span>{statusText || 'Generating response…'}</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sl-text-disabled">
+                <span className="font-mono">&gt;</span>
+                <span>Token Performance</span>
+                <span className="font-mono">{lastRunTps ?? 0} tok/s</span>
+              </span>
+            )}
+          </div>
           <MessageInput
             message={formData.message}
             onMessageChange={(value) => setFormData({ message: value })}
@@ -1476,8 +1550,8 @@ export default function Chat(props: {
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">
-                  <span><span className="text-sl-text-disabled">&lt;esc&gt;</span> <span className="text-sl-text-faint">interrupt</span></span>
-                  <span><span className="text-sl-text-disabled">&lt;ctrl+tab&gt;</span> <span className="text-sl-text-faint">switch conversation</span></span>
+                  <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
+                  <span><span className="text-sl-text-disabled">[ctrl+tab]</span> <span className="text-sl-text-faint">switch conversation</span></span>
                 </span>
               </>
             ) : (

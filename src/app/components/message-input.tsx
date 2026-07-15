@@ -54,6 +54,16 @@ export default function MessageInput({
   const [droppedFile, setDroppedFile] = useState<{ file: File; id: number } | null>(null);
   const dragCounterRef = useRef(0);
 
+  // Elapsed seconds while the model works — shown as a Claude-style "Thinking… 5s"
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isLoading) { setElapsed(0); return; }
+    setElapsed(0);
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [isLoading]);
+
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);
   useEffect(() => {
@@ -157,7 +167,7 @@ export default function MessageInput({
           inputRef={inputRef}
           name="message"
           autoComplete="off"
-          placeholder={isLoading ? "Generating response..." : placeholder}
+          placeholder={isLoading ? `Thinking… (${elapsed}s)` : placeholder}
           type="text"
           multiline={true}
           minRows={minRows}
@@ -171,7 +181,11 @@ export default function MessageInput({
           startAdornment={
             isLoading ? (
               <InputAdornment position="start">
-                <AutoAwesomeIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 18, mr: 0.5 }} />
+                {/* Claude-style thinking indicator while the model works (input disabled) */}
+                <AutoAwesomeIcon
+                  className="animate-pulse"
+                  sx={{ color: 'var(--sl-brand-primary)', fontSize: 16, mr: 0.5 }}
+                />
               </InputAdornment>
             ) : null
           }
@@ -192,9 +206,9 @@ export default function MessageInput({
               opacity: 1
             },
             '& .MuiInputBase-input.Mui-disabled::placeholder': {
-              color: 'var(--sl-text-muted) !important',
+              color: 'var(--sl-text-faint) !important',
               opacity: '1 !important',
-              WebkitTextFillColor: 'var(--sl-text-muted) !important',
+              WebkitTextFillColor: 'var(--sl-text-faint) !important',
             },
           }}
         />
@@ -257,7 +271,7 @@ export default function MessageInput({
           {/* Right side - Send / Stop button */}
           {isLoading ? (
             <button
-              className="p-2 md:p-3 rounded-lg transition-colors shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors shadow-lg"
               style={{
                 backgroundColor: 'var(--sl-brand-alpha-15)',
                 border: '1.5px solid var(--sl-brand-alpha-30)',
@@ -268,11 +282,10 @@ export default function MessageInput({
               <Box
                 component="span"
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: { xs: 18, md: 20 },
-                  height: { xs: 18, md: 20 },
+                  width: 12,
+                  height: 12,
+                  borderRadius: '3px',
+                  bgcolor: 'var(--sl-brand-primary)',
                   animation: 'pulseStop 1.5s ease-in-out infinite',
                   '@keyframes pulseStop': {
                     '0%': { opacity: 1, transform: 'scale(1)' },
@@ -280,22 +293,12 @@ export default function MessageInput({
                     '100%': { opacity: 1, transform: 'scale(1)' },
                   },
                 }}
-              >
-                <Box
-                  component="span"
-                  sx={{
-                    width: { xs: 12, md: 14 },
-                    height: { xs: 12, md: 14 },
-                    borderRadius: '3px',
-                    bgcolor: 'var(--sl-brand-primary)',
-                  }}
-                />
-              </Box>
+              />
             </button>
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="p-2 md:p-3 rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
               style={{
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
                 border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
@@ -314,7 +317,7 @@ export default function MessageInput({
               }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: { xs: 18, md: 20 } }} />
+              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 18 }} />
             </button>
           )}
         </Box>

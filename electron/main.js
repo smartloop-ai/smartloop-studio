@@ -582,7 +582,14 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     let importZipPath = resolved;
     if (contentDir !== tmpDir) {
       importZipPath = path.join(tmpDir, 'repacked-import.zip');
-      execFileSync('zip', ['-r', importZipPath, '.'], { cwd: contentDir, timeout: 120000 });
+      if (process.platform === 'win32') {
+        // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
+        // Pass entry names explicitly so paths aren't prefixed with "./"
+        const entries = fs.readdirSync(contentDir);
+        execFileSync('tar', ['-a', '-cf', importZipPath, '-C', contentDir, ...entries], { timeout: 120000 });
+      } else {
+        execFileSync('zip', ['-r', importZipPath, '.'], { cwd: contentDir, timeout: 120000 });
+      }
     }
 
     const fileBuffer = fs.readFileSync(importZipPath);
