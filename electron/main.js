@@ -2128,8 +2128,11 @@ if (!gotTheLock) {
     console.log('[OAuth] Second instance detected (Windows)');
     console.log('[OAuth] Command line args:', commandLine);
 
-    // Someone tried to run a second instance, we should focus our window
-    if (mainWindow) {
+    // Someone tried to run a second instance (e.g. taskbar icon click while
+    // the window is hidden to tray) — show and focus our window. focus()
+    // alone does nothing on a hidden window.
+    if (mainWindow && !(splashWindow && !splashWindow.isDestroyed())) {
+      mainWindow.show();
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }

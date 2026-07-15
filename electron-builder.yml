@@ -48,8 +48,9 @@ win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
   # Authenticode signing via Azure Trusted Signing — the same account/profile
-  # that signs slp.exe in smartloop-ai/smartloop. The hook no-ops when the
-  # AZURE_TS_* env vars are absent, so local builds stay unsigned but succeed.
+  # that signs slp.exe in smartloop-ai/smartloop. The hook only signs in CI
+  # (CI/GITHUB_ACTIONS env) with AZURE_TS_* set, so local builds always stay
+  # unsigned but succeed.
   signtoolOptions:
     sign: ./scripts/win-sign.js
   target:
@@ -69,11 +70,19 @@ linux:
 nsis:
   # customInstall downloads/installs the SLP framework during setup (see
   # build/install-slp.ps1) so first launch skips the in-app download.
+  # customUnInstall removes ~/.smartloop and the Electron user-data folder on
+  # real uninstalls (kept during --updated upgrades).
   include: build/installer.nsh
+  # Dark-theme branded left banner for the assisted installer/uninstaller
+  # welcome and finish pages (164x314 BMP, Smartloop dark theme).
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/installerSidebar.bmp
   oneClick: false
   perMachine: false
   allowElevation: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # One-click installers only (ours is assisted) — data removal is handled by
+  # customUnInstall in build/installer.nsh instead.
   deleteAppDataOnUninstall: false

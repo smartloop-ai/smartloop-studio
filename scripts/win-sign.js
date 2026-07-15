@@ -19,6 +19,13 @@ function psQuote(value) {
 }
 
 exports.default = async function sign(configuration) {
+  // Signing is CI-only — local builds always stay unsigned, even if AZURE_TS_*
+  // vars happen to be present in the developer's shell.
+  if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
+    console.log(`  • not running in CI — skipping Authenticode signing  file=${configuration.path}`);
+    return;
+  }
+
   const endpoint = process.env.AZURE_TS_ENDPOINT;
   const account = process.env.AZURE_TS_ACCOUNT;
   const profile = process.env.AZURE_TS_PROFILE;
