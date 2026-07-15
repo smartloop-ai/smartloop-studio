@@ -17,6 +17,8 @@ on:
 permissions:
   contents: write
   actions: read
+  # Azure OIDC (federated) login for Trusted Signing on the Windows build.
+  id-token: write
 
 env:
   GCP_BUCKET: gs://smartloop-gcp-us-east-releases
@@ -138,9 +140,77 @@ jobs:
             dist/*.deb
           retention-days: 1
 
+  build-windows:
+    needs: [notify-start]
+    name: Build for Windows
+    runs-on: windows-latest
+    # Scopes the Azure OIDC token to a stable subject
+    # (repo:smartloop-ai/smartloop-studio:environment:release) so a single
+    # Trusted Signing federated credential covers both tag-push and manual
+    # dispatch runs — same pattern as smartloop-ai/smartloop's build.yml.
+    environment: release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Authenticode-sign the app and installer with the same Azure Trusted
+      # Signing account/profile that signs slp.exe in smartloop-ai/smartloop.
+      # Auth is OIDC (federated) via the job's `id-token: write` — no secrets.
+      # scripts/win-sign.js (electron-builder sign hook) does the signing.
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # The sign hook shells out to Invoke-TrustedSigning via powershell.exe,
+      # so install the module for Windows PowerShell (CurrentUser scope).
+      - name: Install TrustedSigning PowerShell module
+        shell: powershell
+        run: |
+          try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -ErrorAction Stop } catch {}
+          Install-Module -Name TrustedSigning -MinimumVersion 0.5.0 -Force -Repository PSGallery -Scope CurrentUser
+
+      - name: Build for Windows
+        run: npm run electron-build-win
+        env:
+          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
+          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_TS_ENDPOINT: ${{ secrets.AZURE_TS_ENDPOINT }}
+          AZURE_TS_ACCOUNT: ${{ secrets.AZURE_TS_ACCOUNT }}
+          AZURE_TS_PROFILE: ${{ secrets.AZURE_TS_PROFILE }}
+
+      - name: Verify signature
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter '*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'No setup exe found in dist/' }
+          $sig = Get-AuthenticodeSignature $setup.FullName
+          Write-Host "$($setup.Name): $($sig.Status) - $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') {
+            throw "$($setup.Name) signature is $($sig.Status), expected Valid"
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+          retention-days: 1
+
   upload-to-gcp:
     name: Upload to GCP Bucket
-    needs: [build-macos, build-linux]
+    needs: [build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     outputs:
       download_urls: ${{ steps.urls.outputs.download_urls }}
@@ -158,6 +228,12 @@ jobs:
         with:
           name: linux-build
           path: artifacts/linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts/windows
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -185,6 +261,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           mkdir -p release/$VERSION/macos
           mkdir -p release/$VERSION/linux
+          mkdir -p release/$VERSION/windows
 
           if [ -d "artifacts/macos" ]; then
             mv artifacts/macos/* release/$VERSION/macos/ 2>/dev/null || true
@@ -192,6 +269,10 @@ jobs:
 
           if [ -d "artifacts/linux" ]; then
             mv artifacts/linux/* release/$VERSION/linux/ 2>/dev/null || true
+          fi
+
+          if [ -d "artifacts/windows" ]; then
+            mv artifacts/windows/* release/$VERSION/windows/ 2>/dev/null || true
           fi
 
           # Create latest symlinks
@@ -232,6 +313,13 @@ jobs:
               URLS="${URLS} • <${BASE_URL}/${VERSION}/linux/${fname}|${fname}>\n"
             done
           fi
+          if [ -d "release/$VERSION/windows" ]; then
+            URLS="${URLS}*Windows:*\n"
+            for f in release/$VERSION/windows/*; do
+              fname=$(basename "$f")
+              URLS="${URLS} • <${BASE_URL}/${VERSION}/windows/${fname}|${fname}>\n"
+            done
+          fi
           # Write as single line with literal \n so it's safe inside JSON strings
           echo "download_urls=${URLS}" >> $GITHUB_OUTPUT
 
@@ -250,6 +338,9 @@ jobs:
               ],
               "linux": [
                 $(cd release/$VERSION/linux 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
+              ],
+              "windows": [
+                $(cd release/$VERSION/windows 2>/dev/null && ls -1 | sed 's/^/"/' | sed 's/$/"/' | paste -sd ',' - || echo '""')
               ]
             }
           }
@@ -276,6 +367,11 @@ jobs:
           echo "**Linux:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/linux/ || echo "No Linux builds" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Windows:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/windows/ || echo "No Windows builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
