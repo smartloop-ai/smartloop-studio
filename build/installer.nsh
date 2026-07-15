@@ -40,3 +40,23 @@
     ${EndIf}
   ${EndIf}
 !macroend
+
+; On uninstall, remove everything the app put on the machine: the SLP
+; framework, models, and local DB under %USERPROFILE%\.smartloop, plus the
+; Electron user-data folder (electron-store, caches). Guarded by ${isUpdated}
+; because electron-builder runs the old uninstaller with --updated during an
+; in-place upgrade — data must survive updates and only go on real uninstall.
+!macro customUnInstall
+  ${IfNot} ${isUpdated}
+    ; Stop any SLP server still running so its files aren't locked.
+    nsExec::Exec 'taskkill /F /T /IM slp.exe'
+    Pop $R0
+
+    DetailPrint "Removing SLP framework and application data..."
+    RMDir /r "$PROFILE\.smartloop"
+    ; Electron userData is named after package.json "name" (no productName
+    ; there); also remove the productName variant in case that ever changes.
+    RMDir /r "$APPDATA\smartloop-studio"
+    RMDir /r "$APPDATA\${APP_FILENAME}"
+  ${EndIf}
+!macroend
