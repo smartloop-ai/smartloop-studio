@@ -47,10 +47,13 @@ mac:
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
-  signAndEditExecutable: false
+  # Authenticode signing via Azure Trusted Signing — the same account/profile
+  # that signs slp.exe in smartloop-ai/smartloop. The hook no-ops when the
+  # AZURE_TS_* env vars are absent, so local builds stay unsigned but succeed.
+  signtoolOptions:
+    sign: ./scripts/win-sign.js
   target:
     - nsis
-    - portable
 linux:
   icon: public/img/logo.png
   category: Development
@@ -64,6 +67,9 @@ linux:
       arch:
         - x64
 nsis:
+  # customInstall downloads/installs the SLP framework during setup (see
+  # build/install-slp.ps1) so first launch skips the in-app download.
+  include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowElevation: false
