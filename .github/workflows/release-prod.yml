@@ -26,6 +26,10 @@ permissions:
   contents: write
   pull-requests: write
   actions: read
+  # Must cover everything build-and-deploy.yml requests (a called reusable
+  # workflow cannot exceed its caller's permissions): Azure OIDC login for
+  # Trusted Signing needs id-token: write.
+  id-token: write
 
 jobs:
   # ── Step 1: open the release PR ────────────────────────────────────────────
