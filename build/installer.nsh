@@ -11,10 +11,14 @@
 
 ; Install the SLP framework into %USERPROFILE%\.smartloop as part of app
 ; installation so first launch skips the in-app download. The download runs
-; through the INetC plugin (real progress UI); extraction/verification and the
-; tracking files live in install-slp.ps1 — a PowerShell port of the install
-; steps in electron/slp-setup.js, which remains the runtime fallback whenever
-; any of this fails (offline install, blocked download, etc.).
+; through the NScurl plugin (vendored at build/x86-unicode/NScurl.dll,
+; v26.6.21.315 from github.com/negrutiu/nsis-nscurl — electron-builder
+; auto-registers build/<pluginArch>/ as an NSIS plugin dir), which drives the
+; InstFiles page's own progress bar instead of popping a separate download
+; window like INetC did. Extraction/verification and the tracking files live
+; in install-slp.ps1 — a PowerShell port of the install steps in
+; electron/slp-setup.js, which remains the runtime fallback whenever any of
+; this fails (offline install, blocked download, etc.).
 !macro customInstall
   ; electron-builder's install section runs with `SetDetailsPrint none`
   ; (templates/nsis/installSection.nsh), which hides the status text above the
@@ -32,7 +36,13 @@
     DetailPrint "SLP framework already installed - skipping download."
   ${Else}
     DetailPrint "Downloading SLP framework ${SLP_VERSION}..."
-    inetc::get /caption "SLP framework ${SLP_VERSION}" /resume "" "${SLP_ARCHIVE_URL}" "$PLUGINSDIR\windows-amd64-slp.zip" /end
+    ; Hand NScurl the InstFiles page's own progress bar (dlg item 1004) and
+    ; status text (1006) so the download reuses the installer's single bar.
+    ; In silent installs NScurl ignores these and waits silently.
+    FindWindow $R1 "#32770" "" $HWNDPARENT
+    GetDlgItem $R2 $R1 1004
+    GetDlgItem $R3 $R1 1006
+    NScurl::http GET "${SLP_ARCHIVE_URL}" "$PLUGINSDIR\windows-amd64-slp.zip" /INSIST /RESUME /PROGRESSWND $R2 /TEXTWND $R3 /STRING TEXT "Downloading SLP framework ${SLP_VERSION} — @XFERSIZE@ of @FILESIZE@ (@SPEED@)" /END
     Pop $R0
     ${If} $R0 == "OK"
       DetailPrint "Installing SLP framework ${SLP_VERSION}..."
