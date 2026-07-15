@@ -16,6 +16,12 @@ function createTray() {
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
   tray = new Tray(icon);
   tray.setToolTip('Smartloop Studio');
+
+  // Left-click on the tray icon shows the window (Windows/Linux; on macOS a
+  // tray with a context menu opens the menu on click instead).
+  tray.on('click', () => {
+    showOrCreateWindow();
+  });
 }
 
 /**

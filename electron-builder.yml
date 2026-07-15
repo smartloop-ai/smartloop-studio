@@ -48,8 +48,9 @@ win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
   # Authenticode signing via Azure Trusted Signing — the same account/profile
-  # that signs slp.exe in smartloop-ai/smartloop. The hook no-ops when the
-  # AZURE_TS_* env vars are absent, so local builds stay unsigned but succeed.
+  # that signs slp.exe in smartloop-ai/smartloop. The hook only signs in CI
+  # (CI/GITHUB_ACTIONS env) with AZURE_TS_* set, so local builds always stay
+  # unsigned but succeed.
   signtoolOptions:
     sign: ./scripts/win-sign.js
   target:
