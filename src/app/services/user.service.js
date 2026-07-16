@@ -75,7 +75,6 @@ const getUser = async () => {
 
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
-        projects: result.projects,
 
         // conversations
         conversations: result.conversations || [],
@@ -168,7 +167,6 @@ const fetchAndStoreUser = async () => {
         selected_model: result.selected_model || null,
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
-        projects: result.projects,
 
         // conversations
         conversations: result.conversations || [],

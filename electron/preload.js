@@ -182,6 +182,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
   // Get the path to the bundled blank project template zip
   getTemplateZipPath: () => ipcRenderer.invoke('get-template-zip-path'),
+  // Projects: centralized /v1/projects access (list + CRUD live in main.js).
+  // Mutations broadcast `projects-changed` → DOM `projectsChanged` event below.
+  projects: {
+    list: () => ipcRenderer.invoke('projects-list'),
+    create: (params) => ipcRenderer.invoke('projects-create', params),
+    update: (id, updates) => ipcRenderer.invoke('projects-update', id, updates),
+    delete: (id) => ipcRenderer.invoke('projects-delete', id),
+  },
   // SQLite database methods
   db: {
     // Projects
@@ -263,4 +271,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Bridge main-process user profile updates to a DOM event
 ipcRenderer.on('user-profile-updated', (event, data) => {
   window.dispatchEvent(new CustomEvent('userProfileUpdated', { detail: data }));
+});
+
+// Bridge main-process project changes to a DOM event so ProjectContext can
+// subscribe with a plain window.addEventListener (single refresh trigger).
+ipcRenderer.on('projects-changed', () => {
+  window.dispatchEvent(new CustomEvent('projectsChanged'));
 });
