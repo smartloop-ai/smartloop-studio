@@ -1,6 +1,6 @@
 ---
 name: pr-release
-description: Create a release PR merging dev into main (via a throwaway release/v<version> branch) titled "merge <version> release" with a website-ready Release Notes section. Defaults to a patch bump of the version in package.json; pass an explicit version (e.g. /pr-release 1.1.1) to override.
+description: Create a release PR merging dev into main (via a throwaway release/v<version> branch) titled "<version> release" with a website-ready Release Notes section. Defaults to a patch bump of the version in package.json; pass an explicit version (e.g. /pr-release 1.1.1) to override.
 argument-hint: [version]
 ---
 
@@ -39,7 +39,7 @@ Arguments: `$ARGUMENTS` — an optional explicit semver (e.g. `1.1.1`). If empty
 
 5. **Create the release branch and PR**
    - Push `dev`'s tip to the release branch: `git push origin dev:refs/heads/release/v<version>` (no checkout needed). If the branch already exists on origin, stop and ask the user — a leftover branch means a previous release attempt didn't finish.
-   - Title: `merge <version> release` (e.g. `merge 1.0.17 release`).
+   - Title: `<version> release` (e.g. `1.0.17 release`).
    - Base: `main`. Head: `release/v<version>`. (This is the one PR that targets `main`; day-to-day PRs target `dev`. Never open it from `dev` directly — see above.)
    - Body format:
 
