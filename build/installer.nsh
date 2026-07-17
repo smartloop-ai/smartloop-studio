@@ -9,6 +9,24 @@
 
 !define SLP_ARCHIVE_URL "https://dl.smartloop.ai/slp/${SLP_VERSION}/windows-amd64-slp.zip"
 
+; electron-builder's install section starts with `SetDetailsPrint none` and
+; customInstall only runs after the old-version uninstall and app-file
+; extraction — so the whole first phase of the install showed a bare progress
+; bar with no status text. CHECK_APP_RUNNING is the earliest hook inside the
+; install section, so re-enable the status text there. Defining
+; customCheckAppRunning makes allowOnlyOneInstallerInstance.nsh skip its own
+; getProcessInfo include and $pid declaration (both are guarded by
+; !ifmacrondef customCheckAppRunning), so provide them here before delegating
+; to the stock _CHECK_APP_RUNNING implementation.
+!include "getProcessInfo.nsh"
+Var pid
+
+!macro customCheckAppRunning
+  SetDetailsPrint both
+  DetailPrint "Preparing to install ${PRODUCT_NAME}..."
+  !insertmacro _CHECK_APP_RUNNING
+!macroend
+
 ; Install the SLP framework into %USERPROFILE%\.smartloop as part of app
 ; installation so first launch skips the in-app download. The download runs
 ; through the NScurl plugin (vendored at build/x86-unicode/NScurl.dll,
@@ -20,11 +38,9 @@
 ; electron/slp-setup.js, which remains the runtime fallback whenever any of
 ; this fails (offline install, blocked download, etc.).
 !macro customInstall
-  ; electron-builder's install section runs with `SetDetailsPrint none`
-  ; (templates/nsis/installSection.nsh), which hides the status text above the
-  ; progress bar — so none of the DetailPrint lines below were visible.
-  ; Re-enable it here so the (long) SLP download/install phase shows what it
-  ; is doing, matching the uninstaller's behavior.
+  ; Status text is normally already on (customCheckAppRunning above), but that
+  ; hook is skipped for UAC inner instances — keep this as a safety net so the
+  ; (long) SLP download/install phase always shows what it is doing.
   SetDetailsPrint both
 
   File "/oname=$PLUGINSDIR\install-slp.ps1" "${BUILD_RESOURCES_DIR}\install-slp.ps1"
