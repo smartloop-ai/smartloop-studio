@@ -11,6 +11,7 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 
 import PaletteIcon from '@mui/icons-material/Palette';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { themes, themeList, type ThemeId } from '@/app/theme/themes';
 import AvailableModels from '@/app/components/available-models';
 
@@ -202,6 +203,31 @@ export default function SettingsPage() {
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
     const appVersion = __APP_VERSION__;
 
+    // App update check — driven by the main-process release-checker
+    const [latestRelease, setLatestRelease] = useState<any>(null);
+    const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+    const CHANGELOG_URL = 'https://smartloop.ai/docs/changelog';
+
+    useEffect(() => {
+        const api = window.electronAPI;
+        api?.getLatestRelease?.().then((r: any) => { if (r) setLatestRelease(r); }).catch(() => {});
+        api?.onReleaseUpdate?.((data: any) => setLatestRelease(data));
+        return () => api?.removeReleaseUpdateListener?.();
+    }, []);
+
+    const handleCheckForUpdates = async () => {
+        setCheckingUpdate(true);
+        try {
+            const result = await window.electronAPI?.checkForUpdates?.();
+            if (result) setLatestRelease(result);
+        } catch { /* leave last known result */ }
+        setCheckingUpdate(false);
+    };
+
+    const latestVersion = latestRelease?.release?.version ?? null;
+    const updateAvailable = latestRelease?.update_available === true;
+
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
         const loadHistory = async () => {
@@ -332,6 +358,54 @@ export default function SettingsPage() {
                     <Box className="mb-6 md:mb-8">
                         <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--sl-text-primary)' }}>Settings</h1>
                         <p className="text-sm md:text-base" style={{ color: 'var(--sl-text-muted)' }}>Model configuration and default settings</p>
+                    </Box>
+
+                    {/* 0. App version / updates */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-4">
+                            <SystemUpdateAltIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                            {updateAvailable ? (
+                                <span
+                                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
+                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
+                                >
+                                    Update available
+                                </span>
+                            ) : latestVersion ? (
+                                <span className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>Up to date</span>
+                            ) : null}
+                        </Box>
+
+                        <div className="flex flex-col gap-2 mb-4">
+                            <div className="flex items-center justify-between">
+                                <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--sl-text-muted)' }}>Current version</span>
+                                <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-muted)' }}>{appVersion}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--sl-text-muted)' }}>Latest version</span>
+                                <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-muted)' }}>{latestVersion ?? '—'}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={handleCheckForUpdates}
+                                disabled={checkingUpdate}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                            >
+                                {checkingUpdate && <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />}
+                                {checkingUpdate ? 'Checking…' : 'Check for Updates'}
+                            </button>
+                            <button
+                                onClick={() => window.electronAPI?.openExternal?.(CHANGELOG_URL)}
+                                className="text-sm transition-colors"
+                                style={{ color: 'var(--sl-brand-primary)' }}
+                            >
+                                Read the changelog →
+                            </button>
+                        </div>
                     </Box>
 
                     {/* 1. Theme */}

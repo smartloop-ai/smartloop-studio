@@ -91,6 +91,11 @@ export interface ElectronAPI {
   removeModelsUpdatedListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
+  // App release / update check
+  checkForUpdates: () => Promise<any>;
+  getLatestRelease: () => Promise<any>;
+  onReleaseUpdate: (callback: (data: any) => void) => void;
+  removeReleaseUpdateListener: () => void;
   // System hardware info
   getFrameworkVersion: () => Promise<string>;
   getSystemInfo: () => Promise<{

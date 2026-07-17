@@ -131,6 +131,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeHealthUpdateListener: () => {
     ipcRenderer.removeAllListeners('health-update');
   },
+  // App release / update check
+  checkForUpdates: () => ipcRenderer.invoke('release-check-now'),
+  getLatestRelease: () => ipcRenderer.invoke('release-get-latest'),
+  onReleaseUpdate: (callback) => {
+    ipcRenderer.on('release-update', (event, data) => callback(data));
+  },
+  removeReleaseUpdateListener: () => {
+    ipcRenderer.removeAllListeners('release-update');
+  },
   onNavigateToProject: (callback) => {
     ipcRenderer.on('navigate-to-project', (event, projectId) => callback(projectId));
   },
