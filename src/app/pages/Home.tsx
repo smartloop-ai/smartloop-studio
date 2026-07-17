@@ -13,7 +13,7 @@ import RightSidebar from '@/app/components/right-sidebar';
 import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
-import { projectService } from '@/app/services/project.service';
+import { useProjectContext } from '@/app/contexts/ProjectContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
@@ -27,8 +27,16 @@ import { useAuthContext } from '@/app/contexts/AuthContext';
 
 export default function Home() {
   const [user, setUser] = useAuthContext();
+  const {
+    projects: projectsList,
+    selectedProject,
+    selectProject,
+    updateProject: updateProjectCtx,
+    deleteProject: deleteProjectCtx,
+    refresh: refreshProjects,
+    ready: projectsReady,
+  } = useProjectContext();
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedProject, setSelectedProject]: any = useState(null);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
@@ -135,80 +143,12 @@ export default function Home() {
     loadModel();
   }, [selectedProject]);
 
-  // Load a single project from local SLP service (enriched with SQLite metadata)
-  const loadProjectFromApi = async (projectId: string) => {
-    try {
-      const projects = await projectService.getProjects();
-      return projects.find((p: any) => p.id === projectId) || null;
-    } catch {
-      return null;
-    }
-  };
-
-  // Ensure a project is always selected — fall back to system project
+  // Project list + selection + bootstrap (auto-create/auto-select) are owned by
+  // ProjectContext. Here we only dismiss the loader once the context has
+  // finished its initial load. `selectedProject` is derived from the URL.
   useEffect(() => {
-    if (!selectedProject && user?.projects?.length > 0) {
-      const systemProject = user.projects.find((p: any) => p.system === true);
-      const fallback = systemProject || user.projects[0];
-      setSelectedProject(fallback);
-    }
-  }, [selectedProject, user?.projects]);
-
-  // Wait for local SLP service to load projects before dismissing loader
-  useEffect(() => {
-    const loadProjects = async () => {
-      const projects = await projectService.getProjects();
-      if (projects.length > 0) {
-        setUser((prev: any) => prev ? { ...prev, projects } : prev);
-
-        // Restore last selected conversation from SQLite if nothing is in the URL
-        if (!searchParams.get('project') && !searchParams.get('conversation')) {
-          const selected = await storageService.getSelectedConversation();
-
-          if (selected) {
-            const projectId = selected.project_id || projects.find((p: any) => p.system)?.id;
-            navigate(`/?conversation=${selected.id}&project=${projectId}`, { replace: true });
-            setIsLoading(false);
-            return true;
-          }
-
-          // No stored selection — fall back to system project
-          const systemProject = projects.find((p: any) => p.system === true);
-          const defaultProject = systemProject || projects[0];
-          setSelectedProject(defaultProject);
-          navigate(`/?project=${defaultProject.id}`, { replace: true });
-        }
-
-        setIsLoading(false);
-        return true;
-      }
-
-      // Service responded but no projects exist yet — dismiss loader
-      // so user can see the page and create a project
-      const localBase = await import('@/app/constants').then(m => m.getLocalApiEndpoint());
-      if (localBase) {
-        setUser((prev: any) => prev ? { ...prev, projects: [] } : prev);
-        setSelectedProject(null);
-        setIsLoading(false);
-        return true;
-      }
-
-      return false;
-    };
-
-    // Check if SLP is already ready (event may have fired before mount)
-    loadProjects().then((loaded) => {
-      if (!loaded) {
-        // Not ready yet — wait for the event
-        const handleReady = async () => {
-          await loadProjects();
-          setIsLoading(false);
-          window.removeEventListener('slpServiceReady', handleReady);
-        };
-        window.addEventListener('slpServiceReady', handleReady);
-      }
-    });
-  }, []);
+    if (projectsReady) setIsLoading(false);
+  }, [projectsReady]);
 
   // Listen for conversation deletion events
   useEffect(() => {
@@ -352,25 +292,13 @@ export default function Home() {
 
         // Persist selection in SQLite
         await storageService.selectConversation(urlConversationId);
-
-        // Set project from conversation's project_id via local API (already enriched with local metadata)
-        if (foundConversation.project_id) {
-          const project = await loadProjectFromApi(foundConversation.project_id);
-          if (project) {
-            setSelectedProject(project);
-          }
-        }
+        // Project is derived from the URL by ProjectContext — no need to set it here.
       };
 
       loadAndSetConversation();
     } else if (urlProjectId) {
       const isExplicitNew = searchParams.get('new') === '1';
       (async () => {
-        const project = await loadProjectFromApi(urlProjectId);
-        if (project) {
-          setSelectedProject(project);
-        }
-
         // Clear selection when switching to a project
         await storageService.clearSelectedConversation();
 
@@ -388,30 +316,19 @@ export default function Home() {
         setConversation(null);
       })();
     } else {
-      // No URL params — if conversations exist, auto-select the most recent one
-      const autoSelect = async () => {
-        const allConversations = await storageService.getConversations();
-        if (allConversations.length > 0) {
-          const sorted = allConversations.sort((a: any, b: any) =>
-            new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
-          );
-          const mostRecent = sorted[0];
-          const projectId = mostRecent.project_id;
-          if (projectId) {
-            navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
-          } else {
-            navigate(`/?conversation=${mostRecent.id}`, { replace: true });
-          }
-        } else {
-          // No conversations — auto-select system project so Chat has a valid project context
-          setConversation(null);
-          setChatMessage(null);
-          const systemProject = user?.projects?.find((p: any) => p.system === true);
-          const fallbackProject = systemProject || user?.projects?.[0] || null;
-          setSelectedProject(fallbackProject);
-        }
+      // No URL params — restore the last-viewed project (fallback: system, then
+      // first). Keyed on selected_project_id, not conversation recency. Selecting
+      // ?project=X then auto-selects X's latest conversation via the branch above.
+      // ProjectContext.reconcile mirrors this on its own triggers.
+      const restoreProject = async () => {
+        const savedId = await storageService.getSetting('selected_project_id');
+        const target = (savedId && projectsList.find((p: any) => p.id === savedId))
+          ?? projectsList.find((p: any) => p.system === true)
+          ?? projectsList[0];
+        if (target) selectProject(target.id, { replace: true });
+        else { setConversation(null); setChatMessage(null); } // list not ready; reconcile will select
       };
-      autoSelect();
+      restoreProject();
     }
   }, [searchParams]);
 
@@ -442,7 +359,8 @@ export default function Home() {
 
     (async () => {
       try {
-        const project = await loadProjectFromApi(projectId);
+        // selectedProject is the enriched project derived from the context list.
+        const project = selectedProject;
         if (cancelled) return;
         if (project) {
           setCurrentProjectData(project);
@@ -631,7 +549,7 @@ export default function Home() {
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
     const projectId = selectedProject?.id ||
-      user?.projects?.find((p: any) => p.system === true)?.id;
+      projectsList.find((p: any) => p.system === true)?.id;
 
     if (!projectId) return;
 
@@ -687,23 +605,10 @@ export default function Home() {
     };
   }, [selectedProject, user]);
 
-  // When SLP service comes online, re-enrich selectedProject with API data and reload conversations
-  // NOTE: Initial project/conversation selection is handled by the loadProjects effect above.
-  // This handler only enriches already-selected state — it does NOT navigate.
+  // When SLP service comes online, reload conversations. Project re-enrichment
+  // is handled by ProjectContext (selectedProject is derived from its list).
   useEffect(() => {
-    const handleServiceReady = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const urlProjectId = params.get('project');
-
-      if (urlProjectId) {
-        const project = await loadProjectFromApi(urlProjectId);
-        if (project) {
-          setSelectedProject(project);
-        }
-      }
-      loadProjectConversations();
-    };
-
+    const handleServiceReady = () => { loadProjectConversations(); };
     window.addEventListener('slpServiceReady', handleServiceReady);
     return () => {
       window.removeEventListener('slpServiceReady', handleServiceReady);
@@ -738,12 +643,6 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [projectConversations, conversation, selectedProject, navigate]);
 
-  // Clear project selection when component unmounts (navigating away)
-  useEffect(() => {
-    return () => {
-      setSelectedProject(null);
-    };
-  }, []);
 
 
   const saveProjectSkills = async (skills: Array<{ id?: string; name: string; content: string }>) => {
@@ -874,30 +773,29 @@ export default function Home() {
 
   const handleFolderPathChange = async (path: string) => {
     if (!selectedProject?.id) return;
+    // Color/folder are UI-only metadata (SQLite). Update meta, then refresh the
+    // context list so the derived selectedProject picks up the change.
     await storageService.updateProjectMeta(selectedProject.id, { folder_path: path });
-    const updated = { ...currentProjectData, folder_path: path };
-    setCurrentProjectData(updated);
-    setSelectedProject((prev: any) => prev ? { ...prev, folder_path: path } : prev);
+    setCurrentProjectData((prev: any) => prev ? { ...prev, folder_path: path } : prev);
+    await refreshProjects();
   };
 
   const handleColorChange = async (color: string) => {
     if (!selectedProject?.id) return;
     await storageService.updateProjectMeta(selectedProject.id, { color });
     setCurrentProjectData((prev: any) => prev ? { ...prev, color } : prev);
-    setSelectedProject((prev: any) => prev ? { ...prev, color } : prev);
-    window.dispatchEvent(new CustomEvent('projectUpdated'));
+    await refreshProjects();
   };
 
   const handleRenameProject = async (name: string) => {
     if (!selectedProject?.id) return;
     const trimmedName = name.trim();
     if (!trimmedName) return;
-    const result = await projectService.updateProject(selectedProject.id, { name: trimmedName });
+    // Name goes through the API; the context refreshes off the projects-changed broadcast.
+    const result = await updateProjectCtx(selectedProject.id, { name: trimmedName });
     if (result.success) {
       const folderPath = result.data?.folder_path;
-      setSelectedProject((prev: any) => prev ? { ...prev, name: trimmedName, ...(folderPath ? { folder_path: folderPath } : {}) } : prev);
       setCurrentProjectData((prev: any) => prev ? { ...prev, name: trimmedName, ...(folderPath ? { folder_path: folderPath } : {}) } : prev);
-      window.dispatchEvent(new CustomEvent('projectUpdated'));
     }
   };
 
@@ -1024,11 +922,12 @@ export default function Home() {
           // Check if any conversations remain globally
           const allRemaining = await storageService.getConversations();
           if (allRemaining.length === 0) {
-            // No conversations left anywhere — go to home with system project
-            navigate('/', { replace: true });
+            // No conversations left anywhere — select the system project so Chat
+            // has a valid context.
             setConversation(null);
-            const systemProject = user?.projects?.find((p: any) => p.system === true);
-            setSelectedProject(systemProject || user?.projects?.[0] || null);
+            const target = projectsList.find((p: any) => p.system === true) || projectsList[0];
+            if (target) selectProject(target.id, { replace: true });
+            else navigate('/', { replace: true });
           } else {
             // Other projects still have conversations — select most recent
             const sorted = allRemaining.sort((a: any, b: any) =>
@@ -1319,15 +1218,9 @@ export default function Home() {
     setDeleteProjectError('');
 
     try {
-      // Delete all conversations for this project first
-      // Ensure conversations is always an array, never null or undefined
-      const allConversations = (user?.conversations && Array.isArray(user.conversations)) ? user.conversations : [];
-      const projectConversations = allConversations.filter(
-        (conv: any) => conv.project_id === selectedProject.id
-      );
-
-      // Delete each conversation
-      for (const conv of projectConversations) {
+      // Delete this project's conversations first (server + SQLite + events).
+      const projectConvos = await storageService.getConversations(selectedProject.id);
+      for (const conv of projectConvos) {
         try {
           await conversationService.deleteConversation(conv.id);
         } catch (error) {
@@ -1335,40 +1228,21 @@ export default function Home() {
         }
       }
 
-      // Delete the project using project service (this also cleans up local storage)
-      const result = await projectService.deleteProject(selectedProject.id);
+      // Delete the project via ProjectContext. Main cascades the remaining
+      // SQLite cleanup and broadcasts projects-changed, which triggers the
+      // context to refresh + auto-select a remaining project.
+      const result = await deleteProjectCtx(selectedProject.id);
 
       if (result.success) {
-        // Refresh user data (skip remote call in Electron)
-        const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
-        if (!isElectron) {
-          const updatedUser = await userService.get();
-          if (updatedUser) {
-            setUser(updatedUser);
-          }
-        } else {
-          // In Electron, remove project from local user state
-          const updatedProjects = (user?.projects || []).filter((p: any) => p.id !== selectedProject.id);
-          const updatedConversations = (user?.conversations || []).filter(
-            (c: any) => c.project_id !== selectedProject.id
-          );
-          setUser({ ...user, projects: updatedProjects, conversations: updatedConversations });
-        }
-
-        // Dispatch projectDeleted event to update sidebar
-        window.dispatchEvent(new CustomEvent('projectDeleted', {
-          detail: { projectId: selectedProject.id }
-        }));
-
         // Close dialog
         setShowDeleteProjectDialog(false);
         setDeleteProjectConfirm('');
 
-        // Navigate to home and reset all state
+        // Reset conversation/chat state; the context reconcile selects a
+        // remaining project once the URL clears.
         navigate('/');
         setConversation(null);
         setChatMessage(null);
-        setSelectedProject(null);
         setMessageAttachments([]);
       } else {
         setDeleteProjectError(result.error || 'Failed to delete project. Please try again.');
@@ -1448,26 +1322,10 @@ export default function Home() {
         return filtered;
       });
 
-      // Update user state incrementally - remove the deleted document from the specific project
-      if (user && selectedProject) {
-        const updatedProjects = (user.projects || []).map((p: any) => {
-          if (p.id === selectedProject.id) {
-            const filteredDocs = (p.documents || []).filter((doc: any) => doc.id !== documentToDelete.id);
-            return { ...p, documents: filteredDocs };
-          }
-          return p;
-        });
-
-        const updatedUser = { ...user, projects: updatedProjects };
-        setUser(updatedUser);
-
-        // Update current project data - keep project selected even with no documents
-        const updatedProject = updatedProjects.find((p: any) => p.id === selectedProject.id);
-        if (updatedProject) {
-          setCurrentProjectData(updatedProject);
-          setSelectedProject(updatedProject);
-        }
-      }
+      // Remove the deleted document from the local project detail view.
+      setCurrentProjectData((prev: any) =>
+        prev ? { ...prev, documents: (prev.documents || []).filter((doc: any) => doc.id !== documentToDelete.id) } : prev
+      );
 
       // Trigger directory re-scan so the sidebar updates
       window.dispatchEvent(new CustomEvent('documentProcessingComplete', {

@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { projectService } from '@/app/services/project.service';
 
 /**
- * Custom hook for local-only authentication
- * Checks auth status from local SLP service and loads projects
+ * Custom hook for local-only authentication.
+ * Checks auth status from the local SLP service. Projects are owned by
+ * ProjectContext, not this hook — the user object no longer carries `projects`.
  * @returns [user, setUser, authReady] tuple
  */
 export function useAuth(): [any, (user: any) => void, boolean] {
@@ -17,16 +17,6 @@ export function useAuth(): [any, (user: any) => void, boolean] {
 
     const init = async () => {
       try {
-        let projects: any[] = [];
-        try {
-          const localProjects = await projectService.getProjects();
-          projects = Array.isArray(localProjects) ? localProjects : [];
-        } catch (err) {
-          console.warn('useAuth: Could not load local projects:', err);
-        }
-
-        console.log(`useAuth: Loaded ${projects.length} project(s) from local SLP`);
-
         // Check auth status from local service
         let authUser: any = null;
         try {
@@ -51,13 +41,13 @@ export function useAuth(): [any, (user: any) => void, boolean] {
               console.warn('useAuth: Could not fetch user profile:', err);
             }
           }
-          setUser({ ...profile, guest: false, projects, conversations: [] });
+          setUser({ ...profile, guest: false, conversations: [] });
         } else {
-          setUser({ name: 'Local', guest: true, projects, conversations: [] });
+          setUser({ name: 'Local', guest: true, conversations: [] });
         }
       } catch (error) {
         console.error('useAuth: Error during init:', error);
-        setUser({ name: 'Local', guest: true, projects: [], conversations: [] });
+        setUser({ name: 'Local', guest: true, conversations: [] });
       } finally {
         isAuthCheckingRef.current = false;
         setAuthReady(true);
@@ -67,7 +57,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     init();
   }, []);
 
-  // Listen for userUpdated events (e.g., when a project is created)
+  // Listen for userUpdated events
   useEffect(() => {
     const handleUserUpdated = (event: CustomEvent) => {
       if (event.detail) {
@@ -78,7 +68,7 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     const handleAuthStateChanged = (event: CustomEvent) => {
       const { loggedIn, user: authUser } = event.detail || {};
       if (loggedIn && authUser) {
-        setUser((prev: any) => prev ? { ...prev, ...authUser, guest: false } : { ...authUser, guest: false, projects: [], conversations: [] });
+        setUser((prev: any) => prev ? { ...prev, ...authUser, guest: false } : { ...authUser, guest: false, conversations: [] });
       } else {
         setUser((prev: any) => prev ? { ...prev, email: undefined, guest: true } : prev);
       }
@@ -98,34 +88,9 @@ export function useAuth(): [any, (user: any) => void, boolean] {
     };
     window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
 
-    // When SLP service comes online, refresh projects
-    const handleSlpReady = async () => {
-      try {
-        let projects = await projectService.getProjects();
-
-        // Auto-create a system project if none exist
-        if (projects.length === 0) {
-          const result = await projectService.createProject({
-            name: 'General Chat',
-            system: true,
-          });
-          if (result.success && result.data) {
-            projects = [result.data];
-            console.log('useAuth: Auto-created system project:', result.data.id);
-          }
-        }
-
-        if (projects.length > 0) {
-          setUser((prev: any) => prev ? { ...prev, projects } : prev);
-        }
-      } catch {}
-    };
-    window.addEventListener('slpServiceReady', handleSlpReady);
-
     return () => {
       window.removeEventListener('userUpdated', handleUserUpdated as EventListener);
       window.removeEventListener('authStateChanged', handleAuthStateChanged as EventListener);
-      window.removeEventListener('slpServiceReady', handleSlpReady);
       window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
     };
   }, []);

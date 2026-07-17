@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
-import { projectService } from '../services/project.service';
+import { useProjectContext } from '@/app/contexts/ProjectContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -55,7 +55,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState('');
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [isDeletingProject, setIsDeletingProject] = useState(false);
-  const [localProjects, setLocalProjects] = useState<any[]>([]);
+  // Projects list + selection are owned by ProjectContext. `localProjects` is an
+  // alias for the context list so existing read sites keep working.
+  const {
+    projects: localProjects,
+    selectedProject,
+    deleteProject: deleteProjectCtx,
+    refresh: refreshProjects,
+  } = useProjectContext();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(anchorEl);
   const [authUser, setAuthUser] = useState<any>(null);
@@ -182,63 +189,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
 
 
-  // Load projects from local API (enriched with local UI metadata like color)
-  const loadLocalProjects = async () => {
-    const projects = await projectService.getProjects();
-    setLocalProjects(projects);
-    return projects;
-  };
-
-  const autoSelectFirstProject = async (projects?: any[]) => {
-    const hash = window.location.hash;
-    const queryStart = hash.indexOf('?');
-    const params = new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart) : '');
-    if (params.get('project') || params.get('conversation')) return;
-    const list = projects ?? await projectService.getProjects();
-    if (list.length === 0) return;
-    const savedId = await storageService.getSetting('selected_project_id');
-    const target = (savedId && list.find((p: any) => p.id === savedId))
-      ?? list.find((p: any) => p.system)
-      ?? list[0];
-    navigate(`/?project=${target.id}`, { replace: true });
-  };
-
-  // Load projects and conversations on mount and when user.projects changes
-  const sidebarInitRef = useRef(false);
-  useEffect(() => {
-    if (!sidebarInitRef.current) {
-      sidebarInitRef.current = true;
-    }
-    loadLocalProjects();
-    refreshConversations();
-  }, [user?.projects?.length]);
-
-  // Reload when SLP service becomes ready (may fire after initial load)
-  useEffect(() => {
-    const handleServiceReady = async () => {
-      const projects = await loadLocalProjects();
-      await refreshConversations();
-      await autoSelectFirstProject(projects);
-    };
-    window.addEventListener('slpServiceReady', handleServiceReady);
-    // Also check immediately in case event already fired
-    loadLocalProjects().then(autoSelectFirstProject);
-    return () => window.removeEventListener('slpServiceReady', handleServiceReady);
-  }, []);
-
-  // Reload when bootstrap completes so newly downloaded models/projects appear
-  useEffect(() => {
-    if (!isElectron || !window.electronAPI?.onBootstrapComplete) return;
-    const handleBootstrapComplete = async () => {
-      const projects = await loadLocalProjects();
-      await refreshConversations();
-      await autoSelectFirstProject(projects);
-    };
-    window.electronAPI.onBootstrapComplete(handleBootstrapComplete);
-    return () => window.electronAPI!.removeBootstrapCompleteListener?.();
-  }, []);
-
-  // Load conversations from SQLite (local mode) or user service (remote)
+  // Load conversations from SQLite (local mode)
   const refreshConversations = async (): Promise<any[]> => {
     try {
       const convos = await storageService.getConversations(undefined, 'desc');
@@ -250,31 +201,23 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
-  // Persist selected project whenever the URL project param changes (covers all navigation paths)
+  // Load conversations on mount and whenever the selected project changes.
+  // (The projects list, auto-select, and selected-project persistence are all
+  // owned by ProjectContext now.)
   useEffect(() => {
-    const projectId = searchParams.get('project');
-    if (projectId) {
-      storageService.setSetting('selected_project_id', projectId);
-    }
-  }, [searchParams]);
+    refreshConversations();
+  }, [selectedProject?.id]);
 
-  // Listen for conversation and project changes
+  // Refresh conversations on conversation change events.
   useEffect(() => {
     const handleConversationChange = () => { refreshConversations(); };
-    const handleProjectChanged = async () => { await loadLocalProjects(); await refreshConversations(); };
-
     window.addEventListener('conversationCreated', handleConversationChange);
     window.addEventListener('conversationDeleted', handleConversationChange);
     window.addEventListener('conversationUpdated', handleConversationChange);
-    window.addEventListener('projectDeleted', handleProjectChanged);
-    window.addEventListener('projectUpdated', handleProjectChanged);
-
     return () => {
       window.removeEventListener('conversationCreated', handleConversationChange);
       window.removeEventListener('conversationDeleted', handleConversationChange);
       window.removeEventListener('conversationUpdated', handleConversationChange);
-      window.removeEventListener('projectDeleted', handleProjectChanged);
-      window.removeEventListener('projectUpdated', handleProjectChanged);
     };
   }, []);
 
@@ -414,52 +357,43 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   };
 
   const handleProjectClick = async (projectId: string | null) => {
-    // Refresh conversations first to ensure we have the latest data including newly created ones
-    const freshConversations = await refreshConversations();
-
-    // Use the returned data directly (React state may not be updated yet)
-    const allConversations = (freshConversations && Array.isArray(freshConversations)) ? freshConversations : [];
-
-    // If no projectId provided, navigate to system project
+    // Resolve the target project synchronously (localProjects is already in memory)
+    // so we can navigate immediately.
     if (!projectId) {
-      // Find system project
-      const systemProject = user?.projects?.find((p: any) => p.system === true);
-      if (systemProject) {
-        projectId = systemProject.id;
-      } else {
+      const systemProject = localProjects.find((p: any) => p.system === true);
+      if (!systemProject) {
         console.error('[Sidebar] No system project found');
         return;
       }
+      projectId = systemProject.id;
     }
 
-    // For projects, auto-select the most recent conversation
+    // Navigate right away — the sidebar highlight is derived from the URL, so switching
+    // projects feels instant instead of waiting on the conversation refresh below.
+    navigate(`/?project=${projectId}`);
+    setSearchQuery('');
+    onMobileClose?.();
+
+    // Then refresh conversations and, if the project has any, refine the URL to its most
+    // recent conversation. `replace` so this doesn't add a second history entry.
     try {
+      const freshConversations = await refreshConversations();
+      const allConversations = (freshConversations && Array.isArray(freshConversations)) ? freshConversations : [];
       const projectConversations = allConversations.filter(
         (conv: any) => conv.project_id === projectId
       );
 
       if (projectConversations.length > 0) {
-        // Sort by updated_at (most recent first) and navigate to the most recent
-        const sorted = projectConversations.sort((a: any, b: any) => {
+        const mostRecent = projectConversations.sort((a: any, b: any) => {
           const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
           const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
           return dateB - dateA;
-        });
-        const mostRecent = sorted[0];
-        console.log('[Sidebar] Auto-selecting most recent project conversation:', mostRecent.id, 'for project:', projectId);
-        navigate(`/?conversation=${mostRecent.id}&project=${projectId}`);
-      } else {
-        // No conversations for this project, navigate to project view
-        console.log('[Sidebar] No conversations for project, showing project view');
-        navigate(`/?project=${projectId}`);
+        })[0];
+        navigate(`/?conversation=${mostRecent.id}&project=${projectId}`, { replace: true });
       }
     } catch (error) {
       console.error('Error handling project click:', error);
-      navigate(`/?project=${projectId}`);
     }
-
-    setSearchQuery('');
-    onMobileClose?.();
   };
 
   const handleOpenCreateProjectDialog = () => {
@@ -502,15 +436,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       if (resolvedName) meta.name = resolvedName;
       await storageService.updateProjectMeta(projectId, meta);
 
-      const updatedProjects = await projectService.getProjects();
-      setLocalProjects(updatedProjects);
-
+      // importProject is a separate main-process IPC that doesn't broadcast
+      // projects-changed, so refresh the context list explicitly.
+      await refreshProjects();
       await refreshConversations();
-
-      if (user) {
-        const updatedUser = { ...user, projects: updatedProjects };
-        window.dispatchEvent(new CustomEvent('userUpdated', { detail: updatedUser }));
-      }
 
       handleCloseCreateProjectDialog();
       navigate(`/?project=${projectId}`);
@@ -647,15 +576,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     setDeleteProjectError('');
 
     try {
-      const result = await projectService.deleteProject(projectToDelete.id);
+      const result = await deleteProjectCtx(projectToDelete.id);
 
       if (result.success) {
-        // Refresh projects and notify listeners that conversations were removed
-        await loadLocalProjects();
+        // Context refreshes off the projects-changed broadcast; notify that
+        // conversations were removed so the conversation list refreshes too.
         window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { projectId: projectToDelete.id } }));
-        window.dispatchEvent(new CustomEvent('projectDeleted', { detail: { projectId: projectToDelete.id } }));
 
-        // Navigate to home after deletion
+        // Navigate to home; ProjectContext auto-selects a remaining project.
         navigate('/');
         setShowDeleteProjectDialog(false);
         setProjectToDelete(null);
@@ -830,7 +758,8 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                         color: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-secondary)',
                         fontWeight: isActive ? 600 : 500,
                         fontSize: '13.5px',
-                        transition: 'all 0.12s ease',
+                        // Only fade the background; active color/weight snap so switching feels instant.
+                        transition: 'background-color 0.12s ease',
                         border: isActive ? '1px solid var(--sl-brand-alpha-20)' : '1px solid transparent',
                         '&:hover': {
                           bgcolor: isActive ? 'var(--sl-brand-alpha-15)' : 'var(--sl-white-alpha-5)',
@@ -968,7 +897,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   navigate(`/?conversation=${chat.id}&project=${chat.project_id}`);
                 } else {
                   // Conversation without project_id - find system project or navigate without project
-                  const systemProject = user?.projects?.find((p: any) => p.system === true);
+                  const systemProject = localProjects.find((p: any) => p.system === true);
                   if (systemProject) {
                     navigate(`/?conversation=${chat.id}&project=${systemProject.id}`);
                   } else {
