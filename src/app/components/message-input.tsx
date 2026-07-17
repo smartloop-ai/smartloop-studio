@@ -17,6 +17,7 @@ interface MessageInputProps {
   disabled?: boolean;
   isLoading?: boolean;
   allowAttachments?: boolean;
+  allowImages?: boolean;
   conversation?: any;
   onFileAttached?: (documentId: string, fileName: string) => void;
   onAttachmentClear?: () => void;
@@ -38,6 +39,7 @@ export default function MessageInput({
   disabled = false,
   isLoading = false,
   allowAttachments = false,
+  allowImages = false,
   conversation = null,
   onFileAttached,
   onAttachmentClear,
@@ -235,6 +237,7 @@ export default function MessageInput({
                 onUploadingChange={setIsAttaching}
                 disabled={disabled || isLoading}
                 size="small"
+                allowImages={allowImages}
                 showDragDrop={showDragDrop}
                 clearTrigger={clearAttachmentTrigger}
                 externalDrop={droppedFile}

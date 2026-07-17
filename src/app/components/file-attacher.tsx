@@ -17,6 +17,7 @@ interface FileAttacherProps {
   showDragDrop?: boolean;
   maxFileSize?: number; // in MB
   clearTrigger?: number; // Increment this to trigger clear from parent
+  allowImages?: boolean; // Accept PNG/JPG — only when a vision model is enabled (backend OCRs them)
 
   externalDrop?: { file: File; id: number } | null; // Forwarded from parent drag/drop
 }
@@ -31,6 +32,7 @@ export default function FileAttacher({
   showDragDrop = false,
   maxFileSize = 20,
   clearTrigger = 0,
+  allowImages = false,
   externalDrop = null,
 }: FileAttacherProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -70,11 +72,14 @@ export default function FileAttacher({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
       'text/csv',
-      'application/json'
+      'application/json',
+      // Images are OCR'd/described by the vision model on the SLP backend —
+      // only accepted when a vision-capable model is enabled.
+      ...(allowImages ? ['image/png', 'image/jpeg'] : []),
     ];
 
     // Also check file extension as fallback (especially for JSON files)
-    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json'];
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json', ...(allowImages ? ['.png', '.jpg', '.jpeg'] : [])];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
 
     const maxSizeBytes = maxFileSize * 1024 * 1024;
@@ -83,7 +88,7 @@ export default function FileAttacher({
     const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
 
     if (!isValidType) {
-      return 'Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON';
+      return `Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON${allowImages ? ', PNG, JPG' : ''}`;
     }
     if (file.size > maxSizeBytes) {
       return `File size exceeds ${maxFileSize}MB limit`;
@@ -254,7 +259,7 @@ export default function FileAttacher({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,.txt,.csv,.json"
+        accept={`.pdf,.docx,.txt,.csv,.json${allowImages ? ',.png,.jpg,.jpeg' : ''}`}
         onChange={handleFileInputChange}
         className="hidden"
       />
