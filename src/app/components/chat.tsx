@@ -96,6 +96,7 @@ export default function Chat(props: {
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
+  const [visionEnabled, setVisionEnabled] = useState(false);  // True when a vision-capable model is enabled (backend can OCR image attachments)
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
   const { indexingProgress } = useAppStatus();
 
@@ -167,6 +168,27 @@ export default function Chat(props: {
       window.removeEventListener('modelInitStatus', handler);
       window.removeEventListener('modelDownloadProgress', progressHandler);
     };
+  }, []);
+
+  // Enable image attachments only when a vision-capable model is enabled — the
+  // SLP backend OCRs/describes images via that model at attachment-upload time.
+  useEffect(() => {
+    const applyModels = (models?: any[]) => {
+      const hasVision = Array.isArray(models) && models.some(
+        (m: any) => m?.enabled && (m?.capabilities || []).includes('vision')
+      );
+      setVisionEnabled(hasVision);
+    };
+    (async () => {
+      try {
+        const res = await window.electronAPI?.slpListModels();
+        if (res?.success) applyModels(res.models);
+      } catch (e) {
+        console.warn('[Chat] Failed to list models for vision detection:', e);
+      }
+    })();
+    window.electronAPI?.onModelsUpdated((data: any) => applyModels(data?.models));
+    return () => window.electronAPI?.removeModelsUpdatedListener();
   }, []);
 
   // Log project prop for debugging
@@ -1508,6 +1530,7 @@ export default function Chat(props: {
             disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
             isLoading={isLoading}
             allowAttachments={true}
+            allowImages={visionEnabled}
             conversation={props.conversation}
             onFileAttached={handleFileAttached}
             onAttachmentClear={() => {
