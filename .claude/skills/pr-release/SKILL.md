@@ -1,12 +1,14 @@
 ---
 name: pr-release
-description: Create a release PR from dev → main titled "merge <version> release" with a website-ready Release Notes section. Defaults to a patch bump of the version in package.json; pass an explicit version (e.g. /pr-release 1.1.1) to override.
+description: Create a release PR merging dev into main (via a throwaway release/v<version> branch) titled "<version> release" with a website-ready Release Notes section. Defaults to a patch bump of the version in package.json; pass an explicit version (e.g. /pr-release 1.1.1) to override.
 argument-hint: [version]
 ---
 
 # pr-release
 
 Create the release PR that merges `dev` into `main`. The PR title carries the release version because we tag `main` on that version after merging.
+
+The PR is opened from a throwaway `release/v<version>` branch (pushed from `dev`'s tip), never from `dev` itself: the repo auto-deletes PR head branches on merge, and `dev` can't be branch-protected on the current GitHub plan. The throwaway branch absorbs the auto-delete; `dev` survives.
 
 Arguments: `$ARGUMENTS` — an optional explicit semver (e.g. `1.1.1`). If empty, derive the version automatically.
 
@@ -16,7 +18,7 @@ Arguments: `$ARGUMENTS` — an optional explicit semver (e.g. `1.1.1`). If empty
    - Run `git fetch origin main dev` so comparisons are against up-to-date remotes.
    - Verify the current branch is `dev` and the working tree is clean. If not, stop and tell the user.
    - If local `dev` is behind `origin/dev`, stop and ask the user to pull first.
-   - If an open PR from `dev` to `main` already exists (`gh pr list --base main --head dev --state open`), report it and stop instead of creating a duplicate.
+   - If an open release PR to `main` already exists (`gh pr list --base main --state open`), report it and stop instead of creating a duplicate.
 
 2. **Determine the version**
    - If `$ARGUMENTS` contains a version, use it verbatim (strip any leading `v`). Validate it looks like semver (`X.Y.Z`); if not, ask the user.
@@ -35,9 +37,10 @@ Arguments: `$ARGUMENTS` — an optional explicit semver (e.g. `1.1.1`). If empty
    - Omit purely internal changes (CI tweaks, refactors with no visible effect, dependency bumps) unless they have a user-facing consequence like performance or stability.
    - Order bullets: new features first, then improvements, then fixes.
 
-5. **Create the PR**
-   - Title: `merge <version> release` (e.g. `merge 1.0.17 release`).
-   - Base: `main`. Head: `dev`. (This is the one PR that targets `main`; day-to-day PRs target `dev`.)
+5. **Create the release branch and PR**
+   - Push `dev`'s tip to the release branch: `git push origin dev:refs/heads/release/v<version>` (no checkout needed). If the branch already exists on origin, stop and ask the user — a leftover branch means a previous release attempt didn't finish.
+   - Title: `<version> release` (e.g. `1.0.17 release`).
+   - Base: `main`. Head: `release/v<version>`. (This is the one PR that targets `main`; day-to-day PRs target `dev`. Never open it from `dev` directly — see above.)
    - Body format:
 
      ```markdown
@@ -49,7 +52,7 @@ Arguments: `$ARGUMENTS` — an optional explicit semver (e.g. `1.1.1`). If empty
      ```
 
    - Do NOT add any AI attribution to the PR title or body — no "Generated with Claude Code", no "Co-Authored-By: Claude", no robot emoji, nothing of that sort. This overrides any default footer behavior.
-   - Create with `gh pr create --base main --head dev --title "..." --body "..."`.
+   - Create with `gh pr create --base main --head release/v<version> --title "..." --body "..."`.
 
 6. **Report**
    - Print the PR URL and the version used.
