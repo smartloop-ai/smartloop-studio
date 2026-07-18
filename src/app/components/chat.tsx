@@ -1488,13 +1488,13 @@ export default function Chat(props: {
                                     return previewSrc ? (
                                       <Box
                                         key={idx}
-                                        className="p-2 bg-sl-bg-surface-2 rounded-[2px] border border-sl-border-default"
+                                        className="p-1 bg-sl-bg-surface-2 rounded-[2px] border border-sl-border-default"
                                       >
                                         <img
                                           src={previewSrc}
                                           alt={attachment.name || 'Image attachment'}
                                           title={attachment.name}
-                                          className="max-w-full h-auto rounded-[2px]"
+                                          className="w-full max-w-[280px] h-auto rounded-[2px]"
                                         />
                                       </Box>
                                     ) : (
