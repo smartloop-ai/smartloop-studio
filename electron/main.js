@@ -138,6 +138,27 @@ ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
   return filePath;
 });
 
+// IPC: read an uploaded SLP image asset (stored at ~/.smartloop/assets/<asset_id>/original.<ext>)
+// as a data URL so the renderer can display image attachments inline
+ipcMain.handle('read-asset-data-url', async (event, assetId) => {
+  try {
+    if (!/^[a-zA-Z0-9-]+$/.test(assetId || '')) return { success: false, error: 'Invalid asset id' };
+    const assetDir = path.join(os.homedir(), '.smartloop', 'assets', assetId);
+    const metaPath = path.join(assetDir, 'metadata.json');
+    if (!fs.existsSync(metaPath)) return { success: false, error: 'Asset not found' };
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    if (!meta.image || !['image/png', 'image/jpeg'].includes(meta.content_type)) {
+      return { success: false, error: 'Not an image asset' };
+    }
+    const original = fs.readdirSync(assetDir).find((f) => f.startsWith('original.'));
+    if (!original) return { success: false, error: 'Asset file not found' };
+    const data = fs.readFileSync(path.join(assetDir, original));
+    return { success: true, dataUrl: `data:${meta.content_type};base64,${data.toString('base64')}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // IPC: read a text file from disk
 ipcMain.handle('read-text-file', async (event, filePath) => {
   try {
