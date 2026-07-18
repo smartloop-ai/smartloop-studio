@@ -98,7 +98,15 @@ export default function Chat(props: {
   const [model, setModel] = useState<string>('');
   const [visionEnabled, setVisionEnabled] = useState(false);  // True when a vision-capable model is enabled (backend can OCR image attachments)
   const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
+  const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({});  // asset_id -> data URL for image attachments in the transcript
+  const requestedPreviewsRef = useRef<Set<string>>(new Set());  // asset_ids already requested, to avoid duplicate reads
   const { indexingProgress } = useAppStatus();
+
+  // Whether an attachment name looks like an image (gates asset preview loading)
+  const isImageName = (name?: string): boolean => {
+    const lower = (name || '').toLowerCase();
+    return lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg');
+  };
 
   // Load last tok/s value from SQLite (tps_history is the single source of truth)
   useEffect(() => {
@@ -212,6 +220,27 @@ export default function Chat(props: {
     // Don't clear ref when props.attachments is empty - preserve attachments until message is sent
     console.log('[Chat useEffect] Ref after update:', messageAttachmentsRef.current);
   }, [props.attachments]);
+
+  // Resolve inline previews for image attachments in the transcript. The raw bytes
+  // live at ~/.smartloop/assets/<asset_id>; the main process reads them as data URLs.
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.readAssetDataUrl) return;
+    messages.forEach((msg: any) => {
+      (msg.attachments || []).forEach((att: any) => {
+        if (!att.file_id?.startsWith('file-')) return;
+        if (!isImageName(att.name)) return;
+        const assetId = att.file_id.replace(/^file-/, '');
+        if (requestedPreviewsRef.current.has(assetId)) return;
+        requestedPreviewsRef.current.add(assetId);
+        api.readAssetDataUrl(assetId).then((res) => {
+          if (res?.success && res.dataUrl) {
+            setImagePreviews(prev => ({ ...prev, [assetId]: res.dataUrl! }));
+          }
+        });
+      });
+    });
+  }, [messages]);
 
 
   // Clear any existing quote highlights
@@ -1452,7 +1481,23 @@ export default function Chat(props: {
                               <Box className="flex flex-wrap gap-2 mb-2 justify-end">
                                 {msg.attachments
                                   .filter((attachment: any) => attachment.file_id?.startsWith('file-'))
-                                  .map((attachment: any, idx: number) => (
+                                  .map((attachment: any, idx: number) => {
+                                    const previewSrc = isImageName(attachment.name)
+                                      ? imagePreviews[attachment.file_id.replace(/^file-/, '')]
+                                      : undefined;
+                                    return previewSrc ? (
+                                      <Box
+                                        key={idx}
+                                        className="p-2 bg-sl-bg-surface-2 rounded-[2px] border border-sl-border-default"
+                                      >
+                                        <img
+                                          src={previewSrc}
+                                          alt={attachment.name || 'Image attachment'}
+                                          title={attachment.name}
+                                          className="max-w-full h-auto rounded-[2px]"
+                                        />
+                                      </Box>
+                                    ) : (
                                     <Box
                                       key={idx}
                                       className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-sl-bg-surface-2 rounded-sm border border-sl-border-default"
@@ -1472,12 +1517,13 @@ export default function Chat(props: {
                                       </Box>
                                       <span className="text-sl-text-tertiary truncate max-w-[150px]">{attachment.name || 'Document'}</span>
                                     </Box>
-                                  ))}
+                                    );
+                                  })}
                               </Box>
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="border border-sl-border-subtle rounded-sm px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-subtle rounded-sm px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
                               <pre className="user-message-content text-wrap break-words py-3 whitespace-pre-wrap font-[inherit]">
                                 {msg.content}
                               </pre>

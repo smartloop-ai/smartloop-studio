@@ -152,6 +152,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Save a file to a temp directory (for local SLP document upload)
   saveTempFile: (fileName, buffer) => ipcRenderer.invoke('save-temp-file', fileName, buffer),
+  // Read an uploaded SLP asset as a data URL (for inline image attachment display)
+  readAssetDataUrl: (assetId) => ipcRenderer.invoke('read-asset-data-url', assetId),
   // Read a text file from disk
   readTextFile: (filePath) => ipcRenderer.invoke('read-text-file', filePath),
   // Write a text file to a specific path on disk
