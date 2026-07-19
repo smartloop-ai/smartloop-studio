@@ -6,7 +6,7 @@ const { getInstallDir, getInstalledBinaryPath, isNonEmptyFile } = require('./slp
 
 const DEFAULT_SLP_PORT = 38540;
 
-let localServicePort = null;
+let serviceHealthy = false;
 let serviceProcess = null;
 let logStream = null;
 let startedByApp = false;
@@ -51,27 +51,33 @@ function getTargetPort() {
   return readLocalServicePort() || DEFAULT_SLP_PORT;
 }
 
+// Base URL for the local SLP API, or null until the service is confirmed
+// healthy. Callers treat null as "not ready" and skip the request. The port
+// never changes locally, so it's the constant DEFAULT_SLP_PORT once healthy.
 function getLocalBaseUrl() {
-  const port = localServicePort || DEFAULT_SLP_PORT;
-  return `http://localhost:${port}`;
+  if (!serviceHealthy) return null;
+  return `http://localhost:${DEFAULT_SLP_PORT}`;
+}
+
+// Whether the local service has been confirmed healthy via a passing /health.
+function isServiceReady() {
+  return serviceHealthy;
 }
 
 function getPort() {
-  return localServicePort || DEFAULT_SLP_PORT;
+  return DEFAULT_SLP_PORT;
 }
 
 /**
  * Check if the SLP service is running and healthy.
- * Updates internal port state if healthy.
+ * Marks the service ready if healthy.
  * @returns {Promise<boolean>}
  */
 async function checkHealth() {
-  const port = localServicePort || DEFAULT_SLP_PORT;
-
   try {
-    const res = await fetch(`http://localhost:${port}/health`);
+    const res = await fetch(`http://localhost:${DEFAULT_SLP_PORT}/health`);
     if (res.ok) {
-      localServicePort = port;
+      serviceHealthy = true;
       return true;
     }
   } catch {
@@ -104,7 +110,7 @@ async function startService() {
     const res = await fetch(`http://localhost:${targetPort}/health`);
     if (res.ok) {
       console.log('[SLP] Service already running on port', targetPort);
-      localServicePort = targetPort;
+      serviceHealthy = true;
       startedByApp = true;
       return true;
     }
@@ -179,7 +185,7 @@ async function startService() {
         const res = await fetch(`http://localhost:${targetPort}/health`);
         if (res.ok) {
           clearInterval(pollInterval);
-          localServicePort = targetPort;
+          serviceHealthy = true;
           startedByApp = true;
           console.log('[SLP] Service started on port', targetPort);
           resolve(true);
@@ -245,7 +251,7 @@ async function stopService() {
     logStream = null;
   }
 
-  localServicePort = null;
+  serviceHealthy = false;
   startedByApp = false;
 }
 
@@ -304,6 +310,7 @@ module.exports = {
   ensureSlpDir,
   readLocalServicePort,
   getLocalBaseUrl,
+  isServiceReady,
   getLogPath,
   getPort,
   checkHealth,
