@@ -6,6 +6,58 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { documentService } from '@/app/services/document.service';
 
+// Qwen2-VL / Qwen2.5-VL process images as 28x28 patches, so token cost scales
+// with pixel count. A 2B model parses reliably when the long edge is capped
+// around 1024px (~36x36 patches) — downscale before upload to keep the image
+// legible while avoiding oversized, token-heavy inputs.
+const MAX_IMAGE_EDGE = 1024;
+
+const isResizableImage = (file: File): boolean =>
+  file.type === 'image/png' || file.type === 'image/jpeg';
+
+// Downscale an image so its longest edge is <= MAX_IMAGE_EDGE, preserving aspect
+// ratio. Returns the original file untouched if it's already small enough or if
+// anything goes wrong (so upload still proceeds).
+const resizeImageForVision = async (file: File): Promise<File> => {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const { width, height } = bitmap;
+    const longest = Math.max(width, height);
+
+    if (longest <= MAX_IMAGE_EDGE) {
+      bitmap.close();
+      return file;
+    }
+
+    const scale = MAX_IMAGE_EDGE / longest;
+    const targetW = Math.round(width * scale);
+    const targetH = Math.round(height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+    bitmap.close();
+
+    // Re-encode as JPEG unless the source is a PNG (preserve transparency/format).
+    const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob(resolve, outType, 0.85)
+    );
+    if (!blob) return file;
+
+    return new File([blob], file.name, { type: outType, lastModified: file.lastModified });
+  } catch (err) {
+    console.warn('[FileAttacher] Image resize failed, uploading original:', err);
+    return file;
+  }
+};
+
 interface FileAttacherProps {
   conversation?: any; // Made optional since v2 endpoint doesn't require it
   onSuccess: (documentId: string, fileName: string) => void;
@@ -17,6 +69,7 @@ interface FileAttacherProps {
   showDragDrop?: boolean;
   maxFileSize?: number; // in MB
   clearTrigger?: number; // Increment this to trigger clear from parent
+  allowImages?: boolean; // Accept PNG/JPG — only when a vision model is enabled (backend OCRs them)
 
   externalDrop?: { file: File; id: number } | null; // Forwarded from parent drag/drop
 }
@@ -31,6 +84,7 @@ export default function FileAttacher({
   showDragDrop = false,
   maxFileSize = 20,
   clearTrigger = 0,
+  allowImages = false,
   externalDrop = null,
 }: FileAttacherProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -70,11 +124,14 @@ export default function FileAttacher({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'text/plain',
       'text/csv',
-      'application/json'
+      'application/json',
+      // Images are OCR'd/described by the vision model on the SLP backend —
+      // only accepted when a vision-capable model is enabled.
+      ...(allowImages ? ['image/png', 'image/jpeg'] : []),
     ];
 
     // Also check file extension as fallback (especially for JSON files)
-    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json'];
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json', ...(allowImages ? ['.png', '.jpg', '.jpeg'] : [])];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
 
     const maxSizeBytes = maxFileSize * 1024 * 1024;
@@ -83,7 +140,7 @@ export default function FileAttacher({
     const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
 
     if (!isValidType) {
-      return 'Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON';
+      return `Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON${allowImages ? ', PNG, JPG' : ''}`;
     }
     if (file.size > maxSizeBytes) {
       return `File size exceeds ${maxFileSize}MB limit`;
@@ -96,8 +153,12 @@ export default function FileAttacher({
     setAttachError('');
 
     try {
+      // Downscale large images so a vision-capable SLM (e.g. Qwen2-VL 2B) can
+      // parse them without oversized, token-heavy inputs. Non-images pass through.
+      const uploadTarget = isResizableImage(file) ? await resizeImageForVision(file) : file;
+
       // Upload as asset to local SLP server (POST /v1/assets)
-      const uploadResult = await documentService.uploadAsset(file);
+      const uploadResult = await documentService.uploadAsset(uploadTarget);
 
       if (!uploadResult.success || !uploadResult.data) {
         throw new Error(uploadResult.error || 'Failed to upload asset');
@@ -254,7 +315,7 @@ export default function FileAttacher({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,.txt,.csv,.json"
+        accept={`.pdf,.docx,.txt,.csv,.json${allowImages ? ',.png,.jpg,.jpeg' : ''}`}
         onChange={handleFileInputChange}
         className="hidden"
       />

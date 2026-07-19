@@ -16,6 +16,8 @@ export interface ElectronAPI {
   getMachineId: () => Promise<string | null>;
   // Save a file to a temp directory for local SLP document upload
   saveTempFile: (fileName: string, buffer: ArrayBuffer) => Promise<string>;
+  // Read an uploaded SLP image asset as a data URL (for inline image attachment display)
+  readAssetDataUrl: (assetId: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
   // Read a text file from disk
   readTextFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   // Write a text file to a specific path on disk
