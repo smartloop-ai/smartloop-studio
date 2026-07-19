@@ -24,6 +24,13 @@ Var pid
 !macro customCheckAppRunning
   SetDetailsPrint both
   DetailPrint "Preparing to install ${PRODUCT_NAME}..."
+  ; Defining customCheckAppRunning also makes the stock CHECK_APP_RUNNING skip
+  ; its IS_POWERSHELL_AVAILABLE insertion (it only runs in the !else branch).
+  ; _CHECK_APP_RUNNING -> FIND_PROCESS/KILL_PROCESS read $IsPowerShellAvailable,
+  ; so declare and populate it here first (mirroring the stock !else branch),
+  ; otherwise NSIS warns about the unknown var and the build fails (warnings are
+  ; treated as errors). $PowerShellPath/$CmdPath are already set by the caller.
+  !insertmacro IS_POWERSHELL_AVAILABLE
   !insertmacro _CHECK_APP_RUNNING
 !macroend
 
