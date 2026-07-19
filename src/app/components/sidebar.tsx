@@ -827,15 +827,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
 
         {/* New Project button */}
         {(() => {
-          const isFreePlan = !!authUser && !(authUser.is_paid || authUser.is_premium);
-          const nonSystemProjectCount = localProjects.filter((p: any) => !p.system).length;
-          const overFreeLimit = isFreePlan && nonSystemProjectCount >= 1;
-          const disabled = !user?.email || overFreeLimit;
+          const disabled = !user?.email;
           const tooltip = !user?.email
             ? 'Login to create a new project'
-            : overFreeLimit
-              ? 'Upgrade to Pro to create more than one project'
-              : '';
+            : '';
           return (
             <Tooltip title={tooltip} placement="right">
               <Box
