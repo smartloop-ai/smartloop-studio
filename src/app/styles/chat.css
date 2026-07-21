@@ -104,6 +104,7 @@
 
 .chat-content [data-streamdown="table"] {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   background-color: var(--sl-bg-surface-1);
 }
@@ -118,12 +119,17 @@
   font-weight: 600;
   border-bottom: 2px solid var(--sl-border-default);
   text-align: left;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-content [data-streamdown="table-cell"] {
   padding: 8px 12px;
   color: var(--sl-text-tertiary);
   border-bottom: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-content [data-streamdown="table-row"]:last-child [data-streamdown="table-cell"] {
