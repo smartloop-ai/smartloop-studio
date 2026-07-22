@@ -3,8 +3,6 @@ const appVersion = require('../package.json').version;
 
 // Backend caches the cloud release feed for ~1h, so a slow client cadence is fine.
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-// Delay the first check so it doesn't race service startup/bootstrap.
-const STARTUP_DELAY_MS = 15_000;
 const CHANNEL = 'stable';
 
 let timeoutId = null;
@@ -64,7 +62,10 @@ function start(windowGetter) {
   getWindow = windowGetter;
   if (started) return;
   started = true;
-  timeoutId = setTimeout(tick, STARTUP_DELAY_MS);
+  // Check immediately. No startup delay is needed: fetchLatest() no-ops while
+  // slpService.getLocalBaseUrl() reports the service unhealthy, so this relies
+  // on the standard health gate the rest of the app uses rather than a timer.
+  tick();
 }
 
 function stop() {
