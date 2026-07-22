@@ -378,17 +378,17 @@ export default function SettingsPage() {
                         </Box>
 
                         <div className="flex flex-col gap-2 mb-4">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
                                 <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--sl-text-muted)' }}>Current version</span>
                                 <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-muted)' }}>{appVersion}</span>
                             </div>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
                                 <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--sl-text-muted)' }}>Latest version</span>
                                 <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-muted)' }}>{latestVersion ?? '—'}</span>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                             <button
                                 onClick={handleCheckForUpdates}
                                 disabled={checkingUpdate}
@@ -398,9 +398,20 @@ export default function SettingsPage() {
                                 {checkingUpdate && <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />}
                                 {checkingUpdate ? 'Checking…' : 'Check for Updates'}
                             </button>
+                            {updateAvailable && (
+                                <button
+                                    onClick={() => window.electronAPI?.openExternal?.('https://smartloop.ai/download/')}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                >
+                                    <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
+                                    Download v{latestVersion}
+                                </button>
+                            )}
+                            <div className="flex-1" />
                             <button
                                 onClick={() => window.electronAPI?.openExternal?.(CHANGELOG_URL)}
-                                className="text-sm transition-colors"
+                                className="flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                                 style={{ color: 'var(--sl-brand-primary)' }}
                             >
                                 Read the changelog →
