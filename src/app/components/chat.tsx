@@ -5,8 +5,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, CircularProgress, Tooltip } from "@mui/material";
 import OpenAI from 'openai';
 
-import { Streamdown } from 'streamdown';
+import { Streamdown, defaultRehypePlugins } from 'streamdown';
 import "streamdown/styles.css";
+import { visit } from 'unist-util-visit';
 import { createCodePlugin } from "@streamdown/code";
 const code = createCodePlugin({
   themes: ['github-light', 'github-dark'],
@@ -50,6 +51,41 @@ interface OpenTabRequest {
   title: string;
   data?: any;
 }
+
+// Streamdown sanitizes markdown links through rehype-sanitize (defaultSchema, which
+// only permits http/https/mailto/... href protocols) and then rehype-harden. A local
+// file target — e.g. Windows `C:/Users/.../fund_summary_txt.md` (protocol `c:`),
+// a `file://` URL, or a POSIX absolute path — has its href stripped by sanitize, so
+// harden then renders it as "<name> [blocked]". This is why generated-file links
+// break on Windows (the model emits drive-letter paths). Neither plugin exposes a
+// setting to allow local paths (harden hardcodes `file:` as blocked; sanitize gates
+// by scheme), so we rewrite the href ourselves.
+//
+// Doing this as a rehype plugin that runs *before* sanitize (rather than a raw-text
+// pass) means we only touch real anchor/image nodes — link-like text inside code
+// blocks is left untouched. Local targets become `https://sl.local/open?p=<path>`,
+// which survives sanitize + harden; the link-click handler intercepts that host and
+// hands the real path to the OS file opener.
+const LOCAL_LINK_TARGET_RE = /^(?:file:\/\/|~[\\/]|\/[^/]|[a-zA-Z]:[\\/]|\\\\)/;
+
+const toLocalOpenUrl = (target: unknown): string | null => {
+  if (typeof target !== 'string' || !LOCAL_LINK_TARGET_RE.test(target)) return null;
+  const path = /^file:\/\//i.test(target) ? target.replace(/^file:\/\/\/?/i, '') : target;
+  return `https://sl.local/open?p=${encodeURIComponent(path)}`;
+};
+
+// Rewrite local-file <a href> / <img src> to a sanitizer-safe URL before Streamdown's
+// sanitize/harden plugins run.
+const rehypeLocalFileLinks = () => (tree: any) => {
+  visit(tree, 'element', (node: any) => {
+    const attr = node.tagName === 'a' ? 'href' : node.tagName === 'img' ? 'src' : null;
+    if (!attr || !node.properties) return;
+    const rewritten = toLocalOpenUrl(node.properties[attr]);
+    if (rewritten) node.properties[attr] = rewritten;
+  });
+};
+
+const chatRehypePlugins = [rehypeLocalFileLinks, ...Object.values(defaultRehypePlugins)];
 
 export default function Chat(props: {
   project?: any,
@@ -1043,6 +1079,18 @@ export default function Chat(props: {
 
       const electronAPI = (window as any).electronAPI;
 
+      // Local-file links rewritten by rehypeLocalFileLinks — hand the real path to the OS opener
+      if (rawHref.startsWith('https://sl.local/open')) {
+        e.preventDefault();
+        try {
+          const localPath = new URL(rawHref).searchParams.get('p');
+          if (localPath && electronAPI?.openInFinder) electronAPI.openInFinder(localPath);
+        } catch {
+          // malformed rewrite — ignore
+        }
+        return;
+      }
+
       // Web links — open in system browser
       if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
         e.preventDefault();
@@ -1282,6 +1330,7 @@ export default function Chat(props: {
                                   caret="block"
                                   controls={false}
                                   linkSafety={{ enabled: false }}
+                                  rehypePlugins={chatRehypePlugins}
                                   plugins={{ code, mermaid, math, cjk }}>
                                   {msg.content || ''}
                                 </Streamdown>
