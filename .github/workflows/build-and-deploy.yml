@@ -493,6 +493,8 @@ jobs:
           cat release.json
 
       - name: Create draft release via API
+        env:
+          SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
         run: |
           python scripts/ci_push_release.py \
             --file release.json \
