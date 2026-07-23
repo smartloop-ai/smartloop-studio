@@ -525,7 +525,14 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const zipPath = path.join(tmpDir, zipFileName);
 
     if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-    execFileSync('zip', ['-r', zipPath, '.'], { cwd: exportDir, timeout: 120000 });
+    if (process.platform === 'win32') {
+      // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
+      // Pass entry names explicitly so paths aren't prefixed with "./"
+      const entries = fs.readdirSync(exportDir);
+      execFileSync('tar', ['-a', '-cf', zipPath, '-C', exportDir, ...entries], { timeout: 120000 });
+    } else {
+      execFileSync('zip', ['-r', zipPath, '.'], { cwd: exportDir, timeout: 120000 });
+    }
     fs.rmSync(exportDir, { recursive: true, force: true });
 
     const downloadsDir = require('electron').app.getPath('downloads');
