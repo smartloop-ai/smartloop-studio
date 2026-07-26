@@ -22,7 +22,7 @@ param(
 
 # Fallback when no -Version is passed (the installer always passes one).
 # Kept in sync with VERSION in electron/slp-setup.js by release-prod.yml.
-$DEFAULT_VERSION = '1.0.3'
+$DEFAULT_VERSION = '1.0.5'
 if (-not $Version) { $Version = $DEFAULT_VERSION }
 
 $ErrorActionPreference = 'Stop'
