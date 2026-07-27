@@ -73,16 +73,17 @@ nsis:
   # customUnInstall removes ~/.smartloop and the Electron user-data folder on
   # real uninstalls (kept during --updated upgrades).
   include: build/installer.nsh
-  # Dark-theme branded left banner for the assisted installer/uninstaller
-  # welcome and finish pages (164x314 BMP, Smartloop dark theme).
-  installerSidebar: build/installerSidebar.bmp
-  uninstallerSidebar: build/installerSidebar.bmp
-  oneClick: false
+  # Silent one-click installer required by Microsoft Store cert 10.2.9.2 (Win32
+  # apps must install silently, no UI/prompts). oneClick removes the welcome/
+  # dir/finish wizard pages; allowElevation lets it self-elevate without a
+  # prompt loop; runAfterFinish disabled so a silent/Store install doesn't
+  # auto-launch the app.
+  oneClick: true
   perMachine: false
-  allowElevation: false
-  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  allowToChangeInstallationDirectory: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  # One-click installers only (ours is assisted) — data removal is handled by
-  # customUnInstall in build/installer.nsh instead.
+  runAfterFinish: false
+  # Data removal is handled by customUnInstall in build/installer.nsh instead.
   deleteAppDataOnUninstall: false
