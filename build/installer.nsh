@@ -53,7 +53,7 @@ Var pid
   File "/oname=$PLUGINSDIR\install-slp.ps1" "${BUILD_RESOURCES_DIR}\install-slp.ps1"
 
   ; Skip the (large) download when a usable SLP is already installed.
-  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}" -CheckOnly'
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}" -CheckOnly'
   Pop $R0
   ${If} $R0 == "10"
     DetailPrint "SLP framework already installed - skipping download."
@@ -69,7 +69,7 @@ Var pid
     Pop $R0
     ${If} $R0 == "OK"
       DetailPrint "Installing SLP framework ${SLP_VERSION}..."
-      nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}" -ArchivePath "$PLUGINSDIR\windows-amd64-slp.zip"'
+      nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}" -ArchivePath "$PLUGINSDIR\windows-amd64-slp.zip"'
       Pop $R0
       ${If} $R0 != "0"
         DetailPrint "SLP framework install did not complete (code $R0) - Smartloop Studio will install it on first launch."
