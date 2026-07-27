@@ -57,6 +57,18 @@ Var pid
   Pop $R0
   ${If} $R0 == "10"
     DetailPrint "SLP framework already installed - skipping download."
+  ${ElseIf} ${Silent}
+    ; Silent install (/S, Microsoft Store): there's no InstFiles page to pump
+    ; NScurl's windowed transfer, so it can return before the download finishes
+    ; and the framework ends up missing. nsExec::ExecToLog blocks until the
+    ; process exits, so let install-slp.ps1 download AND extract itself (no
+    ; -ArchivePath) in one synchronous step — that makes /S actually wait.
+    DetailPrint "Downloading SLP framework ${SLP_VERSION}..."
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}"'
+    Pop $R0
+    ${If} $R0 != "0"
+      DetailPrint "SLP framework install did not complete (code $R0) - Smartloop Studio will install it on first launch."
+    ${EndIf}
   ${Else}
     DetailPrint "Downloading SLP framework ${SLP_VERSION}..."
     ; Hand NScurl the InstFiles page's own progress bar (dlg item 1004) and

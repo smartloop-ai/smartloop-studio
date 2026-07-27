@@ -2130,9 +2130,11 @@ function applySplashTheme() {
 let cachedSystemCapability = null;
 
 /**
- * Analyze the machine against the recommended specs for running local models.
- * Best performance: Apple Silicon (M1+) or an NVIDIA GPU with >= 4 GB VRAM (CUDA 12.4+).
- * Anything else falls back to CPU, which only runs the smaller 1B-class models.
+ * Describe the machine's GPU for display on the splash. SLP runs on Vulkan,
+ * which accelerates on Apple Silicon (Metal), NVIDIA, AMD and Intel GPUs, so
+ * this is informational labeling only — the install is no longer gated on it.
+ * When an NVIDIA GPU is present we surface its VRAM (via nvidia-smi) since that
+ * detail is useful; other GPUs are reported generically.
  * See https://www.smartloop.ai/docs/getting-started/
  */
 function detectSystemCapability() {
@@ -2143,9 +2145,9 @@ function detectSystemCapability() {
   const forced = process.env.SLP_FORCE_TIER;
   if (forced === 'accelerated' || forced === 'limited' || forced === 'cpu') {
     const samples = {
-      accelerated: { tier: 'accelerated', label: 'NVIDIA GPU · 8 GB', detail: 'CUDA acceleration ready' },
-      limited: { tier: 'limited', label: 'NVIDIA GPU · 2.0 GB', detail: 'Low VRAM — smaller models only' },
-      cpu: { tier: 'cpu', label: 'No GPU detected', detail: 'Below recommended specs — smaller models only' },
+      accelerated: { tier: 'accelerated', label: 'NVIDIA GPU · 8 GB', detail: 'Vulkan acceleration ready' },
+      limited: { tier: 'limited', label: 'NVIDIA GPU · 2.0 GB', detail: 'Low VRAM — smaller models run best' },
+      cpu: { tier: 'cpu', label: 'GPU detected', detail: 'Vulkan acceleration ready' },
     };
     cachedSystemCapability = samples[forced];
     return cachedSystemCapability;
@@ -2159,7 +2161,8 @@ function detectSystemCapability() {
     // Apple Silicon (M1 or newer) — Metal GPU acceleration.
     result = { tier: 'accelerated', label: 'Apple Silicon', detail: 'GPU acceleration ready' };
   } else {
-    // Probe for an NVIDIA GPU + CUDA via nvidia-smi.
+    // Probe for an NVIDIA GPU via nvidia-smi purely to surface its VRAM. A
+    // failure just means "not NVIDIA" — AMD/Intel GPUs still run under Vulkan.
     try {
       const out = execFileSync(
         'nvidia-smi',
@@ -2169,17 +2172,15 @@ function detectSystemCapability() {
       const memMb = parseInt(out.split('\n')[0].trim(), 10);
       const memGb = memMb / 1024;
       if (Number.isFinite(memGb) && memGb >= 4) {
-        result = { tier: 'accelerated', label: `NVIDIA GPU · ${Math.round(memGb)} GB`, detail: 'CUDA acceleration ready' };
+        result = { tier: 'accelerated', label: `NVIDIA GPU · ${Math.round(memGb)} GB`, detail: 'Vulkan acceleration ready' };
       } else if (Number.isFinite(memGb)) {
-        result = { tier: 'limited', label: `NVIDIA GPU · ${memGb.toFixed(1)} GB`, detail: 'Low VRAM — smaller models only' };
+        result = { tier: 'limited', label: `NVIDIA GPU · ${memGb.toFixed(1)} GB`, detail: 'Low VRAM — smaller models run best' };
       } else {
         throw new Error('unparsable nvidia-smi output');
       }
     } catch (e) {
-      // No usable NVIDIA GPU — CPU fallback.
-      result = platform === 'darwin'
-        ? { tier: 'cpu', label: 'Intel Mac · CPU', detail: 'Below recommended specs — smaller models only' }
-        : { tier: 'cpu', label: 'No GPU detected', detail: 'Below recommended specs — smaller models only' };
+      // Not an NVIDIA GPU — AMD/Intel/other, still Vulkan-accelerated.
+      result = { tier: 'accelerated', label: 'GPU', detail: 'Vulkan acceleration ready' };
     }
   }
 
@@ -2489,20 +2490,14 @@ if (!gotTheLock) {
         try {
           // Step 1: Fetch/install SLP if the version check requires it.
           if (mustInstall) {
-            // Verify the machine against recommended specs first. A machine with
-            // no GPU acceleration can't run the models usefully, so stop here
-            // rather than downloading anything.
+            // Show the "verifying" beat for continuity, but don't gate the
+            // install on GPU vendor: SLP now uses Vulkan, which runs on AMD,
+            // Intel and NVIDIA GPUs alike, so the old NVIDIA/CUDA-only check
+            // wrongly blocked capable machines. cap is still used for labeling.
             const cap = await verifyRequirementsOnSplash();
-            if (cap.tier === 'cpu') {
-              console.warn('[SLP] System requirements not met — aborting install:', cap.label);
-              updateSplashProgress({
-                status: 'error',
-                message: 'This machine doesn’t meet the requirements. A supported GPU (Apple Silicon, or NVIDIA with CUDA) is needed to run Smartloop. You can quit from the tray menu.',
-              });
-              return;
-            }
-            // Requirements met — move off the "verifying" message immediately so
-            // it doesn't linger while the first network request is in flight.
+            console.log('[SLP] System capability:', cap.label);
+            // Move off the "verifying" message immediately so it doesn't linger
+            // while the first network request is in flight.
             updateSplashProgress({ status: 'installing', message: 'Downloading components…' });
             await setupSlpService((progress) => updateSplashProgress(progress));
             if (!database.isFullyInstalled()) {
