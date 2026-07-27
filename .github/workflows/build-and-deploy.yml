@@ -7,12 +7,22 @@ on:
         description: 'Release version (e.g. 1.0.18). Blank = git tag or short SHA.'
         required: false
         type: string
+      overwrite:
+        description: 'Overwrite an existing bucket version dir instead of failing.'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       version:
         description: 'Release version passed by the calling workflow.'
         required: false
         type: string
+      overwrite:
+        description: 'Overwrite an existing bucket version dir instead of failing.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -68,7 +78,7 @@ jobs:
     needs: [notify-start]
     name: Build for macOS
     runs-on: macos-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -107,6 +117,7 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
+            dist/latest-mac.yml
           retention-days: 1
 
   build-linux:
@@ -138,6 +149,7 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.deb
+            dist/latest-linux.yml
           retention-days: 1
 
   build-windows:
@@ -242,11 +254,18 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
+            dist/latest.yml
           retention-days: 1
 
   upload-to-gcp:
     name: Upload to GCP Bucket
     needs: [build-macos, build-linux, build-windows]
+    # Only publish real releases. Genuine releases invoke this workflow via
+    # workflow_call with an explicit `version` (see release-prod.yml); manual
+    # workflow_dispatch runs without a version fall back to a short SHA, which
+    # must NOT be uploaded (it litters the bucket with <sha>/ dirs and posts
+    # junk drafts to the releases API downstream).
+    if: ${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     outputs:
       download_urls: ${{ steps.urls.outputs.download_urls }}
@@ -292,6 +311,16 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      - name: Guard against overwriting an existing release
+        if: ${{ inputs.overwrite != true }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" >/dev/null 2>&1; then
+            echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to overwrite. Bump the version, or re-run with overwrite=true to override."
+            exit 1
+          fi
+          echo "No existing $VERSION dir in bucket — safe to upload."
+
       - name: Create version directory structure
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -300,15 +329,15 @@ jobs:
           mkdir -p release/$VERSION/windows
 
           if [ -d "artifacts/macos" ]; then
-            mv artifacts/macos/* release/$VERSION/macos/ 2>/dev/null || true
+            mv artifacts/macos/*.dmg artifacts/macos/*.zip release/$VERSION/macos/ 2>/dev/null || true
           fi
 
           if [ -d "artifacts/linux" ]; then
-            mv artifacts/linux/* release/$VERSION/linux/ 2>/dev/null || true
+            mv artifacts/linux/*.AppImage artifacts/linux/*.deb release/$VERSION/linux/ 2>/dev/null || true
           fi
 
           if [ -d "artifacts/windows" ]; then
-            mv artifacts/windows/* release/$VERSION/windows/ 2>/dev/null || true
+            mv artifacts/windows/*.exe release/$VERSION/windows/ 2>/dev/null || true
           fi
 
           # Create latest symlinks
@@ -318,13 +347,13 @@ jobs:
       - name: Upload to GCP Bucket
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          
+
           # Upload versioned files
           gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/$VERSION/
-          
+
           # Upload latest files
           gsutil -m cp -r release/latest/* ${{ env.GCP_BUCKET }}/latest/
-          
+
           # Make files publicly readable (optional)
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/latest/
@@ -446,9 +475,60 @@ jobs:
               .addRaw(links.join("\n") + "\n")
               .write();
 
+  create-draft-release:
+    name: Create Draft Release
+    needs: [upload-to-gcp]
+    if: needs.upload-to-gcp.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download macOS yml
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: artifacts/macos
+          pattern: latest-mac.yml
+
+      - name: Download Linux yml
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: artifacts/linux
+          pattern: latest-linux.yml
+
+      - name: Download Windows yml
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts/windows
+          pattern: latest.yml
+
+      - name: Build release JSON
+        run: |
+          python scripts/build-release-json.py \
+            --cdn-base-url https://dl.smartloop.ai \
+            --version "${{ needs.upload-to-gcp.outputs.version }}" \
+            --output release.json \
+            artifacts/macos/latest-mac.yml \
+            artifacts/linux/latest-linux.yml \
+            artifacts/windows/latest.yml
+          echo "--- Release payload ---"
+          cat release.json
+
+      - name: Create draft release via API
+        env:
+          SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
+        run: |
+          python scripts/ci_push_release.py \
+            --file release.json \
+            --draft-only
+
   notify-result:
     if: always()
-    needs: [notify-start, upload-to-gcp]
+    needs: [notify-start, upload-to-gcp, create-draft-release]
     runs-on: ubuntu-latest
     steps:
       - name: Notify build success
