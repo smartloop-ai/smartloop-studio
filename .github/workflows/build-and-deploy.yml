@@ -7,12 +7,22 @@ on:
         description: 'Release version (e.g. 1.0.18). Blank = git tag or short SHA.'
         required: false
         type: string
+      overwrite:
+        description: 'Overwrite an existing bucket version dir instead of failing.'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       version:
         description: 'Release version passed by the calling workflow.'
         required: false
         type: string
+      overwrite:
+        description: 'Overwrite an existing bucket version dir instead of failing.'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -300,6 +310,16 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+
+      - name: Guard against overwriting an existing release
+        if: ${{ inputs.overwrite != true }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" >/dev/null 2>&1; then
+            echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to overwrite. Bump the version, or re-run with overwrite=true to override."
+            exit 1
+          fi
+          echo "No existing $VERSION dir in bucket — safe to upload."
 
       - name: Create version directory structure
         run: |
