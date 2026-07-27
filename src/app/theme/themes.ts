@@ -38,12 +38,12 @@ const smartloopLight: ThemeDefinition = {
   description: 'Clean and bright with Smartloop pink accents',
   mode: 'light',
   colors: {
-    bg: { base: '#faf9f5', surface1: '#f2f0ea', surface2: '#e9e6dd', surface3: '#ddd8cc', input: '#f2f0ea', elevated: '#fdfcf9' },
-    brand: { primary: '#db2777', hover: '#be185d', active: '#9d174d', light: '#ec4899' },
+    bg: { base: '#fdf6f9', surface1: '#f9edf1', surface2: '#f3e0e7', surface3: '#ebd0da', input: '#f9edf1', elevated: '#fefbfc' },
+    brand: { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' },
     text: { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#8b95a3', faint: '#9ca3af' },
     status: { error: '#dc2626', success: '#059669', online: '#16a34a', warning: '#d97706', info: '#2563eb', purple: '#7c3aed' },
-    border: { subtle: '#ece8df', default: '#ddd8cc', hover: '#cbc4b4', code: '#d5cfc1' },
-    table: { head: '#f5f3ec', hover: '#f0ede4', stripe: '#faf9f5', inlineCode: '#f0ede4' },
+    border: { subtle: '#f2e2e8', default: '#ebd0da', hover: '#dfb8c6', code: '#e6ccd5' },
+    table: { head: '#f9edf1', hover: '#f4e6ec', stripe: '#fdf6f9', inlineCode: '#f4e6ec' },
   },
 };
 
