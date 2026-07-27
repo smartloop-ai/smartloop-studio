@@ -2107,9 +2107,9 @@ const splashThemes = {
     '--sl-text-disabled': '#6b7280', '--sl-text-faint': '#4b5563', '--sl-border-default': '#2a2a2a',
   },
   'smartloop-light': {
-    '--sl-bg-base': '#fdf6f9', '--sl-bg-surface-1': '#f9edf1', '--sl-bg-surface-2': '#f3e0e7', '--sl-bg-surface-3': '#ebd0da',
+    '--sl-bg-base': '#fdfbfc', '--sl-bg-surface-1': '#f8f4f6', '--sl-bg-surface-2': '#f1eaed', '--sl-bg-surface-3': '#e6dce0',
     '--sl-brand-primary': '#ec4899', '--sl-text-primary': '#1a1a1a', '--sl-text-secondary': '#374151',
-    '--sl-text-disabled': '#8b95a3', '--sl-text-faint': '#9ca3af', '--sl-border-default': '#ebd0da',
+    '--sl-text-disabled': '#8b95a3', '--sl-text-faint': '#9ca3af', '--sl-border-default': '#e6dce0',
   },
   sepia: {
     '--sl-bg-base': '#171412', '--sl-bg-surface-1': '#211d18', '--sl-bg-surface-2': '#2d2822', '--sl-bg-surface-3': '#3d362e',
