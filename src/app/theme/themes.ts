@@ -1,4 +1,4 @@
-export type ThemeId = 'smartloop' | 'smartloop-light' | 'rams';
+export type ThemeId = 'smartloop' | 'smartloop-light' | 'sepia';
 
 export interface ThemeColors {
   bg: { base: string; surface1: string; surface2: string; surface3: string; input: string; elevated: string };
@@ -38,19 +38,19 @@ const smartloopLight: ThemeDefinition = {
   description: 'Clean and bright with Smartloop pink accents',
   mode: 'light',
   colors: {
-    bg: { base: '#ffffff', surface1: '#f5f5f5', surface2: '#ebebeb', surface3: '#e0e0e0', input: '#f0f0f0', elevated: '#fafafa' },
+    bg: { base: '#faf9f5', surface1: '#f2f0ea', surface2: '#e9e6dd', surface3: '#ddd8cc', input: '#f2f0ea', elevated: '#fdfcf9' },
     brand: { primary: '#db2777', hover: '#be185d', active: '#9d174d', light: '#ec4899' },
     text: { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#8b95a3', faint: '#9ca3af' },
     status: { error: '#dc2626', success: '#059669', online: '#16a34a', warning: '#d97706', info: '#2563eb', purple: '#7c3aed' },
-    border: { subtle: '#e5e5e5', default: '#d4d4d4', hover: '#c0c0c0', code: '#c7ccd3' },
-    table: { head: '#f9fafb', hover: '#f3f4f6', stripe: '#fafafa', inlineCode: '#f3f4f6' },
+    border: { subtle: '#ece8df', default: '#ddd8cc', hover: '#cbc4b4', code: '#d5cfc1' },
+    table: { head: '#f5f3ec', hover: '#f0ede4', stripe: '#faf9f5', inlineCode: '#f0ede4' },
   },
 };
 
-const rams: ThemeDefinition = {
-  id: 'rams',
-  name: 'Rams',
-  description: 'Inspired by Dieter Rams and Braun design language',
+const sepia: ThemeDefinition = {
+  id: 'sepia',
+  name: 'Sepia',
+  description: 'Warm, low-contrast tones for comfortable reading',
   mode: 'dark',
   colors: {
     bg: { base: '#171412', surface1: '#211d18', surface2: '#2d2822', surface3: '#3d362e', input: '#292420', elevated: '#1c1915' },
@@ -62,8 +62,8 @@ const rams: ThemeDefinition = {
   },
 };
 
-export const themes: Record<ThemeId, ThemeDefinition> = { smartloop, 'smartloop-light': smartloopLight, rams };
-export const themeList: ThemeDefinition[] = [smartloop, smartloopLight, rams];
+export const themes: Record<ThemeId, ThemeDefinition> = { smartloop, 'smartloop-light': smartloopLight, sepia };
+export const themeList: ThemeDefinition[] = [smartloop, smartloopLight, sepia];
 
 function hexToRgb(hex: string): string {
   const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
