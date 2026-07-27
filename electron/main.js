@@ -2225,6 +2225,12 @@ function createWindow() {
       sandbox: false,
       nodeIntegration: false,
       contextIsolation: true,
+      // Keep timers/requestIdleCallback running at full rate even when the
+      // window is hidden to tray or occluded. Streamdown's markdown parsing and
+      // token-reveal animation are idle-callback/setTimeout driven; with the
+      // default throttling they stall after the app sits in the background,
+      // so streamed responses stop rendering even though the socket is healthy.
+      backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../public/img/logo.png')
