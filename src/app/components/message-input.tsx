@@ -139,7 +139,7 @@ export default function MessageInput({
       onDrop={handleDrop}
     >
       <Box
-        className="px-4 md:px-6 py-3 md:py-4 rounded-lg shadow-lg transition-all relative"
+        className="px-4 md:px-6 py-3 md:py-4 rounded-lg transition-all relative"
         sx={{
           bgcolor: 'var(--sl-white-alpha-5)',
           border: isDraggingOver
@@ -274,7 +274,7 @@ export default function MessageInput({
           {/* Right side - Send / Stop button */}
           {isLoading ? (
             <button
-              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
               style={{
                 backgroundColor: 'var(--sl-brand-alpha-15)',
                 border: '1.5px solid var(--sl-brand-alpha-30)',
@@ -301,7 +301,7 @@ export default function MessageInput({
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all shadow-lg"
+              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all"
               style={{
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
                 border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,

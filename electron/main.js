@@ -2107,11 +2107,11 @@ const splashThemes = {
     '--sl-text-disabled': '#6b7280', '--sl-text-faint': '#4b5563', '--sl-border-default': '#2a2a2a',
   },
   'smartloop-light': {
-    '--sl-bg-base': '#ffffff', '--sl-bg-surface-1': '#f5f5f5', '--sl-bg-surface-2': '#ebebeb', '--sl-bg-surface-3': '#e0e0e0',
+    '--sl-bg-base': '#faf9f5', '--sl-bg-surface-1': '#f2f0ea', '--sl-bg-surface-2': '#e9e6dd', '--sl-bg-surface-3': '#ddd8cc',
     '--sl-brand-primary': '#db2777', '--sl-text-primary': '#1a1a1a', '--sl-text-secondary': '#374151',
-    '--sl-text-disabled': '#8b95a3', '--sl-text-faint': '#9ca3af', '--sl-border-default': '#d4d4d4',
+    '--sl-text-disabled': '#8b95a3', '--sl-text-faint': '#9ca3af', '--sl-border-default': '#ddd8cc',
   },
-  rams: {
+  sepia: {
     '--sl-bg-base': '#171412', '--sl-bg-surface-1': '#211d18', '--sl-bg-surface-2': '#2d2822', '--sl-bg-surface-3': '#3d362e',
     '--sl-brand-primary': '#d35b36', '--sl-text-primary': '#f2efe9', '--sl-text-secondary': '#d4cbc3',
     '--sl-text-disabled': '#6b655e', '--sl-text-faint': '#4a4540', '--sl-border-default': '#2d2822',
@@ -2120,7 +2120,8 @@ const splashThemes = {
 
 function applySplashTheme() {
   if (!splashWindow || splashWindow.isDestroyed()) return;
-  const themeId = store.get('app_theme', 'smartloop');
+  const savedTheme = store.get('app_theme', 'smartloop');
+  const themeId = savedTheme === 'rams' ? 'sepia' : savedTheme;
   const vars = splashThemes[themeId] || splashThemes.smartloop;
   const css = Object.entries(vars).map(([k, v]) => `document.documentElement.style.setProperty('${k}', '${v}');`).join('\n');
   splashWindow.webContents.executeJavaScript(css).catch(() => {});

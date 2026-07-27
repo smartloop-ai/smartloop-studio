@@ -23,8 +23,11 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     storageService.getItem('app_theme').then((saved: string | null) => {
-      if (saved && saved in themes) {
-        setThemeIdState(saved as ThemeId);
+      // Migrate legacy 'rams' id to its renamed 'sepia' equivalent.
+      const migrated = saved === 'rams' ? 'sepia' : saved;
+      if (migrated && migrated in themes) {
+        setThemeIdState(migrated as ThemeId);
+        if (migrated !== saved) storageService.setItem('app_theme', migrated);
       }
     });
   }, []);
