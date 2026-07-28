@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.0.18). Blank = git tag or short SHA.'
+        description: 'Release version (e.g. 1.0.18). Blank = the version in package.json, i.e. redo the current one (also tick overwrite).'
         required: false
         type: string
       overwrite:
@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Release version passed by the calling workflow.'
+        description: 'Release version passed by the calling workflow. Blank = the version in package.json.'
         required: false
         type: string
       overwrite:
@@ -33,6 +33,8 @@ permissions:
 env:
   GCP_BUCKET: gs://smartloop-gcp-us-east-releases
   APP_NAME: smartloop-studio
+  # Matches ci_push_release.py's default base URL.
+  RELEASES_API_BASE_URL: https://api.smartloop.ai
 
 jobs:
   notify-start:
@@ -55,6 +57,21 @@ jobs:
         run: |
           VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Artifacts are named from package.json, so publishing under any other
+      # version would ship a release that claims X and installs Y — clients would
+      # update, still report Y, and re-download on every check. Fails here rather
+      # than after a 12-minute build.
+      - name: Validate release version
+        if: ${{ inputs.version != '' }}
+        run: |
+          IN="${{ inputs.version }}"
+          PKG="${{ steps.bv.outputs.version }}"
+          if [ "$IN" != "$PKG" ]; then
+            echo "::error::version '$IN' does not match package.json '$PKG'. Artifacts are built and named from package.json, so publishing under '$IN' would ship a release that installs '$PKG'. Dispatch from a ref whose package.json is '$IN', or leave version blank to use '$PKG'."
+            exit 1
+          fi
+          echo "version '$IN' matches package.json."
 
       - name: Notify build started
         uses: slackapi/slack-github-action@v2.1.0
@@ -259,13 +276,7 @@ jobs:
 
   upload-to-gcp:
     name: Upload to GCP Bucket
-    needs: [build-macos, build-linux, build-windows]
-    # Only publish real releases. Genuine releases invoke this workflow via
-    # workflow_call with an explicit `version` (see release-prod.yml); manual
-    # workflow_dispatch runs without a version fall back to a short SHA, which
-    # must NOT be uploaded (it litters the bucket with <sha>/ dirs and posts
-    # junk drafts to the releases API downstream).
-    if: ${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/') }}
+    needs: [notify-start, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     outputs:
       download_urls: ${{ steps.urls.outputs.download_urls }}
@@ -298,28 +309,68 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # Every release path is version-based. A blank input means "redo the
+      # version package.json already declares" — validated equal to package.json
+      # in notify-start, so both paths resolve to the same string the artifacts
+      # are named after. Redoing a version that is already in the bucket is what
+      # the overwrite guard below is for.
       - name: Get version info
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="${GITHUB_SHA:0:7}"
-          fi
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="${{ needs.notify-start.outputs.build_version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      # Two protections, so `overwrite` can only ever repair a draft:
+      #   1. an existing bucket dir needs `overwrite` to be replaced;
+      #   2. a published/revoked version is refused outright, because swapping
+      #      its bytes leaves the feed's sha512 describing files that no longer
+      #      exist — every client already on that feed fails the integrity check.
+      # The API is only consulted once the dir is known to exist, so API trouble
+      # can never block a fresh release.
       - name: Guard against overwriting an existing release
-        if: ${{ inputs.overwrite != true }}
+        env:
+          SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" >/dev/null 2>&1; then
-            echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to overwrite. Bump the version, or re-run with overwrite=true to override."
+          OVERWRITE="${{ inputs.overwrite }}"
+
+          # `gsutil ls` exits non-zero both for "no such prefix" and for real
+          # errors (auth, typo'd bucket). Only the former means "safe" — every
+          # other failure is unknowable, and the whole check branches on this.
+          set +e
+          LS_OUT=$(gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" 2>&1); LS_RC=$?
+          set -e
+          if [ $LS_RC -ne 0 ]; then
+            if echo "$LS_OUT" | grep -q "matched no objects"; then
+              echo "No existing $VERSION dir in bucket — safe to upload."
+              exit 0
+            fi
+            echo "::error::Could not check ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to upload blind. $LS_OUT"
             exit 1
           fi
-          echo "No existing $VERSION dir in bucket — safe to upload."
+
+          CODE=$(curl -sS -o /tmp/release.json -w '%{http_code}' \
+            -H "Authorization: Bearer $SLP_ADMIN_TOKEN_PROD" \
+            "$RELEASES_API_BASE_URL/v1/releases/$VERSION" || echo 000)
+          case "$CODE" in
+            404) STATUS=none ;;
+            200) STATUS=$(jq -r '.status // "unknown"' /tmp/release.json 2>/dev/null || echo unknown) ;;
+            *)   echo "::error::Could not read release $VERSION from the API (HTTP $CODE) — cannot confirm it is safe to overwrite."; exit 1 ;;
+          esac
+
+          if [ "$STATUS" = published ] || [ "$STATUS" = revoked ] || [ "$STATUS" = unknown ]; then
+            echo "::error::Release $VERSION is $STATUS. Replacing its artifacts would leave the release feed advertising a sha512 for bytes that no longer exist, breaking updates for every client already on it. Bump the version instead."
+            exit 1
+          fi
+
+          if [ "$OVERWRITE" = true ]; then
+            echo "$VERSION exists (status: $STATUS) and overwrite was requested — proceeding."
+            exit 0
+          fi
+          echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ (status: $STATUS) — refusing to overwrite. Bump the version, or re-run with overwrite=true to replace the draft."
+          exit 1
 
       - name: Create version directory structure
         run: |
@@ -440,41 +491,6 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: Print GitHub artifact download URLs
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const run_id = context.runId;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
-            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
-              owner,
-              repo,
-              run_id,
-              per_page: 100
-            });
-            core.info(`GitHub Actions run: ${runUrl}`);
-            if (!data.artifacts || data.artifacts.length === 0) {
-              core.info("No artifacts found for this run.");
-              await core.summary
-                .addHeading("GitHub Artifact Downloads", 2)
-                .addRaw(`Run: ${runUrl}\n\nNo artifacts found for this run.\n`)
-                .write();
-              return;
-            }
-            const links = data.artifacts.map((artifact) =>
-              `- ${artifact.name}: https://github.com/${owner}/${repo}/actions/runs/${run_id}/artifacts/${artifact.id}`
-            );
-            core.info("GitHub artifact download URLs:");
-            for (const link of links) {
-              core.info(link);
-            }
-            await core.summary
-              .addHeading("GitHub Artifact Downloads", 2)
-              .addRaw(`Run: ${runUrl}\n\n`)
-              .addRaw(links.join("\n") + "\n")
-              .write();
-
   create-draft-release:
     name: Create Draft Release
     needs: [upload-to-gcp]
@@ -528,11 +544,57 @@ jobs:
 
   notify-result:
     if: always()
-    needs: [notify-start, upload-to-gcp, create-draft-release]
+    needs: [notify-start, build-macos, build-linux, build-windows, upload-to-gcp, create-draft-release]
     runs-on: ubuntu-latest
     steps:
+      # Artifact links live in the run summary, not Slack: a version-less
+      # dispatch publishes nothing, and whoever dispatched it is already looking
+      # at the run. Runs here rather than in upload-to-gcp so the links still get
+      # written on runs where that job is gated out.
+      - name: Print GitHub artifact download URLs
+        # Informational only. Both Slack steps below carry an `if:` without a
+        # status function, so GitHub ANDs an implicit success() into them — a
+        # failure here would otherwise silence the failure alert itself.
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id,
+              per_page: 100
+            });
+            core.info(`GitHub Actions run: ${runUrl}`);
+            if (!data.artifacts || data.artifacts.length === 0) {
+              core.info("No artifacts found for this run.");
+              await core.summary
+                .addHeading("GitHub Artifact Downloads", 2)
+                .addRaw(`Run: ${runUrl}\n\nNo artifacts found for this run.\n`)
+                .write();
+              return;
+            }
+            const links = data.artifacts.map((artifact) =>
+              `- ${artifact.name}: https://github.com/${owner}/${repo}/actions/runs/${run_id}/artifacts/${artifact.id}`
+            );
+            core.info("GitHub artifact download URLs:");
+            for (const link of links) {
+              core.info(link);
+            }
+            await core.summary
+              .addHeading("GitHub Artifact Downloads", 2)
+              .addRaw(`Run: ${runUrl}\n\n`)
+              .addRaw(links.join("\n") + "\n")
+              .write();
+
+      # Success means the release actually exists: artifacts on the CDN *and* a
+      # draft in the releases API. Gating on upload alone reported green when the
+      # draft POST failed.
       - name: Notify build success
-        if: needs.upload-to-gcp.result == 'success'
+        if: ${{ needs.upload-to-gcp.result == 'success' && needs.create-draft-release.result == 'success' }}
         uses: slackapi/slack-github-action@v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -550,8 +612,12 @@ jobs:
               ]
             }
 
+      # Any failed/cancelled job, whatever the trigger — a broken main build is
+      # worth knowing about even on a version-less dispatch. A *clean* version-less
+      # run matches neither this nor the success condition and stays silent, so
+      # the release channel doesn't fill up with untagged builds.
       - name: Notify build failure
-        if: needs.upload-to-gcp.result != 'success'
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         uses: slackapi/slack-github-action@v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}

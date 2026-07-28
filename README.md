@@ -220,6 +220,9 @@ Built applications are placed in the `dist/` folder:
 - **Windows**: Setup `.exe` (NSIS) and portable `.exe`
 - **Linux**: `.AppImage` and `.deb` packages
 
+For cutting a production release (the GitHub Actions flow, versioning, and
+publishing), see [RELEASING.md](RELEASING.md).
+
 ## 📖 Learn More
 
 - [Electron Documentation](https://www.electronjs.org/docs)

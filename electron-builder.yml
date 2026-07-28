@@ -1,7 +1,7 @@
 appId: ai.smartloop.studio
 productName: Smartloop Studio
 copyright: Copyright © 2026 Smartloop Inc.
-buildVersion: 1.0.1
+# buildVersion unset: electron-builder falls back to package.json's version.
 directories:
   output: dist
   buildResources: build
