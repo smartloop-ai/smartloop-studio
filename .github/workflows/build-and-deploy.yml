@@ -33,6 +33,8 @@ permissions:
 env:
   GCP_BUCKET: gs://smartloop-gcp-us-east-releases
   APP_NAME: smartloop-studio
+  # Matches ci_push_release.py's default base URL.
+  RELEASES_API_BASE_URL: https://api.smartloop.ai
 
 jobs:
   notify-start:
@@ -320,15 +322,55 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      # Two protections, so `overwrite` can only ever repair a draft:
+      #   1. an existing bucket dir needs `overwrite` to be replaced;
+      #   2. a published/revoked version is refused outright, because swapping
+      #      its bytes leaves the feed's sha512 describing files that no longer
+      #      exist — every client already on that feed fails the integrity check.
+      # The API is only consulted once the dir is known to exist, so API trouble
+      # can never block a fresh release.
       - name: Guard against overwriting an existing release
-        if: ${{ inputs.overwrite != true }}
+        env:
+          SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" >/dev/null 2>&1; then
-            echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to overwrite. Bump the version, or re-run with overwrite=true to override."
+          OVERWRITE="${{ inputs.overwrite }}"
+
+          # `gsutil ls` exits non-zero both for "no such prefix" and for real
+          # errors (auth, typo'd bucket). Only the former means "safe" — every
+          # other failure is unknowable, and the whole check branches on this.
+          set +e
+          LS_OUT=$(gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" 2>&1); LS_RC=$?
+          set -e
+          if [ $LS_RC -ne 0 ]; then
+            if echo "$LS_OUT" | grep -q "matched no objects"; then
+              echo "No existing $VERSION dir in bucket — safe to upload."
+              exit 0
+            fi
+            echo "::error::Could not check ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to upload blind. $LS_OUT"
             exit 1
           fi
-          echo "No existing $VERSION dir in bucket — safe to upload."
+
+          CODE=$(curl -sS -o /tmp/release.json -w '%{http_code}' \
+            -H "Authorization: Bearer $SLP_ADMIN_TOKEN_PROD" \
+            "$RELEASES_API_BASE_URL/v1/releases/$VERSION" || echo 000)
+          case "$CODE" in
+            404) STATUS=none ;;
+            200) STATUS=$(jq -r '.status // "unknown"' /tmp/release.json 2>/dev/null || echo unknown) ;;
+            *)   echo "::error::Could not read release $VERSION from the API (HTTP $CODE) — cannot confirm it is safe to overwrite."; exit 1 ;;
+          esac
+
+          if [ "$STATUS" = published ] || [ "$STATUS" = revoked ] || [ "$STATUS" = unknown ]; then
+            echo "::error::Release $VERSION is $STATUS. Replacing its artifacts would leave the release feed advertising a sha512 for bytes that no longer exist, breaking updates for every client already on it. Bump the version instead."
+            exit 1
+          fi
+
+          if [ "$OVERWRITE" = true ]; then
+            echo "$VERSION exists (status: $STATUS) and overwrite was requested — proceeding."
+            exit 0
+          fi
+          echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ (status: $STATUS) — refusing to overwrite. Bump the version, or re-run with overwrite=true to replace the draft."
+          exit 1
 
       - name: Create version directory structure
         run: |
