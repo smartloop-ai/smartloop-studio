@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.0.18). Blank = git tag or short SHA.'
+        description: 'Release version (e.g. 1.0.18). Blank = the version in package.json, i.e. redo the current one (also tick overwrite).'
         required: false
         type: string
       overwrite:
@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       version:
-        description: 'Release version passed by the calling workflow.'
+        description: 'Release version passed by the calling workflow. Blank = the version in package.json.'
         required: false
         type: string
       overwrite:
@@ -55,6 +55,21 @@ jobs:
         run: |
           VERSION=$(jq -r .version package.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Artifacts are named from package.json, so publishing under any other
+      # version would ship a release that claims X and installs Y — clients would
+      # update, still report Y, and re-download on every check. Fails here rather
+      # than after a 12-minute build.
+      - name: Validate release version
+        if: ${{ inputs.version != '' }}
+        run: |
+          IN="${{ inputs.version }}"
+          PKG="${{ steps.bv.outputs.version }}"
+          if [ "$IN" != "$PKG" ]; then
+            echo "::error::version '$IN' does not match package.json '$PKG'. Artifacts are built and named from package.json, so publishing under '$IN' would ship a release that installs '$PKG'. Dispatch from a ref whose package.json is '$IN', or leave version blank to use '$PKG'."
+            exit 1
+          fi
+          echo "version '$IN' matches package.json."
 
       - name: Notify build started
         uses: slackapi/slack-github-action@v2.1.0
@@ -259,13 +274,7 @@ jobs:
 
   upload-to-gcp:
     name: Upload to GCP Bucket
-    needs: [build-macos, build-linux, build-windows]
-    # Only publish real releases. Genuine releases invoke this workflow via
-    # workflow_call with an explicit `version` (see release-prod.yml); manual
-    # workflow_dispatch runs without a version fall back to a short SHA, which
-    # must NOT be uploaded (it litters the bucket with <sha>/ dirs and posts
-    # junk drafts to the releases API downstream).
-    if: ${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/') }}
+    needs: [notify-start, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     outputs:
       download_urls: ${{ steps.urls.outputs.download_urls }}
@@ -298,16 +307,16 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      # Every release path is version-based. A blank input means "redo the
+      # version package.json already declares" — validated equal to package.json
+      # in notify-start, so both paths resolve to the same string the artifacts
+      # are named after. Redoing a version that is already in the bucket is what
+      # the overwrite guard below is for.
       - name: Get version info
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
-          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-          else
-            VERSION="${GITHUB_SHA:0:7}"
-          fi
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="${{ needs.notify-start.outputs.build_version }}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
