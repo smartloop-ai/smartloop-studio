@@ -440,41 +440,6 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: Print GitHub artifact download URLs
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const run_id = context.runId;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
-            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
-              owner,
-              repo,
-              run_id,
-              per_page: 100
-            });
-            core.info(`GitHub Actions run: ${runUrl}`);
-            if (!data.artifacts || data.artifacts.length === 0) {
-              core.info("No artifacts found for this run.");
-              await core.summary
-                .addHeading("GitHub Artifact Downloads", 2)
-                .addRaw(`Run: ${runUrl}\n\nNo artifacts found for this run.\n`)
-                .write();
-              return;
-            }
-            const links = data.artifacts.map((artifact) =>
-              `- ${artifact.name}: https://github.com/${owner}/${repo}/actions/runs/${run_id}/artifacts/${artifact.id}`
-            );
-            core.info("GitHub artifact download URLs:");
-            for (const link of links) {
-              core.info(link);
-            }
-            await core.summary
-              .addHeading("GitHub Artifact Downloads", 2)
-              .addRaw(`Run: ${runUrl}\n\n`)
-              .addRaw(links.join("\n") + "\n")
-              .write();
-
   create-draft-release:
     name: Create Draft Release
     needs: [upload-to-gcp]
@@ -528,11 +493,57 @@ jobs:
 
   notify-result:
     if: always()
-    needs: [notify-start, upload-to-gcp, create-draft-release]
+    needs: [notify-start, build-macos, build-linux, build-windows, upload-to-gcp, create-draft-release]
     runs-on: ubuntu-latest
     steps:
+      # Artifact links live in the run summary, not Slack: a version-less
+      # dispatch publishes nothing, and whoever dispatched it is already looking
+      # at the run. Runs here rather than in upload-to-gcp so the links still get
+      # written on runs where that job is gated out.
+      - name: Print GitHub artifact download URLs
+        # Informational only. Both Slack steps below carry an `if:` without a
+        # status function, so GitHub ANDs an implicit success() into them — a
+        # failure here would otherwise silence the failure alert itself.
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id,
+              per_page: 100
+            });
+            core.info(`GitHub Actions run: ${runUrl}`);
+            if (!data.artifacts || data.artifacts.length === 0) {
+              core.info("No artifacts found for this run.");
+              await core.summary
+                .addHeading("GitHub Artifact Downloads", 2)
+                .addRaw(`Run: ${runUrl}\n\nNo artifacts found for this run.\n`)
+                .write();
+              return;
+            }
+            const links = data.artifacts.map((artifact) =>
+              `- ${artifact.name}: https://github.com/${owner}/${repo}/actions/runs/${run_id}/artifacts/${artifact.id}`
+            );
+            core.info("GitHub artifact download URLs:");
+            for (const link of links) {
+              core.info(link);
+            }
+            await core.summary
+              .addHeading("GitHub Artifact Downloads", 2)
+              .addRaw(`Run: ${runUrl}\n\n`)
+              .addRaw(links.join("\n") + "\n")
+              .write();
+
+      # Success means the release actually exists: artifacts on the CDN *and* a
+      # draft in the releases API. Gating on upload alone reported green when the
+      # draft POST failed.
       - name: Notify build success
-        if: needs.upload-to-gcp.result == 'success'
+        if: ${{ needs.upload-to-gcp.result == 'success' && needs.create-draft-release.result == 'success' }}
         uses: slackapi/slack-github-action@v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -550,8 +561,12 @@ jobs:
               ]
             }
 
+      # Any failed/cancelled job, whatever the trigger — a broken main build is
+      # worth knowing about even on a version-less dispatch. A *clean* version-less
+      # run matches neither this nor the success condition and stays silent, so
+      # the release channel doesn't fill up with untagged builds.
       - name: Notify build failure
-        if: needs.upload-to-gcp.result != 'success'
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         uses: slackapi/slack-github-action@v2.1.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
