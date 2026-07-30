@@ -32,6 +32,8 @@ import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import LinkIcon from '@mui/icons-material/Link';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
@@ -44,6 +46,56 @@ interface Attachment {
   name?: string;
   size?: number;
   type?: string;
+}
+
+// Human-readable document type for a reference filename, derived from its extension.
+const DOC_TYPE_LABELS: Record<string, string> = {
+  pdf: 'PDF Document',
+  md: 'Markdown Report',
+  markdown: 'Markdown Report',
+  txt: 'Text File',
+  doc: 'Word Document',
+  docx: 'Word Document',
+  csv: 'CSV Spreadsheet',
+  xls: 'Excel Spreadsheet',
+  xlsx: 'Excel Spreadsheet',
+  ppt: 'PowerPoint',
+  pptx: 'PowerPoint',
+  json: 'JSON File',
+  html: 'HTML Document',
+};
+function docTypeLabel(name: string): string {
+  const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
+  return DOC_TYPE_LABELS[ext] || (ext ? `${ext.toUpperCase()} File` : 'Document');
+}
+
+// Format a byte count as a compact, human-readable size (e.g. "1.2 MB").
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+// Turn bare URLs in plain user-message text into clickable, themed links.
+// Clicks are picked up by the document-level handler that opens web links externally.
+const USER_URL_REGEX = /(https?:\/\/[^\s<>()]+)/g;
+function renderUserMessageContent(text: string): React.ReactNode[] {
+  return text.split(USER_URL_REGEX).map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a key={i} href={part} rel="noopener noreferrer">
+        <LinkIcon className="user-message-link-icon" sx={{ fontSize: 14 }} />
+        {part.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+      </a>
+    ) : (
+      <React.Fragment key={i}>{part}</React.Fragment>
+    )
+  );
 }
 
 interface OpenTabRequest {
@@ -1343,7 +1395,7 @@ export default function Chat(props: {
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
                         <Box className="flex-1">
-                          <div className="chat-paper rounded-sm p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                          <div className="chat-paper p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
                             <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
                                 <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
@@ -1362,26 +1414,63 @@ export default function Chat(props: {
                             </div>
                             {msg.citations && msg.citations.length > 0 && !msg.is_new && (
                               <div className="mt-3 pt-3 border-t border-sl-border-subtle">
-                                <p className="text-[10px] text-sl-text-disabled uppercase tracking-wider mb-1.5">References</p>
-                                <div className="flex flex-wrap gap-1.5">
+                                <p className="flex items-center gap-1.5 text-[10px] text-sl-text-disabled uppercase tracking-wider mb-2">
+                                  <LinkIcon sx={{ fontSize: 12 }} />
+                                  References
+                                </p>
+                                <div className="flex flex-wrap gap-2">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
                                     const folderPath = props.project?.folder_path;
                                     const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
+                                    const size = citation.file_size || citation.size;
+                                    const meta = [size ? formatBytes(size) : '', docTypeLabel(label)]
+                                      .filter(Boolean)
+                                      .join(' · ');
+                                    const openDoc = () => {
+                                      if (resolvedPath) {
+                                        window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
+                                      }
+                                    };
                                     return (
-                                      <span
+                                      <div
                                         key={idx}
-                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-sl-bg-surface-2 border border-sl-border-default text-sl-text-muted cursor-pointer hover:text-sl-text-secondary hover:border-sl-border-hover transition-colors"
+                                        className="group inline-flex items-center gap-2 px-2 py-1 rounded-md border border-sl-border-hover hover:border-sl-brand-primary hover:bg-sl-bg-surface-2 transition-colors cursor-pointer"
                                         title={resolvedPath || citation.document_id}
-                                        onClick={() => {
-                                          if (resolvedPath) {
-                                            window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
-                                          }
-                                        }}
+                                        onClick={openDoc}
                                       >
-                                        <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)', opacity: 0.7 }} />
-                                        {label}
-                                      </span>
+                                        <div
+                                          className="flex items-center justify-center w-6 h-6 rounded flex-shrink-0"
+                                          style={{ background: 'var(--sl-brand-alpha-15)' }}
+                                        >
+                                          <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                        </div>
+                                        <div className="whitespace-nowrap leading-tight">
+                                          <div className="text-[11px] font-semibold text-sl-text-secondary">{label}</div>
+                                          <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide">{meta}</div>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 flex-shrink-0 ml-0.5">
+                                          <Tooltip title="Preview" arrow placement="top">
+                                            <button
+                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                              onClick={(e) => { e.stopPropagation(); openDoc(); }}
+                                            >
+                                              <VisibilityOutlinedIcon sx={{ fontSize: 13 }} />
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip title="Download" arrow placement="top">
+                                            <button
+                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (resolvedPath) window.electronAPI?.downloadDocument?.(resolvedPath);
+                                              }}
+                                            >
+                                              <SaveAltIcon sx={{ fontSize: 13 }} />
+                                            </button>
+                                          </Tooltip>
+                                        </div>
+                                      </div>
                                     );
                                   })}
                                 </div>
@@ -1596,15 +1685,11 @@ export default function Chat(props: {
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-subtle rounded-sm px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
-                              <pre className="user-message-content text-wrap break-words py-3 whitespace-pre-wrap font-[inherit]">
-                                {msg.content}
+                            <div style={{ borderRight: '2px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                              <pre className="user-message-content text-wrap break-words whitespace-pre-wrap font-[inherit]">
+                                {renderUserMessageContent(msg.content)}
                               </pre>
                             </div>
-                          </Box>
-
-                          <Box className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Box className="w-3 h-3 rounded-full" sx={{ bgcolor: 'var(--sl-brand-primary)' }}></Box>
                           </Box>
                         </Box>
                       </Box>

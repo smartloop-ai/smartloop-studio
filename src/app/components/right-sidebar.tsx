@@ -71,7 +71,7 @@ export default function RightSidebar({
   onRefreshSkills,
 }: RightSidebarProps) {
   const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>(selectedProject?.system ? null : 'documents');
+  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>('documents');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
@@ -95,12 +95,6 @@ export default function RightSidebar({
   const savingSkill = pendingSkill !== null;
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
-
-  useEffect(() => {
-    if (selectedProject?.system && (activeSection === 'documents' || activeSection === 'settings')) {
-      setActiveSection(null);
-    }
-  }, [selectedProject?.id]);
 
   // Skills loaded from the API
   const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
@@ -1720,12 +1714,12 @@ export default function RightSidebar({
                 </p>
               </div>
 
-              {/* Share Project */}
+              {/* Share Project — not available for the general/system project */}
               <div>
                 <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Share</div>
                 <Box
                   onClick={async () => {
-                    if (exporting || !selectedProject?.id) return;
+                    if (exporting || selectedProject?.system || !selectedProject?.id) return;
                     setExporting(true);
                     setExportDone(false);
                     try {
@@ -1748,11 +1742,11 @@ export default function RightSidebar({
                     borderRadius: '6px',
                     backgroundColor: 'var(--sl-bg-surface-1)',
                     border: '1px solid var(--sl-border-default)',
-                    cursor: exporting ? 'default' : 'pointer',
-                    opacity: exporting ? 0.6 : 1,
+                    cursor: (exporting || selectedProject?.system) ? 'not-allowed' : 'pointer',
+                    opacity: (exporting || selectedProject?.system) ? 0.5 : 1,
                     '&:hover': {
-                      backgroundColor: exporting ? 'var(--sl-bg-surface-1)' : 'var(--sl-bg-surface-1)',
-                      borderColor: exporting ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
+                      backgroundColor: 'var(--sl-bg-surface-1)',
+                      borderColor: (exporting || selectedProject?.system) ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
                     },
                   }}
                 >
@@ -1770,7 +1764,9 @@ export default function RightSidebar({
                   </span>
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  Share project and all its contents as a zip file.
+                  {selectedProject?.system
+                    ? 'The general chat project can’t be shared.'
+                    : 'Share project and all its contents as a zip file.'}
                 </p>
               </div>
             </div>
@@ -1790,23 +1786,21 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
-        <Tooltip title={selectedProject?.system ? "Documents (Disabled)" : "Documents"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title="Documents" placement="left">
+          <span className={'cursor-default'}>
             <IconButton
               onClick={() => {
-                if (selectedProject?.system) return;
                 const next = activeSection === 'documents' ? null : 'documents';
                 setActiveSection(next);
                 if (next === 'documents') refreshDocuments();
               }}
-              disabled={!!selectedProject?.system}
               sx={{
                 color: (activeSection === 'documents' || activeTab === 'document') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  color: 'var(--sl-brand-primary)',
                 },
                 '&.Mui-disabled': {
                   color: 'var(--sl-text-disabled)',
@@ -1885,18 +1879,17 @@ export default function RightSidebar({
         <Box sx={{ flex: 1 }} />
 
         {/* Project Settings gear icon */}
-        <Tooltip title={selectedProject?.system ? "Settings (Disabled)" : "Project Settings"} placement="left">
-          <span className={selectedProject?.system ? 'cursor-not-allowed' : 'cursor-default'}>
+        <Tooltip title="Project Settings" placement="left">
+          <span className={'cursor-default'}>
             <IconButton
-              onClick={() => !selectedProject?.system && setActiveSection(activeSection === 'settings' ? null : 'settings')}
-              disabled={selectedProject?.system}
+              onClick={() => setActiveSection(activeSection === 'settings' ? null : 'settings')}
               sx={{
                 color: activeSection === 'settings' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
                 borderRadius: '8px',
-                cursor: selectedProject?.system ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 '&:hover': {
-                  color: selectedProject?.system ? 'var(--sl-text-muted)' : 'var(--sl-brand-primary)',
+                  color: 'var(--sl-brand-primary)',
                 },
               }}
               size="small"
