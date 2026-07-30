@@ -1,6 +1,7 @@
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const slpService = require('./slp-service');
+const releaseChecker = require('./release-checker');
 
 let tray = null;
 let mainWindow = null;
@@ -110,7 +111,20 @@ async function refreshTray() {
     }
   }
 
-  const template = [
+  const template = [];
+
+  // A staged update needs a path to install that doesn't require a window —
+  // the app hides to tray and can run for days without one being open.
+  const updater = releaseChecker.getUpdaterStatus();
+  if (updater?.state === 'downloaded') {
+    template.push({
+      label: `Restart to Update${updater.version ? ` (v${updater.version})` : ''}`,
+      click: () => releaseChecker.quitAndInstall(),
+    });
+    template.push({ type: 'separator' });
+  }
+
+  template.push(
     { label: 'Smartloop Studio', enabled: false },
     { type: 'separator' },
     { label: `Service: ${statusLabel}`, enabled: false },
@@ -156,7 +170,7 @@ async function refreshTray() {
       },
     },
     { type: 'separator' },
-  ];
+  );
 
   // Add projects submenu if we have any
   if (projectItems.length > 0) {
