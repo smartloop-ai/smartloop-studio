@@ -226,7 +226,6 @@ export default function SettingsPage() {
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
     const appVersion = __APP_VERSION__;
 
-    const CHANGELOG_URL = 'https://smartloop.ai/docs/changelog';
     const DOWNLOAD_URL = 'https://smartloop.ai/download/';
 
     const { updateAvailable, latestVersion, stagedVersion, updaterSupported, state: updaterState, percent: downloadPercent, checking: checkingUpdate, error: updaterError } = appUpdate;
@@ -370,13 +369,8 @@ export default function SettingsPage() {
                             <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                             <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-faint)' }}>v{appVersion}</span>
                             <div className="flex-1" />
-                            <button
-                                onClick={() => window.electronAPI?.openExternal?.(CHANGELOG_URL)}
-                                className="flex items-center text-xs font-medium transition-colors"
-                                style={{ color: 'var(--sl-brand-primary)' }}
-                            >
-                                Changelog →
-                            </button>
+                            {/* Changelog link hidden until the docs page ships —
+                                restore with CHANGELOG_URL from @/app/constants. */}
                         </Box>
 
                         {/* Single adaptive status line — updates download in the background
