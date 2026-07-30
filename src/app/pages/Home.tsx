@@ -983,8 +983,6 @@ export default function Home() {
 
 
   const handleOpenTab = (tab: OpenTab) => {
-    if (tab.type === 'document' && selectedProject?.system) return;
-
     setOpenTabs((prev) => {
       const existing = prev.find((t) => t.id === tab.id);
       if (existing) {

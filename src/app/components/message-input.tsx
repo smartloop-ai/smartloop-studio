@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState } from 'react';
-import { Box, InputBase, InputAdornment } from '@mui/material';
+import { Box, InputBase, InputAdornment, IconButton, Tooltip } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CloseIcon from '@mui/icons-material/Close';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
 import FileAttacher from './file-attacher';
 
 interface MessageInputProps {
@@ -18,6 +19,7 @@ interface MessageInputProps {
   isLoading?: boolean;
   allowAttachments?: boolean;
   allowImages?: boolean;
+  allowVoice?: boolean;
   conversation?: any;
   onFileAttached?: (documentId: string, fileName: string) => void;
   onAttachmentClear?: () => void;
@@ -40,6 +42,7 @@ export default function MessageInput({
   isLoading = false,
   allowAttachments = false,
   allowImages = false,
+  allowVoice = false,
   conversation = null,
   onFileAttached,
   onAttachmentClear,
@@ -219,29 +222,51 @@ export default function MessageInput({
           {/* Left side - File attachment and selected quote */}
           <Box className="flex items-center gap-2 flex-1 overflow-hidden">
             {allowAttachments && (
-              <FileAttacher
-                conversation={conversation}
-                onSuccess={(documentId, fileName) => {
-                  if (onFileAttached) {
-                    onFileAttached(documentId, fileName);
-                  }
-                }}
-                onClear={() => {
-                  if (onAttachmentClear) {
-                    onAttachmentClear();
-                  }
-                }}
-                onError={(error) => {
-                  console.error('File attach error:', error);
-                }}
-                onUploadingChange={setIsAttaching}
-                disabled={disabled || isLoading}
-                size="small"
-                allowImages={allowImages}
-                showDragDrop={showDragDrop}
-                clearTrigger={clearAttachmentTrigger}
-                externalDrop={droppedFile}
-              />
+              <>
+                {/* Single Attach action — documents plus images when a vision model is available */}
+                <FileAttacher
+                  conversation={conversation}
+                  onSuccess={(documentId, fileName) => {
+                    if (onFileAttached) {
+                      onFileAttached(documentId, fileName);
+                    }
+                  }}
+                  onClear={() => {
+                    if (onAttachmentClear) {
+                      onAttachmentClear();
+                    }
+                  }}
+                  onError={(error) => {
+                    console.error('File attach error:', error);
+                  }}
+                  onUploadingChange={setIsAttaching}
+                  disabled={disabled || isLoading}
+                  size="small"
+                  allowImages={allowImages}
+                  showDragDrop={showDragDrop}
+                  clearTrigger={clearAttachmentTrigger}
+                  externalDrop={droppedFile}
+                />
+
+                {/* Voice input — disabled until speech-to-text is available */}
+                <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
+                  <span>
+                    <IconButton
+                      disabled={!allowVoice || disabled || isLoading}
+                      size="small"
+                      sx={{
+                        color: 'var(--sl-text-muted)',
+                        borderRadius: '8px',
+                        padding: '5px',
+                        '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
+                        '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
+                      }}
+                    >
+                      <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
             )}
             {/* Selected quote indicator */}
             {selectedQuote && (
