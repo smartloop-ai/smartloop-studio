@@ -31,6 +31,7 @@ import { useAppStatus } from '@/app/contexts/AppStatusContext';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
@@ -105,6 +106,9 @@ export default function Chat(props: {
     message: "",
   });
   const [selectedQuote, setSelectedQuote] = useState<string>("");
+  // Right-click context menu (Copy / Quote) shown over a selection in an assistant message.
+  // The native selection is left intact so text can still be copied normally (Cmd+C).
+  const [selectionMenu, setSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
@@ -293,36 +297,33 @@ export default function Chat(props: {
     });
   };
 
-  // Handle text selection from assistant messages
-  const handleTextSelection = () => {
+  // Explicitly quote the given text, wrapping the current selection in a persistent
+  // highlight span for visual feedback. Triggered by the context menu.
+  const quoteText = (text: string) => {
     const selection = window.getSelection();
-    if (selection && selection.toString().trim()) {
-      const selectedText = selection.toString().trim();
-      // Check if the selection is within an assistant message
-      const anchorNode = selection.anchorNode;
-      if (anchorNode) {
-        const chatContent = anchorNode.parentElement?.closest('.chat-content');
-        if (chatContent) {
-          // Clear previous highlights first
-          clearQuoteHighlight();
-
-          // Wrap selection in highlight span
-          try {
-            const range = selection.getRangeAt(0);
-            const highlightSpan = document.createElement('span');
-            highlightSpan.className = 'quote-highlight';
-            range.surroundContents(highlightSpan);
-          } catch (e) {
-            // surroundContents can fail if selection spans multiple elements
-            // In that case, just set the quote without visual highlight
-            console.log('Could not highlight selection spanning multiple elements');
-          }
-
-          setSelectedQuote(selectedText);
-          selection.removeAllRanges(); // Clear browser selection after highlighting
-        }
+    if (selection && selection.rangeCount > 0) {
+      clearQuoteHighlight();
+      try {
+        const range = selection.getRangeAt(0);
+        const highlightSpan = document.createElement('span');
+        highlightSpan.className = 'quote-highlight';
+        range.surroundContents(highlightSpan);
+      } catch (e) {
+        // surroundContents fails when the selection spans multiple elements;
+        // quote the text anyway, just without the visual highlight.
+        console.log('Could not highlight selection spanning multiple elements');
       }
+      selection.removeAllRanges();
     }
+    setSelectedQuote(text);
+    setSelectionMenu(null);
+  };
+
+  // Copy the given text to the clipboard via Electron's native clipboard.
+  const copyText = (text: string) => {
+    window.electronAPI?.writeClipboard(text);
+    window.getSelection()?.removeAllRanges();
+    setSelectionMenu(null);
   };
 
   // Clear highlight when quote is cleared
@@ -331,11 +332,34 @@ export default function Chat(props: {
     setSelectedQuote("");
   };
 
-  // Attach text selection listener
+  // Right-click over a selection inside an assistant message → Copy / Quote menu.
+  const handleContextMenu = (e: MouseEvent) => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    const target = e.target as HTMLElement | null;
+    if (!text || !target?.closest('.chat-content')) return;
+    e.preventDefault();
+    setSelectionMenu({ text, x: e.clientX, y: e.clientY });
+  };
+
+  // Attach selection listeners. Hide the context menu when a new interaction begins
+  // or the user presses Escape.
   useEffect(() => {
-    document.addEventListener('mouseup', handleTextSelection);
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.selection-context-menu')) return;
+      setSelectionMenu(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectionMenu(null);
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mouseup', handleTextSelection);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -1682,6 +1706,34 @@ export default function Chat(props: {
         </footer>
 
       </Box>
+
+      {selectionMenu && (
+        <div
+          className="selection-context-menu fixed z-50 flex flex-col min-w-[140px] py-1 rounded-md shadow-lg"
+          style={{
+            left: selectionMenu.x,
+            top: selectionMenu.y,
+            background: 'var(--sl-bg-surface-1)',
+            border: '1px solid var(--sl-border-default)',
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-sl-text-secondary hover:bg-sl-bg-surface-2 text-left"
+            onClick={() => copyText(selectionMenu.text)}
+          >
+            <ContentCopyIcon sx={{ fontSize: 14 }} />
+            Copy
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-sl-text-secondary hover:bg-sl-bg-surface-2 text-left"
+            onClick={() => quoteText(selectionMenu.text)}
+          >
+            <FormatQuoteIcon sx={{ fontSize: 14 }} />
+            Quote
+          </button>
+        </div>
+      )}
 
     </>
   )
