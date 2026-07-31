@@ -1,0 +1,8 @@
+# Nord — drop this onto the "+" tile in Settings → Theme
+name: Nord
+mode: dark
+description: Nord — cool arctic slate with a frost-blue accent
+colors:
+  bg: '#2e3440'      # polar night
+  brand: '#88c0d0'   # frost blue
+  text: '#eceff4'    # snow storm

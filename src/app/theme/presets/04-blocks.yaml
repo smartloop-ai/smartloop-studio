@@ -1,0 +1,11 @@
+id: minecraft
+name: Blocks
+description: Grassy blocky world, inspired by Minecraft
+mode: dark
+colors:
+  bg:     { base: '#101a0c', surface1: '#1b2a12', surface2: '#26381a', surface3: '#375226', input: '#1b2a12', elevated: '#131f0d' }
+  brand:  { primary: '#5db02c', hover: '#4e9625', active: '#3f7a1e', light: '#7bc94a' }
+  text:   { primary: '#eaf3df', secondary: '#cfe0bf', tertiary: '#adc196', muted: '#7f9668', disabled: '#5a6f47', faint: '#425234' }
+  status: { error: '#d64b3f', success: '#5db02c', online: '#5db02c', warning: '#f0b429', info: '#4fc3d6', purple: '#a06cd5' }
+  border: { subtle: '#1b2a12', default: '#2e4420', hover: '#375226', code: '#2e4420' }
+  table:  { head: '#1b2a12', hover: '#26381a', stripe: '#131f0d', inlineCode: '#1b2a12' }

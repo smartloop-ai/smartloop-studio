@@ -1,0 +1,8 @@
+# Gruvbox — drop this onto the "+" tile in Settings → Theme
+name: Gruvbox
+mode: dark
+description: Gruvbox — warm retro brown with a golden accent
+colors:
+  bg: '#282828'      # dark0
+  brand: '#fabd2f'   # bright yellow
+  text: '#ebdbb2'    # light1
