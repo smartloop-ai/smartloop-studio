@@ -1,0 +1,8 @@
+# Mario — drop this onto the "+" tile in Settings → Theme
+name: Mario
+mode: dark
+description: It's-a me! Red hat, coin gold and a night-castle sky
+colors:
+  bg: '#10193f'      # deep night-sky blue
+  brand: '#e52521'   # Mario red
+  text: '#ffe9a8'    # warm coin gold

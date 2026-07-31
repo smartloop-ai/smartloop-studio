@@ -1,0 +1,4 @@
+/* Row hover highlights the enable checkbox with the brand color. */
+.aux-panel .aux-row:hover .model-checkbox {
+    border-color: var(--sl-brand-primary) !important;
+}

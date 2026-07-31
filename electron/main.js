@@ -2153,10 +2153,23 @@ const splashThemes = {
 
 function applySplashTheme() {
   if (!splashWindow || splashWindow.isDestroyed()) return;
-  const savedTheme = store.get('app_theme', 'smartloop');
-  const themeId = savedTheme === 'rams' ? 'sepia' : savedTheme;
-  const vars = splashThemes[themeId] || splashThemes.smartloop;
-  const css = Object.entries(vars).map(([k, v]) => `document.documentElement.style.setProperty('${k}', '${v}');`).join('\n');
+  // Prefer the exact colors the renderer persisted for the active theme — this
+  // covers every built-in and any user-imported custom theme. Fall back to the
+  // built-in map (then smartloop) on a first-ever launch before any are saved.
+  let vars = null;
+  try {
+    const saved = store.get('app_theme_colors', null);
+    if (saved) vars = typeof saved === 'string' ? JSON.parse(saved) : saved;
+  } catch { /* ignore malformed */ }
+  if (!vars || typeof vars !== 'object') {
+    const savedTheme = store.get('app_theme', 'smartloop');
+    const themeId = (savedTheme === 'rams' || savedTheme === 'sepia') ? 'smartloop' : savedTheme;
+    vars = splashThemes[themeId] || splashThemes.smartloop;
+  }
+  const css = Object.entries(vars)
+    .filter(([, v]) => typeof v === 'string')
+    .map(([k, v]) => `document.documentElement.style.setProperty(${JSON.stringify(k)}, ${JSON.stringify(v)});`)
+    .join('\n');
   splashWindow.webContents.executeJavaScript(css).catch(() => {});
 }
 
