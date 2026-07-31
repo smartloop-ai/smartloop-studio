@@ -25,6 +25,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
+import AuxiliaryModelsMenu from './auxiliary-models-menu';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -157,7 +158,6 @@ export default function Chat(props: {
   const [formData, setFormData] = useState({
     message: "",
   });
-  const [selectedQuote, setSelectedQuote] = useState<string>("");
   // Right-click context menu (Copy / Quote) shown over a selection in an assistant message.
   // The native selection is left intact so text can still be copied normally (Cmd+C).
   const [selectionMenu, setSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -367,8 +367,19 @@ export default function Chat(props: {
       }
       selection.removeAllRanges();
     }
-    setSelectedQuote(text);
+    // Insert the quote as an editable markdown blockquote at the top of the composer
+    // so the user can trim or annotate it before sending.
+    const quoted = `> ${text.split('\n').join('\n> ')}\n\n`;
+    setFormData(prev => ({ message: quoted + prev.message }));
     setSelectionMenu(null);
+    // Focus the composer and drop the cursor just after the quote block.
+    requestAnimationFrame(() => {
+      const el = document.querySelector('textarea[name="message"]') as HTMLTextAreaElement | null;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(quoted.length, quoted.length);
+      }
+    });
   };
 
   // Copy the given text to the clipboard via Electron's native clipboard.
@@ -376,12 +387,6 @@ export default function Chat(props: {
     window.electronAPI?.writeClipboard(text);
     window.getSelection()?.removeAllRanges();
     setSelectionMenu(null);
-  };
-
-  // Clear highlight when quote is cleared
-  const handleQuoteClear = () => {
-    clearQuoteHighlight();
-    setSelectedQuote("");
   };
 
   // Right-click over a selection inside an assistant message → Copy / Quote menu.
@@ -437,19 +442,16 @@ export default function Chat(props: {
       return;
     }
 
-    let userMessage = messageOverride || formData.message.trim();
+    const userMessage = messageOverride || formData.message.trim();
 
     if (userMessage.length === 0) {
       console.log('Empty message, skipping');
       return;
     }
 
-    // Prepend selected quote if present
-    if (selectedQuote) {
-      userMessage = `> ${selectedQuote.split('\n').join('\n> ')}\n\n${userMessage}`;
-      clearQuoteHighlight(); // Clear the visual highlight
-      setSelectedQuote(""); // Clear the quote after using
-    }
+    // The quote (if any) is already part of the composer text; just clear the
+    // lingering highlight on the source message.
+    clearQuoteHighlight();
 
     // Mark as sending
     sendingMessageRef.current = true;
@@ -1037,7 +1039,6 @@ export default function Chat(props: {
   useEffect(() => {
     // Reset input box when switching to a different conversation
     setFormData({ message: "" });
-    setSelectedQuote("");
     clearQuoteHighlight();
     messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1);
@@ -1326,8 +1327,8 @@ export default function Chat(props: {
                 <div className="flex-1"></div>
                 <Box
                   sx={{
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                    border: '1px solid var(--sl-border-default)',
+                    bgcolor: 'transparent',
+                    border: '1px solid var(--sl-border-subtle)',
                     borderRadius: '16px',
                     padding: { xs: '20px', md: '32px' },
                     maxWidth: '700px',
@@ -1749,8 +1750,7 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
-            selectedQuote={selectedQuote}
-            onQuoteClear={handleQuoteClear}
+            leftSlot={model && <AuxiliaryModelsMenu model={model} />}
           />
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
@@ -1762,8 +1762,8 @@ export default function Chat(props: {
                   </span>
                 ) : (
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0" style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
-                    <span>ready</span>
+                    <span className={`inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`} style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
+                    <span>{isLoading ? 'thinking' : 'ready'}</span>
                   </span>
                 )}
                 {model && (
