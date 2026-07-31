@@ -1,0 +1,8 @@
+# Dracula — drop this onto the "+" tile in Settings → Theme
+name: Dracula
+mode: dark
+description: Classic Dracula — dark slate with a purple accent
+colors:
+  bg: '#282a36'      # background
+  brand: '#bd93f9'   # purple
+  text: '#f8f8f2'    # foreground

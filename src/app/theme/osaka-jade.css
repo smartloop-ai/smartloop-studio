@@ -1,0 +1,35 @@
+/*
+ * Osaka Jade theme — monospace console + CRT scanlines.
+ * Palette lives in themes.ts; these are the non-color cues, scoped behind the
+ * `theme-osaka-jade` root class toggled by ThemeContext.
+ */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* Monospace console typography. MUI icons are SVG and the custom [class*=_icon-]
+   font-icons set their own family, so neither is affected. */
+html.theme-osaka-jade,
+html.theme-osaka-jade body {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: 0.2px;
+}
+
+html.theme-osaka-jade h1,
+html.theme-osaka-jade h2,
+html.theme-osaka-jade h3,
+html.theme-osaka-jade h4 {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Faint CRT scanlines over the base background */
+html.theme-osaka-jade body {
+  background-color: var(--sl-bg-base);
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(85, 227, 163, 0.04) 0px,
+    rgba(85, 227, 163, 0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}

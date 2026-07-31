@@ -56,6 +56,9 @@ export default function Home() {
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
+  // Primary orchestrator model for the active project — passed to the sidebar's
+  // Models panel so it can filter itself out of the auxiliary list.
+  const [currentModel, setCurrentModel] = useState<string>('');
 
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
@@ -74,6 +77,7 @@ export default function Home() {
       } else {
         modelName = await storageService.getItem('selected_model') || '';
       }
+      setCurrentModel(modelName);
 
       // Call /v1/models/load to ensure the model is loaded for this project
       if (modelName && selectedProject?.id) {
@@ -1769,6 +1773,7 @@ export default function Home() {
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
                     user={user}
+                    model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}
                     onTabChange={handleOpenTab}
                     projectSkills={projectSkills}
