@@ -1,10 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
-import { Box, InputBase, InputAdornment } from '@mui/material';
+import { Box, InputBase, IconButton, Tooltip } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import CloseIcon from '@mui/icons-material/Close';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
 import FileAttacher from './file-attacher';
 
 interface MessageInputProps {
@@ -18,6 +16,7 @@ interface MessageInputProps {
   isLoading?: boolean;
   allowAttachments?: boolean;
   allowImages?: boolean;
+  allowVoice?: boolean;
   conversation?: any;
   onFileAttached?: (documentId: string, fileName: string) => void;
   onAttachmentClear?: () => void;
@@ -25,8 +24,7 @@ interface MessageInputProps {
   showDragDrop?: boolean;
   minRows?: number;
   maxRows?: number;
-  selectedQuote?: string;
-  onQuoteClear?: () => void;
+  leftSlot?: React.ReactNode;
 }
 
 export default function MessageInput({
@@ -40,6 +38,7 @@ export default function MessageInput({
   isLoading = false,
   allowAttachments = false,
   allowImages = false,
+  allowVoice = false,
   conversation = null,
   onFileAttached,
   onAttachmentClear,
@@ -47,8 +46,7 @@ export default function MessageInput({
   showDragDrop = false,
   minRows = 1,
   maxRows = 4,
-  selectedQuote = "",
-  onQuoteClear,
+  leftSlot,
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isAttaching, setIsAttaching] = useState(false);
@@ -139,7 +137,7 @@ export default function MessageInput({
       onDrop={handleDrop}
     >
       <Box
-        className="px-4 md:px-6 py-3 md:py-4 rounded-lg transition-all relative"
+        className="px-3 md:px-5 py-3 md:py-4 rounded-lg transition-all relative"
         sx={{
           bgcolor: 'var(--sl-white-alpha-5)',
           border: isDraggingOver
@@ -180,17 +178,6 @@ export default function MessageInput({
           disabled={disabled || isLoading}
           className="w-full text-inherit mb-3"
           onKeyDown={handleKeyDownInternal}
-          startAdornment={
-            isLoading ? (
-              <InputAdornment position="start">
-                {/* Claude-style thinking indicator while the model works (input disabled) */}
-                <AutoAwesomeIcon
-                  className="animate-pulse"
-                  sx={{ color: 'var(--sl-brand-primary)', fontSize: 16, mr: 0.5 }}
-                />
-              </InputAdornment>
-            ) : null
-          }
           sx={{
             border: 'none',
             height: '100%',
@@ -216,58 +203,55 @@ export default function MessageInput({
         />
 
         <Box className="flex items-center justify-between">
-          {/* Left side - File attachment and selected quote */}
+          {/* Left side - Model selector, file attachment and selected quote */}
           <Box className="flex items-center gap-2 flex-1 overflow-hidden">
+            {leftSlot}
             {allowAttachments && (
-              <FileAttacher
-                conversation={conversation}
-                onSuccess={(documentId, fileName) => {
-                  if (onFileAttached) {
-                    onFileAttached(documentId, fileName);
-                  }
-                }}
-                onClear={() => {
-                  if (onAttachmentClear) {
-                    onAttachmentClear();
-                  }
-                }}
-                onError={(error) => {
-                  console.error('File attach error:', error);
-                }}
-                onUploadingChange={setIsAttaching}
-                disabled={disabled || isLoading}
-                size="small"
-                allowImages={allowImages}
-                showDragDrop={showDragDrop}
-                clearTrigger={clearAttachmentTrigger}
-                externalDrop={droppedFile}
-              />
-            )}
-            {/* Selected quote indicator */}
-            {selectedQuote && (
-              <Box
-                className="flex items-center gap-1.5 px-2 py-1 text-xs text-sl-text-tertiary border border-sl-border-subtle max-w-[200px] md:max-w-[300px]"
-                style={{ backgroundColor: 'var(--sl-white-alpha-7)' }}
-                sx={{ flexShrink: 0 }}
-              >
-                <FormatQuoteIcon sx={{ fontSize: 14, color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
-                <span className="truncate" title={selectedQuote}>
-                  {selectedQuote.length > 40 ? selectedQuote.substring(0, 40) + '...' : selectedQuote}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (onQuoteClear) {
-                      onQuoteClear();
+              <>
+                {/* Single Attach action — documents plus images when a vision model is available */}
+                <FileAttacher
+                  conversation={conversation}
+                  onSuccess={(documentId, fileName) => {
+                    if (onFileAttached) {
+                      onFileAttached(documentId, fileName);
                     }
                   }}
-                  className="p-0.5 hover:bg-sl-bg-surface-3 rounded transition-colors flex-shrink-0"
-                  title="Remove quote"
-                >
-                  <CloseIcon sx={{ fontSize: 12, color: 'var(--sl-text-muted)' }} />
-                </button>
-              </Box>
+                  onClear={() => {
+                    if (onAttachmentClear) {
+                      onAttachmentClear();
+                    }
+                  }}
+                  onError={(error) => {
+                    console.error('File attach error:', error);
+                  }}
+                  onUploadingChange={setIsAttaching}
+                  disabled={disabled || isLoading}
+                  size="small"
+                  allowImages={allowImages}
+                  showDragDrop={showDragDrop}
+                  clearTrigger={clearAttachmentTrigger}
+                  externalDrop={droppedFile}
+                />
+
+                {/* Voice input — disabled until speech-to-text is available */}
+                <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
+                  <span>
+                    <IconButton
+                      disabled={!allowVoice || disabled || isLoading}
+                      size="small"
+                      sx={{
+                        color: 'var(--sl-text-muted)',
+                        borderRadius: '8px',
+                        padding: '5px',
+                        '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
+                        '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
+                      }}
+                    >
+                      <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
             )}
           </Box>
 

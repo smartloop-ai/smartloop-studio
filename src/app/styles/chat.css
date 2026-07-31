@@ -13,7 +13,8 @@
 /* ── Paper container for assistant messages ─────────────────────────────── */
 .chat-paper {
   background-color: var(--sl-bg-surface-1);
-  border: 1px solid var(--sl-border-subtle);
+  border: 1px solid var(--sl-border-default);
+  border-radius: 8px;
 }
 
 /* ── Streamdown theme mapping ───────────────────────────────────────────────
@@ -98,15 +99,39 @@
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .chat-content [data-streamdown="table-wrapper"] {
-  overflow: hidden;
+  overflow-x: auto;
+  max-width: 100%;
   margin: 1em 0;
 }
 
+/* Render streamdown tables as a single fixed-layout table so header and body
+   columns stay aligned and the table fits the message width (wrapping cell text
+   rather than overflowing). Overrides the generic block-scroll .chat-content
+   table rules below, which otherwise force display:block and misalign columns. */
 .chat-content [data-streamdown="table"] {
+  display: table;
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
+  border-spacing: 0;
+  margin: 1em 0;
   background-color: var(--sl-bg-surface-1);
+}
+
+.chat-content [data-streamdown="table"] thead {
+  display: table-header-group;
+  width: auto;
+  table-layout: auto;
+}
+
+.chat-content [data-streamdown="table"] tbody {
+  display: table-row-group;
+  width: auto;
+  table-layout: auto;
+}
+
+.chat-content [data-streamdown="table"] tr {
+  display: table-row;
 }
 
 .chat-content [data-streamdown="table-header"] {
@@ -188,6 +213,34 @@
 
 .user-message-content p:last-child {
   margin-bottom: 0;
+}
+
+/* Bare URLs in user messages — themed, clickable link chips */
+.user-message-content a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sl-brand-primary);
+  text-decoration: none;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background-color: var(--sl-brand-alpha-10);
+  border: 1px solid var(--sl-brand-alpha-20);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.user-message-content a .user-message-link-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.user-message-content a:hover {
+  color: var(--sl-brand-light);
+  background-color: var(--sl-brand-alpha-15);
+  border-color: var(--sl-brand-alpha-30);
 }
 
 .user-message-content a,

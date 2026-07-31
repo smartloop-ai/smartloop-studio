@@ -117,6 +117,7 @@ export interface ElectronAPI {
   openInFinder: (filePath: string) => void;
   showItemInFolder: (filePath: string) => Promise<boolean>;
   openDocumentReference: (filePath: string, documentId?: string, projectId?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  downloadDocument: (filePath: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   platform: string;
   versions: {
     node: string;

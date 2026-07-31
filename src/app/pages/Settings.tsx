@@ -336,10 +336,13 @@ export default function SettingsPage() {
 
                     {/* 1. Theme */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                        <Box className="flex items-center gap-2 mb-4">
+                        <Box className="flex items-center gap-2 mb-1">
                             <PaletteIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                             <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Theme</h2>
                         </Box>
+                        <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                            Choose how Smartloop looks — switch between light and dark appearances to match your environment.
+                        </p>
                         <div className="flex gap-4">
                             {themeList.map((t) => {
                                 const isActive = themeId === t.id;
@@ -357,6 +360,16 @@ export default function SettingsPage() {
                                             width: 200,
                                             borderColor: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
                                             boxShadow: isActive ? '0 0 0 3px var(--sl-brand-alpha-20)' : 'none',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (isActive) return;
+                                            e.currentTarget.style.borderColor = 'var(--sl-brand-alpha-30)';
+                                            e.currentTarget.style.boxShadow = '0 0 0 3px var(--sl-brand-alpha-10)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (isActive) return;
+                                            e.currentTarget.style.borderColor = 'var(--sl-border-default)';
+                                            e.currentTarget.style.boxShadow = 'none';
                                         }}
                                     >
                                         {/* Mini UI preview */}
@@ -406,10 +419,13 @@ export default function SettingsPage() {
 
                     {/* 2. Agent */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                            <Box className="flex items-center gap-2 mb-4">
+                            <Box className="flex items-center gap-2 mb-1">
                                 <DnsIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
                                 <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Agent</h2>
                             </Box>
+                            <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                                The local agent service that runs your models and handles inference, document indexing, and retrieval on your machine.
+                            </p>
 
                             {/* Table */}
                             <Box
