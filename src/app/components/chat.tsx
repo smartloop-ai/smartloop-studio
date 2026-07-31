@@ -25,12 +25,16 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
+import AuxiliaryModelsMenu from './auxiliary-models-menu';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import LinkIcon from '@mui/icons-material/Link';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
@@ -43,6 +47,56 @@ interface Attachment {
   name?: string;
   size?: number;
   type?: string;
+}
+
+// Human-readable document type for a reference filename, derived from its extension.
+const DOC_TYPE_LABELS: Record<string, string> = {
+  pdf: 'PDF Document',
+  md: 'Markdown Report',
+  markdown: 'Markdown Report',
+  txt: 'Text File',
+  doc: 'Word Document',
+  docx: 'Word Document',
+  csv: 'CSV Spreadsheet',
+  xls: 'Excel Spreadsheet',
+  xlsx: 'Excel Spreadsheet',
+  ppt: 'PowerPoint',
+  pptx: 'PowerPoint',
+  json: 'JSON File',
+  html: 'HTML Document',
+};
+function docTypeLabel(name: string): string {
+  const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
+  return DOC_TYPE_LABELS[ext] || (ext ? `${ext.toUpperCase()} File` : 'Document');
+}
+
+// Format a byte count as a compact, human-readable size (e.g. "1.2 MB").
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+// Turn bare URLs in plain user-message text into clickable, themed links.
+// Clicks are picked up by the document-level handler that opens web links externally.
+const USER_URL_REGEX = /(https?:\/\/[^\s<>()]+)/g;
+function renderUserMessageContent(text: string): React.ReactNode[] {
+  return text.split(USER_URL_REGEX).map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a key={i} href={part} rel="noopener noreferrer">
+        <LinkIcon className="user-message-link-icon" sx={{ fontSize: 14 }} />
+        {part.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+      </a>
+    ) : (
+      <React.Fragment key={i}>{part}</React.Fragment>
+    )
+  );
 }
 
 interface OpenTabRequest {
@@ -104,7 +158,9 @@ export default function Chat(props: {
   const [formData, setFormData] = useState({
     message: "",
   });
-  const [selectedQuote, setSelectedQuote] = useState<string>("");
+  // Right-click context menu (Copy / Quote) shown over a selection in an assistant message.
+  // The native selection is left intact so text can still be copied normally (Cmd+C).
+  const [selectionMenu, setSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
 
@@ -293,49 +349,74 @@ export default function Chat(props: {
     });
   };
 
-  // Handle text selection from assistant messages
-  const handleTextSelection = () => {
+  // Explicitly quote the given text, wrapping the current selection in a persistent
+  // highlight span for visual feedback. Triggered by the context menu.
+  const quoteText = (text: string) => {
     const selection = window.getSelection();
-    if (selection && selection.toString().trim()) {
-      const selectedText = selection.toString().trim();
-      // Check if the selection is within an assistant message
-      const anchorNode = selection.anchorNode;
-      if (anchorNode) {
-        const chatContent = anchorNode.parentElement?.closest('.chat-content');
-        if (chatContent) {
-          // Clear previous highlights first
-          clearQuoteHighlight();
-
-          // Wrap selection in highlight span
-          try {
-            const range = selection.getRangeAt(0);
-            const highlightSpan = document.createElement('span');
-            highlightSpan.className = 'quote-highlight';
-            range.surroundContents(highlightSpan);
-          } catch (e) {
-            // surroundContents can fail if selection spans multiple elements
-            // In that case, just set the quote without visual highlight
-            console.log('Could not highlight selection spanning multiple elements');
-          }
-
-          setSelectedQuote(selectedText);
-          selection.removeAllRanges(); // Clear browser selection after highlighting
-        }
+    if (selection && selection.rangeCount > 0) {
+      clearQuoteHighlight();
+      try {
+        const range = selection.getRangeAt(0);
+        const highlightSpan = document.createElement('span');
+        highlightSpan.className = 'quote-highlight';
+        range.surroundContents(highlightSpan);
+      } catch (e) {
+        // surroundContents fails when the selection spans multiple elements;
+        // quote the text anyway, just without the visual highlight.
+        console.log('Could not highlight selection spanning multiple elements');
       }
+      selection.removeAllRanges();
     }
+    // Insert the quote as an editable markdown blockquote at the top of the composer
+    // so the user can trim or annotate it before sending.
+    const quoted = `> ${text.split('\n').join('\n> ')}\n\n`;
+    setFormData(prev => ({ message: quoted + prev.message }));
+    setSelectionMenu(null);
+    // Focus the composer and drop the cursor just after the quote block.
+    requestAnimationFrame(() => {
+      const el = document.querySelector('textarea[name="message"]') as HTMLTextAreaElement | null;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(quoted.length, quoted.length);
+      }
+    });
   };
 
-  // Clear highlight when quote is cleared
-  const handleQuoteClear = () => {
-    clearQuoteHighlight();
-    setSelectedQuote("");
+  // Copy the given text to the clipboard via Electron's native clipboard.
+  const copyText = (text: string) => {
+    window.electronAPI?.writeClipboard(text);
+    window.getSelection()?.removeAllRanges();
+    setSelectionMenu(null);
   };
 
-  // Attach text selection listener
+  // Right-click over a selection inside an assistant message → Copy / Quote menu.
+  const handleContextMenu = (e: MouseEvent) => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    const target = e.target as HTMLElement | null;
+    if (!text || !target?.closest('.chat-content')) return;
+    e.preventDefault();
+    setSelectionMenu({ text, x: e.clientX, y: e.clientY });
+  };
+
+  // Attach selection listeners. Hide the context menu when a new interaction begins
+  // or the user presses Escape.
   useEffect(() => {
-    document.addEventListener('mouseup', handleTextSelection);
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.selection-context-menu')) return;
+      setSelectionMenu(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectionMenu(null);
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mouseup', handleTextSelection);
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -361,19 +442,16 @@ export default function Chat(props: {
       return;
     }
 
-    let userMessage = messageOverride || formData.message.trim();
+    const userMessage = messageOverride || formData.message.trim();
 
     if (userMessage.length === 0) {
       console.log('Empty message, skipping');
       return;
     }
 
-    // Prepend selected quote if present
-    if (selectedQuote) {
-      userMessage = `> ${selectedQuote.split('\n').join('\n> ')}\n\n${userMessage}`;
-      clearQuoteHighlight(); // Clear the visual highlight
-      setSelectedQuote(""); // Clear the quote after using
-    }
+    // The quote (if any) is already part of the composer text; just clear the
+    // lingering highlight on the source message.
+    clearQuoteHighlight();
 
     // Mark as sending
     sendingMessageRef.current = true;
@@ -961,7 +1039,6 @@ export default function Chat(props: {
   useEffect(() => {
     // Reset input box when switching to a different conversation
     setFormData({ message: "" });
-    setSelectedQuote("");
     clearQuoteHighlight();
     messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1);
@@ -1250,8 +1327,8 @@ export default function Chat(props: {
                 <div className="flex-1"></div>
                 <Box
                   sx={{
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                    border: '1px solid var(--sl-border-default)',
+                    bgcolor: 'transparent',
+                    border: '1px solid var(--sl-border-subtle)',
                     borderRadius: '16px',
                     padding: { xs: '20px', md: '32px' },
                     maxWidth: '700px',
@@ -1319,7 +1396,7 @@ export default function Chat(props: {
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
                         <Box className="flex-1">
-                          <div className="chat-paper rounded-sm p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                          <div className="chat-paper p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
                             <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
                                 <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--sl-text-primary)' }} />
@@ -1338,26 +1415,63 @@ export default function Chat(props: {
                             </div>
                             {msg.citations && msg.citations.length > 0 && !msg.is_new && (
                               <div className="mt-3 pt-3 border-t border-sl-border-subtle">
-                                <p className="text-[10px] text-sl-text-disabled uppercase tracking-wider mb-1.5">References</p>
-                                <div className="flex flex-wrap gap-1.5">
+                                <p className="flex items-center gap-1.5 text-[10px] text-sl-text-disabled uppercase tracking-wider mb-2">
+                                  <LinkIcon sx={{ fontSize: 12 }} />
+                                  References
+                                </p>
+                                <div className="flex flex-wrap gap-2">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
                                     const folderPath = props.project?.folder_path;
                                     const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
+                                    const size = citation.file_size || citation.size;
+                                    const meta = [size ? formatBytes(size) : '', docTypeLabel(label)]
+                                      .filter(Boolean)
+                                      .join(' · ');
+                                    const openDoc = () => {
+                                      if (resolvedPath) {
+                                        window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
+                                      }
+                                    };
                                     return (
-                                      <span
+                                      <div
                                         key={idx}
-                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-sl-bg-surface-2 border border-sl-border-default text-sl-text-muted cursor-pointer hover:text-sl-text-secondary hover:border-sl-border-hover transition-colors"
+                                        className="group inline-flex items-center gap-2 px-2 py-1 rounded-md border border-sl-border-hover hover:border-sl-brand-primary hover:bg-sl-bg-surface-2 transition-colors cursor-pointer"
                                         title={resolvedPath || citation.document_id}
-                                        onClick={() => {
-                                          if (resolvedPath) {
-                                            window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
-                                          }
-                                        }}
+                                        onClick={openDoc}
                                       >
-                                        <InsertDriveFileIcon sx={{ fontSize: 10, color: 'var(--sl-brand-primary)', opacity: 0.7 }} />
-                                        {label}
-                                      </span>
+                                        <div
+                                          className="flex items-center justify-center w-6 h-6 rounded flex-shrink-0"
+                                          style={{ background: 'var(--sl-brand-alpha-15)' }}
+                                        >
+                                          <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                        </div>
+                                        <div className="whitespace-nowrap leading-tight">
+                                          <div className="text-[11px] font-semibold text-sl-text-secondary">{label}</div>
+                                          <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide">{meta}</div>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 flex-shrink-0 ml-0.5">
+                                          <Tooltip title="Preview" arrow placement="top">
+                                            <button
+                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                              onClick={(e) => { e.stopPropagation(); openDoc(); }}
+                                            >
+                                              <VisibilityOutlinedIcon sx={{ fontSize: 13 }} />
+                                            </button>
+                                          </Tooltip>
+                                          <Tooltip title="Download" arrow placement="top">
+                                            <button
+                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (resolvedPath) window.electronAPI?.downloadDocument?.(resolvedPath);
+                                              }}
+                                            >
+                                              <SaveAltIcon sx={{ fontSize: 13 }} />
+                                            </button>
+                                          </Tooltip>
+                                        </div>
+                                      </div>
                                     );
                                   })}
                                 </div>
@@ -1572,15 +1686,11 @@ export default function Chat(props: {
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '3px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-subtle rounded-sm px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
-                              <pre className="user-message-content text-wrap break-words py-3 whitespace-pre-wrap font-[inherit]">
-                                {msg.content}
+                            <div style={{ borderRight: '2px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                              <pre className="user-message-content text-wrap break-words whitespace-pre-wrap font-[inherit]">
+                                {renderUserMessageContent(msg.content)}
                               </pre>
                             </div>
-                          </Box>
-
-                          <Box className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Box className="w-3 h-3 rounded-full" sx={{ bgcolor: 'var(--sl-brand-primary)' }}></Box>
                           </Box>
                         </Box>
                       </Box>
@@ -1640,8 +1750,7 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
-            selectedQuote={selectedQuote}
-            onQuoteClear={handleQuoteClear}
+            leftSlot={model && <AuxiliaryModelsMenu model={model} />}
           />
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
@@ -1653,8 +1762,8 @@ export default function Chat(props: {
                   </span>
                 ) : (
                   <span className="flex items-center gap-1">
-                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0" style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
-                    <span>ready</span>
+                    <span className={`inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`} style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
+                    <span>{isLoading ? 'thinking' : 'ready'}</span>
                   </span>
                 )}
                 {model && (
@@ -1682,6 +1791,34 @@ export default function Chat(props: {
         </footer>
 
       </Box>
+
+      {selectionMenu && (
+        <div
+          className="selection-context-menu fixed z-50 flex flex-col min-w-[140px] py-1 rounded-md shadow-lg"
+          style={{
+            left: selectionMenu.x,
+            top: selectionMenu.y,
+            background: 'var(--sl-bg-surface-1)',
+            border: '1px solid var(--sl-border-default)',
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-sl-text-secondary hover:bg-sl-bg-surface-2 text-left"
+            onClick={() => copyText(selectionMenu.text)}
+          >
+            <ContentCopyIcon sx={{ fontSize: 14 }} />
+            Copy
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-sl-text-secondary hover:bg-sl-bg-surface-2 text-left"
+            onClick={() => quoteText(selectionMenu.text)}
+          >
+            <FormatQuoteIcon sx={{ fontSize: 14 }} />
+            Quote
+          </button>
+        </div>
+      )}
 
     </>
   )

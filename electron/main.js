@@ -92,6 +92,34 @@ ipcMain.handle('show-item-in-folder', async (event, filePath) => {
   return false;
 });
 
+// IPC: download (save a copy of) an existing local file to a user-chosen location
+ipcMain.handle('download-document', async (event, filePath) => {
+  try {
+    if (!filePath) return { success: false, error: 'No file path' };
+    const { app, dialog } = require('electron');
+    const resolved = filePath.startsWith('~')
+      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      : filePath;
+    if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
+
+    const fileName = path.basename(resolved);
+    const ext = path.extname(fileName).replace('.', '');
+    const result = await dialog.showSaveDialog({
+      defaultPath: path.join(app.getPath('downloads'), fileName),
+      filters: [
+        ...(ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : []),
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePath) return { success: false, error: 'Cancelled' };
+
+    fs.copyFileSync(resolved, result.filePath);
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
@@ -843,15 +871,20 @@ function enrichProjects(apiProjects) {
   const enriched = apiProjects.map((p) => {
     const meta = metaMap.get(p.id);
     const folderPath = p.cwd || meta?.folder_path || null;
+
+    // Ensure every project has a local metadata row so UI-only fields (color,
+    // folder_path) can be persisted. The system "general_chat" project is created
+    // by the SLP backend without a local row, so without this its color/label edits
+    // would silently no-op (UPDATE ... WHERE id matches nothing).
+    if (!meta) {
+      database.upsertProject({ id: p.id, name: p.name, color: null, system: p.system, folder_path: folderPath });
+    } else if (folderPath && !meta.folder_path) {
+      // Backfill folder_path from the API response when SQLite lacks it.
+      database.updateProject(p.id, { folder_path: folderPath });
+    }
+
     return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
   });
-
-  // Persist folder_path from the API response when SQLite lacks it.
-  for (const p of enriched) {
-    if (p.folder_path && !metaMap.get(p.id)?.folder_path) {
-      database.updateProject(p.id, { folder_path: p.folder_path });
-    }
-  }
 
   return enriched;
 }

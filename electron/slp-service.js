@@ -136,12 +136,15 @@ async function startService() {
     windowsHide: true,
   });
 
-  proc.stdout.on('data', (data) => {
-    logStream.write(data);
-  });
-  proc.stderr.on('data', (data) => {
-    logStream.write(data);
-  });
+  // Capture this process's stream so late stdout/stderr chunks (which can arrive
+  // after the exit handler has ended/nulled the module-level `logStream`) write to
+  // the right stream, and skip the write once it's no longer writable.
+  const procLogStream = logStream;
+  const writeLog = (data) => {
+    if (procLogStream && procLogStream.writable) procLogStream.write(data);
+  };
+  proc.stdout.on('data', writeLog);
+  proc.stderr.on('data', writeLog);
 
   serviceProcess = proc;
   let procExited = false;

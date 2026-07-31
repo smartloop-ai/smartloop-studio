@@ -1,105 +1,29 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
 import { Box } from '@mui/material';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
+import { useLocalModels } from '../hooks/useLocalModels';
 
 export default function AvailableModels() {
-    const [localModels, setLocalModels] = useState<any[]>([]);
-    const [localModelsLoading, setLocalModelsLoading] = useState(false);
-    const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
-    const [toggling, setToggling] = useState<string | null>(null);
-    const [downloadProgress, setDownloadProgress] = useState<{ percent: number; status: string } | null>(null);
-    const togglingRef = useRef<string | null>(null);
-
-    const enabledModels = new Set(localModels.filter((m: any) => {
-        const name = m.name || m.id || m.model;
-        return enabledOverrides.has(name) ? enabledOverrides.get(name) : m.enabled;
-    }).map((m: any) => m.name || m.id || m.model));
-
-    const fetchLocalModels = useCallback(async () => {
-        setLocalModelsLoading(true);
-        try {
-            const api = window.electronAPI;
-            if (api?.slpListModels) {
-                const result = await api.slpListModels();
-                if (result?.success && result.models) {
-                    setLocalModels(result.models);
-                }
-            }
-        } catch (err) {
-            console.warn('Failed to fetch local models:', err);
-        } finally {
-            setLocalModelsLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        const api = window.electronAPI;
-        const handleProgress = (data: any) => {
-            if (togglingRef.current && data.model === togglingRef.current) {
-                setDownloadProgress({ percent: data.percent, status: data.status });
-            }
-        };
-        api?.onModelDownloadProgress?.(handleProgress);
-        return () => { api?.removeModelDownloadProgressListener?.(); };
-    }, []);
-
-    const handleCancelDownload = useCallback(async () => {
-        const api = window.electronAPI;
-        const modelName = togglingRef.current;
-        if (!modelName || !api?.slpCancelModelDownload) return;
-        await api.slpCancelModelDownload(modelName);
-        togglingRef.current = null;
-        setToggling(null);
-        setDownloadProgress(null);
-        setEnabledOverrides(prev => { const next = new Map(prev); next.delete(modelName); return next; });
-        await fetchLocalModels();
-    }, [fetchLocalModels]);
-
-    const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
-        const api = window.electronAPI;
-        if (!api?.slpSetModelEnabled || togglingRef.current) return;
-
-        togglingRef.current = name;
-        setToggling(name);
-        setDownloadProgress(null);
-        setEnabledOverrides(prev => new Map(prev).set(name, enabled));
-
-        try {
-            await api.slpSetModelEnabled(workspaceName, enabled);
-            await fetchLocalModels();
-        } finally {
-            togglingRef.current = null;
-            setToggling(null);
-            setDownloadProgress(null);
-            setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
-        }
-    }, [fetchLocalModels]);
-
-    useEffect(() => {
-        fetchLocalModels();
-
-        const handleAuthChange = () => fetchLocalModels();
-        window.addEventListener('authStateChanged', handleAuthChange);
-
-        const api = window.electronAPI;
-        api?.onModelsUpdated?.(({ models }) => {
-            if (Array.isArray(models)) setLocalModels(models);
-        });
-
-        return () => {
-            window.removeEventListener('authStateChanged', handleAuthChange);
-            api?.removeModelsUpdatedListener?.();
-        };
-    }, [fetchLocalModels]);
+    const {
+        localModels,
+        localModelsLoading,
+        toggling,
+        downloadProgress,
+        enabledModels,
+        handleToggleModel,
+        handleCancelDownload,
+    } = useLocalModels();
 
     return (
         <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-            <Box className="flex items-center gap-2 mb-4">
+            <Box className="flex items-center gap-2 mb-1">
                 <ViewListIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Available Models</h2>
+                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Auxiliary Models</h2>
             </Box>
+            <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                Auxiliary models are used to enrich your prompt requests — they work together to produce results comparable to a frontier model.
+            </p>
 
             {localModels.length > 0 && (
                 <Box
