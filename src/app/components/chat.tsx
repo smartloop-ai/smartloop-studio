@@ -25,7 +25,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
-import AuxiliaryModelsMenu from './auxiliary-models-menu';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -1750,7 +1749,6 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
-            leftSlot={model && <AuxiliaryModelsMenu model={model} />}
           />
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (

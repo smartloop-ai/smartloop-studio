@@ -1,8 +1,6 @@
 import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import ConstructionIcon from '@mui/icons-material/Construction';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
@@ -12,8 +10,12 @@ import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
+import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
+import { useThemeContext } from '@/app/contexts/ThemeContext';
+import PixelRailIcon from './pixel-rail-icons';
+import OsakaRailIcon from './osaka-rail-icons';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -36,6 +38,7 @@ interface RightSidebarProps {
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
   user: any;
+  model?: string;
   activeTab: string;
   onTabChange?: (tab: OpenTab) => void;
   projectSkills?: Array<{ id?: string; name: string; content: string; description?: string }>;
@@ -64,6 +67,7 @@ export default function RightSidebar({
   onDeleteDocument,
   onColorChange,
   onRenameProject,
+  model,
   activeTab,
   onTabChange,
   projectSkills: _projectSkills = [],
@@ -71,7 +75,13 @@ export default function RightSidebar({
   onRefreshSkills,
 }: RightSidebarProps) {
   const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
-  const [activeSection, setActiveSection] = useState<'documents' | 'mcp' | 'skills' | 'settings' | null>('documents');
+  const { themeId } = useThemeContext();
+  const isMc = themeId === 'minecraft';
+  const isOsaka = themeId === 'osaka-jade';
+  // Themed rail icon for the active named theme, or null to use the default.
+  const railIcon = (name: 'models' | 'documents' | 'mcp' | 'skills' | 'settings') =>
+    isMc ? <PixelRailIcon name={name} /> : isOsaka ? <OsakaRailIcon name={name} /> : null;
+  const [activeSection, setActiveSection] = useState<'models' | 'documents' | 'mcp' | 'skills' | 'settings' | null>('models');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
@@ -1044,10 +1054,15 @@ export default function RightSidebar({
           {/* Section Title */}
           <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
             <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
-              {activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'MCP Servers' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'models' ? 'Auxiliary Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
 
+
+          {/* Models Section */}
+          {activeSection === 'models' && (
+            <AuxiliaryModelsPanel model={model || ''} />
+          )}
 
           {/* Documents Section */}
           {activeSection === 'documents' && (
@@ -1537,7 +1552,10 @@ export default function RightSidebar({
                               },
                             }}
                           >
-                            <ConstructionIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="flex-shrink-0" style={{ marginTop: '2px', color: 'var(--sl-text-faint)' }}>
+                              <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+                              <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+                            </svg>
                             <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
                               <span className="text-[11px] text-sl-text-tertiary truncate">
                                 {skill.name || 'Untitled'}
@@ -1786,6 +1804,31 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
+        <Tooltip title="Models" placement="left">
+          <span className={'cursor-default'}>
+            <IconButton
+              onClick={() => setActiveSection(activeSection === 'models' ? null : 'models')}
+              sx={{
+                color: activeSection === 'models' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                padding: '10px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': {
+                  color: 'var(--sl-brand-primary)',
+                },
+              }}
+              size="small"
+            >
+              {railIcon('models') ?? (
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
+                <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
+              </svg>
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Documents" placement="left">
           <span className={'cursor-default'}>
             <IconButton
@@ -1811,11 +1854,17 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <DescriptionOutlinedIcon fontSize="small" />
+              {railIcon('documents') ?? (
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                <path d="M4 1.5h5L12.5 5v9.5H4V1.5z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                <path d="M9 1.5V5h3.5" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                <path d="M6 8h4.5M6 10.5h4.5M6 5.5h2" stroke="currentColor" strokeWidth="0.5" strokeLinecap="round" />
+              </svg>
+              )}
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="MCP Servers" placement="left">
+        <Tooltip title="Connections" placement="left">
           <span>
             <IconButton
               onClick={() => {
@@ -1841,7 +1890,7 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <PowerOutlinedIcon fontSize="small" />
+              {railIcon('mcp') ?? <PowerOutlinedIcon fontSize="small" />}
             </IconButton>
           </span>
         </Tooltip>
@@ -1870,7 +1919,12 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <ConstructionIcon fontSize="small" />
+              {railIcon('skills') ?? (
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+                <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+              </svg>
+              )}
             </IconButton>
           </span>
         </Tooltip>
@@ -1894,7 +1948,7 @@ export default function RightSidebar({
               }}
               size="small"
             >
-              <SettingsIcon fontSize="small" />
+              {railIcon('settings') ?? <SettingsIcon fontSize="small" />}
             </IconButton>
           </span>
         </Tooltip>

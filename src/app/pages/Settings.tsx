@@ -11,7 +11,9 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
 
 import PaletteIcon from '@mui/icons-material/Palette';
-import { themes, themeList, type ThemeId } from '@/app/theme/themes';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
+import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import AvailableModels from '@/app/components/available-models';
 
 
@@ -184,7 +186,26 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
 export default function SettingsPage() {
     const [user, setUser] = useAuthContext();
-    const { themeId, setThemeId } = useThemeContext();
+    const { themeId, setThemeId, allThemes, addCustomTheme, removeCustomTheme } = useThemeContext();
+    const [themeDragOver, setThemeDragOver] = useState(false);
+    const [themeImportError, setThemeImportError] = useState('');
+
+    // Import a dropped YAML theme file — parse, derive the full palette, save.
+    const handleThemeFileDrop = (file: File) => {
+        setThemeImportError('');
+        if (!/\.(ya?ml)$/i.test(file.name)) {
+            setThemeImportError('Drop a .yaml or .yml file.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const { theme, error } = parseThemeYaml(String(reader.result || ''));
+            if (error || !theme) { setThemeImportError(error || 'Could not read theme.'); return; }
+            addCustomTheme(theme);
+        };
+        reader.onerror = () => setThemeImportError('Could not read the file.');
+        reader.readAsText(file);
+    };
     // Local SLP health comes from the central health-monitor via AppStatusContext —
     // the page never fetches /health itself.
     const { serverHealth } = useAppStatus();
@@ -343,21 +364,22 @@ export default function SettingsPage() {
                         <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
                             Choose how Smartloop looks — switch between light and dark appearances to match your environment.
                         </p>
-                        <div className="flex gap-4">
-                            {themeList.map((t) => {
+                        <div className="flex flex-wrap gap-3">
+                            {allThemes.map((t) => {
                                 const isActive = themeId === t.id;
-                                const activeMode = themes[themeId]?.mode ?? 'dark';
+                                const activeMode = allThemes.find((x) => x.id === themeId)?.mode ?? 'dark';
                                 const mismatch = t.mode !== activeMode;
+                                const isCustom = isCustomThemeId(t.id);
                                 const overlay = mismatch
                                     ? activeMode === 'dark' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)'
                                     : undefined;
                                 return (
                                     <div
                                         key={t.id}
-                                        onClick={() => setThemeId(t.id as ThemeId)}
-                                        className="rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden"
+                                        onClick={() => setThemeId(t.id)}
+                                        className="rounded-xl border-2 cursor-pointer transition-all duration-200 overflow-hidden aspect-square flex flex-col"
                                         style={{
-                                            width: 200,
+                                            width: 172,
                                             borderColor: isActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
                                             boxShadow: isActive ? '0 0 0 3px var(--sl-brand-alpha-20)' : 'none',
                                         }}
@@ -373,7 +395,7 @@ export default function SettingsPage() {
                                         }}
                                     >
                                         {/* Mini UI preview */}
-                                        <div className="relative flex rounded-lg overflow-hidden m-2" style={{ height: 100, backgroundColor: t.colors.bg.base, border: `1px solid ${t.colors.border.default}` }}>
+                                        <div className="relative flex flex-1 min-h-0 rounded-lg overflow-hidden m-2" style={{ backgroundColor: t.colors.bg.base, border: `1px solid ${t.colors.border.default}` }}>
                                             {overlay && (
                                                 <div className="absolute inset-0 rounded-lg pointer-events-none" style={{ backgroundColor: overlay }} />
                                             )}
@@ -407,6 +429,18 @@ export default function SettingsPage() {
                                                     {isActive && (
                                                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--sl-brand-primary)' }} />
                                                     )}
+                                                    {isCustom && (
+                                                        <button
+                                                            title="Remove theme"
+                                                            onClick={(e) => { e.stopPropagation(); removeCustomTheme(t.id); }}
+                                                            className="flex items-center justify-center rounded transition-colors"
+                                                            style={{ width: 16, height: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sl-text-muted)' }}
+                                                            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sl-status-error)'; }}
+                                                            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sl-text-muted)'; }}
+                                                        >
+                                                            <CloseIcon sx={{ fontSize: 13 }} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                             <p className="text-[10px] mt-0.5 leading-snug" style={{ color: mismatch ? 'var(--sl-text-muted)' : t.colors.text.muted }}>{t.description}</p>
@@ -414,7 +448,36 @@ export default function SettingsPage() {
                                     </div>
                                 );
                             })}
+
+                            {/* Import tile — drop a YAML palette to add a custom theme */}
+                            <div
+                                onDragOver={(e) => { e.preventDefault(); setThemeDragOver(true); }}
+                                onDragLeave={(e) => { e.preventDefault(); setThemeDragOver(false); }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    setThemeDragOver(false);
+                                    const file = e.dataTransfer.files?.[0];
+                                    if (file) handleThemeFileDrop(file);
+                                }}
+                                className="rounded-xl border-2 border-dashed cursor-default transition-all duration-200 flex flex-col items-center justify-center gap-2 aspect-square p-3 text-center"
+                                style={{
+                                    width: 172,
+                                    borderColor: themeDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)',
+                                    backgroundColor: themeDragOver ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                                }}
+                            >
+                                <AddIcon sx={{ fontSize: 26, color: themeDragOver ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
+                                <span className="text-[11px] font-medium" style={{ color: 'var(--sl-text-muted)' }}>
+                                    {themeDragOver ? 'Drop to import' : 'Drop a theme'}
+                                </span>
+                                <span className="text-[9px] leading-snug" style={{ color: 'var(--sl-text-faint)' }}>
+                                    name + colors (bg, brand, text)
+                                </span>
+                            </div>
                         </div>
+                        {themeImportError && (
+                            <p className="text-[11px] mt-2" style={{ color: 'var(--sl-status-error)' }}>{themeImportError}</p>
+                        )}
                     </Box>
 
                     {/* 2. Agent */}
