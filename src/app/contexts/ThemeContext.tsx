@@ -75,8 +75,31 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       '--sl-text-faint': c.text.faint,
       '--sl-border-default': c.border.default,
     }));
-    // Non-color cues (themed font, textures, blocky icons) live behind a root
-    // class since they can't be expressed as CSS-variable overrides.
+    // Themed typeface (YAML-driven): set the font CSS vars consumed by body /
+    // headings and load the webfont via a single managed <link>. Cleared when
+    // the theme has no font so we fall back to the default (Poppins).
+    const root = document.documentElement;
+    if (t.font) {
+      root.style.setProperty('--sl-font-family', t.font.family);
+      root.style.setProperty('--sl-font-heading', t.font.heading || t.font.family);
+    } else {
+      root.style.removeProperty('--sl-font-family');
+      root.style.removeProperty('--sl-font-heading');
+    }
+    let link = document.getElementById('sl-theme-font') as HTMLLinkElement | null;
+    if (t.font?.url) {
+      if (!link) {
+        link = document.createElement('link');
+        link.id = 'sl-theme-font';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
+      if (link.href !== t.font.url) link.href = t.font.url;
+    } else if (link) {
+      link.remove();
+    }
+    // Remaining non-color cues (textures, blocky icons) live behind a root class
+    // since they can't be expressed as CSS-variable overrides.
     document.documentElement.classList.toggle('theme-minecraft', t.id === 'minecraft');
     document.documentElement.classList.toggle('theme-osaka-jade', t.id === 'osaka-jade');
     (window as any).electronAPI?.setNativeTheme?.(t.mode, t.colors.bg.base);
@@ -111,11 +134,8 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     const t = themeById[themeId] ?? themes.smartloop;
     // Portaled MUI surfaces (menus, popovers, tooltips) render outside the app
     // tree, and MUI sets its own typography fontFamily — so a themed font only
-    // reaches them through the MUI theme, not the root-class CSS.
-    const themedFont =
-      t.id === 'minecraft' ? "'VT323', 'Press Start 2P', ui-monospace, monospace"
-      : t.id === 'osaka-jade' ? "'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace"
-      : undefined;
+    // reaches them through the MUI theme, not the root CSS var.
+    const themedFont = t.font?.family;
     return createTheme({
       palette: {
         mode: t.mode,

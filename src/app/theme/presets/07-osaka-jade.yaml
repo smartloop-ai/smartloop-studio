@@ -9,6 +9,10 @@ colors:
   status: { error: '#ff6b6b', success: '#55e3a3', online: '#55e3a3', warning: '#f2c14e', info: '#4fb6d6', purple: '#b98cff' }
   border: { subtle: '#142620', default: '#1f3a30', hover: '#2c4f42', code: '#1f3a30' }
   table:  { head: '#10201a', hover: '#172c24', stripe: '#0e1a15', inlineCode: '#172c24' }
+# Monospace console typeface. `url` loads the webfont (https only).
+font:
+  family: "'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace"
+  url: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap'
 # Terminal/glyph-style rail icons. Edit these SVGs to reskin the sidebar rail;
 # use stroke="currentColor" so they inherit the rail's muted / active states.
 icons:

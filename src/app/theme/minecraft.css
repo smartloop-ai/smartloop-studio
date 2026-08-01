@@ -1,25 +1,19 @@
 /*
- * Minecraft theme — pixel font + block textures.
- * Palette lives in themes.ts; these are the non-color cues, scoped behind the
+ * Minecraft theme — block textures.
+ * Palette + font live in the theme YAML (themes are data); this file holds only
+ * the non-color, non-font cues (block grid, pixelated icons) scoped behind the
  * `theme-minecraft` root class toggled by ThemeContext.
  */
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap');
 
-/* Pixel typography across the app. MUI icons are SVG (not font glyphs), and the
-   custom [class*=_icon-] font-icons set their own font-family, so neither is
-   affected by this inherited change. */
 html.theme-minecraft,
 html.theme-minecraft body {
-  font-family: 'VT323', 'Press Start 2P', ui-monospace, monospace;
   letter-spacing: 0.4px;
 }
 
-/* Chunky pixel headings */
 html.theme-minecraft h1,
 html.theme-minecraft h2,
 html.theme-minecraft h3,
 html.theme-minecraft h4 {
-  font-family: 'Press Start 2P', 'VT323', monospace;
   letter-spacing: 0;
   line-height: 1.4;
 }
