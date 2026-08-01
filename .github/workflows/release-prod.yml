@@ -136,4 +136,7 @@ jobs:
     uses: ./.github/workflows/build-and-deploy.yml
     with:
       version: ${{ needs.detect-release.outputs.version }}
+      # Opt into the gated publish job. It still waits for manual approval on the
+      # `production` environment before the draft goes live.
+      publish: true
     secrets: inherit
