@@ -23,6 +23,7 @@ import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
 import DocumentViewer from '@/app/components/document-viewer';
+import UpdatePill from '@/app/components/update-pill';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 export default function Home() {
@@ -1702,6 +1703,8 @@ export default function Home() {
                         )}
                       </Box>
                     </Box>
+                    {/* App-update badge — top-right, opposite the project name */}
+                    <UpdatePill />
                   </Box>
                 </Box>
 
