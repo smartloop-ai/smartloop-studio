@@ -1,0 +1,11 @@
+id: solarized-dark
+name: Solarized Dark
+description: Ethan Schoonover's low-contrast solarized palette on teal-black
+mode: dark
+colors:
+  bg:     { base: '#002b36', surface1: '#073642', surface2: '#0a3f4d', surface3: '#0e4b5a', input: '#073642', elevated: '#00252e' }
+  brand:  { primary: '#268bd2', hover: '#1f7ab8', active: '#19689e', light: '#4ba3e0' }
+  text:   { primary: '#fdf6e3', secondary: '#eee8d5', tertiary: '#93a1a1', muted: '#839496', disabled: '#657b83', faint: '#586e75' }
+  status: { error: '#dc322f', success: '#859900', online: '#859900', warning: '#b58900', info: '#2aa198', purple: '#6c71c4' }
+  border: { subtle: '#073642', default: '#0e4b5a', hover: '#155a6b', code: '#0e4b5a' }
+  table:  { head: '#073642', hover: '#0a3f4d', stripe: '#00252e', inlineCode: '#0a3f4d' }

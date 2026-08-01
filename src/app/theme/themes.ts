@@ -1,4 +1,7 @@
-export type ThemeId = 'smartloop' | 'smartloop-light' | 'sepia';
+import { parseThemeYaml } from './theme-parse';
+
+// Theme ids are strings (built-in preset ids + user `custom-*` ids).
+export type ThemeId = string;
 
 export interface ThemeColors {
   bg: { base: string; surface1: string; surface2: string; surface3: string; input: string; elevated: string };
@@ -9,61 +12,70 @@ export interface ThemeColors {
   table: { head: string; hover: string; stripe: string; inlineCode: string };
 }
 
+// Rail icons a theme may override with its own artwork (right-sidebar rail).
+export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+
+// Optional per-theme typography. `family` is applied to body/UI text (and MUI),
+// `heading` (falling back to `family`) to h1–h6, and `url` is a stylesheet the
+// renderer injects to load the webfont (e.g. a Google Fonts link).
+export interface ThemeFont {
+  family: string;
+  heading?: string;
+  url?: string;
+}
+
 export interface ThemeDefinition {
-  id: ThemeId;
+  id: string;
   name: string;
   description: string;
   mode: 'dark' | 'light';
   colors: ThemeColors;
+  // Optional per-theme rail icons: name → raw inline SVG markup. When present a
+  // theme (built-in preset or user-imported YAML) ships its own iconography for
+  // the right-sidebar rail, replacing the default vector icons. SVGs should use
+  // `stroke="currentColor"`/`fill="currentColor"` so they inherit rail states.
+  icons?: Partial<Record<RailIconName, string>>;
+  // Optional themed typeface (family + optional heading font + webfont URL).
+  font?: ThemeFont;
 }
 
-const smartloop: ThemeDefinition = {
-  id: 'smartloop',
-  name: 'Smartloop',
-  description: 'Pink accent dark theme inspired by GitHub Dark',
-  mode: 'dark',
-  colors: {
-    bg: { base: '#000000', surface1: '#1a1a1a', surface2: '#2a2a2a', surface3: '#3a3a3a', input: '#303030', elevated: '#1b1b1b' },
-    brand: { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' },
-    text: { primary: '#ffffff', secondary: '#e5e7eb', tertiary: '#d1d5db', muted: '#9ca3af', disabled: '#6b7280', faint: '#4b5563' },
-    status: { error: '#ef4444', success: '#10b981', online: '#22c55e', warning: '#f59e0b', info: '#3b82f6', purple: '#a855f7' },
-    border: { subtle: '#1a1a1a', default: '#2a2a2a', hover: '#3a3a3a', code: '#374151' },
-    table: { head: '#111827', hover: '#1f2937', stripe: '#0f1419', inlineCode: '#1f2937' },
-  },
-};
+// ── Theme presets are shipped as YAML, not hardcoded here ────────────────────
+// Every built-in theme lives in ./presets/*.yaml and is loaded + parsed at
+// build time, so themes are data (a single YAML source) rather than code.
+// User-imported custom themes (see custom-themes.ts) use the exact same parser.
+const presetModules = import.meta.glob('./presets/*.yaml', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 
-const smartloopLight: ThemeDefinition = {
-  id: 'smartloop-light',
-  name: 'Smartloop',
-  description: 'Clean and bright with Smartloop pink accents',
-  mode: 'light',
-  colors: {
-    bg: { base: '#fdfbfc', surface1: '#f8f4f6', surface2: '#f1eaed', surface3: '#e6dce0', input: '#f8f4f6', elevated: '#fefdfd' },
-    brand: { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' },
-    text: { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#8b95a3', faint: '#9ca3af' },
-    status: { error: '#dc2626', success: '#059669', online: '#16a34a', warning: '#d97706', info: '#2563eb', purple: '#7c3aed' },
-    border: { subtle: '#efe7ea', default: '#e6dce0', hover: '#d6c7ce', code: '#e0d4da' },
-    table: { head: '#f8f4f6', hover: '#f2ebee', stripe: '#fdfbfc', inlineCode: '#f2ebee' },
-  },
-};
+const loadedThemes: ThemeDefinition[] = [];
+for (const path of Object.keys(presetModules).sort()) {
+  const { theme, error } = parseThemeYaml(presetModules[path], { allowExplicitId: true });
+  if (theme) loadedThemes.push(theme);
+  else console.error(`[themes] failed to load preset ${path}: ${error}`);
+}
 
-const sepia: ThemeDefinition = {
-  id: 'sepia',
-  name: 'Sepia',
-  description: 'Warm, low-contrast tones for comfortable reading',
-  mode: 'dark',
-  colors: {
-    bg: { base: '#171412', surface1: '#211d18', surface2: '#2d2822', surface3: '#3d362e', input: '#292420', elevated: '#1c1915' },
-    brand: { primary: '#d35b36', hover: '#c04e2c', active: '#a54324', light: '#e07048' },
-    text: { primary: '#f2efe9', secondary: '#d4cbc3', tertiary: '#b8afa5', muted: '#8c857e', disabled: '#6b655e', faint: '#4a4540' },
-    status: { error: '#c1392b', success: '#6b8040', online: '#7a8f47', warning: '#d4a843', info: '#4a7ba7', purple: '#9b8ec4' },
-    border: { subtle: '#211d18', default: '#2d2822', hover: '#3d362e', code: '#3d3629' },
-    table: { head: '#1c1915', hover: '#2d2822', stripe: '#191613', inlineCode: '#2d2822' },
-  },
-};
+// Safety net: never leave the app without the default theme (Smartloop).
+if (!loadedThemes.some((t) => t.id === 'smartloop')) {
+  loadedThemes.unshift({
+    id: 'smartloop',
+    name: 'Smartloop',
+    description: 'Pink accent dark theme inspired by GitHub Dark',
+    mode: 'dark',
+    colors: {
+      bg: { base: '#000000', surface1: '#1a1a1a', surface2: '#2a2a2a', surface3: '#3a3a3a', input: '#303030', elevated: '#1b1b1b' },
+      brand: { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' },
+      text: { primary: '#ffffff', secondary: '#e5e7eb', tertiary: '#d1d5db', muted: '#9ca3af', disabled: '#6b7280', faint: '#4b5563' },
+      status: { error: '#ef4444', success: '#10b981', online: '#22c55e', warning: '#f59e0b', info: '#3b82f6', purple: '#a855f7' },
+      border: { subtle: '#1a1a1a', default: '#2a2a2a', hover: '#3a3a3a', code: '#374151' },
+      table: { head: '#111827', hover: '#1f2937', stripe: '#0f1419', inlineCode: '#1f2937' },
+    },
+  });
+}
 
-export const themes: Record<ThemeId, ThemeDefinition> = { smartloop, 'smartloop-light': smartloopLight, sepia };
-export const themeList: ThemeDefinition[] = [smartloop, smartloopLight, sepia];
+export const themeList: ThemeDefinition[] = loadedThemes;
+export const themes: Record<string, ThemeDefinition> = Object.fromEntries(loadedThemes.map((t) => [t.id, t]));
 
 function hexToRgb(hex: string): string {
   const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);

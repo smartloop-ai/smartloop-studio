@@ -1,6 +1,8 @@
 @charset "UTF-8";
 
 @import './theme/theme.css';
+@import './theme/minecraft.css';
+@import './theme/osaka-jade.css';
 
 @tailwind base;
 
@@ -124,7 +126,9 @@
   h5,
   h6 {
     font-weight: inherit;
-    font-size: inherit
+    font-size: inherit;
+    /* Themed heading font (YAML-driven); falls back to the body font. */
+    font-family: var(--sl-font-heading, inherit)
   }
 
   body {
@@ -147,7 +151,8 @@
 
 
   body {
-    font-family: Poppins;
+    /* Themed body font (YAML-driven); falls back to Poppins. */
+    font-family: var(--sl-font-family, 'Poppins', sans-serif);
     color: var(--sl-text-primary);
     line-height: 1;
     font-size: 1rem;
@@ -4314,6 +4319,30 @@ body._touch .header-account__list>li._active .header-account__arrow {
     opacity: 0.3;
   }
   30% {
+    opacity: 1;
+  }
+}
+
+/* Slow breath for the "update ready" sparkle. Deliberately slower than
+   animate-pulse, which reads as "loading" rather than "something new". */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.sl-sparkle {
+  animation: sparkle 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-sparkle {
+    animation: none;
     opacity: 1;
   }
 }

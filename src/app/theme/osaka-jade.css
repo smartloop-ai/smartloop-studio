@@ -1,0 +1,31 @@
+/*
+ * Osaka Jade theme — CRT scanline texture.
+ * Palette + font live in the theme YAML (themes are data); this file holds only
+ * the non-color, non-font cue (scanlines) scoped behind the `theme-osaka-jade`
+ * root class toggled by ThemeContext.
+ */
+
+html.theme-osaka-jade,
+html.theme-osaka-jade body {
+  letter-spacing: 0.2px;
+}
+
+html.theme-osaka-jade h1,
+html.theme-osaka-jade h2,
+html.theme-osaka-jade h3,
+html.theme-osaka-jade h4 {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Faint CRT scanlines over the base background */
+html.theme-osaka-jade body {
+  background-color: var(--sl-bg-base);
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(85, 227, 163, 0.04) 0px,
+    rgba(85, 227, 163, 0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}

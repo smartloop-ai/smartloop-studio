@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 const { createTitlebarOnDOMContentLoaded, TitlebarColor } = require('custom-electron-titlebar');
 
 let titlebarInstance = null;
+
 createTitlebarOnDOMContentLoaded({
   removeMenuBar: true,
   backgroundColor: TitlebarColor.fromHex('#000000'),
@@ -63,6 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setNativeTheme: (mode, bgColor) => {
     ipcRenderer.invoke('set-native-theme', mode, bgColor);
     if (titlebarInstance && bgColor) {
+      // Title bar uses the main content area color (theme bg.base) so the top
+      // band reads as one uniform strip with the base-colored logo header.
       titlebarInstance.updateBackground(TitlebarColor.fromHex(bgColor));
     }
   },
@@ -133,6 +136,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeHealthUpdateListener: () => {
     ipcRenderer.removeAllListeners('health-update');
   },
+  // App release / update check
+  checkForUpdates: () => ipcRenderer.invoke('release-check-now'),
+  getLatestRelease: () => ipcRenderer.invoke('release-get-latest'),
+  onReleaseUpdate: (callback) => {
+    ipcRenderer.on('release-update', (event, data) => callback(data));
+  },
+  removeReleaseUpdateListener: () => {
+    ipcRenderer.removeAllListeners('release-update');
+  },
+  // In-app updater (electron-updater)
+  isUpdaterSupported: () => ipcRenderer.invoke('updater-supported'),
+  quitAndInstallUpdate: () => ipcRenderer.invoke('updater-quit-and-install'),
+  pauseUpdate: () => ipcRenderer.invoke('updater-pause'),
+  resumeUpdate: () => ipcRenderer.invoke('updater-resume'),
+  onUpdaterStatus: (callback) => {
+    ipcRenderer.on('updater-status', (event, data) => callback(data));
+  },
+  removeUpdaterStatusListener: () => {
+    ipcRenderer.removeAllListeners('updater-status');
+  },
+  getUpdaterStatus: () => ipcRenderer.invoke('updater-get-status'),
   onNavigateToProject: (callback) => {
     ipcRenderer.on('navigate-to-project', (event, projectId) => callback(projectId));
   },

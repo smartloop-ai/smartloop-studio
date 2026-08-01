@@ -1,0 +1,33 @@
+/*
+ * Minecraft theme — block textures.
+ * Palette + font live in the theme YAML (themes are data); this file holds only
+ * the non-color, non-font cues (block grid, pixelated icons) scoped behind the
+ * `theme-minecraft` root class toggled by ThemeContext.
+ */
+
+html.theme-minecraft,
+html.theme-minecraft body {
+  letter-spacing: 0.4px;
+}
+
+html.theme-minecraft h1,
+html.theme-minecraft h2,
+html.theme-minecraft h3,
+html.theme-minecraft h4 {
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+/* Faint 16px block grid over the base background for a "world of blocks" feel */
+html.theme-minecraft body {
+  background-color: var(--sl-bg-base);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Blocky/crisp edges — square off small chrome and keep pixel icons sharp */
+html.theme-minecraft .mc-pixel {
+  image-rendering: pixelated;
+}

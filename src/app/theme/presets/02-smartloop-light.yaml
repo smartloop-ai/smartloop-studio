@@ -1,0 +1,11 @@
+id: smartloop-light
+name: Smartloop
+description: Pink accent light theme inspired by GitHub Light
+mode: light
+colors:
+  bg:     { base: '#ffffff', surface1: '#f6f8fa', surface2: '#eaeef2', surface3: '#d8dee4', input: '#f6f8fa', elevated: '#ffffff' }
+  brand:  { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' }
+  text:   { primary: '#1f2328', secondary: '#424a53', tertiary: '#656d76', muted: '#818b98', disabled: '#8c959f', faint: '#afb8c1' }
+  status: { error: '#d1242f', success: '#1a7f37', online: '#1a7f37', warning: '#9a6700', info: '#0969da', purple: '#8250df' }
+  border: { subtle: '#eaeef2', default: '#d0d7de', hover: '#afb8c1', code: '#d0d7de' }
+  table:  { head: '#f6f8fa', hover: '#eaeef2', stripe: '#fbfcfd', inlineCode: '#eaeef2' }
