@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish:
+        description: 'Publish the release (PATCH to published) instead of leaving it a draft. Leave off for ad-hoc/test builds.'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       version:
@@ -20,6 +25,11 @@ on:
         type: string
       overwrite:
         description: 'Overwrite an existing bucket version dir instead of failing.'
+        required: false
+        default: false
+        type: boolean
+      publish:
+        description: 'Publish the release instead of leaving it a draft. release-prod passes true so a merge to main goes live.'
         required: false
         default: false
         type: boolean
@@ -541,6 +551,44 @@ jobs:
           python scripts/ci_push_release.py \
             --file release.json \
             --draft-only
+
+      # Hand the exact payload to the gated publish job so it PATCHes the same
+      # artifacts to published — no re-deriving it from yml a second time.
+      - name: Upload release.json for publish step
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-json
+          path: release.json
+
+  # ── Gated go-live: create-draft-release always drafts; this promotes the
+  # draft to `published`. It runs in the `release` environment, so with a
+  # required reviewer configured on that environment it pauses for a manual
+  # approval in the Actions UI before publishing. Only runs when the caller
+  # opts in via `publish: true` (release-prod does; ad-hoc dispatch does not).
+  publish-release:
+    name: Publish Release
+    needs: [create-draft-release]
+    if: ${{ inputs.publish && needs.create-draft-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release.json
+        uses: actions/download-artifact@v4
+        with:
+          name: release-json
+          path: .
+
+      # Re-runs ci_push_release.py without --draft-only: it re-upserts the draft
+      # (idempotent) and PATCHes it to published, after the server's per-artifact
+      # HEAD validation against the CDN files uploaded in upload-to-gcp.
+      - name: Publish release via API
+        env:
+          SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
+        run: |
+          python scripts/ci_push_release.py --file release.json
 
   notify-result:
     if: always()
