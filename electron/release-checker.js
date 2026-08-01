@@ -1,5 +1,5 @@
 const { app } = require('electron');
-const { autoUpdater } = require('electron-updater');
+const { autoUpdater, CancellationToken } = require('electron-updater');
 const slpService = require('./slp-service');
 const appVersion = require('../package.json').version;
 
@@ -18,6 +18,9 @@ let onStatusChange = null;
 let updaterWired = false;
 let updateInFlight = null; // version currently downloading, to avoid re-triggering
 let updaterStatus = { state: 'idle' };
+let downloadToken = null;   // CancellationToken for the in-flight download (pause)
+let downloadPaused = false; // user paused — suppresses auto-restart from polls
+let stagedInfo = null;      // last update-available info, so resume can restart
 
 function send(channel, data) {
   const win = getWindow?.();
@@ -148,24 +151,83 @@ function setUpdaterStatus(next) {
 function wireUpdater() {
   if (updaterWired) return;
   updaterWired = true;
-  autoUpdater.autoDownload = true;
+  // We drive downloadUpdate() ourselves so we can hold a CancellationToken and
+  // pause the transfer — autoDownload would download without handing us one.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => setUpdaterStatus({ state: 'checking' }));
-  autoUpdater.on('update-available', (info) =>
-    setUpdaterStatus({ state: 'downloading', version: info?.version, percent: 0 }));
+  autoUpdater.on('update-available', (info) => {
+    stagedInfo = info;
+    // Honour a user pause: don't auto-start the download we just staged.
+    if (downloadPaused) {
+      setUpdaterStatus({ state: 'paused', version: info?.version });
+      return;
+    }
+    setUpdaterStatus({ state: 'downloading', version: info?.version, percent: 0 });
+    startDownload();
+  });
   autoUpdater.on('update-not-available', () => {
     updateInFlight = null;
+    stagedInfo = null;
     setUpdaterStatus({ state: 'idle', version: null, percent: 0 });
   });
   autoUpdater.on('download-progress', (p) =>
     setUpdaterStatus({ state: 'downloading', percent: Math.round(p?.percent ?? 0) }));
-  autoUpdater.on('update-downloaded', (info) =>
-    setUpdaterStatus({ state: 'downloaded', version: info?.version, percent: 100 }));
+  autoUpdater.on('update-downloaded', (info) => {
+    downloadPaused = false;
+    setUpdaterStatus({ state: 'downloaded', version: info?.version, percent: 100 });
+  });
   autoUpdater.on('error', (err) => {
+    // Pausing cancels the transfer, which surfaces here as an error — swallow it.
+    if (isCancellation(err)) return;
     updateInFlight = null;
     setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
   });
+}
+
+/** A cancelled download rejects/errrors with a cancellation message, not a real failure. */
+function isCancellation(err) {
+  return String(err?.message || err || '').toLowerCase().includes('cancel');
+}
+
+/** Start (or restart) the staged download, holding a token so it can be paused. */
+function startDownload() {
+  downloadPaused = false;
+  downloadToken = new CancellationToken();
+  autoUpdater.downloadUpdate(downloadToken).catch((err) => {
+    if (downloadPaused || isCancellation(err)) return;
+    updateInFlight = null;
+    setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
+  });
+}
+
+/**
+ * Pause the in-flight download. electron-updater can't resume from a byte
+ * offset, so this cancels the transfer; resumeDownload() restarts it from the
+ * top (partial data already on disk is reused where the provider allows).
+ */
+function pauseDownload() {
+  if (updaterStatus.state !== 'downloading') return { success: false };
+  downloadPaused = true;
+  try { downloadToken?.cancel(); } catch { /* already settled */ }
+  downloadToken = null;
+  setUpdaterStatus({ state: 'paused' });
+  return { success: true };
+}
+
+/** Resume a paused download by restarting the transfer for the staged version. */
+function resumeDownload() {
+  if (!updaterSupported()) return { success: false };
+  downloadPaused = false;
+  if (stagedInfo) {
+    setUpdaterStatus({ state: 'downloading' });
+    startDownload();
+  } else {
+    // Nothing staged (e.g. app restarted) — a fresh check re-stages and starts.
+    autoUpdater.checkForUpdates();
+  }
+  return { success: true };
 }
 
 /**
@@ -237,6 +299,8 @@ module.exports = {
   checkNow,
   getLast,
   quitAndInstall,
+  pauseDownload,
+  resumeDownload,
   isUpdaterSupported,
   getUpdaterStatus,
 };
