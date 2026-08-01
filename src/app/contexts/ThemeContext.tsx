@@ -7,6 +7,8 @@ import { storageService } from '@/app/services/storage.service';
 
 interface ThemeContextValue {
   themeId: string;
+  // The resolved active theme definition (falls back to the default).
+  theme: ThemeDefinition;
   setThemeId: (id: string) => void;
   // Built-in themes plus any the user has imported.
   allThemes: ThemeDefinition[];
@@ -16,6 +18,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   themeId: 'smartloop',
+  theme: themes.smartloop,
   setThemeId: () => {},
   allThemes: themeList,
   addCustomTheme: () => {},
@@ -36,13 +39,19 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     for (const t of customThemes) map[t.id] = t;
     return map;
   }, [customThemes]);
+  const theme = useMemo(() => themeById[themeId] ?? themes.smartloop, [themeById, themeId]);
 
   // Load persisted selection + custom themes on mount.
   useEffect(() => {
     loadCustomThemes().then(setCustomThemes);
     storageService.getItem('app_theme').then((saved: string | null) => {
-      // Migrate legacy ids: 'rams' → 'sepia' → now 'ubuntu'.
-      const migrated = (saved === 'rams' || saved === 'sepia') ? 'ubuntu' : saved;
+      // Migrate legacy/retired preset ids to their nearest current theme:
+      //   'rams'/'sepia'/'ubuntu' (graphite) → solarized-dark
+      //   'minecraft' (Blocks — now an importable example) → catppuccin-mocha
+      const migrated =
+        (saved === 'rams' || saved === 'sepia' || saved === 'ubuntu') ? 'solarized-dark'
+        : saved === 'minecraft' ? 'catppuccin-mocha'
+        : saved;
       if (migrated) setThemeIdState(migrated);
     });
   }, []);
@@ -70,7 +79,6 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     // class since they can't be expressed as CSS-variable overrides.
     document.documentElement.classList.toggle('theme-minecraft', t.id === 'minecraft');
     document.documentElement.classList.toggle('theme-osaka-jade', t.id === 'osaka-jade');
-    document.documentElement.classList.toggle('theme-ubuntu', t.id === 'ubuntu');
     (window as any).electronAPI?.setNativeTheme?.(t.mode, t.colors.bg.base);
   }, [themeId, themeById]);
 
@@ -107,7 +115,6 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
     const themedFont =
       t.id === 'minecraft' ? "'VT323', 'Press Start 2P', ui-monospace, monospace"
       : t.id === 'osaka-jade' ? "'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace"
-      : t.id === 'ubuntu' ? "'Ubuntu', 'Ubuntu Sans', sans-serif"
       : undefined;
     return createTheme({
       palette: {
@@ -124,7 +131,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   }, [themeId, themeById]);
 
   return (
-    <ThemeContext.Provider value={{ themeId, setThemeId, allThemes, addCustomTheme, removeCustomTheme }}>
+    <ThemeContext.Provider value={{ themeId, theme, setThemeId, allThemes, addCustomTheme, removeCustomTheme }}>
       <MuiThemeProvider theme={muiTheme}>
         <CssBaseline />
         {children}

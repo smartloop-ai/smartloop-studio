@@ -3,7 +3,6 @@
 @import './theme/theme.css';
 @import './theme/minecraft.css';
 @import './theme/osaka-jade.css';
-@import './theme/ubuntu.css';
 
 @tailwind base;
 

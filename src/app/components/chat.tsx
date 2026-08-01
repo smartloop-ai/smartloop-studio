@@ -1759,9 +1759,17 @@ export default function Chat(props: {
                     <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1">
-                    <span className={`inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`} style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
-                    <span>{isLoading ? 'thinking' : 'ready'}</span>
+                  <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                        style={{
+                          backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                          ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
+                        }}
+                      ></span>
+                    ))}
                   </span>
                 )}
                 {model && (
