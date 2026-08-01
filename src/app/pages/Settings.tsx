@@ -397,6 +397,21 @@ export default function SettingsPage() {
                                 </button>
                             );
 
+                            // Pause control. Rendered disabled during "Preparing" so the button's
+                            // slot stays put through the sub-second hand-off into the live
+                            // download, then enables once there's a transfer to actually pause.
+                            const pauseButton = (disabled: boolean) => (
+                                <button
+                                    onClick={disabled ? undefined : pauseUpdate}
+                                    disabled={disabled}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                >
+                                    <PauseIcon sx={{ fontSize: 16 }} />
+                                    Pause
+                                </button>
+                            );
+
                             // Each state resolves to the status text (left column) and a single
                             // primary action (right column). Updates download in the background
                             // automatically, so most states need no button at all. "Check for
@@ -456,16 +471,7 @@ export default function SettingsPage() {
                                         Downloading update v{stagedVersion ?? latestVersion}… {downloadPercent}%
                                     </span>
                                 );
-                                actions = (
-                                    <button
-                                        onClick={pauseUpdate}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                        style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                    >
-                                        <PauseIcon sx={{ fontSize: 16 }} />
-                                        Pause
-                                    </button>
-                                );
+                                actions = pauseButton(false);
                             }
                             // Paused mid-download. electron-updater can't resume from a byte
                             // offset, so Resume restarts the transfer — the progress the user
@@ -496,7 +502,8 @@ export default function SettingsPage() {
                                         Preparing update v{latestVersion}…
                                     </span>
                                 );
-                                // No button — hand-off to the automatic download.
+                                // Disabled Pause holds the slot until the download starts.
+                                actions = pauseButton(true);
                             }
                             // Platforms electron-updater can't install for us — the Linux .deb,
                             // and unpackaged dev builds. Downloading by hand is the normal path.
