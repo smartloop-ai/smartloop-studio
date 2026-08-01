@@ -19,7 +19,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import AvailableModels from '@/app/components/available-models';
 
 
 
@@ -849,9 +848,6 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
-
-                    {/* 3. Available Models */}
-                    <AvailableModels />
 
                     {/* 4. Active Model Card — specs + performance graph */}
                     {slpConfig && (() => {
