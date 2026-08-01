@@ -15,6 +15,15 @@ export interface ThemeColors {
 // Rail icons a theme may override with its own artwork (right-sidebar rail).
 export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
 
+// Optional per-theme typography. `family` is applied to body/UI text (and MUI),
+// `heading` (falling back to `family`) to h1–h6, and `url` is a stylesheet the
+// renderer injects to load the webfont (e.g. a Google Fonts link).
+export interface ThemeFont {
+  family: string;
+  heading?: string;
+  url?: string;
+}
+
 export interface ThemeDefinition {
   id: string;
   name: string;
@@ -26,6 +35,8 @@ export interface ThemeDefinition {
   // the right-sidebar rail, replacing the default vector icons. SVGs should use
   // `stroke="currentColor"`/`fill="currentColor"` so they inherit rail states.
   icons?: Partial<Record<RailIconName, string>>;
+  // Optional themed typeface (family + optional heading font + webfont URL).
+  font?: ThemeFont;
 }
 
 // ── Theme presets are shipped as YAML, not hardcoded here ────────────────────

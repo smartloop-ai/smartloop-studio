@@ -126,7 +126,9 @@
   h5,
   h6 {
     font-weight: inherit;
-    font-size: inherit
+    font-size: inherit;
+    /* Themed heading font (YAML-driven); falls back to the body font. */
+    font-family: var(--sl-font-heading, inherit)
   }
 
   body {
@@ -149,7 +151,8 @@
 
 
   body {
-    font-family: Poppins;
+    /* Themed body font (YAML-driven); falls back to Poppins. */
+    font-family: var(--sl-font-family, 'Poppins', sans-serif);
     color: var(--sl-text-primary);
     line-height: 1;
     font-size: 1rem;
