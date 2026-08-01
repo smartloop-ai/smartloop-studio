@@ -963,7 +963,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       {authUser ? (
         <>
           <Box sx={{
-            p: 2,
+            p: 1.5,
             borderTop: '1px solid var(--sl-border-subtle)',
           }}>
             <Box

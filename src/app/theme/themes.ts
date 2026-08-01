@@ -12,12 +12,31 @@ export interface ThemeColors {
   table: { head: string; hover: string; stripe: string; inlineCode: string };
 }
 
+// Rail icons a theme may override with its own artwork (right-sidebar rail).
+export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+
+// Optional per-theme typography. `family` is applied to body/UI text (and MUI),
+// `heading` (falling back to `family`) to h1–h6, and `url` is a stylesheet the
+// renderer injects to load the webfont (e.g. a Google Fonts link).
+export interface ThemeFont {
+  family: string;
+  heading?: string;
+  url?: string;
+}
+
 export interface ThemeDefinition {
   id: string;
   name: string;
   description: string;
   mode: 'dark' | 'light';
   colors: ThemeColors;
+  // Optional per-theme rail icons: name → raw inline SVG markup. When present a
+  // theme (built-in preset or user-imported YAML) ships its own iconography for
+  // the right-sidebar rail, replacing the default vector icons. SVGs should use
+  // `stroke="currentColor"`/`fill="currentColor"` so they inherit rail states.
+  icons?: Partial<Record<RailIconName, string>>;
+  // Optional themed typeface (family + optional heading font + webfont URL).
+  font?: ThemeFont;
 }
 
 // ── Theme presets are shipped as YAML, not hardcoded here ────────────────────
@@ -37,7 +56,7 @@ for (const path of Object.keys(presetModules).sort()) {
   else console.error(`[themes] failed to load preset ${path}: ${error}`);
 }
 
-// Safety net: never leave the app without the default theme.
+// Safety net: never leave the app without the default theme (Smartloop).
 if (!loadedThemes.some((t) => t.id === 'smartloop')) {
   loadedThemes.unshift({
     id: 'smartloop',

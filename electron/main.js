@@ -43,7 +43,7 @@ ipcMain.handle('get-machine-id', async () => {
 
 // Open external URL in system browser
 ipcMain.handle('open-external', async (event, url) => {
-  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+  if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:'))) {
     await shell.openExternal(url);
     return true;
   }

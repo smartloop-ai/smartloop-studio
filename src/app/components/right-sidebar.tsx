@@ -15,7 +15,6 @@ import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 import PixelRailIcon from './pixel-rail-icons';
-import OsakaRailIcon from './osaka-rail-icons';
 import McpServerItem from './mcp-server-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
@@ -44,6 +43,18 @@ interface RightSidebarProps {
   projectSkills?: Array<{ id?: string; name: string; content: string; description?: string }>;
   onSaveSkills?: (skills: Array<{ id?: string; name: string; content: string; description?: string }>) => void;
   onRefreshSkills?: () => void;
+}
+
+// Renders a theme's embedded rail SVG. The markup is sanitized at parse time
+// (see theme-parse.ts) and uses currentColor, so it inherits the rail's states.
+function ThemeRailIcon({ svg, size = 18 }: { svg: string; size?: number }) {
+  return (
+    <span
+      className="flex-shrink-0 inline-flex items-center justify-center"
+      style={{ width: size, height: size }}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
 }
 
 const getSkillPreviewText = (content: string, description?: string) => {
@@ -75,12 +86,15 @@ export default function RightSidebar({
   onRefreshSkills,
 }: RightSidebarProps) {
   const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
-  const { themeId } = useThemeContext();
+  const { themeId, theme } = useThemeContext();
   const isMc = themeId === 'minecraft';
-  const isOsaka = themeId === 'osaka-jade';
-  // Themed rail icon for the active named theme, or null to use the default.
-  const railIcon = (name: 'models' | 'documents' | 'mcp' | 'skills' | 'settings') =>
-    isMc ? <PixelRailIcon name={name} /> : isOsaka ? <OsakaRailIcon name={name} /> : null;
+  // Themed rail icon for the active theme: the theme's own embedded SVG (from
+  // its YAML `icons`) wins; Minecraft keeps its pixel icons; else the default.
+  const railIcon = (name: 'models' | 'documents' | 'mcp' | 'skills' | 'settings') => {
+    const svg = theme.icons?.[name];
+    if (svg) return <ThemeRailIcon svg={svg} />;
+    return isMc ? <PixelRailIcon name={name} /> : null;
+  };
   const [activeSection, setActiveSection] = useState<'models' | 'documents' | 'mcp' | 'skills' | 'settings' | null>('models');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
