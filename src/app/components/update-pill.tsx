@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 
 /**
@@ -7,9 +7,9 @@ import { useAppStatus } from '@/app/contexts/AppStatusContext';
  * electron-updater has the new version on disk — while it's still downloading
  * the sidebar stays quiet and Settings carries the progress.
  *
- * Restarting is an accelerator, not a requirement: autoInstallOnAppQuit lands
- * the update on the next quit either way. The second line spells out what the
- * click does, so the row needs no trailing icon to explain itself.
+ * A single line — icon + "Update ready — restart". Restarting is an
+ * accelerator, not a requirement: autoInstallOnAppQuit lands the update on the
+ * next quit either way, so the version and that nuance live in the tooltip.
  */
 export default function UpdatePill() {
     const { appUpdate, installUpdate } = useAppStatus();
@@ -19,11 +19,11 @@ export default function UpdatePill() {
     const version = appUpdate.stagedVersion ?? appUpdate.latestVersion;
 
     return (
-        <Box className="p-2.5">
+        <Box className="px-4 pb-4 pt-2">
             <Box
                 onClick={installUpdate}
                 role="button"
-                title="Restart now to switch to the new version — otherwise it installs the next time you quit"
+                title={`Restart now to switch to the new version${version ? ` (v${version})` : ''} — otherwise it installs the next time you quit`}
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer"
                 sx={{
                     bgcolor: 'var(--sl-brand-alpha-10)',
@@ -36,14 +36,9 @@ export default function UpdatePill() {
                     },
                 }}
             >
-                <AutoAwesomeIcon className="sl-sparkle" sx={{ fontSize: 16, flexShrink: 0 }} />
-                <Box className="flex-1 min-w-0">
-                    <Box className="text-[12px] font-semibold leading-tight truncate">
-                        Update ready{version ? ` · v${version}` : ''}
-                    </Box>
-                    <Box className="text-[11px] leading-tight" sx={{ opacity: 0.75 }}>
-                        Click to restart &amp; install
-                    </Box>
+                <RefreshIcon sx={{ fontSize: 16, flexShrink: 0 }} />
+                <Box className="flex-1 min-w-0 text-[12px] font-semibold leading-tight truncate">
+                    Update ready — restart
                 </Box>
             </Box>
         </Box>

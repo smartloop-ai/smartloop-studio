@@ -15,6 +15,7 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import AvailableModels from '@/app/components/available-models';
@@ -422,7 +423,7 @@ export default function SettingsPage() {
                                                 className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                                                 style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                             >
-                                                <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
+                                                <RefreshIcon sx={{ fontSize: 16 }} />
                                                 Restart & Install
                                             </button>
                                         </>
