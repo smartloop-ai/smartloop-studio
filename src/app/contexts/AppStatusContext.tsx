@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { storageService } from '@/app/services/storage.service';
+import type { UpdaterStatus } from '@/electron';
 
 export interface IndexingProgress {
   total: number;
@@ -13,6 +14,25 @@ export interface ServerHealth {
   status: string;
   details?: Record<string, any>;
   error?: string;
+}
+
+export interface AppUpdate {
+  // From the SLP /releases check — is a newer release published?
+  updateAvailable: boolean;
+  latestVersion: string | null;
+  // Version electron-updater actually has on disk. Tracked separately from
+  // latestVersion because the feed can stop reporting an update (cache flap,
+  // pulled release) while the staged build is still sitting there installable.
+  stagedVersion: string | null;
+  // Whether electron-updater can download+install on this build/platform
+  // (false in dev and for the Linux .deb).
+  updaterSupported: boolean;
+  // electron-updater's progress through that download.
+  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error';
+  percent: number;
+  error?: string;
+  // A manual force-check is in flight.
+  checking: boolean;
 }
 
 export interface AppStatus {
@@ -33,6 +53,18 @@ export interface AppStatus {
   // Forget a document's processed state (used by refreshApi cleanup when a
   // doc no longer exists in the API).
   removeProcessed: (docId: string) => void;
+  // App update state, driven by the main-process release-checker. This is the
+  // only subscriber to `updater-status` — preload's removeAllListeners means a
+  // second one would clobber it.
+  appUpdate: AppUpdate;
+  // Force an immediate check (bypasses the backend's release cache).
+  checkForUpdates: () => Promise<void>;
+  // Relaunch into a downloaded update.
+  installUpdate: () => void;
+  // Pause / resume the in-flight download. electron-updater can't resume from a
+  // byte offset, so resume restarts the transfer.
+  pauseUpdate: () => void;
+  resumeUpdate: () => void;
 }
 
 interface HealthDetails {
@@ -47,6 +79,16 @@ interface HealthPayload extends ServerHealth {
   details?: HealthDetails;
 }
 
+const DEFAULT_APP_UPDATE: AppUpdate = {
+  updateAvailable: false,
+  latestVersion: null,
+  stagedVersion: null,
+  updaterSupported: false,
+  state: 'idle',
+  percent: 0,
+  checking: false,
+};
+
 const DEFAULT_STATUS: AppStatus = {
   memory: null,
   serverHealth: null,
@@ -55,6 +97,11 @@ const DEFAULT_STATUS: AppStatus = {
   processedDates: {},
   setDocumentStatus: () => {},
   removeProcessed: () => {},
+  appUpdate: DEFAULT_APP_UPDATE,
+  checkForUpdates: async () => {},
+  installUpdate: () => {},
+  pauseUpdate: () => {},
+  resumeUpdate: () => {},
 };
 
 const AppStatusContext = createContext<AppStatus>(DEFAULT_STATUS);
@@ -65,6 +112,7 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
   const [indexingProgress, setIndexingProgress] = useState<IndexingProgress | null>(null);
   const [indexingStatus, setIndexingStatus] = useState<Record<string, string>>({});
   const [processedDates, setProcessedDates] = useState<Record<string, string>>({});
+  const [appUpdate, setAppUpdate] = useState<AppUpdate>(DEFAULT_APP_UPDATE);
 
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('project');
@@ -180,6 +228,84 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // App updates. Seeded from the main process (including the current updater
+  // state, so a download that finished while this provider was mounting still
+  // paints) and then kept live by the two pushes. Not persisted to SQLite:
+  // autoInstallOnAppQuit means a staged update is already applied next launch,
+  // so a cached "restart to update" would be a lie.
+  useEffect(() => {
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    let cancelled = false;
+
+    const applyRelease = (release: any) => {
+      if (cancelled || !release) return;
+      setAppUpdate(prev => ({
+        ...prev,
+        updateAvailable: release.update_available === true,
+        latestVersion: release.release?.version ?? null,
+      }));
+    };
+
+    const applyStatus = (status: UpdaterStatus) => {
+      if (cancelled || !status) return;
+      setAppUpdate(prev => ({
+        ...prev,
+        state: status.state,
+        percent: status.percent ?? prev.percent,
+        // null clears it (update-not-available); undefined just means this
+        // event didn't carry one (download-progress), so keep what we had.
+        stagedVersion: status.version === undefined ? prev.stagedVersion : status.version,
+        error: status.error,
+      }));
+    };
+
+    api.getLatestRelease?.().then(applyRelease).catch(() => {});
+    api.getUpdaterStatus?.().then(applyStatus).catch(() => {});
+    api.isUpdaterSupported?.().then((supported: boolean) => {
+      if (cancelled) return;
+      setAppUpdate(prev => ({ ...prev, updaterSupported: !!supported }));
+    }).catch(() => {});
+
+    api.onReleaseUpdate?.(applyRelease);
+    api.onUpdaterStatus?.(applyStatus);
+    return () => {
+      cancelled = true;
+      api.removeReleaseUpdateListener?.();
+      api.removeUpdaterStatusListener?.();
+    };
+  }, []);
+
+  const checkForUpdates = useCallback(async () => {
+    setAppUpdate(prev => ({ ...prev, checking: true }));
+    try {
+      const result = await (window as any).electronAPI?.checkForUpdates?.();
+      if (result) {
+        setAppUpdate(prev => ({
+          ...prev,
+          updateAvailable: result.update_available === true,
+          latestVersion: result.release?.version ?? null,
+        }));
+      }
+    } catch {
+      // Leave the last known result in place.
+    }
+    setAppUpdate(prev => ({ ...prev, checking: false }));
+  }, []);
+
+  const installUpdate = useCallback(() => {
+    (window as any).electronAPI?.quitAndInstallUpdate?.();
+  }, []);
+
+  const pauseUpdate = useCallback(() => {
+    (window as any).electronAPI?.pauseUpdate?.();
+  }, []);
+
+  const resumeUpdate = useCallback(() => {
+    (window as any).electronAPI?.resumeUpdate?.();
+  }, []);
+
+
   const setDocumentStatus = useCallback((docId: string, status: string) => {
     if (!docId || !status) return;
     setIndexingStatus(prev => ({ ...prev, [docId]: status }));
@@ -222,6 +348,11 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     processedDates,
     setDocumentStatus,
     removeProcessed,
+    appUpdate,
+    checkForUpdates,
+    installUpdate,
+    pauseUpdate,
+    resumeUpdate,
   };
 
   return (

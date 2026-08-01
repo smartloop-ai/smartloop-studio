@@ -14,6 +14,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import UpdatePill from '@/app/components/update-pill';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
@@ -959,11 +960,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         )}
       </Box>
 
+      {/* Staged app update — renders above both the user card and the guest box */}
+      <UpdatePill />
+
       {/* Login / User Profile */}
       {authUser ? (
         <>
           <Box sx={{
-            p: 2,
+            p: 1.5,
             borderTop: '1px solid var(--sl-border-subtle)',
           }}>
             <Box

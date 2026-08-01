@@ -82,6 +82,7 @@ export default function AvailableModels() {
                             const size = model.size || model.file_size;
                             const accessLevel = model.access_level || 'free';
                             const isEnabled = enabledModels.has(name);
+                            const locked = model.is_accessible === false;
 
                             return (
                                 <tr
@@ -102,6 +103,9 @@ export default function AvailableModels() {
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase cap-brand" style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}>
                                                 {displayName}
                                             </span>
+                                            {locked && (
+                                                <LockOutlinedIcon sx={{ fontSize: 13, color: 'var(--sl-text-faint)' }} />
+                                            )}
                                             {(model.capabilities || []).map((cap: string) => {
                                                 const isVision = cap === 'vision';
                                                 const isSkills = cap === 'skills';
@@ -131,9 +135,7 @@ export default function AvailableModels() {
                                         )}
                                     </Box>
                                     <Box component="td" sx={{ textAlign: 'center', verticalAlign: 'middle', width: 90, pr: 3 }}>
-                                        {model.is_accessible === false ? (
-                                            <LockOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto' }} />
-                                        ) : !model.downloaded ? (
+                                        {!model.downloaded ? (
                                             toggling === name ? (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleCancelDownload(); }}
@@ -173,7 +175,7 @@ export default function AvailableModels() {
                                             ) : (
                                                 <CloudDownloadOutlinedIcon
                                                     className="model-checkbox"
-                                                    sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto', cursor: 'pointer', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                                                    sx={{ fontSize: 20, color: 'var(--sl-text-faint)', display: 'block', mx: 'auto', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1, ...(locked ? {} : { '&:hover': { color: 'var(--sl-brand-primary)' } }) }}
                                                 />
                                             )
                                         ) : (
@@ -181,6 +183,7 @@ export default function AvailableModels() {
                                                 className="model-checkbox flex items-center justify-center rounded select-none mx-auto"
                                                 style={{
                                                     width: 20, height: 20,
+                                                    opacity: locked ? 0.4 : 1,
                                                     border: isEnabled ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
                                                     backgroundColor: isEnabled ? 'var(--sl-brand-alpha-10)' : 'transparent',
                                                 }}

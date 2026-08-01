@@ -25,7 +25,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
-import AuxiliaryModelsMenu from './auxiliary-models-menu';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -1686,7 +1685,7 @@ export default function Chat(props: {
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '2px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                            <div className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
                               <pre className="user-message-content text-wrap break-words whitespace-pre-wrap font-[inherit]">
                                 {renderUserMessageContent(msg.content)}
                               </pre>
@@ -1750,7 +1749,6 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
-            leftSlot={model && <AuxiliaryModelsMenu model={model} />}
           />
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
@@ -1761,9 +1759,17 @@ export default function Chat(props: {
                     <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1">
-                    <span className={`inline-block w-[6px] h-[6px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`} style={{ backgroundColor: 'var(--sl-brand-primary)' }}></span>
-                    <span>{isLoading ? 'thinking' : 'ready'}</span>
+                  <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                        style={{
+                          backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                          ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
+                        }}
+                      ></span>
+                    ))}
                   </span>
                 )}
                 {model && (

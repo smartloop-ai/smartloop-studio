@@ -11,6 +11,7 @@ const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
 const healthMonitor = require('./health-monitor');
+const releaseChecker = require('./release-checker');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -43,7 +44,7 @@ ipcMain.handle('get-machine-id', async () => {
 
 // Open external URL in system browser
 ipcMain.handle('open-external', async (event, url) => {
-  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+  if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:'))) {
     await shell.openExternal(url);
     return true;
   }
@@ -1363,6 +1364,25 @@ ipcMain.handle('slp-switch-version', async (event, version) => {
   }
 });
 
+// IPC: force an immediate release check (manual "Check for Updates")
+ipcMain.handle('release-check-now', () => releaseChecker.checkNow());
+
+// IPC: last known release-check result (or null)
+ipcMain.handle('release-get-latest', () => releaseChecker.getLast());
+
+// IPC: whether electron-updater can self-install on this build/platform
+ipcMain.handle('updater-supported', () => releaseChecker.isUpdaterSupported());
+
+// IPC: relaunch into the downloaded update
+ipcMain.handle('updater-quit-and-install', () => releaseChecker.quitAndInstall());
+
+// IPC: pause / resume the in-flight download
+ipcMain.handle('updater-pause', () => releaseChecker.pauseDownload());
+ipcMain.handle('updater-resume', () => releaseChecker.resumeDownload());
+
+// IPC: current updater state, for renderers that mount after the last push
+ipcMain.handle('updater-get-status', () => releaseChecker.getUpdaterStatus());
+
 // Bootstrap the SLP service via SSE endpoint
 // Handles workspace creation, model download, project creation, and model loading
 const { bootstrapProgress } = require('./bootstrap-progress.js');
@@ -2153,10 +2173,23 @@ const splashThemes = {
 
 function applySplashTheme() {
   if (!splashWindow || splashWindow.isDestroyed()) return;
-  const savedTheme = store.get('app_theme', 'smartloop');
-  const themeId = savedTheme === 'rams' ? 'sepia' : savedTheme;
-  const vars = splashThemes[themeId] || splashThemes.smartloop;
-  const css = Object.entries(vars).map(([k, v]) => `document.documentElement.style.setProperty('${k}', '${v}');`).join('\n');
+  // Prefer the exact colors the renderer persisted for the active theme — this
+  // covers every built-in and any user-imported custom theme. Fall back to the
+  // built-in map (then smartloop) on a first-ever launch before any are saved.
+  let vars = null;
+  try {
+    const saved = store.get('app_theme_colors', null);
+    if (saved) vars = typeof saved === 'string' ? JSON.parse(saved) : saved;
+  } catch { /* ignore malformed */ }
+  if (!vars || typeof vars !== 'object') {
+    const savedTheme = store.get('app_theme', 'smartloop');
+    const themeId = (savedTheme === 'rams' || savedTheme === 'sepia') ? 'smartloop' : savedTheme;
+    vars = splashThemes[themeId] || splashThemes.smartloop;
+  }
+  const css = Object.entries(vars)
+    .filter(([, v]) => typeof v === 'string')
+    .map(([k, v]) => `document.documentElement.style.setProperty(${JSON.stringify(k)}, ${JSON.stringify(v)});`)
+    .join('\n');
   splashWindow.webContents.executeJavaScript(css).catch(() => {});
 }
 
@@ -2471,6 +2504,7 @@ if (!gotTheLock) {
         mainWindow.show();
         mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
         healthMonitor.start(() => mainWindow);
+        releaseChecker.start(() => mainWindow, () => refreshTray());
       }
 
       // Download blank project template in the background
@@ -2586,6 +2620,7 @@ if (!gotTheLock) {
             mainWindow.show();
             mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
             healthMonitor.start(() => mainWindow);
+            releaseChecker.start(() => mainWindow, () => refreshTray());
             fetchModels();
           }
 
@@ -2683,6 +2718,7 @@ app.on('before-quit', () => {
   app.isQuitting = true;
 
   healthMonitor.stop();
+  releaseChecker.stop();
 
   try {
     database.closeDatabase();
