@@ -561,16 +561,18 @@ jobs:
           path: release.json
 
   # ── Gated go-live: create-draft-release always drafts; this promotes the
-  # draft to `published`. It runs in the `release` environment, so with a
-  # required reviewer configured on that environment it pauses for a manual
-  # approval in the Actions UI before publishing. Only runs when the caller
-  # opts in via `publish: true` (release-prod does; ad-hoc dispatch does not).
+  # draft to `published`. It runs in the dedicated `production` environment
+  # (kept separate from `release`, which the Windows build uses for OIDC, so a
+  # required reviewer here gates only the publish, not the build). With a
+  # required reviewer configured it pauses for a manual approval in the Actions
+  # UI before publishing. Only runs when the caller opts in via `publish: true`
+  # (release-prod does; ad-hoc dispatch does not).
   publish-release:
     name: Publish Release
     needs: [create-draft-release]
     if: ${{ inputs.publish && needs.create-draft-release.result == 'success' }}
     runs-on: ubuntu-latest
-    environment: release
+    environment: production
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
