@@ -2171,6 +2171,33 @@ const splashThemes = {
   },
 };
 
+/**
+ * Resolve the active theme's base background color from the same persisted
+ * source the splash uses, so the native window can be created already dark.
+ * Without a backgroundColor the window defaults to white, which bleeds through
+ * the hidden-titlebar strip on macOS — most visibly when the window is inactive.
+ */
+function getPersistedBaseColor() {
+  try {
+    const saved = store.get('app_theme_colors', null);
+    const vars = saved ? (typeof saved === 'string' ? JSON.parse(saved) : saved) : null;
+    if (vars && typeof vars['--sl-bg-base'] === 'string') return vars['--sl-bg-base'];
+  } catch { /* malformed — fall through */ }
+  const savedTheme = store.get('app_theme', 'smartloop');
+  const themeId = (savedTheme === 'rams' || savedTheme === 'sepia') ? 'smartloop' : savedTheme;
+  const vars = splashThemes[themeId] || splashThemes.smartloop;
+  return (vars && vars['--sl-bg-base']) || '#000000';
+}
+
+/** True when a #rrggbb color is dark (so the native window chrome should be dark). */
+function isDarkColor(hex) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+  if (!m) return true; // no/malformed color → assume dark (the common case)
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+}
+
 function applySplashTheme() {
   if (!splashWindow || splashWindow.isDestroyed()) return;
   // Prefer the exact colors the renderer persisted for the active theme — this
@@ -2281,6 +2308,14 @@ function createStartingSplash() {
 }
 
 function createWindow() {
+  // Match the native window appearance to the theme up front. Without this,
+  // themeSource stays 'system' until the renderer calls setNativeTheme, so on a
+  // light-mode OS macOS draws the inactive titlebar with its light material
+  // (the white strip). Seed both the appearance and the window background from
+  // the persisted theme; setNativeTheme keeps them in sync on later changes.
+  const baseColor = getPersistedBaseColor();
+  nativeTheme.themeSource = isDarkColor(baseColor) ? 'dark' : 'light';
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 900,
@@ -2288,6 +2323,10 @@ function createWindow() {
     minHeight: 600,
     show: false, // Don't show until ready
     titleBarStyle: 'hidden',
+    // Seed the native window background with the active theme's base so the
+    // hidden-titlebar strip never flashes white — including when the window is
+    // inactive. setNativeTheme keeps it in sync on later theme changes.
+    backgroundColor: baseColor,
     webPreferences: {
       sandbox: false,
       nodeIntegration: false,
