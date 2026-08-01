@@ -1685,7 +1685,7 @@ export default function Chat(props: {
                             )}
 
                             {/* Message bubble */}
-                            <div style={{ borderRight: '2px solid var(--sl-brand-primary)' }} className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
+                            <div className="self-end max-w-full border border-sl-border-default rounded-lg px-3 md:px-5 py-2 md:py-3 text-sl-text-primary text-sm md:text-base leading-relaxed">
                               <pre className="user-message-content text-wrap break-words whitespace-pre-wrap font-[inherit]">
                                 {renderUserMessageContent(msg.content)}
                               </pre>
