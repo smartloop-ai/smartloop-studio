@@ -1376,6 +1376,10 @@ ipcMain.handle('updater-supported', () => releaseChecker.isUpdaterSupported());
 // IPC: relaunch into the downloaded update
 ipcMain.handle('updater-quit-and-install', () => releaseChecker.quitAndInstall());
 
+// IPC: pause / resume the in-flight download
+ipcMain.handle('updater-pause', () => releaseChecker.pauseDownload());
+ipcMain.handle('updater-resume', () => releaseChecker.resumeDownload());
+
 // IPC: current updater state, for renderers that mount after the last push
 ipcMain.handle('updater-get-status', () => releaseChecker.getUpdaterStatus());
 

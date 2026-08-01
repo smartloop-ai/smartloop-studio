@@ -28,7 +28,7 @@ export interface AppUpdate {
   // (false in dev and for the Linux .deb).
   updaterSupported: boolean;
   // electron-updater's progress through that download.
-  state: 'idle' | 'checking' | 'downloading' | 'downloaded' | 'error';
+  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error';
   percent: number;
   error?: string;
   // A manual force-check is in flight.
@@ -61,6 +61,10 @@ export interface AppStatus {
   checkForUpdates: () => Promise<void>;
   // Relaunch into a downloaded update.
   installUpdate: () => void;
+  // Pause / resume the in-flight download. electron-updater can't resume from a
+  // byte offset, so resume restarts the transfer.
+  pauseUpdate: () => void;
+  resumeUpdate: () => void;
 }
 
 interface HealthDetails {
@@ -96,6 +100,8 @@ const DEFAULT_STATUS: AppStatus = {
   appUpdate: DEFAULT_APP_UPDATE,
   checkForUpdates: async () => {},
   installUpdate: () => {},
+  pauseUpdate: () => {},
+  resumeUpdate: () => {},
 };
 
 const AppStatusContext = createContext<AppStatus>(DEFAULT_STATUS);
@@ -291,6 +297,14 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     (window as any).electronAPI?.quitAndInstallUpdate?.();
   }, []);
 
+  const pauseUpdate = useCallback(() => {
+    (window as any).electronAPI?.pauseUpdate?.();
+  }, []);
+
+  const resumeUpdate = useCallback(() => {
+    (window as any).electronAPI?.resumeUpdate?.();
+  }, []);
+
 
   const setDocumentStatus = useCallback((docId: string, status: string) => {
     if (!docId || !status) return;
@@ -337,6 +351,8 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     appUpdate,
     checkForUpdates,
     installUpdate,
+    pauseUpdate,
+    resumeUpdate,
   };
 
   return (

@@ -17,6 +17,8 @@ import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AvailableModels from '@/app/components/available-models';
 
 
@@ -211,7 +213,7 @@ export default function SettingsPage() {
     };
     // Local SLP health and app-update state both come from AppStatusContext —
     // the page never fetches /health or subscribes to updater events itself.
-    const { serverHealth, appUpdate, checkForUpdates, installUpdate } = useAppStatus();
+    const { serverHealth, appUpdate, checkForUpdates, installUpdate, pauseUpdate, resumeUpdate } = useAppStatus();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -454,8 +456,36 @@ export default function SettingsPage() {
                                         Downloading update v{stagedVersion ?? latestVersion}… {downloadPercent}%
                                     </span>
                                 );
-                                // No button — the download finishes on its own and flips to
-                                // "Restart & Install".
+                                actions = (
+                                    <button
+                                        onClick={pauseUpdate}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                        style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                    >
+                                        <PauseIcon sx={{ fontSize: 16 }} />
+                                        Pause
+                                    </button>
+                                );
+                            }
+                            // Paused mid-download. electron-updater can't resume from a byte
+                            // offset, so Resume restarts the transfer — the progress the user
+                            // last saw is kept so the pause reads as a pause, not a reset.
+                            else if (updaterSupported && updaterState === 'paused') {
+                                status = (
+                                    <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                        Update v{stagedVersion ?? latestVersion} paused{typeof downloadPercent === 'number' ? ` at ${downloadPercent}%` : ''}
+                                    </span>
+                                );
+                                actions = (
+                                    <button
+                                        onClick={resumeUpdate}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                        style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                    >
+                                        <PlayArrowIcon sx={{ fontSize: 16 }} />
+                                        Resume
+                                    </button>
+                                );
                             }
                             // Feed says there's an update and we can self-install, but
                             // electron-updater hasn't reported progress yet.

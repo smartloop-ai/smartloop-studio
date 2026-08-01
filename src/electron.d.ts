@@ -1,5 +1,5 @@
 export interface UpdaterStatus {
-  state: 'idle' | 'checking' | 'downloading' | 'downloaded' | 'error';
+  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error';
   percent?: number;
   version?: string | null;
   error?: string;
@@ -106,6 +106,8 @@ export interface ElectronAPI {
   // In-app updater (electron-updater)
   isUpdaterSupported: () => Promise<boolean>;
   quitAndInstallUpdate: () => Promise<{ success: boolean }>;
+  pauseUpdate: () => Promise<{ success: boolean }>;
+  resumeUpdate: () => Promise<{ success: boolean }>;
   onUpdaterStatus: (callback: (data: UpdaterStatus) => void) => void;
   removeUpdaterStatusListener: () => void;
   getUpdaterStatus: () => Promise<UpdaterStatus>;
