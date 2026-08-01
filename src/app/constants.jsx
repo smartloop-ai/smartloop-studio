@@ -7,6 +7,9 @@ export const API_ENDPOINT = `${BASE_URL}/v1`;
 export const WS_ENDPOINT = `${BASE_URL}/ws`;
 export const APP_URL = import.meta.env.VITE_APP_URL || "https://app.smartloop.ai";
 export const API_BASE_URL = BASE_URL; // For OAuth app_url parameter
+// Marketing-site changelog. Not linked from the UI yet — the docs page hasn't
+// launched; the Settings version pane picks it back up in a future release.
+export const CHANGELOG_URL = "https://smartloop.ai/docs/changelog";
 
 // Local SLP service endpoint (cached)
 let _localApiUrl = null;
