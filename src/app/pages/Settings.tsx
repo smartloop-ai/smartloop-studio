@@ -17,7 +17,6 @@ import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import AvailableModels from '@/app/components/available-models';
 
 
@@ -227,6 +226,10 @@ export default function SettingsPage() {
     const [tpsHistory, setTpsHistory] = useState<{ tokens_per_second: number; created_at: string }[]>([]);
     const appVersion = __APP_VERSION__;
 
+    // SLP agent (framework) version, sourced from slp-setup.js VERSION via IPC —
+    // distinct from the app's own version shown in the header badge.
+    const [agentVersion, setAgentVersion] = useState<string>('');
+
     const DOWNLOAD_URL = 'https://smartloop.ai/download/';
 
     const { updateAvailable, latestVersion, stagedVersion, updaterSupported, state: updaterState, percent: downloadPercent, checking: checkingUpdate, error: updaterError } = appUpdate;
@@ -247,6 +250,7 @@ export default function SettingsPage() {
         const api = window.electronAPI;
         api?.getSlpConfig?.().then(setSlpConfig).catch(() => {});
         api?.getSystemInfo?.().then(setSystemInfo).catch(() => {});
+        api?.getFrameworkVersion?.().then((v) => { if (v) setAgentVersion(v); }).catch(() => {});
     }, []);
 
     // Load settings from SQLite first, then fall back to user object
@@ -365,145 +369,169 @@ export default function SettingsPage() {
 
                     {/* 0. App version / updates */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                        <Box className="flex items-center gap-2 mb-3">
-                            <Inventory2OutlinedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                            <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--sl-text-faint)' }}>v{appVersion}</span>
-                            <div className="flex-1" />
-                            {/* Changelog link hidden until the docs page ships —
-                                restore with CHANGELOG_URL from @/app/constants. */}
-                        </Box>
+                        {(() => {
+                            const checkButton = (
+                                <button
+                                    onClick={checkForUpdates}
+                                    disabled={checkingUpdate}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                >
+                                    {checkingUpdate && <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />}
+                                    {checkingUpdate ? 'Checking…' : 'Check for Updates'}
+                                </button>
+                            );
 
-                        {/* Single adaptive status line — updates download in the background
-                            automatically. The force-check stays available in every state so
-                            support can have users pull a just-published build immediately,
-                            and so it doubles as a retry after an updater error. */}
-                        <div className="flex items-center gap-3 min-h-[32px]">
-                            {(() => {
-                                const checkButton = (
-                                    <button
-                                        onClick={checkForUpdates}
-                                        disabled={checkingUpdate}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-                                        style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                    >
-                                        {checkingUpdate && <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />}
-                                        {checkingUpdate ? 'Checking…' : 'Check for Updates'}
-                                    </button>
+                            // Escape hatch to the website build. Needed wherever
+                            // electron-updater can't install for us.
+                            const downloadButton = (
+                                <button
+                                    onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                >
+                                    <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
+                                    Download
+                                </button>
+                            );
+
+                            // Each state resolves to the status text (left column) and a single
+                            // primary action (right column). Updates download in the background
+                            // automatically, so most states need no button at all. "Check for
+                            // Updates" only appears in the idle state — the one place a force-check
+                            // is meaningful (and where support can pull a just-published build);
+                            // every other state already knows about the update and offers the one
+                            // action that moves it forward.
+                            let status: React.ReactNode;
+                            let actions: React.ReactNode = null;
+
+                            // A build already on disk is the authoritative signal, so this is
+                            // checked before updateAvailable: the feed can stop reporting the
+                            // update while the staged build is still installable, and dropping
+                            // the button then would strand the user on the old version.
+                            if (updaterSupported && updaterState === 'downloaded') {
+                                const readyVersion = stagedVersion ?? latestVersion;
+                                status = (
+                                    <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
+                                        Update{readyVersion ? ` v${readyVersion}` : ''} ready to install
+                                    </span>
                                 );
-
-                                // Escape hatch to the website build. Needed wherever
-                                // electron-updater can't install for us.
-                                const downloadButton = (
+                                actions = (
                                     <button
-                                        onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
+                                        onClick={installUpdate}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                                         style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                     >
-                                        <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
-                                        Download
+                                        <RefreshIcon sx={{ fontSize: 16 }} />
+                                        Restart & Install
                                     </button>
                                 );
-
-                                // A build already on disk is the authoritative signal, so this is
-                                // checked before updateAvailable: the feed can stop reporting the
-                                // update while the staged build is still installable, and dropping
-                                // the button then would strand the user on the old version.
-                                if (updaterSupported && updaterState === 'downloaded') {
-                                    const readyVersion = stagedVersion ?? latestVersion;
-                                    return (
-                                        <>
-                                            <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
-                                                Update{readyVersion ? ` v${readyVersion}` : ''} ready to install
-                                            </span>
-                                            <div className="flex-1" />
-                                            {checkButton}
-                                            <button
-                                                onClick={installUpdate}
-                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                            >
-                                                <RefreshIcon sx={{ fontSize: 16 }} />
-                                                Restart & Install
-                                            </button>
-                                        </>
-                                    );
-                                }
-
-                                // Self-update broke. Kept separate from the .deb case below because the
-                                // wording is the only thing telling the user something went wrong —
-                                // otherwise a failed auto-update looks exactly like a .deb install,
-                                // where downloading by hand is simply how it works.
-                                if (updaterState === 'error') {
-                                    return (
-                                        <>
-                                            <ErrorOutlineIcon sx={{ fontSize: 16, color: 'var(--sl-status-error)' }} />
-                                            <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }} title={updaterError}>
-                                                Couldn't install the update automatically
-                                            </span>
-                                            <div className="flex-1" />
-                                            {checkButton}
-                                            {updateAvailable && downloadButton}
-                                        </>
-                                    );
-                                }
-
-                                // A download in flight is local reality and outranks the feed, which
-                                // a force-check mid-download can flip to "no update" (the backend
-                                // compares against the running version, not the one being fetched).
-                                // Gating this on updateAvailable would blank the progress out from
-                                // under a download that is still very much running.
-                                if (updaterSupported && updaterState === 'downloading') {
-                                    return (
-                                        <>
-                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                            <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                                Downloading update v{stagedVersion ?? latestVersion}… {downloadPercent}%
-                                            </span>
-                                            <div className="flex-1" />
-                                            {checkButton}
-                                        </>
-                                    );
-                                }
-
-                                // Feed says there's an update and we can self-install, but
-                                // electron-updater hasn't reported progress yet.
-                                if (updateAvailable && updaterSupported) {
-                                    return (
-                                        <>
-                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                            <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                                Preparing update v{latestVersion}…
-                                            </span>
-                                            <div className="flex-1" />
-                                            {checkButton}
-                                        </>
-                                    );
-                                }
-
-                                // Platforms electron-updater can't install for us — the Linux .deb,
-                                // and unpackaged dev builds. Downloading by hand is the normal path.
-                                if (updateAvailable) {
-                                    return (
-                                        <>
-                                            <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>Version {latestVersion} available</span>
-                                            <div className="flex-1" />
-                                            {checkButton}
-                                            {downloadButton}
-                                        </>
-                                    );
-                                }
-                                return (
-                                    <>
-                                        <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                            {latestVersion ? "You're up to date" : 'Checking for updates…'}
-                                        </span>
-                                        <div className="flex-1" />
-                                        {checkButton}
-                                    </>
+                            }
+                            // Self-update broke. Kept separate from the .deb case below because the
+                            // wording is the only thing telling the user something went wrong —
+                            // otherwise a failed auto-update looks exactly like a .deb install,
+                            // where downloading by hand is simply how it works.
+                            else if (updaterState === 'error') {
+                                status = (
+                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-secondary)' }} title={updaterError}>
+                                        <ErrorOutlineIcon sx={{ fontSize: 16, color: 'var(--sl-status-error)' }} />
+                                        Couldn't install the update automatically
+                                    </span>
                                 );
-                            })()}
-                        </div>
+                                // Auto-install failed: Download is both the fix and the retry.
+                                // Fall back to a re-check only if there's nothing to download.
+                                actions = updateAvailable ? downloadButton : checkButton;
+                            }
+                            // A download in flight is local reality and outranks the feed, which
+                            // a force-check mid-download can flip to "no update" (the backend
+                            // compares against the running version, not the one being fetched).
+                            // Gating this on updateAvailable would blank the progress out from
+                            // under a download that is still very much running.
+                            else if (updaterSupported && updaterState === 'downloading') {
+                                status = (
+                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        Downloading update v{stagedVersion ?? latestVersion}… {downloadPercent}%
+                                    </span>
+                                );
+                                // No button — the download finishes on its own and flips to
+                                // "Restart & Install".
+                            }
+                            // Feed says there's an update and we can self-install, but
+                            // electron-updater hasn't reported progress yet.
+                            else if (updateAvailable && updaterSupported) {
+                                status = (
+                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        Preparing update v{latestVersion}…
+                                    </span>
+                                );
+                                // No button — hand-off to the automatic download.
+                            }
+                            // Platforms electron-updater can't install for us — the Linux .deb,
+                            // and unpackaged dev builds. Downloading by hand is the normal path.
+                            else if (updateAvailable) {
+                                status = <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>Version {latestVersion} available</span>;
+                                actions = downloadButton;
+                            } else {
+                                status = (
+                                    <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                        {latestVersion ? "You're up to date" : 'Checking for updates…'}
+                                    </span>
+                                );
+                                actions = checkButton;
+                            }
+
+                            return (
+                                <div className="flex items-center justify-between gap-4">
+                                    {/* Left columns: package icon + identity/status stack */}
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div
+                                            className="flex items-center justify-center rounded-xl shrink-0"
+                                            style={{ width: 48, height: 48, backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-default)' }}
+                                        >
+                                            <svg
+                                                width="24"
+                                                height="24"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="var(--sl-brand-primary)"
+                                                strokeWidth="1.75"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            >
+                                                <path d="m7.5 4.27 9 5.15" />
+                                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                                                <path d="M3.3 7 12 12l8.7-5" />
+                                                <path d="M12 22V12" />
+                                            </svg>
+                                        </div>
+                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                                                <span
+                                                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
+                                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
+                                                >
+                                                    v{appVersion}
+                                                </span>
+                                                {/* Changelog link hidden until the docs page ships —
+                                                    restore with CHANGELOG_URL from @/app/constants. */}
+                                            </div>
+                                            {status}
+                                        </div>
+                                    </div>
+
+                                    {/* Right: single primary action, vertically centered against
+                                        the block. Absent while an update downloads on its own. */}
+                                    {actions && (
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {actions}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
                     </Box>
 
                     {/* 1. Theme */}
@@ -683,14 +711,14 @@ export default function SettingsPage() {
                                             </span>
                                         </Box>
                                     </tr>
-                                    {appVersion && (
+                                    {agentVersion && (
                                         <tr>
                                             <Box component="td" sx={{ color: 'var(--sl-text-muted)', fontSize: '11px', fontWeight: 500, width: '40%' }}>
                                                 Version
                                             </Box>
                                             <Box component="td">
                                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold" style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-muted)', fontFamily: 'monospace' }}>
-                                                    {appVersion}
+                                                    {agentVersion}
                                                 </span>
                                             </Box>
                                         </tr>
