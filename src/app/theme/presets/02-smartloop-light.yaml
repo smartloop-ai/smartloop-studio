@@ -1,11 +1,11 @@
 id: smartloop-light
 name: Smartloop
-description: Clean and bright with Smartloop pink accents
+description: Pink accent light theme inspired by GitHub Light
 mode: light
 colors:
-  bg:     { base: '#fdfbfc', surface1: '#f8f4f6', surface2: '#f1eaed', surface3: '#e6dce0', input: '#f8f4f6', elevated: '#fefdfd' }
+  bg:     { base: '#ffffff', surface1: '#f6f8fa', surface2: '#eaeef2', surface3: '#d8dee4', input: '#f6f8fa', elevated: '#ffffff' }
   brand:  { primary: '#ec4899', hover: '#db2777', active: '#be185d', light: '#f472b6' }
-  text:   { primary: '#1a1a1a', secondary: '#374151', tertiary: '#4b5563', muted: '#6b7280', disabled: '#8b95a3', faint: '#9ca3af' }
-  status: { error: '#dc2626', success: '#059669', online: '#16a34a', warning: '#d97706', info: '#2563eb', purple: '#7c3aed' }
-  border: { subtle: '#efe7ea', default: '#e6dce0', hover: '#d6c7ce', code: '#e0d4da' }
-  table:  { head: '#f8f4f6', hover: '#f2ebee', stripe: '#fdfbfc', inlineCode: '#f2ebee' }
+  text:   { primary: '#1f2328', secondary: '#424a53', tertiary: '#656d76', muted: '#818b98', disabled: '#8c959f', faint: '#afb8c1' }
+  status: { error: '#d1242f', success: '#1a7f37', online: '#1a7f37', warning: '#9a6700', info: '#0969da', purple: '#8250df' }
+  border: { subtle: '#eaeef2', default: '#d0d7de', hover: '#afb8c1', code: '#d0d7de' }
+  table:  { head: '#f6f8fa', hover: '#eaeef2', stripe: '#fbfcfd', inlineCode: '#eaeef2' }

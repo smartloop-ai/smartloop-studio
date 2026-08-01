@@ -86,6 +86,46 @@ function buildColors(colorsDoc: any, mode: 'dark' | 'light'): { colors?: ThemeCo
   return { colors: derived };
 }
 
+// ── Theme rail icons ─────────────────────────────────────────────────────────
+const RAIL_ICON_NAMES = ['models', 'documents', 'mcp', 'skills', 'settings'] as const;
+
+// User-imported YAML is untrusted and rail icons render as raw inline SVG, so
+// strip anything that could execute: <script> tags, on*= event handlers, and
+// javascript: URLs. Only accept a value that is actually a single <svg> element.
+function sanitizeSvg(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!/^<svg[\s>]/i.test(s) || !/<\/svg>\s*$/i.test(s)) return null;
+  return s
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/((?:xlink:)?href)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '');
+}
+
+function parseIcons(doc: any): Partial<Record<string, string>> | undefined {
+  if (!doc || typeof doc !== 'object') return undefined;
+  const out: Record<string, string> = {};
+  for (const name of RAIL_ICON_NAMES) {
+    const clean = sanitizeSvg(doc[name]);
+    if (clean) out[name] = clean;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+// ── Theme font ───────────────────────────────────────────────────────────────
+// `family` is required; `heading`/`url` optional. The url must be an https
+// stylesheet (Google Fonts et al.) so an imported theme can't inject arbitrary
+// resources.
+function parseFont(doc: any): { family: string; heading?: string; url?: string } | undefined {
+  if (!doc || typeof doc !== 'object') return undefined;
+  const family = typeof doc.family === 'string' ? doc.family.trim() : '';
+  if (!family) return undefined;
+  const out: { family: string; heading?: string; url?: string } = { family };
+  if (typeof doc.heading === 'string' && doc.heading.trim()) out.heading = doc.heading.trim();
+  if (typeof doc.url === 'string' && /^https:\/\//i.test(doc.url.trim())) out.url = doc.url.trim();
+  return out;
+}
+
 // Parse an already-loaded YAML document into a ready-to-use theme.
 // `allowExplicitId` trusts the doc's `id` (for shipped presets); otherwise a
 // `custom-*` id is generated so user imports can never clobber a built-in.
@@ -100,6 +140,8 @@ export function parseThemeDoc(doc: any, opts: { allowExplicitId?: boolean } = {}
 
   const name = doc.name.trim();
   const id = opts.allowExplicitId && typeof doc.id === 'string' && doc.id.trim() ? doc.id.trim() : `custom-${slug(name)}`;
+  const icons = parseIcons(doc.icons);
+  const font = parseFont(doc.font);
   return {
     theme: {
       id,
@@ -107,6 +149,8 @@ export function parseThemeDoc(doc: any, opts: { allowExplicitId?: boolean } = {}
       description: (typeof doc.description === 'string' && doc.description.trim()) || 'Custom theme',
       mode,
       colors,
+      ...(icons ? { icons } : {}),
+      ...(font ? { font } : {}),
     },
   };
 }

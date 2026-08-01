@@ -1,0 +1,19 @@
+id: catppuccin-mocha
+name: Catppuccin Mocha
+description: Cozy dark mocha palette with a mauve accent
+mode: dark
+colors:
+  bg:     { base: '#1e1e2e', surface1: '#313244', surface2: '#45475a', surface3: '#585b70', input: '#313244', elevated: '#181825' }
+  brand:  { primary: '#cba6f7', hover: '#b48fe8', active: '#9d78d6', light: '#d9c2fa' }
+  text:   { primary: '#cdd6f4', secondary: '#bac2de', tertiary: '#a6adc8', muted: '#9399b2', disabled: '#7f849c', faint: '#6c7086' }
+  status: { error: '#f38ba8', success: '#a6e3a1', online: '#a6e3a1', warning: '#f9e2af', info: '#89b4fa', purple: '#cba6f7' }
+  border: { subtle: '#313244', default: '#45475a', hover: '#585b70', code: '#45475a' }
+  table:  { head: '#181825', hover: '#313244', stripe: '#11111b', inlineCode: '#313244' }
+# Playful rail icons — skills is a cat, in keeping with Catppuccin. Edit these
+# SVGs to reskin the sidebar rail; use stroke="currentColor" to inherit states.
+icons:
+  models:    '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5 13.5 5.5 8 8.5 2.5 5.5Z"/><path d="M2.5 8.5 8 11.5 13.5 8.5"/><path d="M2.5 11 8 14 13.5 11"/></svg>'
+  documents: '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h5l3 3v8H4Z"/><path d="M9 2.5v3h3"/><path d="M6 8.5h4M6 10.5h4"/></svg>'
+  mcp:       '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4.5" r="1.6"/><circle cx="12" cy="4.5" r="1.6"/><circle cx="8" cy="11.5" r="1.6"/><path d="M5.4 5.4 6.9 10.2M10.6 5.4 9.1 10.2M5.6 4.5h4.8"/></svg>'
+  skills:    '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 8 4 4 7.2 6M11.8 8 12 4 8.8 6"/><circle cx="8" cy="9.2" r="3.4"/><path d="M6.9 8.9h.01M9.1 8.9h.01" stroke-width="1.4"/><path d="M8 9.9v.7M7.6 10.5 5.6 10.1M8.4 10.5l2-.4"/></svg>'
+  settings:  '<svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.3"/><path d="M8 2.6V4M8 12v1.4M2.6 8H4M12 8h1.4M4.3 4.3l1 1M10.7 10.7l1 1M11.7 4.3l-1 1M5.3 10.7l-1 1"/></svg>'

@@ -1,0 +1,11 @@
+id: solarized-light
+name: Solarized Light
+description: Ethan Schoonover's warm cream solarized palette, the light pair
+mode: light
+colors:
+  bg:     { base: '#fdf6e3', surface1: '#eee8d5', surface2: '#e4ddc8', surface3: '#d9d2bd', input: '#eee8d5', elevated: '#fffbef' }
+  brand:  { primary: '#268bd2', hover: '#1f7ab8', active: '#19689e', light: '#4ba3e0' }
+  text:   { primary: '#073642', secondary: '#586e75', tertiary: '#657b83', muted: '#839496', disabled: '#93a1a1', faint: '#aeb7a6' }
+  status: { error: '#dc322f', success: '#859900', online: '#859900', warning: '#b58900', info: '#2aa198', purple: '#6c71c4' }
+  border: { subtle: '#eee8d5', default: '#ddd6c1', hover: '#cbc4ab', code: '#ddd6c1' }
+  table:  { head: '#eee8d5', hover: '#e4ddc8', stripe: '#f7f1de', inlineCode: '#e4ddc8' }
