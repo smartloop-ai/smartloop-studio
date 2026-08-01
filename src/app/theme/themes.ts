@@ -12,12 +12,20 @@ export interface ThemeColors {
   table: { head: string; hover: string; stripe: string; inlineCode: string };
 }
 
+// Rail icons a theme may override with its own artwork (right-sidebar rail).
+export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+
 export interface ThemeDefinition {
   id: string;
   name: string;
   description: string;
   mode: 'dark' | 'light';
   colors: ThemeColors;
+  // Optional per-theme rail icons: name → raw inline SVG markup. When present a
+  // theme (built-in preset or user-imported YAML) ships its own iconography for
+  // the right-sidebar rail, replacing the default vector icons. SVGs should use
+  // `stroke="currentColor"`/`fill="currentColor"` so they inherit rail states.
+  icons?: Partial<Record<RailIconName, string>>;
 }
 
 // ── Theme presets are shipped as YAML, not hardcoded here ────────────────────
@@ -37,7 +45,7 @@ for (const path of Object.keys(presetModules).sort()) {
   else console.error(`[themes] failed to load preset ${path}: ${error}`);
 }
 
-// Safety net: never leave the app without the default theme.
+// Safety net: never leave the app without the default theme (Smartloop).
 if (!loadedThemes.some((t) => t.id === 'smartloop')) {
   loadedThemes.unshift({
     id: 'smartloop',
