@@ -210,6 +210,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # The GitHub OIDC token azure/login exchanges is a client assertion that
+      # is only valid for ~5 minutes. Signing runs ~11 minutes later (npm
+      # install + build sit between login and the sign hook), so by the time
+      # the Trusted Signing dlib asks the Azure CLI for a code-signing token,
+      # az must re-present the now-expired assertion and fails with
+      # AADSTS700024 ("Client assertion is not within its valid time range").
+      # Fetch the code-signing token here, while the assertion is still fresh,
+      # so az caches it (~75 min lifetime) — the dlib's AzureCliCredential then
+      # gets a cache hit at sign time and never touches the expired assertion.
+      # See https://github.com/Azure/login/issues/180.
+      - name: Pre-fetch Trusted Signing token (before the OIDC assertion expires)
+        shell: pwsh
+        run: az account get-access-token --scope https://codesigning.azure.net/.default --output none
+
       # The sign hook shells out to Invoke-TrustedSigning via powershell.exe.
       # Install machine-wide (AllUsers → Program Files\WindowsPowerShell\
       # Modules): the runner presets the PSModulePath env var with PowerShell 7
