@@ -97,6 +97,7 @@ export interface ElectronAPI {
   removeModelInitProgressListener: () => void;
   slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
   slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
+  slpGetDownloadState: () => Promise<{ success: boolean; downloads: Record<string, { percent: number; status: string; downloading: boolean; projectId?: string | null }> }>;
   onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
   removeModelDownloadProgressListener: () => void;
   onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => void;

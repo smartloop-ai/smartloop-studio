@@ -44,13 +44,62 @@ export function useLocalModels() {
     useEffect(() => {
         const api = window.electronAPI;
         const handleProgress = (data: any) => {
-            if (togglingRef.current && data.model === togglingRef.current) {
+            const active = togglingRef.current;
+            if (!active || data.model !== active) return;
+            const done = data.downloading === false || (data.percent ?? 0) >= 100;
+            if (done) {
+                // Terminal event. Finalize here rather than relying on the original
+                // handleToggleModel await — after a remount that await no longer
+                // exists, so this is the only place that clears the download.
+                togglingRef.current = null;
+                setToggling(null);
+                setDownloadProgress(null);
+                setEnabledOverrides(prev => { const next = new Map(prev); next.delete(active); return next; });
+                fetchLocalModels();
+            } else {
                 setDownloadProgress({ percent: data.percent, status: data.status });
             }
         };
         api?.onModelDownloadProgress?.(handleProgress);
         return () => { api?.removeModelDownloadProgressListener?.(); };
-    }, []);
+    }, [fetchLocalModels]);
+
+    // On mount, rehydrate any in-flight download from the main process (the source
+    // of truth). Without this, a panel remount (e.g. after tab navigation) would
+    // reset to "not downloaded" and a re-click would start a duplicate download.
+    useEffect(() => {
+        const api = window.electronAPI;
+        if (!api?.slpGetDownloadState) return;
+        let cancelled = false;
+        (async () => {
+            const result = await api.slpGetDownloadState();
+            if (cancelled || !result?.success) return;
+            // Only adopt a download started for the project this view is showing —
+            // enablement is per-project, so another project's download must not
+            // flip this view's toggle.
+            const entries = Object.entries(result.downloads || {})
+                .filter(([, s]) => (s.projectId ?? null) === projectId);
+            if (entries.length === 0) {
+                // Nothing in flight here. Drop any download adopted for the project
+                // we just switched away from, so its spinner does not linger.
+                const stale = togglingRef.current;
+                if (stale) {
+                    togglingRef.current = null;
+                    setToggling(null);
+                    setDownloadProgress(null);
+                    setEnabledOverrides(prev => { const next = new Map(prev); next.delete(stale); return next; });
+                }
+                return;
+            }
+            // Only one auxiliary download runs at a time; adopt the first.
+            const [name, state] = entries[0] as [string, { percent: number; status: string }];
+            togglingRef.current = name;
+            setToggling(name);
+            setDownloadProgress({ percent: state.percent, status: state.status });
+            setEnabledOverrides(prev => new Map(prev).set(name, true));
+        })();
+        return () => { cancelled = true; };
+    }, [projectId]);
 
     const handleCancelDownload = useCallback(async () => {
         const api = window.electronAPI;

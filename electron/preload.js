@@ -113,6 +113,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
   slpCancelModelDownload: (modelName, projectId) => ipcRenderer.invoke('slp-cancel-model-download', modelName, projectId),
+  slpGetDownloadState: () => ipcRenderer.invoke('slp-get-download-state'),
   onModelDownloadProgress: (callback) => {
     ipcRenderer.on('model-download-progress', (event, data) => callback(data));
   },
