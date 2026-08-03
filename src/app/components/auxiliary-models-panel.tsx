@@ -70,16 +70,27 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         .map(({ m }) => m);
 
     // Leading circular state indicator.
-    const renderIndicator = (s: { enabled: boolean; locked: boolean; downloaded: boolean; isDownloading: boolean; percent: number }) => {
+    const renderIndicator = (s: { enabled: boolean; needsUnlock: boolean; needsLogin: boolean; downloaded: boolean; isDownloading: boolean; percent: number }) => {
         const ring: React.CSSProperties = {
             width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
         };
-        if (s.locked) {
+        if (s.needsUnlock) {
             return (
                 <Tooltip title="Upgrade your plan to use this model" arrow placement="top">
                     <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
+                    </span>
+                </Tooltip>
+            );
+        }
+        // Free model, but the user isn't signed in yet — show a (disabled) download
+        // affordance rather than a plan-gate lock.
+        if (s.needsLogin) {
+            return (
+                <Tooltip title="Sign in to download this model" arrow placement="top">
+                    <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
+                        <FileDownloadOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
                     </span>
                 </Tooltip>
             );
@@ -137,11 +148,19 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const displayName = m.display_name || name;
         const description = m.description || '';
         const enabled = isEnabled(name);
-        const locked = m.is_accessible === false;
         const downloaded = !!m.downloaded;
+        // An already-downloaded model stays usable regardless of auth/plan — the
+        // gate only applies to models the user hasn't downloaded yet.
+        const locked = m.is_accessible === false && !downloaded;
+        // "Unlock" is only for genuinely plan-gated models (paid / internal). A
+        // free model reported inaccessible just because the user is signed out is
+        // a login gate — surfaced as a disabled Download + tooltip, not an Unlock.
+        const isGated = m.access_level === 'premium' || m.access_level === 'internal';
+        const needsUnlock = locked && isGated;
+        const needsLogin = locked && !needsUnlock;
         const isDownloading = toggling === name && !downloaded;
         const percent = downloadProgress?.percent ?? 0;
-        const isPremium = m.access_level === 'premium' || locked;
+        const isPremium = isGated;
         const paramsLabel = formatParams(m);
 
         const onClick = () => {
@@ -170,10 +189,10 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
             >
                 {/* Header — indicator, title, and params / percent / unlock */}
                 <div className="flex items-center gap-3">
-                    {renderIndicator({ enabled, locked, downloaded, isDownloading, percent })}
+                    {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent })}
                     <span className="text-[13px] font-bold text-sl-text-primary truncate">{displayName}</span>
                     <div className="ml-auto flex-shrink-0">
-                        {locked ? (
+                        {needsUnlock ? (
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleUnlock(); }}
                                 className="flex items-center gap-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
@@ -233,6 +252,15 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     <div className="flex-shrink-0">
                         {isDownloading ? (
                             <span className="text-[12px]" style={{ color: 'var(--sl-text-muted)' }}>Downloading…</span>
+                        ) : needsLogin ? (
+                            <Tooltip title="Sign in to download this model" arrow placement="top">
+                                <span
+                                    className="text-[12px] font-semibold"
+                                    style={{ color: 'var(--sl-text-faint)', cursor: 'default' }}
+                                >
+                                    Download
+                                </span>
+                            </Tooltip>
                         ) : (!downloaded && !locked) ? (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onClick(); }}

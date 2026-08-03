@@ -24,7 +24,7 @@
 	box-shadow: 2px 2px 8px var(--sl-black-alpha-20);
 }
 
-/* Right sidebar pink scrollbar */
+/* Right sidebar scrollbar — themed via brand tokens */
 .sidebar-scroll::-webkit-scrollbar {
 	width: 4px;
 }
@@ -34,10 +34,10 @@
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb {
-	background: rgba(236, 72, 153, 0.25);
+	background: var(--sl-brand-alpha-30);
 	border-radius: 4px;
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-	background: rgba(236, 72, 153, 0.6);
+	background: var(--sl-brand-primary);
 }
