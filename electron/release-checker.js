@@ -257,8 +257,19 @@ function maybeStartUpdate(result) {
  * `isSilent = true` keeps Windows from showing the NSIS installer UI for what
  * the user asked to be a restart; both args are ignored on macOS.
  */
-function quitAndInstall() {
+async function quitAndInstall() {
   if (!updaterSupported()) return { success: false };
+
+  // Stop SLP and wait for it to exit before relaunching. main.js's before-quit
+  // stops it too but doesn't await, so the old service can outlive the quit —
+  // then the new instance adopts it and skips installing the SLP bundled with
+  // this update. Awaiting here guarantees the port is free for a clean startup.
+  try {
+    await slpService.stopService();
+  } catch (err) {
+    console.warn('[Updater] Error stopping SLP before install:', err?.message || err);
+  }
+
   setImmediate(() => {
     // The main window's close handler hides to tray unless this is set.
     let quitStarted = false;
