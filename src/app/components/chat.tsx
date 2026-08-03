@@ -1222,7 +1222,7 @@ export default function Chat(props: {
     <>
       <Box className="chat__box flex flex-col h-full bg-sl-bg-base overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-border-subtle)' }}>
         <section className="chat__body flex-1 overflow-hidden">
-          <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 scrollbar-thin">
+          <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 sidebar-scroll">
             <div ref={messagesEndRef} />
 
             {(displayMessages || []).length === 0 && searchQuery.trim() === "" && modelDownloadProgress &&
