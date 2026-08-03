@@ -14,6 +14,8 @@
  */
 const { execFileSync } = require('child_process');
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function psQuote(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
@@ -50,6 +52,31 @@ exports.default = async function sign(configuration) {
     "if (-not (Get-Command Invoke-TrustedSigning -ErrorAction SilentlyContinue)) { " +
     "Import-Module (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\\Modules\\TrustedSigning') -ErrorAction Stop } }";
 
+  // The dlib resolves an AAD token via Azure.Identity's DefaultAzureCredential,
+  // which walks a fixed chain. azure/login (OIDC) establishes an Azure CLI
+  // session but sets no client secret or federated-token file, so the only
+  // credential that can actually mint a token is AzureCliCredential — which
+  // sits *after* ManagedIdentityCredential in the chain. On GitHub-hosted
+  // runners there is no managed identity, and the ManagedIdentity IMDS probe
+  // (169.254.169.254) intermittently blackholes and hangs, stalling signtool
+  // at "Submitting digest for signing..." until the timeout killed the build.
+  // Exclude ManagedIdentity (the hang) plus the desktop/interactive
+  // credentials that have no business on a runner, so the chain resolves
+  // straight to the Azure CLI session azure/login created.
+  const excludeCredentials = [
+    '-ExcludeManagedIdentityCredential',
+    '-ExcludeSharedTokenCacheCredential',
+    '-ExcludeVisualStudioCredential',
+    '-ExcludeVisualStudioCodeCredential',
+    '-ExcludeInteractiveBrowserCredential',
+  ];
+
+  // With the IMDS hang removed, genuine Trusted Signing calls complete in
+  // seconds, so a tight per-attempt timeout is safe and turns a stalled
+  // request into a fast retry instead of a 20-minute build failure.
+  const perAttemptTimeoutSec = 300;
+  const maxAttempts = 3;
+
   const command = [
     importModule + ';',
     'Invoke-TrustedSigning',
@@ -59,17 +86,31 @@ exports.default = async function sign(configuration) {
     '-FileDigest', psQuote('SHA256'),
     '-TimestampRfc3161', psQuote('http://timestamp.acs.microsoft.com'),
     '-TimestampDigest', psQuote('SHA256'),
-    // The module's default signtool timeout is 300s; the Trusted Signing
-    // endpoint sometimes takes longer to return a signature, which killed
-    // otherwise-healthy builds. Give it real headroom.
-    '-Timeout', '1200',
+    ...excludeCredentials,
+    '-Timeout', String(perAttemptTimeoutSec),
     '-Files', psQuote(configuration.path),
   ].join(' ');
 
-  console.log(`  • signing with Azure Trusted Signing  file=${configuration.path}`);
-  execFileSync(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
-    { stdio: 'inherit' }
-  );
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(
+        `  • signing with Azure Trusted Signing (attempt ${attempt}/${maxAttempts})  file=${configuration.path}`
+      );
+      execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
+        { stdio: 'inherit' }
+      );
+      return;
+    } catch (err) {
+      if (attempt === maxAttempts) {
+        console.error(`  ⨯ signing failed after ${maxAttempts} attempts  file=${configuration.path}`);
+        throw err;
+      }
+      const backoffSec = attempt * 15;
+      const reason = (err && err.message ? String(err.message).split('\n')[0] : String(err));
+      console.warn(`  • signing attempt ${attempt} failed (${reason}); retrying in ${backoffSec}s`);
+      await sleep(backoffSec * 1000);
+    }
+  }
 };
