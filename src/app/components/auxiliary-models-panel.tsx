@@ -156,7 +156,13 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const needsLogin = locked && !needsUnlock;
         const isDownloading = toggling === name && !downloaded;
         const percent = downloadProgress?.percent ?? 0;
-        const isPremium = isGated;
+        // Tier tag shown on gated models: pro uses the brand color, internal
+        // collapses into a gold "Premium". Border is ~30% of the text color.
+        const tier = m.access_level === 'pro'
+            ? { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' }
+            : isGated
+                ? { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' }
+                : null;
         const paramsLabel = formatParams(m);
 
         const onClick = () => {
@@ -228,12 +234,12 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                                 </span>
                             );
                         })}
-                        {isPremium && (
+                        {tier && (
                             <span
                                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                                style={{ border: `1px solid ${tier.border}`, color: tier.color }}
                             >
-                                Premium
+                                {tier.label}
                             </span>
                         )}
                     </div>
