@@ -120,9 +120,11 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
             );
         }
         if (!s.downloaded) {
+            // Not downloaded yet — the bulb shows disabled; the download action
+            // lives in the footer.
             return (
-                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
-                    <FileDownloadOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
+                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)', opacity: 0.5 }}>
+                    <LightbulbOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-faint)' }} />
                 </span>
             );
         }
@@ -227,9 +229,9 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                             const isVision = cap === 'vision';
                             const isSkills = cap === 'skills';
                             const isDp = cap === 'dp';
-                            const isKnowledge = cap === 'knowledge';
-                            const color = isVision ? '#93c5fd' : isSkills ? '#86efac' : isDp ? '#fdba74' : isKnowledge ? '#c4b5fd' : 'var(--sl-text-muted)';
-                            const border = isVision ? 'rgba(147,197,253,0.35)' : isSkills ? 'rgba(134,239,172,0.35)' : isDp ? 'rgba(253,186,116,0.35)' : isKnowledge ? 'rgba(196,181,253,0.35)' : 'var(--sl-border-default)';
+                            const isGeneral = cap === 'general';
+                            const color = isVision ? '#93c5fd' : isSkills ? '#86efac' : isDp ? '#fdba74' : isGeneral ? '#c4b5fd' : 'var(--sl-text-muted)';
+                            const border = isVision ? 'rgba(147,197,253,0.35)' : isSkills ? 'rgba(134,239,172,0.35)' : isDp ? 'rgba(253,186,116,0.35)' : isGeneral ? 'rgba(196,181,253,0.35)' : 'var(--sl-border-default)';
                             return (
                                 <span
                                     key={cap}
@@ -255,20 +257,22 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                         ) : needsLogin ? (
                             <Tooltip title="Sign in to download this model" arrow placement="top">
                                 <span
-                                    className="text-[12px] font-semibold"
+                                    className="flex items-center justify-center"
                                     style={{ color: 'var(--sl-text-faint)', cursor: 'default' }}
                                 >
-                                    Download
+                                    <FileDownloadOutlinedIcon sx={{ fontSize: 18 }} />
                                 </span>
                             </Tooltip>
                         ) : (!downloaded && !locked) ? (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onClick(); }}
-                                className="text-[12px] font-semibold"
-                                style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                            >
-                                Download
-                            </button>
+                            <Tooltip title="Download model" arrow placement="top">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onClick(); }}
+                                    className="flex items-center justify-center"
+                                    style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                >
+                                    <FileDownloadOutlinedIcon sx={{ fontSize: 18 }} />
+                                </button>
+                            </Tooltip>
                         ) : null}
                     </div>
                 </div>
