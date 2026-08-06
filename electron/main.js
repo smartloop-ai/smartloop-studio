@@ -1,3 +1,6 @@
+// Initialize logging first so everything below (including early startup
+// failures) is captured to the OS-standard log file. Overrides console.*.
+require('./logger');
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } = require('electron');
 const { setupTitlebarAndAttachToWindow } = require('custom-electron-titlebar/main');
 const path = require('path');

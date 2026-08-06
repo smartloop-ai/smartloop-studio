@@ -151,6 +151,10 @@ function setUpdaterStatus(next) {
 function wireUpdater() {
   if (updaterWired) return;
   updaterWired = true;
+  // Route electron-updater's own diagnostics to the log file. This is what
+  // records the real reason an update download/install fails (e.g. a macOS
+  // signature rejection that otherwise fails silently) — see logger.js.
+  autoUpdater.logger = require('electron-log/main');
   // We drive downloadUpdate() ourselves so we can hold a CancellationToken and
   // pause the transfer — autoDownload would download without handing us one.
   autoUpdater.autoDownload = false;
