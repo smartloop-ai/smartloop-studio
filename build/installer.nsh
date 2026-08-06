@@ -58,17 +58,16 @@ Var pid
   ${If} $R0 == "10"
     DetailPrint "SLP framework already installed - skipping download."
   ${ElseIf} ${Silent}
-    ; Silent install (/S, Microsoft Store): there's no InstFiles page to pump
-    ; NScurl's windowed transfer, so it can return before the download finishes
-    ; and the framework ends up missing. nsExec::ExecToLog blocks until the
-    ; process exits, so let install-slp.ps1 download AND extract itself (no
-    ; -ArchivePath) in one synchronous step — that makes /S actually wait.
-    DetailPrint "Downloading SLP framework ${SLP_VERSION}..."
-    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "$PLUGINSDIR\install-slp.ps1" -Version "${SLP_VERSION}"'
-    Pop $R0
-    ${If} $R0 != "0"
-      DetailPrint "SLP framework install did not complete (code $R0) - Smartloop Studio will install it on first launch."
-    ${EndIf}
+    ; Silent install (/S, Microsoft Store): a silent installer has no InstFiles
+    ; window to show a progress bar, and the Store can't render sub-progress of a
+    ; Win32 silent installer — it only tracks its own package download and then
+    ; waits for our process to exit. Downloading the (large) SLP framework here
+    ; would therefore stall behind an invisible, unbounded wait. Defer it to
+    ; first launch instead, where the app's splash bootstrap shows a real
+    ; "Downloading Framework… X / Y MB" progress bar (see updateSplashProgress
+    ; in electron/main.js). The runtime install in slp-setup.js is the exact
+    ; same code path, so nothing is lost — only made visible.
+    DetailPrint "Deferring SLP framework install to first launch (silent mode)."
   ${Else}
     DetailPrint "Downloading SLP framework ${SLP_VERSION}..."
     ; Hand NScurl the InstFiles page's own progress bar (dlg item 1004) and
