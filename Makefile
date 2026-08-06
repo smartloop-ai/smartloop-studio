@@ -66,6 +66,7 @@ help-electron:
 	@echo "  make stop                    - Stop the running SLP service"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
+	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
 	@echo ""
@@ -142,6 +143,29 @@ run-electron-dev:
 
 # Alias for run-electron-dev
 electron-dev: run-electron-dev
+
+# App name electron-log uses for its per-user log directory. In dev this is the
+# package.json "name" (app.name); keep in sync if that ever changes.
+LOG_APP_NAME=smartloop-studio
+
+# Tail the Electron main-process log (electron-log) live. Resolves the
+# OS-standard path on macOS, Linux, and Windows (Git Bash / MSYS). Uses `tail -F`
+# so it survives electron-log's 5MB rotation and starts streaming once the app
+# creates the file — run it alongside `make electron-dev`.
+logs-dev:
+	@os="$$(uname -s)"; \
+	case "$$os" in \
+		Darwin) LOG="$(HOME)/Library/Logs/$(LOG_APP_NAME)/main.log";; \
+		Linux)  LOG="$(HOME)/.config/$(LOG_APP_NAME)/logs/main.log";; \
+		MINGW*|MSYS*|CYGWIN*) LOG="$(HOME)/AppData/Roaming/$(LOG_APP_NAME)/logs/main.log";; \
+		*) echo "❌ Unsupported OS: $$os"; exit 1;; \
+	esac; \
+	if [ ! -f "$$LOG" ]; then \
+		echo "⚠️  Log not created yet: $$LOG"; \
+		echo "   Start the app (make electron-dev) — tailing begins when it appears..."; \
+	fi; \
+	echo "📜 Tailing $$LOG (Ctrl-C to stop)"; \
+	tail -n 200 -F "$$LOG"
 
 # Quick rebuild without cleaning (faster for iterating)
 rebuild-electron:
