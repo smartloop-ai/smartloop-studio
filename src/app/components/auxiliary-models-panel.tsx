@@ -4,7 +4,6 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import { useLocalModels } from '../hooks/useLocalModels';
-import { useAuthContext } from '@/app/contexts/AuthContext';
 import '../styles/aux-models.css';
 
 interface AuxiliaryModelsPanelProps {
@@ -25,10 +24,6 @@ function formatParams(m: any): string | null {
     return /params/i.test(s) ? s : `${s} params`;
 }
 
-// A locked model means one of two things: signed out → create an account (the
-// OAuth flow returns them logged in and unlocks the free tier); or signed in but
-// plan-gated → the model stays locked, so route to support for an upgrade.
-const createAccount = () => (window as any).electronAPI?.oauthLogin?.();
 // Note: the main-process open-external handler only permits http(s), so this
 // must be a web URL (a mailto: is silently rejected).
 const contactUs = () => (window as any).electronAPI?.openExternal?.('mailto:hello@smartloop.ai');
@@ -36,8 +31,8 @@ const contactUs = () => (window as any).electronAPI?.openExternal?.('mailto:hell
 // Sidebar panel listing the enabled auxiliary models as cards. Each card's
 // leading circle reflects the model's lifecycle state (enabled, off, needs
 // download, downloading, or locked); the whole card toggles/downloads on click.
-// Locked (signed-out / premium) models are dimmed with an Unlock CTA and, at the
-// bottom, an upsell card pointing to pricing.
+// Locked (premium / plan-gated) models are dimmed and carry a Premium tag with an
+// "upgrade" tooltip; at the bottom an upsell card points to pricing.
 export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProps) {
     const {
         localModels,
@@ -47,11 +42,6 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         handleToggleModel,
         handleCancelDownload,
     } = useLocalModels();
-    const [authUser] = useAuthContext();
-
-    // Signed out → account creation unlocks the free tier; signed in but still
-    // locked → the model is plan-gated, so send them to support to upgrade.
-    const handleUnlock = () => (authUser ? contactUs() : createAccount());
 
     // Auxiliary models = every local model except the primary orchestrator.
     const auxModels = localModels.filter((m: any) => {
@@ -77,7 +67,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         };
         if (s.needsUnlock) {
             return (
-                <Tooltip title="Upgrade your plan to use this model" arrow placement="top">
+                <Tooltip title="Upgrade to a Pro plan to use this model" arrow placement="top">
                     <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
                     </span>
@@ -120,9 +110,11 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
             );
         }
         if (!s.downloaded) {
+            // Not downloaded yet — the bulb shows disabled; the download action
+            // lives in the footer.
             return (
-                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
-                    <FileDownloadOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
+                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)', opacity: 0.5 }}>
+                    <LightbulbOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-faint)' }} />
                 </span>
             );
         }
@@ -149,18 +141,28 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const description = m.description || '';
         const enabled = isEnabled(name);
         const downloaded = !!m.downloaded;
+        // Paid tiers (pro / premium / internal) require an entitlement. The
+        // backend's is_accessible flag can't be trusted for these — it may report
+        // true for a paid model on a free plan — so we gate them on access_level
+        // directly rather than on is_accessible alone.
+        const isGated = m.access_level === 'pro' || m.access_level === 'premium' || m.access_level === 'internal';
         // An already-downloaded model stays usable regardless of auth/plan — the
         // gate only applies to models the user hasn't downloaded yet.
-        const locked = m.is_accessible === false && !downloaded;
-        // "Unlock" is only for genuinely plan-gated models (paid / internal). A
-        // free model reported inaccessible just because the user is signed out is
-        // a login gate — surfaced as a disabled Download + tooltip, not an Unlock.
-        const isGated = m.access_level === 'premium' || m.access_level === 'internal';
+        const locked = (m.is_accessible === false || isGated) && !downloaded;
+        // "Unlock" is for genuinely plan-gated (paid) models. A free model reported
+        // inaccessible just because the user is signed out is a login gate —
+        // surfaced as a disabled Download + tooltip, not an Unlock.
         const needsUnlock = locked && isGated;
         const needsLogin = locked && !needsUnlock;
         const isDownloading = toggling === name && !downloaded;
         const percent = downloadProgress?.percent ?? 0;
-        const isPremium = isGated;
+        // Tier tag shown on gated models: pro uses the brand color, internal
+        // collapses into a gold "Premium". Border is ~30% of the text color.
+        const tier = m.access_level === 'pro'
+            ? { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' }
+            : isGated
+                ? { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' }
+                : null;
         const paramsLabel = formatParams(m);
 
         const onClick = () => {
@@ -192,15 +194,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent })}
                     <span className="text-[13px] font-bold text-sl-text-primary truncate">{displayName}</span>
                     <div className="ml-auto flex-shrink-0">
-                        {needsUnlock ? (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleUnlock(); }}
-                                className="flex items-center gap-1 rounded-full text-[10px] font-semibold uppercase tracking-wide"
-                                style={{ padding: '4px 10px', backgroundColor: 'var(--sl-text-primary)', color: 'var(--sl-bg-base)', border: 'none', cursor: 'pointer' }}
-                            >
-                                <LockOutlinedIcon sx={{ fontSize: 11 }} /> Unlock
-                            </button>
-                        ) : isDownloading ? (
+                        {isDownloading ? (
                             <span className="text-[12px] font-mono tabular-nums" style={{ color: 'var(--sl-text-muted)' }}>{percent}%</span>
                         ) : paramsLabel ? (
                             <span className="text-[12px]" style={{ color: 'var(--sl-text-muted)' }}>{paramsLabel}</span>
@@ -227,9 +221,9 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                             const isVision = cap === 'vision';
                             const isSkills = cap === 'skills';
                             const isDp = cap === 'dp';
-                            const isKnowledge = cap === 'knowledge';
-                            const color = isVision ? '#93c5fd' : isSkills ? '#86efac' : isDp ? '#fdba74' : isKnowledge ? '#c4b5fd' : 'var(--sl-text-muted)';
-                            const border = isVision ? 'rgba(147,197,253,0.35)' : isSkills ? 'rgba(134,239,172,0.35)' : isDp ? 'rgba(253,186,116,0.35)' : isKnowledge ? 'rgba(196,181,253,0.35)' : 'var(--sl-border-default)';
+                            const isGeneral = cap === 'general';
+                            const color = isVision ? '#93c5fd' : isSkills ? '#86efac' : isDp ? '#fdba74' : isGeneral ? '#c4b5fd' : 'var(--sl-text-muted)';
+                            const border = isVision ? 'rgba(147,197,253,0.35)' : isSkills ? 'rgba(134,239,172,0.35)' : isDp ? 'rgba(253,186,116,0.35)' : isGeneral ? 'rgba(196,181,253,0.35)' : 'var(--sl-border-default)';
                             return (
                                 <span
                                     key={cap}
@@ -240,12 +234,12 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                                 </span>
                             );
                         })}
-                        {isPremium && (
+                        {tier && (
                             <span
                                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                                style={{ border: `1px solid ${tier.border}`, color: tier.color }}
                             >
-                                Premium
+                                {tier.label}
                             </span>
                         )}
                     </div>
@@ -255,20 +249,22 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                         ) : needsLogin ? (
                             <Tooltip title="Sign in to download this model" arrow placement="top">
                                 <span
-                                    className="text-[12px] font-semibold"
+                                    className="flex items-center justify-center"
                                     style={{ color: 'var(--sl-text-faint)', cursor: 'default' }}
                                 >
-                                    Download
+                                    <FileDownloadOutlinedIcon sx={{ fontSize: 18 }} />
                                 </span>
                             </Tooltip>
                         ) : (!downloaded && !locked) ? (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onClick(); }}
-                                className="text-[12px] font-semibold"
-                                style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                            >
-                                Download
-                            </button>
+                            <Tooltip title="Download model" arrow placement="top">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onClick(); }}
+                                    className="flex items-center justify-center"
+                                    style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                >
+                                    <FileDownloadOutlinedIcon sx={{ fontSize: 18 }} />
+                                </button>
+                            </Tooltip>
                         ) : null}
                     </div>
                 </div>
