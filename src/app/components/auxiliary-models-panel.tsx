@@ -4,6 +4,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import { useLocalModels } from '../hooks/useLocalModels';
+import ModelBrandIcon from './model-brand-icon';
 import '../styles/aux-models.css';
 
 interface AuxiliaryModelsPanelProps {
@@ -145,7 +146,10 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         // backend's is_accessible flag can't be trusted for these — it may report
         // true for a paid model on a free plan — so we gate them on access_level
         // directly rather than on is_accessible alone.
-        const isGated = m.access_level === 'pro' || m.access_level === 'premium' || m.access_level === 'internal';
+        // Internal models are only ever sent to eligible users, so their mere
+        // presence in the list means they're downloadable — never gate them.
+        const isInternal = m.access_level === 'internal';
+        const isGated = m.access_level === 'pro' || m.access_level === 'premium';
         // An already-downloaded model stays usable regardless of auth/plan — the
         // gate only applies to models the user hasn't downloaded yet.
         const locked = (m.is_accessible === false || isGated) && !downloaded;
@@ -160,9 +164,11 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         // collapses into a gold "Premium". Border is ~30% of the text color.
         const tier = m.access_level === 'pro'
             ? { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' }
-            : isGated
-                ? { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' }
-                : null;
+            : isInternal
+                ? { label: 'Internal', color: 'rgb(96,165,250)', border: 'rgba(96,165,250,0.3)' }
+                : isGated
+                    ? { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' }
+                    : null;
         const paramsLabel = formatParams(m);
 
         const onClick = () => {
@@ -189,16 +195,18 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     transition: 'background-color 0.15s ease, box-shadow 0.15s ease',
                 }}
             >
-                {/* Header — indicator, title, and params / percent / unlock */}
+                {/* Header — brand icon, title, params, and the lifecycle
+                    indicator (bulb / lock / download) on the right. */}
                 <div className="flex items-center gap-3">
-                    {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent })}
+                    <span className="flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30 }}>
+                        <ModelBrandIcon name={name} size={22} />
+                    </span>
                     <span className="text-[13px] font-bold text-sl-text-primary truncate">{displayName}</span>
-                    <div className="ml-auto flex-shrink-0">
-                        {isDownloading ? (
-                            <span className="text-[12px] font-mono tabular-nums" style={{ color: 'var(--sl-text-muted)' }}>{percent}%</span>
-                        ) : paramsLabel ? (
+                    <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                        {!isDownloading && paramsLabel && (
                             <span className="text-[12px]" style={{ color: 'var(--sl-text-muted)' }}>{paramsLabel}</span>
-                        ) : null}
+                        )}
+                        {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent })}
                     </div>
                 </div>
 
@@ -245,7 +253,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     </div>
                     <div className="flex-shrink-0">
                         {isDownloading ? (
-                            <span className="text-[12px]" style={{ color: 'var(--sl-text-muted)' }}>Downloading…</span>
+                            <span className="text-[12px] font-mono tabular-nums" style={{ color: 'var(--sl-brand-primary)' }}>{percent}%</span>
                         ) : needsLogin ? (
                             <Tooltip title="Sign in to download this model" arrow placement="top">
                                 <span
