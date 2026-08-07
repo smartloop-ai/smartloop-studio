@@ -1029,7 +1029,7 @@ description: A clear description of what this skill does and when to use it
 
 # ${title}
 
-[Add your instructions here that Claude will follow when this skill is active]
+[Add your instructions here that the model will follow when this skill is active]
 
 ## Examples
 - Example usage 1
