@@ -4,6 +4,33 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import MicNoneOutlinedIcon from '@mui/icons-material/MicNoneOutlined';
 import FileAttacher from './file-attacher';
+import { useThemeContext } from '@/app/contexts/ThemeContext';
+
+export interface SkillOption {
+  name: string;
+  description?: string;
+}
+
+// Skill glyph for the "/" picker — the active theme's own skill icon (e.g. the
+// Catppuccin cat) when it ships one, otherwise the default shield. Inherits color.
+function SkillGlyph({ svg, size = 13 }: { svg?: string; size?: number }) {
+  if (svg) {
+    // Force the injected (fixed-size) theme SVG to fill the requested box.
+    return (
+      <span
+        className="flex-shrink-0 inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+        style={{ width: size, height: size }}
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+      <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+      <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 interface MessageInputProps {
   message: string;
@@ -25,6 +52,8 @@ interface MessageInputProps {
   minRows?: number;
   maxRows?: number;
   leftSlot?: React.ReactNode;
+  skills?: SkillOption[];
+  onCreateSkill?: (name: string) => void;
 }
 
 export default function MessageInput({
@@ -47,12 +76,72 @@ export default function MessageInput({
   minRows = 1,
   maxRows = 4,
   leftSlot,
+  skills = [],
+  onCreateSkill,
 }: MessageInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isAttaching, setIsAttaching] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [droppedFile, setDroppedFile] = useState<{ file: File; id: number } | null>(null);
   const dragCounterRef = useRef(0);
+  const { theme } = useThemeContext();
+  const themedSkillSvg = theme.icons?.skills;
+
+  // Leading "/<slug>" command token, if the message opens with one. Highlighted
+  // in the input via a mirrored backdrop layer and parsed as a skill server-side.
+  // The "/" command is available when there are skills to run OR skills can be
+  // created (chat only passes onCreateSkill when a skills-capable model is on).
+  const skillsAvailable = skills.length > 0 || !!onCreateSkill;
+  const slashToken = skillsAvailable ? (/^\/[A-Za-z0-9][\w-]*/.exec(message)?.[0] ?? null) : null;
+
+  // "/" command — a slash-prefixed word (no spaces yet) opens a picker. It lists
+  // matching existing skills to use, plus a "create" action when the typed name
+  // is a valid new slug that no existing skill matches.
+  const slashMatch = /^\/(\S*)$/.exec(message);
+  const rawQuery = slashMatch?.[1] ?? '';
+  const skillQuery = rawQuery.toLowerCase();
+  const filteredSkills = slashMatch
+    ? skills.filter((s) => s.name.toLowerCase().includes(skillQuery))
+    : [];
+  const normSlug = (s: string) => s.replace(/[\s_-]+/g, '').toLowerCase();
+  const exactExists = skills.some((s) => normSlug(s.name) === normSlug(rawQuery));
+  const canCreateSkill =
+    !!slashMatch && !!onCreateSkill && /^[A-Za-z0-9][\w-]*$/.test(rawQuery) && !exactExists;
+
+  // Unified, keyboard-navigable item list: existing skills to use, then create.
+  type PickerItem =
+    | { kind: 'use'; skill: SkillOption }
+    | { kind: 'create'; name: string };
+  const pickerItems: PickerItem[] = [
+    ...filteredSkills.map((skill) => ({ kind: 'use' as const, skill })),
+    ...(canCreateSkill ? [{ kind: 'create' as const, name: rawQuery }] : []),
+  ];
+  const showSkillMenu = !!slashMatch && pickerItems.length > 0;
+  const [skillIndex, setSkillIndex] = useState(0);
+
+  // Keep the highlighted item in range as the filter narrows.
+  useEffect(() => {
+    setSkillIndex(0);
+  }, [skillQuery, showSkillMenu]);
+
+  // Insert the skill as a leading "/<slug> " token in the message; the user then
+  // types the rest of the request after it. The SLP server parses this leading
+  // slash-command to resolve the skill (spaces in a name become hyphens so the
+  // token stays a single word the server's regex matches).
+  const chooseSkill = (skill: SkillOption) => {
+    const slug = skill.name.trim().replace(/\s+/g, '-');
+    onMessageChange(`/${slug} `);
+    inputRef.current?.focus();
+  };
+
+  const choosePickerItem = (item: PickerItem) => {
+    if (item.kind === 'use') {
+      chooseSkill(item.skill);
+    } else {
+      onCreateSkill?.(item.name);   // creates from template + opens the editor
+      onMessageChange('');
+    }
+  };
 
   // Elapsed seconds while the model works — shown as a Claude-style "Thinking… 5s"
   const [elapsed, setElapsed] = useState(0);
@@ -90,6 +179,30 @@ export default function MessageInput({
   }, [isLoading]);
 
   const handleKeyDownInternal = (e: React.KeyboardEvent) => {
+    // Skill picker navigation takes precedence over send/newline handling.
+    if (showSkillMenu) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSkillIndex((i) => (i + 1) % pickerItems.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSkillIndex((i) => (i - 1 + pickerItems.length) % pickerItems.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        choosePickerItem(pickerItems[skillIndex] ?? pickerItems[0]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onMessageChange('');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (!disabled && !isLoading && !isAttaching && message.trim()) {
@@ -150,6 +263,42 @@ export default function MessageInput({
           },
         }}
       >
+        {/* "/" skill picker — an inline, minimal list above the input */}
+        {showSkillMenu && (
+          <Box
+            className="mb-2 pb-2 flex flex-col gap-0.5"
+            sx={{ maxHeight: 180, overflowY: 'auto', borderBottom: '1px solid var(--sl-border-subtle)' }}
+          >
+            {pickerItems.map((item, i) => (
+              <Box
+                key={item.kind === 'use' ? `use-${item.skill.name}` : `create-${item.name}`}
+                onMouseDown={(e) => { e.preventDefault(); choosePickerItem(item); }}
+                onMouseEnter={() => setSkillIndex(i)}
+                className="px-2 py-1 rounded cursor-pointer text-[13px] flex items-center gap-2"
+                sx={{
+                  bgcolor: i === skillIndex ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                  color: i === skillIndex ? 'var(--sl-text-primary)' : 'var(--sl-text-muted)',
+                }}
+              >
+                {/* Fixed-width icon slot so every label lines up at the same x */}
+                <span className="flex items-center justify-center flex-shrink-0" style={{ width: 16, height: 16, color: 'var(--sl-brand-primary)' }}>
+                  {item.kind === 'use' ? (
+                    <SkillGlyph svg={themedSkillSvg} size={13} />
+                  ) : (
+                    <span className="text-[16px] leading-none">+</span>
+                  )}
+                </span>
+                <span className="truncate min-w-0">
+                  {item.kind === 'use' ? (
+                    item.skill.name
+                  ) : (
+                    <>Create skill <span style={{ color: 'var(--sl-brand-primary)' }}>“{item.name}”</span></>
+                  )}
+                </span>
+              </Box>
+            ))}
+          </Box>
+        )}
         {isDraggingOver && (
           <Box
             className="absolute inset-0 flex flex-col items-center justify-center rounded-lg z-10 pointer-events-none gap-1"
@@ -163,6 +312,43 @@ export default function MessageInput({
             <span className="text-xs" style={{ color: 'var(--sl-brand-primary)' }}>Drop file to attach</span>
           </Box>
         )}
+        <Box className="relative mb-3">
+          {/* Mirror layer that renders the same text with the leading "/command"
+              token wrapped in a brand-tinted pill. Text is transparent so the real
+              (readable) input text sits on top; only the highlight shows through.
+              Metrics must match the textarea exactly so the pill lines up. */}
+          {slashToken && (
+            <div
+              aria-hidden
+              className="absolute inset-0 pointer-events-none overflow-hidden"
+              style={{
+                font: 'inherit',
+                fontSize: '15px',
+                lineHeight: '1.5',
+                padding: 0,
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: 'transparent',
+                zIndex: 0,
+              }}
+            >
+              <span
+                style={{
+                  backgroundColor: 'var(--sl-brand-alpha-15)',
+                  color: 'transparent',
+                  borderRadius: '4px',
+                  padding: '1px 3px',
+                  margin: '0 -3px',
+                  boxDecorationBreak: 'clone',
+                  WebkitBoxDecorationBreak: 'clone',
+                }}
+              >
+                {slashToken}
+              </span>
+              {message.slice(slashToken.length)}
+            </div>
+          )}
         <InputBase
           inputRef={inputRef}
           name="message"
@@ -176,14 +362,19 @@ export default function MessageInput({
           onChange={(e) => onMessageChange(e.target.value)}
           fullWidth
           disabled={disabled || isLoading}
-          className="w-full text-inherit mb-3"
+          className="w-full text-inherit"
           onKeyDown={handleKeyDownInternal}
           sx={{
             border: 'none',
             height: '100%',
             fontSize: '15px',
             lineHeight: '1.5',
+            padding: 0,
+            position: 'relative',
+            zIndex: 1,
             '& .MuiInputBase-input': {
+              padding: 0,
+              background: 'transparent',
               caretColor: 'var(--sl-brand-primary)',
             },
             '& .MuiInputBase-input.Mui-disabled': {
@@ -201,6 +392,7 @@ export default function MessageInput({
             },
           }}
         />
+        </Box>
 
         <Box className="flex items-center justify-between">
           {/* Left side - Model selector, file attachment and selected quote */}

@@ -1,13 +1,10 @@
 import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import SubdirectoryArrowLeftIcon from '@mui/icons-material/SubdirectoryArrowLeft';
-import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ShareIcon from '@mui/icons-material/Share';
 import CheckIcon from '@mui/icons-material/Check';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
@@ -50,7 +47,7 @@ interface RightSidebarProps {
 function ThemeRailIcon({ svg, size = 18 }: { svg: string; size?: number }) {
   return (
     <span
-      className="flex-shrink-0 inline-flex items-center justify-center"
+      className="flex-shrink-0 inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
       style={{ width: size, height: size }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
@@ -69,6 +66,18 @@ const getSkillPreviewText = (content: string, description?: string) => {
 
   const preview = lines.slice(0, 3).join('\n');
   return preview.length > 240 ? `${preview.slice(0, 240).trimEnd()}…` : preview;
+};
+
+// Deprecated built-in skills hidden from the UI (compared by normalized name).
+const DEPRECATED_SKILL_NAMES = new Set(['fetchurl']);
+const normSkillName = (s: string) => (s || '').replace(/[\s_-]+/g, '').toLowerCase();
+
+/** Map a skills API response to the local shape, dropping deprecated skills. */
+const mapProjectSkills = (data: any) => {
+  const list = Array.isArray(data) ? data : (data?.skills ?? []);
+  return list
+    .map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' }))
+    .filter((s: any) => s.name && !DEPRECATED_SKILL_NAMES.has(normSkillName(s.name)));
 };
 
 export default function RightSidebar({
@@ -95,10 +104,41 @@ export default function RightSidebar({
     if (svg) return <ThemeRailIcon svg={svg} />;
     return isMc ? <PixelRailIcon name={name} /> : null;
   };
+  // The skill glyph shown on cards — the active theme's own skill icon (e.g. the
+  // Catppuccin cat) when it ships one, otherwise the default shield. Inherits the
+  // surrounding text color via currentColor.
+  const skillIcon = (size = 18) => {
+    const svg = theme.icons?.skills;
+    if (svg) return <ThemeRailIcon svg={svg} size={size} />;
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+        <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+        <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+      </svg>
+    );
+  };
+  // The document glyph shown on cards / the drop zone — the active theme's own
+  // document icon when it ships one, otherwise the default page. Inherits color.
+  const docIcon = (size = 18) => {
+    const svg = theme.icons?.documents;
+    if (svg) return <ThemeRailIcon svg={svg} size={size} />;
+    return (
+      <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+        <path d="M4 1.5h5L12.5 5v9.5H4V1.5z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+        <path d="M9 1.5V5h3.5" stroke="currentColor" strokeWidth="0.5" fill="none" />
+        <path d="M6 8h4.5M6 10.5h4.5M6 5.5h2" stroke="currentColor" strokeWidth="0.5" strokeLinecap="round" />
+      </svg>
+    );
+  };
   const [activeSection, setActiveSection] = useState<'models' | 'documents' | 'mcp' | 'skills' | 'settings' | null>('models');
+  // Combined capabilities of the currently ENABLED models. Documents need "dp"
+  // (document processing) and Skills need "skills"; the matching rail section is
+  // disabled when no enabled model provides it. Null = not loaded yet (don't gate
+  // so nothing flickers on startup); an empty set means "loaded, none support it".
+  const [modelCaps, setModelCaps] = useState<Set<string> | null>(null);
+  const docSupported = modelCaps === null || modelCaps.has('dp');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
-  const [skillSearchQuery, setSkillSearchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -114,9 +154,6 @@ export default function RightSidebar({
   const [skillContent, setSkillContent] = useState('');
   const [skillHasUnsavedChanges, setSkillHasUnsavedChanges] = useState(false);
   const skillAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [skillDragOver, setSkillDragOver] = useState(false);
-  const [pendingSkill, setPendingSkill] = useState<{ baselineCount: number; content: string } | null>(null);
-  const savingSkill = pendingSkill !== null;
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
 
@@ -130,8 +167,7 @@ export default function RightSidebar({
       const res = await fetch(`${base}/v1/projects/${selectedProject.id}/skills`);
       if (res.ok) {
         const data = await res.json();
-        const list = Array.isArray(data) ? data : (data?.skills ?? []);
-        setLocalSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
+        setLocalSkills(mapProjectSkills(data));
       }
     } catch { /* silent */ }
   }, [selectedProject?.id]);
@@ -152,9 +188,9 @@ export default function RightSidebar({
         if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
-          const list = Array.isArray(data) ? data : (data?.skills ?? []);
-          setLocalSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
-          if (list.length === 0 && retriesLeft > 0) {
+          const mapped = mapProjectSkills(data);
+          setLocalSkills(mapped);
+          if (mapped.length === 0 && retriesLeft > 0) {
             setTimeout(() => attempt(retriesLeft - 1), 1500);
           }
         }
@@ -176,21 +212,6 @@ export default function RightSidebar({
     window.addEventListener('skillsSaved', handler);
     return () => window.removeEventListener('skillsSaved', handler);
   }, [loadSkillsFromDir]);
-
-  useEffect(() => {
-    if (!pendingSkill) return;
-    const appeared =
-      localSkills.length > pendingSkill.baselineCount ||
-      localSkills.some((s) => (s.content || '').trim() === pendingSkill.content.trim());
-    if (appeared) setPendingSkill(null);
-  }, [localSkills, pendingSkill]);
-
-  useEffect(() => {
-    if (!pendingSkill) return;
-    const timeout = setTimeout(() => setPendingSkill(null), 15000);
-    return () => clearTimeout(timeout);
-  }, [pendingSkill]);
-
 
   const skillEditorOptions = useMemo(() => ({
     spellChecker: false,
@@ -239,63 +260,6 @@ export default function RightSidebar({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [editingSkillIndex, editingSkillIsNew, skillHasUnsavedChanges, skillContent, handleSkillSave]);
-
-  const handleSkillFileContent = useCallback((content: string, fileName: string) => {
-    const nameMatch = content.match(/^---[\s\S]*?name:\s*(.+?)[\s\n][\s\S]*?---/) || content.match(/^#\s+(.+)$/m);
-    const name = nameMatch?.[1]?.trim() || fileName.replace(/\.md$/i, '');
-    const normalizedContent = content.trim();
-
-    if (onTabChange) {
-      if (onSaveSkills) {
-        onSaveSkills([...localSkills, { name, content: normalizedContent }]);
-        setTimeout(() => loadSkillsFromDir(), 800);
-      }
-      return;
-    }
-
-    setEditingSkillIndex(null);
-    setEditingSkillIsNew(true);
-    setSkillContent(normalizedContent);
-    setSkillHasUnsavedChanges(true);
-  }, [onSaveSkills, onTabChange, localSkills, loadSkillsFromDir]);
-
-  const handleSkillDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setSkillDragOver(false);
-    if (!e.dataTransfer.files?.length) return;
-    const file = e.dataTransfer.files[0];
-    if (!file.name.endsWith('.md') && file.type !== 'text/markdown' && file.type !== 'text/plain') return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        handleSkillFileContent(reader.result, file.name);
-      }
-    };
-    reader.readAsText(file);
-  }, [handleSkillFileContent]);
-
-  const handleSkillPaste = useCallback((e: React.ClipboardEvent) => {
-    const files = e.clipboardData?.files;
-    if (files?.length) {
-      const file = files[0];
-      if (file.name.endsWith('.md') || file.type === 'text/markdown' || file.type === 'text/plain') {
-        e.preventDefault();
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            handleSkillFileContent(reader.result, file.name);
-          }
-        };
-        reader.readAsText(file);
-        return;
-      }
-    }
-    const text = e.clipboardData?.getData('text/plain');
-    if (text && text.includes('---') && text.includes('name:')) {
-      e.preventDefault();
-      handleSkillFileContent(text, 'pasted-skill');
-    }
-  }, [handleSkillFileContent]);
 
 
   // Resizable sidebar
@@ -351,13 +315,47 @@ export default function RightSidebar({
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
 
+  // Recompute the enabled-model capability set. Only ENABLED models contribute —
+  // an installed-but-off model doesn't make the capability available (mirrors how
+  // vision support is detected).
+  const refreshModelCaps = useCallback(async () => {
+    try {
+      const res = await window.electronAPI?.slpListModels();
+      if (!res?.success || !Array.isArray(res.models)) return;
+      const caps = new Set<string>();
+      res.models.forEach((m: any) => {
+        if (m?.enabled) (m.capabilities || []).forEach((c: string) => caps.add(c));
+      });
+      setModelCaps(caps);
+    } catch { /* leave caps as-is */ }
+  }, []);
+
+  // Baseline capability read on mount / model change / section open. We rely on the
+  // toggle event (below) for live updates rather than the raw "models-updated" feed,
+  // which reports a still-enabling model as off and would clobber the optimistic value.
+  useEffect(() => { refreshModelCaps(); }, [model, activeSection, refreshModelCaps]);
+  // Optimistic update: reflect a model toggle immediately (before the backend
+  // confirms), so the Documents/Skills sections light up the instant it's enabled.
+  useEffect(() => {
+    const onCaps = (e: Event) => {
+      const caps = (e as CustomEvent).detail?.caps;
+      if (Array.isArray(caps)) setModelCaps(new Set<string>(caps));
+    };
+    window.addEventListener('localModelCapsChanged', onCaps);
+    return () => window.removeEventListener('localModelCapsChanged', onCaps);
+  }, []);
+
+  // If the open section is no longer supported by the model, close it.
+  useEffect(() => {
+    if (activeSection === 'documents' && !docSupported) setActiveSection(null);
+  }, [activeSection, docSupported]);
+
   // Reset transient editing/form state when switching projects
   useEffect(() => {
     setEditingSkillIndex(null);
     setEditingSkillIsNew(false);
     setSkillContent('');
     setSkillHasUnsavedChanges(false);
-    setSkillSearchQuery('');
     setNewMcpInput('');
     setNewMcpEnv('');
     setIsAddingMcp(false);
@@ -1123,10 +1121,11 @@ export default function RightSidebar({
                       },
                     }}
                   >
-                    <CloudUploadOutlinedIcon sx={{
-                      fontSize: 24,
-                      color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                    }} />
+                    {/* Themed document glyph — files are indexed locally, so a
+                        document icon fits better than a cloud upload. */}
+                    <span style={{ color: isDragging ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }}>
+                      {docIcon(24)}
+                    </span>
                     <span className="text-[12px] text-sl-text-muted font-medium">
                       {isDragging ? 'Drop files here' : 'Drop files or click to add'}
                     </span>
@@ -1147,9 +1146,9 @@ export default function RightSidebar({
                     </span>
                   </Box>
 
-                  {/* Document List — file-tree style with summary */}
+                  {/* Document List — card style, matching the Models panel */}
                   {effectiveDocuments.length > 0 && (
-                    <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {effectiveDocuments
                         .filter((doc: any) => {
                           if (!searchQuery) return true;
@@ -1204,23 +1203,25 @@ export default function RightSidebar({
                                   window.electronAPI.showItemInFolder(filePath);
                                 }
                               }}
+                              className="rounded-xl"
                               sx={{
-                                px: 1,
-                                py: '6px',
+                                padding: '12px 14px',
                                 cursor: 'pointer',
                                 display: 'flex',
-                                gap: 0.75,
-                                transition: 'background 0.1s ease',
+                                gap: 1.25,
+                                transition: 'box-shadow 0.15s ease',
                                 border: '1px solid var(--sl-border-subtle)',
-                                borderRadius: '6px',
-                                mb: 0.75,
-                                '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
+                                bgcolor: 'transparent',
+                                '&:hover': { boxShadow: 'inset 0 0 0 1px var(--sl-brand-alpha-30)' },
                               }}
                             >
-                              <InsertDriveFileIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
-                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              {/* Themed document glyph — matches the sidebar rail */}
+                              <span className="flex items-center justify-center flex-shrink-0" style={{ width: 22, height: 22, marginTop: 1, color: 'var(--sl-brand-primary)' }}>
+                                {docIcon(18)}
+                              </span>
+                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <span className="text-[11px] text-sl-text-tertiary truncate flex-1">
+                                  <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
                                     {filename}
                                   </span>
                                   <IconButton
@@ -1236,13 +1237,16 @@ export default function RightSidebar({
                                   </IconButton>
                                 </Box>
                                 {!isProcessing && summary && (
-                                  <span className="text-[10px] text-sl-text-disabled" style={{ lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+                                  <span className="text-[12px] text-sl-text-muted leading-relaxed" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
                                     {summary}
                                   </span>
                                 )}
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '2px' }}>
                                   {ext && (
-                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-bg-surface-1)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                    <span
+                                      className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                                      style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                                    >
                                       {ext}
                                     </span>
                                   )}
@@ -1265,25 +1269,35 @@ export default function RightSidebar({
                                         else if (diffDay < 30) timeLabel = `${diffDay}d ago`;
                                         else timeLabel = new Date(processedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
                                       }
+                                      // Success — outlined green, matching the label style guide.
                                       return (
-                                        <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>
+                                        <span
+                                          className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                                          style={{ border: '1px solid rgba(52,211,153,0.3)', color: 'rgb(52,211,153)' }}
+                                        >
                                           {timeLabel}
                                         </span>
                                       );
                                     }
-                                    const statusBg: Record<string, string> = {
-                                      local: 'rgba(139,139,245,0.12)',
-                                      indexing: 'rgba(250,204,21,0.12)',
-                                      converting: 'rgba(250,204,21,0.12)',
-                                      processing: 'rgba(250,204,21,0.12)',
-                                      pending: 'rgba(148,163,184,0.1)',
-                                      unknown: 'rgba(148,163,184,0.1)',
-                                      failed: 'rgba(248,113,113,0.12)',
-                                      error: 'rgba(248,113,113,0.12)',
+                                    // Distinct colors per state — outlined (border at ~30% of the text color), never filled.
+                                    const statusColor: Record<string, string> = {
+                                      local: 'rgb(139,139,245)',
+                                      indexing: 'rgb(250,204,21)',
+                                      converting: 'rgb(250,204,21)',
+                                      processing: 'rgb(250,204,21)',
+                                      pending: 'rgb(148,163,184)',
+                                      unknown: 'rgb(148,163,184)',
+                                      failed: 'rgb(248,113,113)',
+                                      error: 'rgb(248,113,113)',
                                     };
+                                    const c = statusColor[status] || statusColor.pending;
+                                    const border = c.replace('rgb(', 'rgba(').replace(')', ',0.3)');
                                     const label = status === 'failed' || status === 'error' ? 'Failed' : status === 'unknown' ? 'Pending' : status.charAt(0).toUpperCase() + status.slice(1);
                                     return (
-                                      <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: statusBg[status] || statusBg.pending, borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+                                      <span
+                                        className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                                        style={{ border: `1px solid ${border}`, color: c }}
+                                      >
                                         {label}
                                       </span>
                                     );
@@ -1367,7 +1381,7 @@ export default function RightSidebar({
               </Box>
 
               {mcpServers.length > 0 && (
-                <Box sx={{ mt: 0 }}>
+                <Box sx={{ mt: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {mcpServers.map((server, index) => {
                     const isSystem = !!(server as any).system;
                     return (
@@ -1405,12 +1419,7 @@ export default function RightSidebar({
 
           {/* Skills Section */}
           {activeSection === 'skills' && (
-            <div
-              onDragOver={(e) => { e.preventDefault(); setSkillDragOver(true); }}
-              onDragLeave={(e) => { e.preventDefault(); setSkillDragOver(false); }}
-              onDrop={handleSkillDrop}
-              onPaste={handleSkillPaste}
-            >
+            <div>
               {(editingSkillIndex !== null || editingSkillIsNew) ? (
                 /* Editing existing skill */
                 <div>
@@ -1444,153 +1453,43 @@ export default function RightSidebar({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {/* Quick-add textarea */}
-                  <Box sx={{
-                    borderRadius: '6px',
-                    border: '1px solid var(--sl-border-subtle)',
-                    overflow: 'hidden',
-                    transition: 'border-color 0.15s ease',
-                    '&:focus-within': { borderColor: 'var(--sl-brand-primary)' },
-                  }}>
-                    <Box sx={{ position: 'relative' }}>
-                      <textarea
-                        value={skillSearchQuery}
-                        onChange={(e) => setSkillSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && skillSearchQuery.trim()) {
-                            e.preventDefault();
-                            if (onSaveSkills) {
-                              const content = skillSearchQuery.trim();
-                              const heading = content.match(/^#\s+(.+)$/m);
-                              const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
-                              setPendingSkill({ baselineCount: localSkills.length, content });
-                              onSaveSkills([...localSkills, { name, content }]);
-                              setSkillSearchQuery('');
-                              setTimeout(() => loadSkillsFromDir(), 800);
+                  {/* Skill List — card style, matching the Models panel */}
+                  {localSkills.length > 0 && (
+                    <div className="flex flex-col gap-2.5" style={{ marginTop: 12 }}>
+                      {localSkills.map((skill, index) => (
+                        <Box
+                          key={`skill-${index}`}
+                          role="button"
+                          onMouseEnter={() => setHoveredSkillIndex(index)}
+                          onMouseLeave={() => setHoveredSkillIndex(null)}
+                          onClick={() => {
+                            if (onTabChange) {
+                              onTabChange({ id: `skill-${skill.id || index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { index } });
+                            } else {
+                              setEditingSkillIndex(index);
+                              setEditingSkillIsNew(false);
+                              setSkillContent(skill.content || '');
+                              setSkillHasUnsavedChanges(false);
                             }
-                          }
-                        }}
-                        rows={5}
-                        style={{
-                          width: '100%',
-                          background: 'transparent',
-                          border: 'none',
-                          outline: 'none',
-                          color: 'var(--sl-text-primary)',
-                          fontSize: '12px',
-                          fontFamily: 'monospace',
-                          padding: '8px 10px',
-                          resize: 'vertical',
-                          minHeight: '60px',
-                        }}
-                      />
-                      {!skillSearchQuery && (
-                        <div className="absolute top-2 left-[10px] right-[10px] pointer-events-none text-[11px] font-mono leading-relaxed opacity-50 text-sl-text-muted">
-                          Write a new skill in Markdown and press{' '}
-                          <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle' }} />{' '}
-                          to add. Skills are snippets of content that are injected into the assistant's context
-                        </div>
-                      )}
-                    </Box>
-                    <Box className="flex items-center justify-between px-2 py-1.5" sx={{ borderTop: '1px solid var(--sl-border-subtle)' }}>
-                      <span className="text-[9px] text-sl-text-faint">Markdown</span>
-                      <button
-                        onClick={() => {
-                          if (onSaveSkills && skillSearchQuery.trim()) {
-                            const content = skillSearchQuery.trim();
-                            const heading = content.match(/^#\s+(.+)$/m);
-                            const name = heading?.[1]?.trim() || content.split('\n')[0].slice(0, 40);
-                            setPendingSkill({ baselineCount: localSkills.length, content });
-                            onSaveSkills([...localSkills, { name, content }]);
-                            setSkillSearchQuery('');
-                            setTimeout(() => loadSkillsFromDir(), 800);
-                          }
-                        }}
-                        disabled={!skillSearchQuery.trim()}
-                        className="text-[10px] px-2.5 py-0.5 rounded text-sl-text-disabled disabled:opacity-30 disabled:cursor-default transition-colors"
-                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sl-brand-light)'; e.currentTarget.style.backgroundColor = 'var(--sl-brand-alpha-10)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = ''; e.currentTarget.style.backgroundColor = ''; }}
-                      >
-                        Add <SubdirectoryArrowLeftIcon sx={{ fontSize: 11, verticalAlign: 'middle', ml: '2px' }} />
-                      </button>
-                    </Box>
-                  </Box>
-
-                  {/* Skill List */}
-                  {(localSkills.length > 0 || savingSkill) && (
-                    <Box sx={{ mt: 3 }}>
-                      <Box sx={{
-                        border: '1px solid var(--sl-border-subtle)',
-                        borderRadius: '6px',
-                        overflow: 'hidden',
-                      }}>
-                        {savingSkill && (
-                          <Box sx={{
-                            padding: '4px 8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 0.75,
-                            borderBottom: localSkills.length > 0 ? '1px solid var(--sl-border-subtle)' : 'none',
-                            bgcolor: 'var(--sl-brand-alpha-10)',
-                          }}>
-                            <CircularProgress size={11} sx={{ color: 'var(--sl-brand-primary)', flexShrink: 0 }} />
-                            <span className="text-[11px] text-sl-text-muted">Adding skill…</span>
-                          </Box>
-                        )}
-                        {localSkills.map((skill, index) => (
-                          <Box
-                            key={`skill-${index}`}
-                            onMouseEnter={() => setHoveredSkillIndex(index)}
-                            onMouseLeave={() => setHoveredSkillIndex(null)}
-                            onClick={() => {
-                              if (onTabChange) {
-                                onTabChange({ id: `skill-${skill.id || index}`, type: 'skill', title: skill.name || 'Untitled Skill', data: { index } });
-                              } else {
-                                setEditingSkillIndex(index);
-                                setEditingSkillIsNew(false);
-                                setSkillContent(skill.content || '');
-                                setSkillHasUnsavedChanges(false);
-                              }
-                            }}
-                            sx={{
-                              padding: '6px 8px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: 0.75,
-                              transition: 'background 0.1s ease, color 0.1s ease',
-                              borderBottom: '1px solid var(--sl-border-subtle)',
-                              '&:last-child': { borderBottom: 'none' },
-                              '&:hover': {
-                                bgcolor: 'var(--sl-brand-alpha-10)',
-                              },
-                            }}
-                          >
-                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" className="flex-shrink-0" style={{ marginTop: '2px', color: 'var(--sl-text-faint)' }}>
-                              <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
-                              <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
-                            </svg>
-                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                              <span className="text-[11px] text-sl-text-tertiary truncate">
-                                {skill.name || 'Untitled'}
-                              </span>
-                              {getSkillPreviewText(skill.content || '', skill.description) && (
-                                <span
-                                  className="text-[10px] text-sl-text-disabled"
-                                  style={{
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 3,
-                                    WebkitBoxOrient: 'vertical' as const,
-                                    overflow: 'hidden',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word',
-                                    lineHeight: 1.35,
-                                  }}
-                                >
-                                  {getSkillPreviewText(skill.content || '', skill.description)}
-                                </span>
-                              )}
-                            </Box>
+                          }}
+                          className="rounded-xl"
+                          sx={{
+                            padding: '12px 14px',
+                            cursor: 'pointer',
+                            border: '1px solid var(--sl-border-subtle)',
+                            bgcolor: 'transparent',
+                            transition: 'background-color 0.15s ease, box-shadow 0.15s ease',
+                            '&:hover': { boxShadow: 'inset 0 0 0 1px var(--sl-brand-alpha-30)' },
+                          }}
+                        >
+                          {/* Header — themed skill icon, title, delete */}
+                          <div className="flex items-center gap-3">
+                            <span className="flex items-center justify-center flex-shrink-0" style={{ width: 22, height: 22, color: 'var(--sl-brand-primary)' }}>
+                              {skillIcon(18)}
+                            </span>
+                            <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
+                              {skill.name || 'Untitled'}
+                            </span>
                             <IconButton
                               size="small"
                               onClick={(e) => {
@@ -1603,31 +1502,57 @@ export default function RightSidebar({
                               sx={{
                                 color: 'var(--sl-text-faint)',
                                 padding: '2px',
-                                mt: '-2px',
+                                flexShrink: 0,
                                 '&:hover': { color: 'var(--sl-status-error)' },
                               }}
                             >
-                              <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+                              <DeleteOutlineIcon sx={{ fontSize: 14 }} />
                             </IconButton>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
+                          </div>
+                          {getSkillPreviewText(skill.content || '', skill.description) && (
+                            <p
+                              className="text-[12px] leading-relaxed mt-2 mb-0"
+                              style={{
+                                color: 'var(--sl-text-muted)',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 3,
+                                WebkitBoxOrient: 'vertical' as const,
+                                overflow: 'hidden',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {getSkillPreviewText(skill.content || '', skill.description)}
+                            </p>
+                          )}
+                        </Box>
+                      ))}
+                    </div>
                   )}
 
-                  {/* Drop hint */}
-                  {skillDragOver && (
-                    <Box sx={{
-                      mt: 1,
-                      padding: '12px',
-                      borderRadius: '4px',
-                      border: '1px dashed var(--sl-brand-primary)',
-                      bgcolor: 'var(--sl-brand-alpha-10)',
-                      textAlign: 'center',
-                    }}>
-                      <span className="text-[10px]" style={{ color: 'var(--sl-brand-light)' }}>Drop .md file to add as skill</span>
-                    </Box>
+                  {/* Empty state — keeps the panel from looking bare with no skills */}
+                  {localSkills.length === 0 && (
+                    <div className="flex flex-col items-center text-center gap-2" style={{ marginTop: 20, padding: '24px 16px' }}>
+                      <span
+                        className="flex items-center justify-center"
+                        style={{
+                          width: 44, height: 44, borderRadius: '50%',
+                          border: '1px solid var(--sl-border-subtle)',
+                          color: 'var(--sl-brand-primary)',
+                          opacity: 0.85,
+                        }}
+                      >
+                        {skillIcon(22)}
+                      </span>
+                      <span className="text-[12px] font-semibold text-sl-text-secondary">No skills yet</span>
+                      <span className="text-[11px] leading-relaxed text-sl-text-faint" style={{ maxWidth: 220 }}>
+                        Create your first skill to tailor how the assistant responds. Type{' '}
+                        <span className="font-mono" style={{ color: 'var(--sl-brand-primary)' }}>/skill-name</span>{' '}
+                        in the chat box to get started.
+                      </span>
+                    </div>
                   )}
+
                 </div>
               )}
             </div>
@@ -1843,9 +1768,10 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="Documents" placement="left">
+        <Tooltip title={docSupported ? 'Documents' : 'Enable a document-capable model to use documents'} placement="left">
           <span className={'cursor-default'}>
             <IconButton
+              disabled={!docSupported}
               onClick={() => {
                 const next = activeSection === 'documents' ? null : 'documents';
                 setActiveSection(next);
