@@ -81,7 +81,7 @@ test: stop
 # SLP version (must match VERSION in electron/slp-setup.js)
 # The SLP framework is no longer bundled — it is downloaded at runtime by
 # electron/slp-setup.js (mirroring https://smartloop.ai/install.sh).
-SLP_VERSION=1.0.8
+SLP_VERSION=1.0.9
 
 # Clean electron build artifacts
 clean-electron:
