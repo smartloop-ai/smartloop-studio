@@ -845,6 +845,13 @@ export default function Chat(props: {
         // ("Generating response…") ever paints and looks fixed.
         // The queue is flushed as soon as the first content token arrives (below).
         if (chunk.object === 'chat.status') {
+          // "model" steps name the aux model the orchestrator just picked (e.g.
+          // "Selected Ministral 3 3B Instruct 2512 (3B) for …"). Broadcast the raw
+          // message so the auxiliary-models panel can light up the matching card in
+          // sync with this status line.
+          if (chunk.step === 'model' && chunk.message) {
+            window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { message: chunk.message } }));
+          }
           // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
           // "Searching documents...", "Processing..." stays as-is)
           const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
@@ -1077,6 +1084,8 @@ export default function Chat(props: {
       setIsLoading(false);
       sendingMessageRef.current = false;  // Reset sending flag
       abortControllerRef.current = null;
+      // Run is over — drop the aux-models panel highlight.
+      window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { done: true } }));
     }
   }
 
