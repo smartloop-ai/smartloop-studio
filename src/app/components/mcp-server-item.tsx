@@ -55,33 +55,32 @@ export default function McpServerItem({
       <Tooltip title={deleteError || ''} arrow placement="top">
       <Box
         onClick={() => setModalOpen(true)}
+        className="rounded-xl"
         sx={{
-          px: 1,
-          py: '6px',
-          borderRadius: '6px',
+          padding: '12px 14px',
           border: deleteError ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
-          bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : undefined,
+          bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : 'transparent',
           display: 'flex',
-          gap: 0.75,
-          transition: 'background 0.1s ease',
-          mb: 0.75,
+          gap: 1.25,
+          transition: 'box-shadow 0.15s ease, background 0.15s ease',
           cursor: 'pointer',
           '&:hover': {
-            bgcolor: deleteError ? 'rgba(248,113,113,0.12)' : 'var(--sl-brand-alpha-10)',
+            boxShadow: deleteError ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
+            bgcolor: deleteError ? 'rgba(248,113,113,0.12)' : 'transparent',
           },
         }}
       >
         {/* Leading icon */}
         {isLocal ? (
-          <TerminalIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+          <TerminalIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '1px' }} />
         ) : (
-          <PowerOutlinedIcon sx={{ fontSize: 11, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '2px' }} />
+          <PowerOutlinedIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '1px' }} />
         )}
 
         {/* Server Info */}
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <span className="text-[11px] text-sl-text-tertiary truncate flex-1">
+            <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
               {displayName}
             </span>
 
@@ -122,7 +121,7 @@ export default function McpServerItem({
 
           {/* Description */}
           {server.description && (
-            <span className="text-[10px] text-sl-text-disabled" style={{ lineHeight: 1.4 }} title={server.description}>
+            <span className="text-[12px] text-sl-text-muted leading-relaxed" title={server.description}>
               {server.description}
             </span>
           )}
@@ -140,7 +139,10 @@ export default function McpServerItem({
                 <span style={{ fontSize: '9px', color: 'var(--sl-brand-primary)' }}>Discovering…</span>
               </>
             ) : allTools.length > 0 ? (
-              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', backgroundColor: 'var(--sl-bg-surface-1)', borderRadius: '3px', padding: '0 4px', lineHeight: '16px' }}>
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+              >
                 {allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}
               </span>
             ) : null}

@@ -4,6 +4,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import { useLocalModels } from '../hooks/useLocalModels';
+import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon from './model-brand-icon';
 import '../styles/aux-models.css';
 
@@ -43,6 +44,15 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         handleToggleModel,
         handleCancelDownload,
     } = useLocalModels();
+
+    // Admins (superusers) can download any model, including plan-gated pro/premium ones.
+    const [user] = useAuthContext();
+    const isAdmin = !!user?.admin;
+    // Internal models are only sent to eligible users, so their presence in the
+    // catalog marks the user as internal-eligible — those users can also download
+    // plan-gated pro/premium models.
+    const hasInternalAccess = localModels.some((m: any) => m.access_level === 'internal');
+    const canDownloadGated = isAdmin || hasInternalAccess;
 
     // Auxiliary models = every local model except the primary orchestrator.
     const auxModels = localModels.filter((m: any) => {
@@ -151,8 +161,9 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const isInternal = m.access_level === 'internal';
         const isGated = m.access_level === 'pro' || m.access_level === 'premium';
         // An already-downloaded model stays usable regardless of auth/plan — the
-        // gate only applies to models the user hasn't downloaded yet.
-        const locked = (m.is_accessible === false || isGated) && !downloaded;
+        // gate only applies to models the user hasn't downloaded yet. Admins and
+        // internal-eligible users bypass the gate and can download any model.
+        const locked = !canDownloadGated && (m.is_accessible === false || isGated) && !downloaded;
         // "Unlock" is for genuinely plan-gated (paid) models. A free model reported
         // inaccessible just because the user is signed out is a login gate —
         // surfaced as a disabled Download + tooltip, not an Unlock.

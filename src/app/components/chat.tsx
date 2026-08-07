@@ -150,7 +150,8 @@ export default function Chat(props: {
   conversation?: any,
   onConversationCreated?: (conversation: any) => void,
   onConversationUpdate?: (conversation: any) => void,
-  onOpenTab?: (tab: OpenTabRequest) => void
+  onOpenTab?: (tab: OpenTabRequest) => void,
+  onCreateSkill?: (name: string) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -162,6 +163,35 @@ export default function Chat(props: {
   const [selectionMenu, setSelectionMenu] = useState<{ text: string; x: number; y: number } | null>(null);
   const messageAttachmentsRef = useRef<Attachment[]>([]);
   const [clearAttachmentTrigger, setClearAttachmentTrigger] = useState(0);
+
+  // User skills for the "/" picker. Fetched from the dedicated project skills
+  // endpoint — the same source the right sidebar uses — which returns only
+  // user-authored skills (built-in/system tool skills are excluded there).
+  const [skillList, setSkillList] = useState<Array<{ name: string; description?: string }>>([]);
+  useEffect(() => {
+    const projectId = props.project?.id;
+    if (!projectId) { setSkillList([]); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const base = await getLocalApiEndpoint();
+        const res = await fetch(`${base}/v1/projects/${projectId}/skills`);
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data?.skills ?? []);
+        setSkillList(
+          list
+            .map((s: any) => ({ name: s.name || '', description: s.description || '' }))
+            // Drop deprecated built-ins (e.g. fetch-url) so they don't show in the picker.
+            .filter((s: any) => s.name && s.name.replace(/[\s_-]+/g, '').toLowerCase() !== 'fetchurl')
+        );
+      } catch { if (!cancelled) setSkillList([]); }
+    };
+    load();
+    // Keep the picker in sync when skills are created/edited/deleted elsewhere.
+    window.addEventListener('skillsSaved', load);
+    return () => { cancelled = true; window.removeEventListener('skillsSaved', load); };
+  }, [props.project?.id]);
 
   const [messages, setMessages]: any = useState([]);
   const [searchQuery] = useState("");
@@ -273,21 +303,29 @@ export default function Chat(props: {
   // SLP backend OCRs/describes images via that model at attachment-upload time.
   useEffect(() => {
     const applyModels = (models?: any[]) => {
-      const hasVision = Array.isArray(models) && models.some(
-        (m: any) => m?.enabled && (m?.capabilities || []).includes('vision')
-      );
-      setVisionEnabled(hasVision);
+      const enabled = Array.isArray(models) ? models.filter((m: any) => m?.enabled) : [];
+      const has = (cap: string) => enabled.some((m: any) => (m?.capabilities || []).includes(cap));
+      setVisionEnabled(has('vision'));
     };
     (async () => {
       try {
         const res = await window.electronAPI?.slpListModels();
         if (res?.success) applyModels(res.models);
       } catch (e) {
-        console.warn('[Chat] Failed to list models for vision detection:', e);
+        console.warn('[Chat] Failed to list models for capability detection:', e);
       }
     })();
-    window.electronAPI?.onModelsUpdated((data: any) => applyModels(data?.models));
-    return () => window.electronAPI?.removeModelsUpdatedListener();
+    // Capability updates come from the models panel's toggle event, which carries
+    // the *optimistic* enabled-capability set (pending override applied). We do NOT
+    // recompute from the raw "models-updated" backend list here — while a model is
+    // still enabling/downloading it reports enabled=false and would clobber the
+    // optimistic value back off.
+    const onCaps = (e: Event) => {
+      const caps: string[] = (e as CustomEvent).detail?.caps || [];
+      setVisionEnabled(caps.includes('vision'));
+    };
+    window.addEventListener('localModelCapsChanged', onCaps);
+    return () => window.removeEventListener('localModelCapsChanged', onCaps);
   }, []);
 
   // Log project prop for debugging
@@ -707,6 +745,14 @@ export default function Chat(props: {
       if (props.project?.folder_path) {
         requestBody.cwd = props.project.folder_path;
       }
+
+      // Per-message locale context. Any "/" skill the user picked travels inside
+      // the message content itself (a leading "/<slug>" token), which the SLP
+      // server parses to resolve the skill — no separate skill field is needed.
+      messageObject.additional_message_params = {
+        user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        user_language: navigator.language,
+      };
 
       const createStream = async () => {
         return await openai.chat.completions.create({
@@ -1730,7 +1776,11 @@ export default function Chat(props: {
                 abortControllerRef.current.abort();
               }
             }}
-            placeholder={modelDownloadProgress?.downloading ? "Waiting for model to be ready..." : "Enter your prompt..."}
+            placeholder={modelDownloadProgress?.downloading
+              ? "Waiting for model to be ready..."
+              : skillList.length > 0
+                ? "Enter your prompt, or type / to run skills"
+                : "Enter your prompt..."}
             disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
             isLoading={isLoading}
             allowAttachments={true}
@@ -1749,6 +1799,8 @@ export default function Chat(props: {
             showDragDrop={true}
             minRows={1}
             maxRows={4}
+            skills={skillList}
+            onCreateSkill={props.onCreateSkill}
           />
           <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
@@ -1783,6 +1835,9 @@ export default function Chat(props: {
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">
+                  {skillList.length > 0 && (
+                    <span><span className="text-sl-text-disabled">[/]</span> <span className="text-sl-text-faint">skills</span></span>
+                  )}
                   <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
                   <span><span className="text-sl-text-disabled">[ctrl+tab]</span> <span className="text-sl-text-faint">switch conversation</span></span>
                 </span>

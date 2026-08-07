@@ -1,10 +1,14 @@
-import { Box } from '@mui/material';
+import { Box, Tooltip } from '@mui/material';
 import CircleIcon from '@mui/icons-material/Circle';
-import ConstructionIcon from '@mui/icons-material/Construction';
-import SimpleMDE from 'react-simplemde-editor';
-import 'easymde/dist/easymde.min.css';
-import '../styles/markdown-editor.css';
-import { useMemo, useState, useEffect, useRef } from 'react';
+import FormatBoldIcon from '@mui/icons-material/FormatBold';
+import FormatItalicIcon from '@mui/icons-material/FormatItalic';
+import TitleIcon from '@mui/icons-material/Title';
+import CodeIcon from '@mui/icons-material/Code';
+import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
+import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
+import LinkIcon from '@mui/icons-material/Link';
+import { useState, useEffect, useRef } from 'react';
+import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 interface Skill {
   name: string;
@@ -40,17 +44,153 @@ description:
 [Add your instructions here]
 `;
 
+// Shared text metrics — the highlight backdrop and the textarea MUST match
+// exactly so the colored frontmatter lines up under the (transparent) input text.
+const editorTextStyle: React.CSSProperties = {
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontSize: '13px',
+  lineHeight: 1.7,
+  padding: '20px 24px',
+  tabSize: 2,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  margin: 0,
+  boxSizing: 'border-box',
+};
+
+// Inline markdown within a body line: bold, italic, inline code, links. Only
+// wraps existing characters in colored spans (markers included), so the text
+// stays character-identical to the textarea and alignment is preserved.
+function renderInline(text: string): React.ReactNode {
+  const regex = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_)|(\[[^\]]+\]\([^)]*\))/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (m[1]) nodes.push(<span key={key++} style={{ color: 'var(--sl-brand-light)' }}>{tok}</span>);
+    else if (m[2]) nodes.push(<span key={key++} style={{ color: 'var(--sl-text-primary)', fontWeight: 700 }}>{tok}</span>);
+    else if (m[3]) nodes.push(<span key={key++} style={{ color: 'var(--sl-text-secondary)', fontStyle: 'italic' }}>{tok}</span>);
+    else if (m[4]) nodes.push(<span key={key++} style={{ color: 'var(--sl-brand-primary)', textDecoration: 'underline' }}>{tok}</span>);
+    last = regex.lastIndex;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+// A body (non-frontmatter) line: block prefixes (heading / list / quote) plus
+// inline formatting.
+function renderBodyLine(line: string): React.ReactNode {
+  let m: RegExpExecArray | null;
+  if ((m = /^(#{1,6}\s)(.*)$/.exec(line))) {
+    return (
+      <span style={{ color: 'var(--sl-brand-primary)', fontWeight: 700 }}>
+        {m[1]}{renderInline(m[2])}
+      </span>
+    );
+  }
+  if ((m = /^(\s*>\s?)(.*)$/.exec(line))) {
+    return (
+      <>
+        <span style={{ color: 'var(--sl-text-faint)' }}>{m[1]}</span>
+        <span style={{ color: 'var(--sl-text-muted)' }}>{renderInline(m[2])}</span>
+      </>
+    );
+  }
+  if ((m = /^(\s*(?:[-*+]|\d+\.)\s)(.*)$/.exec(line))) {
+    return (
+      <>
+        <span style={{ color: 'var(--sl-brand-primary)' }}>{m[1]}</span>
+        {renderInline(m[2])}
+      </>
+    );
+  }
+  return renderInline(line);
+}
+
+/** Colorize the content: leading YAML frontmatter block + body markdown. */
+function highlightFrontmatter(content: string): React.ReactNode {
+  const lines = content.split('\n');
+  let inFrontmatter = false;
+  let frontmatterClosed = false;
+
+  return lines.map((line, i) => {
+    const isDelim = line.trim() === '---';
+    let node: React.ReactNode;
+
+    if (i === 0 && isDelim) {
+      inFrontmatter = true;
+      node = <span style={{ color: 'var(--sl-text-faint)' }}>{line}</span>;
+    } else if (inFrontmatter && !frontmatterClosed && isDelim) {
+      frontmatterClosed = true;
+      inFrontmatter = false;
+      node = <span style={{ color: 'var(--sl-text-faint)' }}>{line}</span>;
+    } else if (inFrontmatter && !frontmatterClosed) {
+      const m = /^(\s*)([\w-]+)(\s*:)(.*)$/.exec(line);
+      node = m ? (
+        <>
+          {m[1]}
+          <span style={{ color: 'var(--sl-brand-primary)' }}>{m[2]}</span>
+          <span style={{ color: 'var(--sl-text-faint)' }}>{m[3]}</span>
+          <span style={{ color: 'var(--sl-text-muted)' }}>{m[4]}</span>
+        </>
+      ) : (
+        <span style={{ color: 'var(--sl-text-muted)' }}>{line}</span>
+      );
+    } else {
+      node = renderBodyLine(line);
+    }
+
+    return (
+      <span key={i}>
+        {node}
+        {i < lines.length - 1 ? '\n' : ''}
+      </span>
+    );
+  });
+}
+
+/** The active theme's skill glyph (e.g. the Catppuccin cat), else the shield. */
+function SkillGlyph({ svg, size = 16 }: { svg?: string; size?: number }) {
+  if (svg) {
+    return (
+      <span
+        className="flex-shrink-0 inline-flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+        style={{ width: size, height: size }}
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+      <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+      <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function SkillEditor({
-  selectedProject,
   projectSkills,
   skillIndex,
   onSaveSkills,
   isNew = false,
 }: SkillEditorProps) {
+  const { theme } = useThemeContext();
   const skill = isNew ? null : projectSkills[skillIndex];
   const [content, setContent] = useState(skill?.content || DEFAULT_SKILL_TEMPLATE);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const editorRef = useRef<any>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  // Keep the highlight backdrop scrolled in lockstep with the textarea.
+  const syncScroll = () => {
+    if (backdropRef.current && textareaRef.current) {
+      backdropRef.current.scrollTop = textareaRef.current.scrollTop;
+      backdropRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+  };
 
   // Keep latest values in refs so unmount cleanup can flush an unsaved save
   const contentRef = useRef(content);
@@ -65,23 +205,6 @@ export default function SkillEditor({
   useEffect(() => { skillIndexRef.current = skillIndex; }, [skillIndex]);
   useEffect(() => { isNewRef.current = isNew; }, [isNew]);
   useEffect(() => { onSaveSkillsRef.current = onSaveSkills; }, [onSaveSkills]);
-
-  const editorOptions = useMemo(() => ({
-    spellChecker: false,
-    status: ["words", "lines"] as const,
-    toolbar: [
-      'bold',
-      'italic',
-      'heading',
-      '|',
-      'unordered-list',
-      'ordered-list',
-      '|',
-      'quote',
-    ] as const,
-    minHeight: '100%',
-    placeholder: 'Add skills or guidelines for this project...',
-  }), [selectedProject?.id]);
 
   // Keyboard shortcut: Ctrl/Cmd+S to save immediately
   useEffect(() => {
@@ -150,6 +273,57 @@ export default function SkillEditor({
     setHasUnsavedChanges(true);
   };
 
+  // Apply the new value + restore a selection/caret, keeping focus on the input.
+  const applyEdit = (value: string, selStart: number, selEnd: number) => {
+    handleChange(value);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(selStart, selEnd);
+    });
+  };
+
+  // Wrap the current selection with `marker` on both sides (bold, italic, code).
+  const wrapSelection = (marker: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const selected = content.slice(start, end) || 'text';
+    const next = content.slice(0, start) + marker + selected + marker + content.slice(end);
+    applyEdit(next, start + marker.length, start + marker.length + selected.length);
+  };
+
+  // Prefix each selected line with `prefix` (headings, lists, quotes).
+  const prefixLines = (prefix: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const lineStart = content.lastIndexOf('\n', start - 1) + 1;
+    const block = content.slice(lineStart, end);
+    const replaced = block
+      .split('\n')
+      .map((l) => (l.startsWith(prefix) ? l : prefix + l))
+      .join('\n');
+    const next = content.slice(0, lineStart) + replaced + content.slice(end);
+    applyEdit(next, lineStart, lineStart + replaced.length);
+  };
+
+  const insertLink = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const label = content.slice(start, end) || 'text';
+    const snippet = `[${label}](url)`;
+    const next = content.slice(0, start) + snippet + content.slice(end);
+    // Select the "url" placeholder for quick replacement.
+    const urlStart = start + label.length + 3;
+    applyEdit(next, urlStart, urlStart + 3);
+  };
+
   const displayName = getDisplayName(content);
 
   return (
@@ -162,51 +336,89 @@ export default function SkillEditor({
     >
       {/* Header */}
       <Box
-        sx={{
-          flex: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-          px: 5,
-          py: 1.5,
-          borderBottom: '1px solid var(--sl-border-subtle)',
-          bgcolor: 'var(--sl-bg-surface-1)',
-        }}
+        className="flex items-center gap-2.5 flex-none px-6 py-3"
+        sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}
       >
-        <ConstructionIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-        <Box sx={{ fontSize: '12px', color: 'var(--sl-text-secondary)', fontWeight: 500 }}>
+        <span style={{ color: 'var(--sl-brand-primary)' }}>
+          <SkillGlyph svg={theme.icons?.skills} size={16} />
+        </span>
+        <span className="text-[13px] font-semibold text-sl-text-primary truncate">
           {displayName || (isNew ? 'New Skill' : 'Untitled Skill')}
-        </Box>
-        <Box
-          sx={{
-            fontSize: '10px',
-            color: 'var(--sl-text-muted)',
-            bgcolor: 'var(--sl-bg-surface-1)',
-            px: 1,
-            py: 0.25,
-            borderRadius: '3px',
-            fontWeight: 600,
-            letterSpacing: '0.5px',
-          }}
+        </span>
+        <span
+          className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide flex-shrink-0"
+          style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
         >
-          SKILL
-        </Box>
+          Skill
+        </span>
         {hasUnsavedChanges && (
-          <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)', ml: 0.5 }} />
+          <CircleIcon sx={{ fontSize: 8, color: 'var(--sl-brand-primary)' }} />
         )}
+        <span className="ml-auto text-[10px] text-sl-text-faint flex-shrink-0">
+          Markdown &middot; auto-saves &middot; ⌘S
+        </span>
       </Box>
 
-      {/* Editor */}
-      <Box className="flex-1 flex flex-col overflow-hidden px-6 py-4 markdown-editor-container skill-editor-fullsize">
-        <SimpleMDE
-          ref={editorRef}
+      {/* Formatting toolbar */}
+      <Box
+        className="flex items-center gap-0.5 flex-none px-4 py-1"
+        sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}
+      >
+        {[
+          { key: 'bold', title: 'Bold', icon: <FormatBoldIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('**') },
+          { key: 'italic', title: 'Italic', icon: <FormatItalicIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('*') },
+          { key: 'heading', title: 'Heading', icon: <TitleIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('# ') },
+          { key: 'code', title: 'Code', icon: <CodeIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('`') },
+          { key: 'ul', title: 'Bulleted list', icon: <FormatListBulletedIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('- ') },
+          { key: 'quote', title: 'Quote', icon: <FormatQuoteIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('> ') },
+          { key: 'link', title: 'Link', icon: <LinkIcon sx={{ fontSize: 16 }} />, run: () => insertLink() },
+        ].map((btn) => (
+          <Tooltip key={btn.key} title={btn.title} placement="bottom" arrow>
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); btn.run(); }}
+              className="flex items-center justify-center rounded transition-colors"
+              style={{ width: 28, height: 28, color: 'var(--sl-text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sl-brand-primary)'; e.currentTarget.style.backgroundColor = 'var(--sl-white-alpha-7)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sl-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              {btn.icon}
+            </button>
+          </Tooltip>
+        ))}
+      </Box>
+
+      {/* Editor — a colorized, full-height Markdown surface that fills the panel.
+          A highlight backdrop shows the (frontmatter-colored) text; the textarea
+          sits on top with transparent text so only the caret/selection show. */}
+      <Box className="flex-1 relative overflow-hidden">
+        <div
+          ref={backdropRef}
+          aria-hidden
+          className="absolute inset-0 overflow-auto pointer-events-none"
+          style={{ ...editorTextStyle, color: 'var(--sl-text-primary)' }}
+        >
+          {highlightFrontmatter(content)}
+        </div>
+        <textarea
+          ref={textareaRef}
           value={content}
-          onChange={handleChange}
-          options={editorOptions}
+          onChange={(e) => handleChange(e.target.value)}
+          onScroll={syncScroll}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="Write this skill in Markdown — frontmatter (name, description) plus the instructions to follow…"
+          className="absolute inset-0 w-full h-full resize-none"
+          style={{
+            ...editorTextStyle,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            color: 'transparent',
+            caretColor: 'var(--sl-brand-primary)',
+            overflowY: 'auto',
+          }}
         />
-        <Box sx={{ fontSize: '10px', color: 'var(--sl-text-faint)', mt: 1.5, textAlign: 'right', flexShrink: 0 }}>
-          Markdown &middot; auto-saves &middot; ⌘S to save
-        </Box>
       </Box>
     </Box>
   );
