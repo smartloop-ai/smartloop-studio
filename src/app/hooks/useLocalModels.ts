@@ -67,6 +67,21 @@ export function useLocalModels() {
         setDownloadProgress(null);
         setEnabledOverrides(prev => new Map(prev).set(name, enabled));
 
+        // Broadcast the optimistic enabled-capability set so other views (e.g. the
+        // sidebar's document/skill gating) update instantly instead of waiting for
+        // the backend to confirm + re-emit the model list.
+        try {
+            const enabledCaps = new Set<string>();
+            localModels.forEach((m: any) => {
+                const mName = m.name || m.id || m.model;
+                const isOn = mName === name
+                    ? enabled
+                    : (enabledOverrides.has(mName) ? enabledOverrides.get(mName) : m.enabled);
+                if (isOn) (m.capabilities || []).forEach((c: string) => enabledCaps.add(c));
+            });
+            window.dispatchEvent(new CustomEvent('localModelCapsChanged', { detail: { caps: Array.from(enabledCaps) } }));
+        } catch { /* non-fatal */ }
+
         try {
             await api.slpSetModelEnabled(workspaceName, enabled);
             await fetchLocalModels();
@@ -76,7 +91,7 @@ export function useLocalModels() {
             setDownloadProgress(null);
             setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
         }
-    }, [fetchLocalModels]);
+    }, [fetchLocalModels, localModels, enabledOverrides]);
 
     useEffect(() => {
         fetchLocalModels();

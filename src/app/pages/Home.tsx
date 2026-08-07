@@ -26,6 +26,15 @@ import DocumentViewer from '@/app/components/document-viewer';
 import UpdatePill from '@/app/components/update-pill';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
+// Deprecated built-in skills hidden everywhere (compared by normalized name).
+// Kept in sync with the right sidebar so skill list indices stay aligned.
+const isDeprecatedSkill = (name: string) =>
+  (name || '').replace(/[\s_-]+/g, '').toLowerCase() === 'fetchurl';
+const mapSkills = (list: any[]) =>
+  list
+    .map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' }))
+    .filter((s) => s.name && !isDeprecatedSkill(s.name));
+
 export default function Home() {
   const [user, setUser] = useAuthContext();
   const {
@@ -380,7 +389,7 @@ export default function Home() {
           if (res.ok) {
             const data = await res.json();
             const list = Array.isArray(data) ? data : (data?.skills ?? []);
-            setProjectSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
+            setProjectSkills(mapSkills(list));
           } else {
             // Nothing on disk — fetch from API and write to disk so readSkillsDir works going forward
             const localBase = await getLocalApiEndpoint();
@@ -403,7 +412,7 @@ export default function Home() {
                   await window.electronAPI!.writeTextFile(`${project.folder_path}/skills/${s.id}/SKILL.md`, fileContent);
                 }
               }
-              setProjectSkills(apiSkills.map((s: any) => ({ id: s.id, name: s.name || '', content: s.content || '', description: s.description || '' })));
+              setProjectSkills(mapSkills(apiSkills));
             } else {
               setProjectSkills([]);
             }
@@ -709,7 +718,7 @@ export default function Home() {
         if (res.ok) {
           const data = await res.json();
           const list = Array.isArray(data) ? data : (data?.skills ?? []);
-          refreshed = list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' }));
+          refreshed = mapSkills(list);
         }
       } catch { /* fallback to local skills array */ }
       setProjectSkills(refreshed);
@@ -769,7 +778,7 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : (data?.skills ?? []);
-        setProjectSkills(list.map((s: any) => ({ id: s.id || s.name, name: s.name || '', content: s.content || '', description: s.description || '' })));
+        setProjectSkills(mapSkills(list));
       }
     } catch {
       // silent – keep existing skills on failure
@@ -1001,6 +1010,70 @@ export default function Home() {
       return [...updated, tab];
     });
     setActiveTabId(tab.id);
+  };
+
+  // Create a new skill from the standard template (name filled from the "/command")
+  // and open it in the editor. If a skill with the same slug already exists we just
+  // open that one instead of adding a duplicate.
+  const createSkillFromTemplate = async (rawName: string) => {
+    if (!selectedProject?.id) return;
+    const slug = rawName.trim().replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (!slug) return;
+    const title = slug.split('-').filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const content =
+`---
+name: ${slug}
+description: A clear description of what this skill does and when to use it
+---
+
+# ${title}
+
+[Add your instructions here that Claude will follow when this skill is active]
+
+## Examples
+- Example usage 1
+- Example usage 2
+
+## Guidelines
+- Guideline 1
+`;
+    const norm = (s: string) => (s || '').replace(/[\s_-]+/g, '').toLowerCase();
+    try {
+      const base = await getLocalApiEndpoint();
+      const fetchList = async () => {
+        const r = await fetch(`${base}/v1/projects/${selectedProject.id}/skills`);
+        if (!r.ok) return [];
+        const d = await r.json();
+        return mapSkills(Array.isArray(d) ? d : (d?.skills ?? []));
+      };
+
+      const before = await fetchList();
+      const exists = before.find((s: any) => norm(s.name) === norm(slug));
+      if (!exists) {
+        const res = await fetch(`${base}/v1/projects/${selectedProject.id}/skills`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        if (!res.ok) return;
+      }
+
+      const list = await fetchList();
+      setProjectSkills(list);
+      window.dispatchEvent(new CustomEvent('skillsSaved'));
+      const idx = list.findIndex((s: any) => norm(s.name) === norm(slug));
+      if (idx >= 0) {
+        handleOpenTab({
+          id: `skill-${list[idx].id || idx}`,
+          type: 'skill',
+          title: list[idx].name || 'Untitled Skill',
+          data: { index: idx },
+        } as OpenTab);
+      }
+    } catch (ex) {
+      console.error('Error creating skill from template:', ex);
+    }
   };
 
   const handleTabSelect = async (tabId: string) => {
@@ -1761,6 +1834,7 @@ export default function Home() {
                           onConversationCreated={handleConversationCreated}
                           onConversationUpdate={handleConversationUpdate}
                           onOpenTab={handleOpenTab}
+                          onCreateSkill={createSkillFromTemplate}
                         />
                       );
                     })()}
