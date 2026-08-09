@@ -28,7 +28,7 @@ export interface AppUpdate {
   // (false in dev and for the Linux .deb).
   updaterSupported: boolean;
   // electron-updater's progress through that download.
-  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error';
+  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error' | 'installing';
   percent: number;
   error?: string;
   // A manual force-check is in flight.

@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getSlpConfig: () => ipcRenderer.invoke('get-slp-config'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  // Storage / free-up-space
+  getStorageUsage: () => ipcRenderer.invoke('storage-usage'),
+  cleanupStorage: (opts) => ipcRenderer.invoke('storage-cleanup', opts),
   getFrameworkVersion: () => ipcRenderer.invoke('get-framework-version'),
   commandExists: (cmd) => ipcRenderer.invoke('command-exists', cmd),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
@@ -135,6 +138,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeHealthUpdateListener: () => {
     ipcRenderer.removeAllListeners('health-update');
+  },
+  // Transient agent-restarting signal (e.g. during a Clean). Kept off the global
+  // health-update channel so it doesn't trigger project/UI reconciles.
+  onAgentRestarting: (callback) => {
+    ipcRenderer.on('agent-restarting', (event, data) => callback(data));
+  },
+  removeAgentRestartingListener: () => {
+    ipcRenderer.removeAllListeners('agent-restarting');
   },
   // App release / update check
   checkForUpdates: () => ipcRenderer.invoke('release-check-now'),
