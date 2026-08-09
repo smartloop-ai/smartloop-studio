@@ -475,11 +475,31 @@ export default function SettingsPage() {
                             let status: React.ReactNode;
                             let actions: React.ReactNode = null;
 
+                            // Install in progress — restarting/relaunching. Checked first so the
+                            // button shows a disabled "Installing…" and repeated clicks are impossible.
+                            if (updaterState === 'installing') {
+                                status = (
+                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        Installing update…
+                                    </span>
+                                );
+                                actions = (
+                                    <button
+                                        disabled
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+                                        style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                    >
+                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                        Installing…
+                                    </button>
+                                );
+                            }
                             // A build already on disk is the authoritative signal, so this is
                             // checked before updateAvailable: the feed can stop reporting the
                             // update while the staged build is still installable, and dropping
                             // the button then would strand the user on the old version.
-                            if (updaterSupported && updaterState === 'downloaded') {
+                            else if (updaterSupported && updaterState === 'downloaded') {
                                 const readyVersion = stagedVersion ?? latestVersion;
                                 status = (
                                     <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
