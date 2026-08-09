@@ -98,6 +98,9 @@ export interface ElectronAPI {
   removeModelsUpdatedListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
+  // Transient agent-restarting signal (e.g. during a Clean)
+  onAgentRestarting: (callback: (data: { restarting: boolean }) => void) => void;
+  removeAgentRestartingListener: () => void;
   // App release / update check
   checkForUpdates: () => Promise<any>;
   getLatestRelease: () => Promise<any>;
@@ -120,6 +123,18 @@ export interface ElectronAPI {
     freeMemGb: number;
     gpu: string | null;
   }>;
+  // Storage / free-up-space
+  getStorageUsage: () => Promise<{
+    success: boolean;
+    total?: number;
+    models?: number;
+    versions?: number;
+    logsCache?: number;
+    reclaimable?: number;
+    error?: string;
+  }>;
+  cleanupStorage: (opts: { models?: boolean; versions?: boolean; logsCache?: boolean }) =>
+    Promise<{ success: boolean; freed?: number; serviceStarted?: boolean; error?: string }>;
   // Save file via native save dialog
   saveFileDialog: (defaultName: string, content: string, defaultDir?: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // Projects: centralized /v1/projects access (list + CRUD in main process)

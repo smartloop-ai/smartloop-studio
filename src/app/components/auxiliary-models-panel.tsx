@@ -279,18 +279,18 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const description = m.description || '';
         const enabled = isEnabled(name);
         const downloaded = !!m.downloaded;
-        // Paid tiers (pro / premium / internal) require an entitlement. The
-        // backend's is_accessible flag can't be trusted for these — it may report
-        // true for a paid model on a free plan — so we gate them on access_level
-        // directly rather than on is_accessible alone.
-        // Internal models are only ever sent to eligible users, so their mere
-        // presence in the list means they're downloadable — never gate them.
+        // Paid tiers (pro / premium / internal) require an entitlement, reported
+        // by the backend's is_accessible flag — it's computed per user (an admin,
+        // internal, or paid account gets is_accessible=true for pro models). We
+        // trust it: a model the backend marks accessible is downloadable whatever
+        // its tier, so a legitimately-entitled user isn't locked out of pro.
         const isInternal = m.access_level === 'internal';
         const isGated = m.access_level === 'pro' || m.access_level === 'premium';
         // An already-downloaded model stays usable regardless of auth/plan — the
         // gate only applies to models the user hasn't downloaded yet. Admins and
-        // internal-eligible users bypass the gate and can download any model.
-        const locked = !canDownloadGated && (m.is_accessible === false || isGated) && !downloaded;
+        // internal-eligible users bypass the gate entirely; everyone else is gated
+        // only when the backend says the model isn't accessible to them.
+        const locked = !canDownloadGated && m.is_accessible === false && !downloaded;
         // "Unlock" is for genuinely plan-gated (paid) models. A free model reported
         // inaccessible just because the user is signed out is a login gate —
         // surfaced as a disabled Download + tooltip, not an Unlock.

@@ -21,6 +21,7 @@ let updaterStatus = { state: 'idle' };
 let downloadToken = null;   // CancellationToken for the in-flight download (pause)
 let downloadPaused = false; // user paused — suppresses auto-restart from polls
 let stagedInfo = null;      // last update-available info, so resume can restart
+let installing = false;     // guards re-entry while quit+install is in progress
 
 function send(channel, data) {
   const win = getWindow?.();
@@ -263,6 +264,13 @@ function maybeStartUpdate(result) {
  */
 async function quitAndInstall() {
   if (!updaterSupported()) return { success: false };
+  // Re-entry guard: stopping SLP + scheduling the quit is async, so without this
+  // repeated clicks would re-run it and race concurrent quitAndInstall() calls.
+  if (installing) return { success: true };
+  installing = true;
+  // Reflect the pending install immediately so the button can show "Installing…"
+  // and disable — otherwise the UI looks unresponsive during the stop/quit gap.
+  setUpdaterStatus({ state: 'installing' });
 
   // Stop SLP and wait for it to exit before relaunching. main.js's before-quit
   // stops it too but doesn't await, so the old service can outlive the quit —
@@ -283,6 +291,7 @@ async function quitAndInstall() {
       autoUpdater.quitAndInstall(true, true);
     } catch (err) {
       app.isQuitting = false;
+      installing = false;
       setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
       return;
     }
@@ -293,6 +302,7 @@ async function quitAndInstall() {
     setTimeout(() => {
       if (quitStarted) return;
       app.isQuitting = false;
+      installing = false;
       setUpdaterStatus({ state: 'error', error: 'Update could not be installed. Try downloading it again.' });
     }, 5000);
   });

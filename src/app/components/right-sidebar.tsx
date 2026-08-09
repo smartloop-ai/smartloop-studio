@@ -134,9 +134,11 @@ export default function RightSidebar({
   // Combined capabilities of the currently ENABLED models. Documents need "dp"
   // (document processing) and Skills need "skills"; the matching rail section is
   // disabled when no enabled model provides it. Null = not loaded yet (don't gate
-  // so nothing flickers on startup); an empty set means "loaded, none support it".
+  // so nothing flickers on startup). An empty set means no model is enabled — the
+  // app falls back to the default model, so don't gate that case either; only
+  // disable when models ARE enabled but none provide the capability.
   const [modelCaps, setModelCaps] = useState<Set<string> | null>(null);
-  const docSupported = modelCaps === null || modelCaps.has('dp');
+  const docSupported = modelCaps === null || modelCaps.size === 0 || modelCaps.has('dp');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [searchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
