@@ -139,8 +139,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const reconcile = useCallback(async (list: any[]) => {
     if (list.length === 0) return;
 
-    // Auto-select only when nothing is already selected via the URL.
+    // Auto-selection is a Home-route behavior. Only auto-pick a project when the
+    // user is actually on Home — never navigate them off another page (e.g.
+    // Settings) to select one. Otherwise a refresh triggered mid-session (like the
+    // one fired after a Clean restart) yanks the user out of the page and remounts
+    // the whole UI instead of just updating the panel they're looking at.
     const hash = window.location.hash;
+    const pathPart = hash.replace(/^#/, '').split('?')[0];
+    if (pathPart && pathPart !== '/') return;
+
+    // Auto-select only when nothing is already selected via the URL.
     const queryStart = hash.indexOf('?');
     const params = new URLSearchParams(queryStart >= 0 ? hash.slice(queryStart) : '');
     if (params.get('project') || params.get('conversation')) return;
