@@ -1453,6 +1453,7 @@ ipcMain.handle('storage-usage', async () => {
     const logsCache = dirSize(log) + dirSize(cache);
     return {
       success: true,
+      total: dirSize(slpService.getSlpDir()),   // whole ~/.smartloop footprint
       models,
       versions,
       logsCache,

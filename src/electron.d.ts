@@ -126,6 +126,7 @@ export interface ElectronAPI {
   // Storage / free-up-space
   getStorageUsage: () => Promise<{
     success: boolean;
+    total?: number;
     models?: number;
     versions?: number;
     logsCache?: number;

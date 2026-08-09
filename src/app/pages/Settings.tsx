@@ -233,7 +233,7 @@ export default function SettingsPage() {
     const [agentVersion, setAgentVersion] = useState<string>('');
 
     // Storage / free-up-space
-    type StorageUsage = { models: number; versions: number; logsCache: number; reclaimable: number };
+    type StorageUsage = { total: number; models: number; versions: number; logsCache: number; reclaimable: number };
     const [storage, setStorage] = useState<StorageUsage | null>(null);
     const [cleanupSel, setCleanupSel] = useState({ models: true, versions: true, logsCache: true });
     const [isCleaning, setIsCleaning] = useState(false);
@@ -251,6 +251,7 @@ export default function SettingsPage() {
         const res = await window.electronAPI?.getStorageUsage?.();
         if (res?.success) {
             setStorage({
+                total: res.total ?? 0,
                 models: res.models ?? 0,
                 versions: res.versions ?? 0,
                 logsCache: res.logsCache ?? 0,
@@ -1060,74 +1061,130 @@ export default function SettingsPage() {
                             and embedding models are always kept, and the agent restarts when you free up space.
                         </p>
 
-                        {/* Category rows with checkboxes */}
-                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--sl-white-alpha-7)' }}>
-                            {([
-                                { key: 'models' as const, label: 'Downloaded models', hint: 'Removable models (keeps slp-orchestra + embeddings)' },
-                                { key: 'versions' as const, label: 'Old agent versions', hint: 'Previously installed agent binaries' },
-                                { key: 'logsCache' as const, label: 'Logs & cache', hint: 'server.log and the download cache' },
-                            ]).map((row, i) => {
-                                const size = storage ? storage[row.key] : 0;
-                                // Models stays actionable at 0 B so it can still reconcile the
-                                // backend's config (mark deleted models as not-downloaded);
-                                // versions/logs have nothing to do when empty.
-                                const disabled = !storage || (row.key !== 'models' && size === 0);
-                                return (
-                                    <label
-                                        key={row.key}
-                                        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+                        {(() => {
+                            const cats = [
+                                { key: 'models' as const, label: 'Models', color: 'var(--sl-brand-primary)' },
+                                { key: 'versions' as const, label: 'Versions', color: 'rgb(96,165,250)' },
+                                { key: 'logsCache' as const, label: 'Logs', color: 'var(--sl-status-warning)' },
+                            ];
+                            const totalFolder = storage ? storage.total : 0;
+                            const totalAll = storage ? storage.models + storage.versions + storage.logsCache : 0;
+                            const kept = Math.max(0, totalFolder - totalAll);   // non-reclaimable footprint
+                            const pct = (n: number) => (totalFolder > 0 ? (n / totalFolder) * 100 : 0);
+                            return (
+                                <>
+                                    {/* macOS-style framed box: "X of Y used" header + disk bar */}
+                                    <div
+                                        className="rounded-lg p-3 mb-4"
+                                        style={{ backgroundColor: 'var(--sl-bg-surface-2)', border: '1px solid var(--sl-border-subtle)' }}
+                                    >
+                                    {/* Header — like macOS "X of Y used": cleanable on the left,
+                                        whole footprint on the right */}
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>Total to clean</span>
+                                            <span className="text-sm font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(selectedReclaim)}</span>
+                                        </div>
+                                        <span className="text-sm" style={{ color: 'var(--sl-text-faint)' }}>
+                                            of <span className="font-mono">{formatBytes(totalFolder)}</span> used
+                                        </span>
+                                    </div>
+
+                                    {/* macOS disk-style bar — cleanable category segments, then a
+                                        labeled "kept" remainder */}
+                                    <div
+                                        className="flex w-full h-5 rounded-md overflow-hidden gap-[2px]"
                                         style={{
-                                            borderTop: i === 0 ? 'none' : '1px solid var(--sl-white-alpha-7)',
-                                            opacity: disabled ? 0.45 : 1,
-                                            cursor: disabled ? 'not-allowed' : 'pointer',
+                                            backgroundColor: 'var(--sl-bg-surface-3)',
+                                            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)',
                                         }}
                                     >
-                                        <input
-                                            type="checkbox"
-                                            checked={cleanupSel[row.key] && !disabled}
-                                            disabled={disabled || isCleaning}
-                                            onChange={(e) => setCleanupSel((s) => ({ ...s, [row.key]: e.target.checked }))}
-                                            style={{ accentColor: 'var(--sl-brand-primary)', width: 15, height: 15 }}
-                                        />
-                                        <div className="flex flex-col min-w-0 flex-1">
-                                            <span className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>{row.label}</span>
-                                            <span className="text-[11px]" style={{ color: 'var(--sl-text-faint)' }}>{row.hint}</span>
-                                        </div>
-                                        <span className="text-sm font-mono" style={{ color: 'var(--sl-text-secondary)' }}>
-                                            {storage ? formatBytes(size) : '—'}
-                                        </span>
-                                    </label>
-                                );
-                            })}
-                        </div>
+                                        {cats.map((c) => {
+                                            const size = storage ? storage[c.key] : 0;
+                                            if (size <= 0) return null;
+                                            return (
+                                                <div
+                                                    key={c.key}
+                                                    title={`${c.label} — ${formatBytes(size)}`}
+                                                    style={{
+                                                        // Floor tiny slices so a few-MB category is still visible.
+                                                        width: `${pct(size)}%`,
+                                                        minWidth: 6,
+                                                        backgroundColor: cleanupSel[c.key] ? c.color : 'var(--sl-white-alpha-8)',
+                                                        opacity: cleanupSel[c.key] ? 1 : 0.4,
+                                                        transition: 'background-color 0.15s ease, opacity 0.15s ease',
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                        {kept > 0 && (
+                                            <div
+                                                className="flex items-center justify-end pr-2"
+                                                title={`System — ${formatBytes(kept)} (can't be cleaned)`}
+                                                style={{ width: `${pct(kept)}%`, minWidth: 6, backgroundColor: 'var(--sl-white-alpha-12, rgba(255,255,255,0.12))' }}
+                                            >
+                                                <span className="text-[10px] font-mono whitespace-nowrap" style={{ color: 'var(--sl-text-muted)' }}>{formatBytes(kept)}</span>
+                                            </div>
+                                        )}
+                                    </div>
 
-                        {/* Footer: total size + action */}
-                        <div className="flex items-center justify-between gap-4 mt-4">
-                            <div className="flex flex-col">
-                                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--sl-text-faint)' }}>Total to clean</span>
-                                <span className="text-lg font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(selectedReclaim)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={runCleanup}
-                                    disabled={isCleaning || !(cleanupSel.models || cleanupSel.versions || cleanupSel.logsCache)}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    {isCleaning ? (
-                                        <>
-                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                            Cleaning…
-                                        </>
-                                    ) : (
-                                        <>
-                                            <DeleteSweepIcon sx={{ fontSize: 16 }} />
-                                            Clean
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
+                                    {/* macOS-style legend — colored dot + name (+ size). Cleanable
+                                        categories toggle inclusion; deselected ones dim. */}
+                                    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3">
+                                        {cats.map((c) => {
+                                            const size = storage ? storage[c.key] : 0;
+                                            // Models stays actionable at 0 B so it can still reconcile the
+                                            // backend config; versions/logs have nothing to do when empty.
+                                            const disabled = !storage || isCleaning || (c.key !== 'models' && size === 0);
+                                            const on = cleanupSel[c.key] && !(!storage || (c.key !== 'models' && size === 0));
+                                            return (
+                                                <button
+                                                    key={c.key}
+                                                    onClick={() => setCleanupSel((s) => ({ ...s, [c.key]: !s[c.key] }))}
+                                                    disabled={disabled}
+                                                    className="flex items-center gap-1.5 text-xs transition-opacity"
+                                                    style={{ opacity: on ? 1 : 0.4, cursor: disabled ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                                                    <span style={{ color: 'var(--sl-text-secondary)' }}>{c.label}</span>
+                                                    <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(size) : '—'}</span>
+                                                </button>
+                                            );
+                                        })}
+                                        {kept > 0 && (
+                                            <span className="flex items-center gap-1.5 text-xs" title="System data — can't be cleaned">
+                                                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--sl-white-alpha-12, rgba(255,255,255,0.12))' }} />
+                                                <span style={{ color: 'var(--sl-text-secondary)' }}>System</span>
+                                                <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{formatBytes(kept)}</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                    </div>
+
+                                    {/* Clean action */}
+                                    <div className="flex justify-start">
+                                        <button
+                                            onClick={runCleanup}
+                                            disabled={isCleaning || !(cleanupSel.models || cleanupSel.versions || cleanupSel.logsCache)}
+                                            className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                            style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                        >
+                                            {isCleaning ? (
+                                                <>
+                                                    <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                                    Cleaning…
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <DeleteSweepIcon sx={{ fontSize: 16 }} />
+                                                    Clean
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </Box>
 
                 </Box>
