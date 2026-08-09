@@ -1084,7 +1084,7 @@ export default function SettingsPage() {
                         {/* Footer: total size + action */}
                         <div className="flex items-center justify-between gap-4 mt-4">
                             <div className="flex flex-col">
-                                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--sl-text-faint)' }}>Total size</span>
+                                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--sl-text-faint)' }}>Total to clean</span>
                                 <span className="text-lg font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(selectedReclaim)}</span>
                             </div>
                             <div className="flex items-center gap-2">
