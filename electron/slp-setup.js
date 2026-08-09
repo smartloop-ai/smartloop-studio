@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
 
-const VERSION = '1.0.9';
+const VERSION = '1.0.10';
 // SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
 //   https://dl.smartloop.ai/slp/<version>/<plat>-<arch>-slp.<ext>
 const SLP_BASE_URL = (process.env.SLP_BASE_URL || 'https://dl.smartloop.ai').replace(/\/+$/, '');
