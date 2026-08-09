@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Box, Switch, Slider, CircularProgress } from '@mui/material';
+import { Box, Switch, CircularProgress } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
-import TuneIcon from '@mui/icons-material/Tune';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
@@ -19,6 +18,8 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 
 
 
@@ -230,6 +231,59 @@ export default function SettingsPage() {
     // SLP agent (framework) version, sourced from slp-setup.js VERSION via IPC —
     // distinct from the app's own version shown in the header badge.
     const [agentVersion, setAgentVersion] = useState<string>('');
+
+    // Storage / free-up-space
+    type StorageUsage = { models: number; versions: number; logsCache: number; reclaimable: number };
+    const [storage, setStorage] = useState<StorageUsage | null>(null);
+    const [cleanupSel, setCleanupSel] = useState({ models: true, versions: true, logsCache: true });
+    const [isCleaning, setIsCleaning] = useState(false);
+    // Transient restart indicator for the Agent panel (driven by a dedicated IPC
+    // channel so it doesn't disturb global health/project state).
+    const [agentRestarting, setAgentRestarting] = useState(false);
+    useEffect(() => {
+        const api = window.electronAPI;
+        if (!api?.onAgentRestarting) return;
+        api.onAgentRestarting(({ restarting }) => setAgentRestarting(restarting));
+        return () => api.removeAgentRestartingListener?.();
+    }, []);
+
+    const loadStorage = async () => {
+        const res = await window.electronAPI?.getStorageUsage?.();
+        if (res?.success) {
+            setStorage({
+                models: res.models ?? 0,
+                versions: res.versions ?? 0,
+                logsCache: res.logsCache ?? 0,
+                reclaimable: res.reclaimable ?? 0,
+            });
+        }
+    };
+    useEffect(() => { loadStorage(); }, []);
+
+    const selectedReclaim = storage
+        ? (cleanupSel.models ? storage.models : 0)
+        + (cleanupSel.versions ? storage.versions : 0)
+        + (cleanupSel.logsCache ? storage.logsCache : 0)
+        : 0;
+
+    const formatBytes = (bytes: number) => {
+        if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let val = bytes / 1024;
+        let i = 0;
+        while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
+        return `${val.toFixed(val >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+    };
+
+    const runCleanup = async () => {
+        setIsCleaning(true);
+        try {
+            const res = await window.electronAPI?.cleanupStorage?.(cleanupSel);
+            if (res?.success) await loadStorage();
+        } finally {
+            setIsCleaning(false);
+        }
+    };
 
     const DOWNLOAD_URL = 'https://smartloop.ai/download/';
 
@@ -739,11 +793,11 @@ export default function SettingsPage() {
                                         </Box>
                                         <Box component="td">
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{
-                                                border: serverHealth?.status === 'running' ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
-                                                color: serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
+                                                border: agentRestarting ? '1px solid var(--sl-status-warning)' : serverHealth?.status === 'running' ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
+                                                color: agentRestarting ? 'var(--sl-status-warning)' : serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
                                                 opacity: 0.7,
                                             }}>
-                                                {serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
+                                                {agentRestarting ? 'RESTARTING' : serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
                                             </span>
                                         </Box>
                                     </tr>
@@ -947,41 +1001,7 @@ export default function SettingsPage() {
                         );
                     })()}
 
-                    {/* 5. AI Model Settings */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                        <Box className="flex items-center gap-2 mb-4 md:mb-6">
-                            <TuneIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>AI Model Settings</h2>
-                        </Box>
-
-                        {/* Temperature */}
-                        <Box>
-                            <Box className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-medium" style={{ color: 'var(--sl-text-secondary)' }}>
-                                    Default Temperature
-                                </label>
-                                <span className="text-sm font-mono" style={{ color: 'var(--sl-brand-light)' }}>{settings.default_temperature}</span>
-                            </Box>
-                            <Slider
-                                value={settings.default_temperature}
-                                onChange={(_, value) => handleChange('default_temperature', value as number)}
-                                min={0}
-                                max={2}
-                                step={0.1}
-                                sx={{
-                                    color: 'var(--sl-brand-primary)',
-                                    '& .MuiSlider-thumb': { bgcolor: 'var(--sl-brand-primary)' },
-                                    '& .MuiSlider-track': { bgcolor: 'var(--sl-brand-primary)' },
-                                    '& .MuiSlider-rail': { bgcolor: 'var(--sl-border-code)' },
-                                }}
-                            />
-                            <p className="text-xs mt-1" style={{ color: 'var(--sl-text-disabled)' }}>
-                                Lower values = more focused and deterministic. Higher values = more creative and random.
-                            </p>
-                        </Box>
-                    </Box>
-
-                    {/* 6. Analytics */}
+                    {/* Analytics */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         <Box className="flex items-center gap-2 mb-4 md:mb-6">
                             <SpeedIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
@@ -1007,6 +1027,87 @@ export default function SettingsPage() {
                         <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
                             Includes token usage, model performance metrics, and session activity. No conversation content or personal data is collected.
                         </p>
+                    </Box>
+
+                    {/* 7. Clean — reclaim disk space */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-1">
+                            <CleaningServicesIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Clean up</h2>
+                        </Box>
+                        <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                            Reclaim disk space used by Smartloop. The default <span className="font-mono">slp-orchestra</span>{' '}
+                            and embedding models are always kept, and the agent restarts when you free up space.
+                        </p>
+
+                        {/* Category rows with checkboxes */}
+                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--sl-white-alpha-7)' }}>
+                            {([
+                                { key: 'models' as const, label: 'Downloaded models', hint: 'Removable models (keeps slp-orchestra + embeddings)' },
+                                { key: 'versions' as const, label: 'Old agent versions', hint: 'Previously installed agent binaries' },
+                                { key: 'logsCache' as const, label: 'Logs & cache', hint: 'server.log and the download cache' },
+                            ]).map((row, i) => {
+                                const size = storage ? storage[row.key] : 0;
+                                // Models stays actionable at 0 B so it can still reconcile the
+                                // backend's config (mark deleted models as not-downloaded);
+                                // versions/logs have nothing to do when empty.
+                                const disabled = !storage || (row.key !== 'models' && size === 0);
+                                return (
+                                    <label
+                                        key={row.key}
+                                        className="flex items-center gap-3 px-3 py-2.5 cursor-pointer"
+                                        style={{
+                                            borderTop: i === 0 ? 'none' : '1px solid var(--sl-white-alpha-7)',
+                                            opacity: disabled ? 0.45 : 1,
+                                            cursor: disabled ? 'not-allowed' : 'pointer',
+                                        }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={cleanupSel[row.key] && !disabled}
+                                            disabled={disabled || isCleaning}
+                                            onChange={(e) => setCleanupSel((s) => ({ ...s, [row.key]: e.target.checked }))}
+                                            style={{ accentColor: 'var(--sl-brand-primary)', width: 15, height: 15 }}
+                                        />
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                            <span className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>{row.label}</span>
+                                            <span className="text-[11px]" style={{ color: 'var(--sl-text-faint)' }}>{row.hint}</span>
+                                        </div>
+                                        <span className="text-sm font-mono" style={{ color: 'var(--sl-text-secondary)' }}>
+                                            {storage ? formatBytes(size) : '—'}
+                                        </span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+
+                        {/* Footer: total size + action */}
+                        <div className="flex items-center justify-between gap-4 mt-4">
+                            <div className="flex flex-col">
+                                <span className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--sl-text-faint)' }}>Total size</span>
+                                <span className="text-lg font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(selectedReclaim)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={runCleanup}
+                                    disabled={isCleaning || !(cleanupSel.models || cleanupSel.versions || cleanupSel.logsCache)}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                >
+                                    {isCleaning ? (
+                                        <>
+                                            <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                            Cleaning…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <DeleteSweepIcon sx={{ fontSize: 16 }} />
+                                            Clean
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
                     </Box>
 
                 </Box>

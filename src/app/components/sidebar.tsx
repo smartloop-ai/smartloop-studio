@@ -64,6 +64,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     refresh: refreshProjects,
   } = useProjectContext();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  // True while a model is (down)loading for the first time. Settings is blocked
+  // during this window so the model can't be changed mid-load.
+  const [modelLoading, setModelLoading] = useState(false);
   const menuOpen = Boolean(anchorEl);
   const [authUser, setAuthUser] = useState<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -221,7 +224,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     };
   }, []);
 
+  // Track model (down)load state so Settings can be disabled while it's loading.
+  useEffect(() => {
+    const handleModelInit = (e: any) => { setModelLoading(!!e.detail?.loading); };
+    window.addEventListener('modelInitStatus', handleModelInit);
+    return () => window.removeEventListener('modelInitStatus', handleModelInit);
+  }, []);
+
   const handleSettings = () => {
+    if (modelLoading) return;   // blocked while a model is loading
     navigate('/settings');
     onMobileClose?.();
   };
@@ -1037,11 +1048,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             }}
           >
             <MenuItem
+              disabled={modelLoading}
               onClick={() => { handleSettings(); handleMenuClose(); }}
-              sx={{ color: 'var(--sl-text-primary)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' } }}
+              sx={{ color: 'var(--sl-text-primary)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' }, '&.Mui-disabled': { opacity: 0.4 } }}
             >
               <SettingsIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-text-disabled)' }} />
-              Settings
+              {modelLoading ? 'Settings (loading model…)' : 'Settings'}
             </MenuItem>
             <Box sx={{ height: '1px', bgcolor: 'var(--sl-bg-surface-1)', my: 0.5, mx: 1 }} />
             <MenuItem
@@ -1107,7 +1119,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               px: 2,
               py: 1,
               borderRadius: '6px',
-              cursor: 'pointer',
+              cursor: modelLoading ? 'not-allowed' : 'pointer',
+              opacity: modelLoading ? 0.4 : 1,
+              pointerEvents: modelLoading ? 'none' : 'auto',
               fontSize: '12px',
               color: 'var(--sl-text-muted)',
               transition: 'all 0.12s ease',

@@ -1757,7 +1757,7 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="relative flex-none px-3 md:px-4 py-4 md:py-6 bg-sl-bg-base border-t border-sl-border-subtle">
+        <footer className="relative flex-none px-3 md:px-4 pt-6 pb-3 bg-sl-bg-base border-t border-sl-border-subtle">
           {/* Overlays the footer's top padding so it uses existing space instead of
               pushing the input down. Muted so focus stays on input. Shows the live SSE
               status while generating; when idle, the last known token throughput
@@ -1787,8 +1787,10 @@ export default function Chat(props: {
             }}
             placeholder={modelDownloadProgress?.downloading
               ? "Waiting for model to be ready..."
-              : skillList.length > 0
-                ? "Enter your prompt, or type / to run skills"
+              // Match the "/" picker's own availability: it opens when there are
+              // skills to run OR skills can be created (onCreateSkill is set).
+              : (skillList.length > 0 || !!props.onCreateSkill)
+                ? "Enter your prompt, or type / to run or create skills"
                 : "Enter your prompt..."}
             disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
             isLoading={isLoading}
@@ -1811,7 +1813,7 @@ export default function Chat(props: {
             skills={skillList}
             onCreateSkill={props.onCreateSkill}
           />
-          <div className="flex items-center gap-2.5 mt-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
+          <div className="flex items-center gap-2.5 mt-2 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
               <>
                 {indexingProgress ? (
@@ -1844,9 +1846,6 @@ export default function Chat(props: {
                   </span>
                 )}
                 <span className="flex items-center gap-2.5 ml-auto">
-                  {skillList.length > 0 && (
-                    <span><span className="text-sl-text-disabled">[/]</span> <span className="text-sl-text-faint">skills</span></span>
-                  )}
                   <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
                   <span><span className="text-sl-text-disabled">[ctrl+tab]</span> <span className="text-sl-text-faint">switch conversation</span></span>
                 </span>
