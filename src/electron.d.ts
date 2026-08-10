@@ -116,6 +116,9 @@ export interface ElectronAPI {
   getUpdaterStatus: () => Promise<UpdaterStatus>;
   // System hardware info
   getFrameworkVersion: () => Promise<string>;
+  getCommandLineStatus: () => Promise<{ supported: boolean; installed: boolean; linkPath: string | null }>;
+  installCommandLine: () => Promise<{ success: boolean; supported?: boolean; linkPath?: string; error?: string }>;
+  uninstallCommandLine: () => Promise<{ success: boolean; supported?: boolean; error?: string }>;
   getSystemInfo: () => Promise<{
     cpu: string;
     cores: number;
