@@ -1785,7 +1785,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <button
               onClick={confirmDeleteConversation}
               disabled={isDeleting}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 flex items-center justify-center gap-2 whitespace-nowrap px-4 py-2.5 bg-sl-status-error hover:opacity-90 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDeleting ? (
                 <>

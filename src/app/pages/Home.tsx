@@ -1101,13 +1101,14 @@ description: A clear description of what this skill does and when to use it
     const newTabs = openTabs.filter((t) => t.id !== tabId);
     setOpenTabs(newTabs);
 
-    // If it's a real conversation tab, remove from SQLite and recent conversations list
+    // If it's a real conversation tab, silently delete it — same behavior as the
+    // sidebar delete (handles local + remote and dispatches conversationDeleted),
+    // just without the confirmation dialog.
     if (closedTab?.type === 'conversation') {
       const convId = tabId.replace('conv-', '');
       if (convId && convId !== 'new') {
-        storageService.deleteConversation(convId).catch(() => { });
+        conversationService.deleteConversation(convId).catch(() => { });
         setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
-        window.dispatchEvent(new CustomEvent('conversationDeleted', { detail: { conversationId: convId } }));
       }
     }
 
