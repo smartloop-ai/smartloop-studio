@@ -5,27 +5,16 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import TagRoundedIcon from '@mui/icons-material/TagRounded';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
-import ModelBrandIcon from './model-brand-icon';
+import ModelBrandIcon, { brandName } from './model-brand-icon';
 import '../styles/aux-models.css';
 
 interface AuxiliaryModelsPanelProps {
     // Label of the primary orchestrator model (filtered out of the list).
     model: string;
-}
-
-// Human-readable parameter count, e.g. "4.5B params". Backends may send it as a
-// string ("4.5B") or a raw number; anything unrecognized is hidden.
-function formatParams(m: any): string | null {
-    const p = m.parameters ?? m.params ?? m.param_count ?? m.param_size;
-    if (p == null || p === '') return null;
-    if (typeof p === 'number') {
-        const v = p >= 1e9 ? `${+(p / 1e9).toFixed(1)}B` : p >= 1e6 ? `${Math.round(p / 1e6)}M` : `${p}`;
-        return `${v} params`;
-    }
-    const s = String(p);
-    return /params/i.test(s) ? s : `${s} params`;
 }
 
 // Model parameter count in billions. The backend doesn't send a param field, so
@@ -44,6 +33,61 @@ function paramBillions(m: any): number | null {
         .map((x) => parseFloat(x[1]))
         .filter((v) => v > 0 && v < 1000);
     return vals.length ? Math.max(...vals) : null;
+}
+
+// Size cue for a card: pairs the real parameter size with the benefit it buys, so
+// a non-technical user sees both the number (which distinguishes two same-family
+// models) and what it means — smaller = faster/lighter, bigger = more capable.
+function sizeTier(m: any): { label: string; tip: string } | null {
+    const b = paramBillions(m);
+    if (b == null) return null;
+    const approx = b >= 10 ? Math.round(b) : Number.isInteger(b) ? b : +b.toFixed(1);
+    const benefit = b < 1 ? 'Fastest' : b < 2.5 ? 'Fast' : b < 5 ? 'Balanced' : b < 10 ? 'Smarter' : 'Smartest';
+    return {
+        label: benefit,
+        tip: `About ${approx} billion parameters — ${benefit.toLowerCase()}. Larger models are more capable but use more memory and respond slower.`,
+    };
+}
+
+// Engineering tokens that mean nothing to a regular user — dropped from the
+// friendly name (quantization, fine-tune method, date tags, etc.).
+const NAME_NOISE = new Set([
+    'instruct', 'it', 'chat', 'base', 'sft', 'dpo', 'rlhf', 'gguf', 'ggml',
+    'hf', 'mlx', 'onnx', 'preview', 'latest', 'text', 'tuned', 'finetune', 'finetuned',
+]);
+
+// Turn a raw model id into a friendly, human-readable name. Regular users don't
+// care about version numbers (Gemma 3 vs 4) or the parameter size (that lives in
+// its own explained tag), so we keep just the family name plus any capability
+// word. We drop the org prefix, engineering noise, quantization, dates, versions,
+// and the size token. Examples:
+//   "gemma3-4b"                        → "Gemma"
+//   "qwen2.5-vl-3b"                    → "Qwen Vision"
+//   "mistralai/Ministral-3B-Instruct" → "Ministral"
+function prettyModelName(m: any): string {
+    const raw = String(m.name || m.id || m.model || '');
+    const id = raw.split('/').pop() || raw;
+    const parts = id
+        .split(/[-_\s]+/)
+        .filter(Boolean)
+        .filter((t) => {
+            const l = t.toLowerCase();
+            if (NAME_NOISE.has(l)) return false;
+            if (/^v?\d+(?:\.\d+)*$/.test(l)) return false;              // bare version/date (3, 2.5, 2512)
+            if (/^(q\d|int\d|fp\d|bf\d|awq|gptq|\d+bit)/i.test(l)) return false; // quantization
+            if (/^[a-z]?\d+(?:\.\d+)?b$/i.test(l)) return false;        // size token (4b, e2b)
+            return true;
+        })
+        .map((t) => {
+            const l = t.toLowerCase();
+            if (l === 'vl' || l === 'vision') return 'Vision';
+            if (l === 'coder') return 'Coder';
+            // Strip the version/size digits off a family token: "gemma3" → "Gemma",
+            // "qwen2.5" → "Qwen", "llama3.2" → "Llama".
+            const alpha = t.replace(/[\d.].*$/, '') || t;
+            return /[A-Z]/.test(alpha) ? alpha : alpha.charAt(0).toUpperCase() + alpha.slice(1);
+        });
+    return parts.join(' ').replace(/\s+/g, ' ').trim() || raw;
 }
 
 // Approximate the model's RAM footprint in GB. Prefers an explicit memory/size
@@ -68,16 +112,19 @@ function memoryGb(m: any): number | null {
 
 // Memory pressure = the model's estimated RAM footprint relative to the machine's
 // total RAM. This is what "pressure" actually means: the same model is High on an
-// 8GB laptop and Low on a 32GB workstation. Buckets: >=40% high, >10% medium,
-// otherwise low. Falls back to null when we know neither the size nor the RAM.
-function memoryPressure(m: any, totalRamGb: number | null): { gb: number; pct: number; label: string; color: string; border: string } | null {
+// 8GB laptop and Low on a 32GB workstation. Buckets: >=80% won't fit (too big to
+// run alongside the OS + app), >=40% high, >10% medium, otherwise low. `fits` is
+// false only for the won't-fit bucket. Falls back to null when we know neither the
+// size nor the RAM.
+function memoryPressure(m: any, totalRamGb: number | null): { gb: number; pct: number; label: string; color: string; border: string; fits: boolean } | null {
     const gb = memoryGb(m);
     if (gb == null || !totalRamGb || totalRamGb <= 0) return null;
     const rounded = gb >= 10 ? Math.round(gb) : +gb.toFixed(1);
     const pct = Math.round((gb / totalRamGb) * 100);
-    if (pct >= 40) return { gb: rounded, pct, label: 'High', color: '#f87171', border: 'rgba(248,113,113,0.35)' };
-    if (pct > 10) return { gb: rounded, pct, label: 'Medium', color: '#fbbf24', border: 'rgba(251,191,36,0.35)' };
-    return { gb: rounded, pct, label: 'Low', color: '#86efac', border: 'rgba(134,239,172,0.35)' };
+    if (pct >= 80) return { gb: rounded, pct, label: "Won't fit", color: '#f87171', border: 'rgba(248,113,113,0.45)', fits: false };
+    if (pct >= 40) return { gb: rounded, pct, label: 'High', color: '#fb923c', border: 'rgba(251,146,60,0.35)', fits: true };
+    if (pct > 10) return { gb: rounded, pct, label: 'Medium', color: '#fbbf24', border: 'rgba(251,191,36,0.35)', fits: true };
+    return { gb: rounded, pct, label: 'Low', color: '#86efac', border: 'rgba(134,239,172,0.35)', fits: true };
 }
 
 // Normalized title used to match a model against the SSE "Selected …" status
@@ -184,6 +231,30 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         })
         .map(({ m }) => m);
 
+    // The single model we highlight as the best fit for THIS machine: the largest
+    // model that still runs comfortably (memory pressure well below "High"), so a
+    // non-technical user gets the most capable option their RAM can handle without
+    // having to compare sizes. Locked models they can't download are never picked;
+    // if nothing fits comfortably we fall back to the smallest (lightest) model.
+    const recommendedName: string | null = (() => {
+        if (!totalRamGb) return null;
+        const candidates = auxModels
+            .filter((m: any) => {
+                const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
+                return !locked && memoryGb(m) != null;
+            })
+            .map((m: any) => {
+                const gb = memoryGb(m)!;
+                return { name: m.name || m.id || m.model, gb, pct: (gb / totalRamGb) * 100 };
+            });
+        if (!candidates.length) return null;
+        // Prefer the largest model that runs comfortably; otherwise the smallest
+        // that still fits at all. Never recommend a model that won't fit (>=80%).
+        const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
+        const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
+        return pick ? pick.name : null;
+    })();
+
     // Leading circular state indicator.
     const renderIndicator = (s: { enabled: boolean; needsUnlock: boolean; needsLogin: boolean; downloaded: boolean; isDownloading: boolean; percent: number; isActive: boolean }) => {
         const ring: React.CSSProperties = {
@@ -275,7 +346,18 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
     const renderCard = (m: any) => {
         const name = m.name || m.id || m.model;
         const workspaceName = m.workspace_name || name;
-        const displayName = m.display_name || name;
+        // Card leads with the model's own name, with the friendly maker name
+        // (Google, Alibaba, Mistral, …) as a secondary line so non-technical users
+        // still recognize the brand behind it.
+        const maker = brandName(name);
+        // Trust a curated display_name from the backend if it's actually different
+        // from the raw id; otherwise decode the id into a friendly name.
+        const modelName = m.display_name && m.display_name !== name ? m.display_name : prettyModelName(m);
+        const title = modelName;
+        const subtitle = maker ? `by ${maker}` : null;
+        // Plain-language size tier (Small/Medium/Large) so cards from the same
+        // family are comparable at a glance.
+        const sizeTag = sizeTier(m);
         const description = m.description || '';
         const enabled = isEnabled(name);
         const downloaded = !!m.downloaded;
@@ -307,8 +389,9 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                 : isGated
                     ? { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' }
                     : null;
-        const paramsLabel = formatParams(m);
         const pressure = memoryPressure(m, totalRamGb);
+        // Best fit for this machine's RAM — surfaced as a "Recommended" badge.
+        const isRecommended = name === recommendedName;
         // Lit while the orchestrator is actively using this model (from chat SSE).
         const isActive = activeModels.has(name);
 
@@ -347,11 +430,15 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     <span className="flex items-center justify-center flex-shrink-0" style={{ width: 30, height: 30 }}>
                         <ModelBrandIcon name={name} size={22} />
                     </span>
-                    <span className="text-[13px] font-bold text-sl-text-primary truncate">{displayName}</span>
-                    <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-                        {!isDownloading && paramsLabel && (
-                            <span className="text-[12px]" style={{ color: 'var(--sl-text-muted)' }}>{paramsLabel}</span>
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-[13px] font-bold text-sl-text-primary truncate">{title}</span>
+                        {subtitle && (
+                            <span className="text-[10px] font-medium truncate" style={{ color: 'var(--sl-text-faint)' }}>
+                                {subtitle}
+                            </span>
                         )}
+                    </div>
+                    <div className="ml-auto flex items-center gap-2 flex-shrink-0">
                         {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent, isActive })}
                     </div>
                 </div>
@@ -371,6 +458,17 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                 {/* Footer — capability badges and lifecycle action */}
                 <div className="flex items-center justify-between gap-2 mt-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                        {isRecommended && (
+                            <Tooltip title="Recommended — the best fit for your computer's memory" arrow placement="top">
+                                <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}
+                                >
+                                    <StarRoundedIcon sx={{ fontSize: 11 }} />
+                                    Recommended
+                                </span>
+                            </Tooltip>
+                        )}
                         {(m.capabilities || []).map((cap: string) => {
                             const isVision = cap === 'vision';
                             const isSkills = cap === 'skills';
@@ -389,6 +487,16 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                                 </Tooltip>
                             );
                         })}
+                        {sizeTag && (
+                            <Tooltip title={sizeTag.tip} arrow placement="top">
+                                <span
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-muted)' }}
+                                >
+                                    {sizeTag.label}
+                                </span>
+                            </Tooltip>
+                        )}
                         {tier && (
                             <Tooltip title={TIER_INFO[tier.label] || tier.label} arrow placement="top">
                                 <span
@@ -400,7 +508,13 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                             </Tooltip>
                         )}
                         {pressure && (
-                            <Tooltip title={`~${pressure.gb}GB RAM · ${pressure.pct}% of this machine's memory · ${pressure.label} pressure`} arrow placement="top">
+                            <Tooltip
+                                title={pressure.fits
+                                    ? `~${pressure.gb}GB RAM · ${pressure.pct}% of this machine's memory · ${pressure.label} pressure`
+                                    : `Too large for this machine — needs ~${pressure.gb}GB (${pressure.pct}% of your memory) and likely won't run well`}
+                                arrow
+                                placement="top"
+                            >
                                 <span
                                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
                                     style={{ border: `1px solid ${pressure.border}`, color: pressure.color }}
@@ -410,6 +524,20 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                                 </span>
                             </Tooltip>
                         )}
+                        <Tooltip title="Full model name" arrow placement="top">
+                            <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono truncate"
+                                style={{
+                                    backgroundColor: 'var(--sl-brand-alpha-10)',
+                                    border: '1px solid var(--sl-brand-alpha-30)',
+                                    color: 'var(--sl-brand-primary)',
+                                    maxWidth: 180,
+                                }}
+                            >
+                                <TagRoundedIcon sx={{ fontSize: 11 }} />
+                                {name}
+                            </span>
+                        </Tooltip>
                     </div>
                     <div className="flex-shrink-0">
                         {isDownloading ? (
