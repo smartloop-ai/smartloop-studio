@@ -96,6 +96,13 @@ def _parse_yml(path: Path) -> dict:
         elif current_file is not None:
             if stripped.startswith("sha512:"):
                 current_file["sha512"] = stripped.split(":", 1)[1].strip().strip("'\"")
+            elif stripped.startswith("blockMapSize:"):
+                # Check before `size:` — startswith("size:") would never match this,
+                # but keep the differential-update field explicit.
+                try:
+                    current_file["blockMapSize"] = int(stripped.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
             elif stripped.startswith("size:"):
                 try:
                     current_file["size"] = int(stripped.split(":", 1)[1].strip())
@@ -166,14 +173,21 @@ def build_release(
             kind = _infer_kind(fname)
             url = f"{cdn_base_url.rstrip('/')}/{version}/{cdn_dir}/{fname}"
 
-            artifacts.append({
+            artifact = {
                 "platform": platform,
                 "arch": arch,
                 "kind": kind,
                 "url": url,
                 "sha512": sha512,
                 "size": size,
-            })
+            }
+            # Only auto-updatable artifacts (zip/nsis/appimage) carry blockMapSize.
+            # Threading it through lets the feed emit it so electron-updater does
+            # differential downloads instead of falling back to a full re-download.
+            block_map_size = file_entry.get("blockMapSize")
+            if block_map_size is not None:
+                artifact["block_map_size"] = block_map_size
+            artifacts.append(artifact)
 
     return {
         "version": version,
