@@ -144,6 +144,7 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.zip
+            dist/*.blockmap
             dist/latest-mac.yml
           retention-days: 1
 
@@ -176,6 +177,7 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.deb
+            dist/*.blockmap
             dist/latest-linux.yml
           retention-days: 1
 
@@ -295,6 +297,7 @@ jobs:
           name: windows-build
           path: |
             dist/*.exe
+            dist/*.blockmap
             dist/latest.yml
           retention-days: 1
 
@@ -404,15 +407,15 @@ jobs:
           mkdir -p release/$VERSION/windows
 
           if [ -d "artifacts/macos" ]; then
-            mv artifacts/macos/*.dmg artifacts/macos/*.zip release/$VERSION/macos/ 2>/dev/null || true
+            mv artifacts/macos/*.dmg artifacts/macos/*.zip artifacts/macos/*.blockmap release/$VERSION/macos/ 2>/dev/null || true
           fi
 
           if [ -d "artifacts/linux" ]; then
-            mv artifacts/linux/*.AppImage artifacts/linux/*.deb release/$VERSION/linux/ 2>/dev/null || true
+            mv artifacts/linux/*.AppImage artifacts/linux/*.deb artifacts/linux/*.blockmap release/$VERSION/linux/ 2>/dev/null || true
           fi
 
           if [ -d "artifacts/windows" ]; then
-            mv artifacts/windows/*.exe release/$VERSION/windows/ 2>/dev/null || true
+            mv artifacts/windows/*.exe artifacts/windows/*.blockmap release/$VERSION/windows/ 2>/dev/null || true
           fi
 
           # Create latest symlinks
