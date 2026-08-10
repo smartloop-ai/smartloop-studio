@@ -9,7 +9,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -1112,6 +1112,11 @@ ipcMain.handle('db-delete-documents-by-project', (event, projectId) => database.
 
 // IPC: get framework version
 ipcMain.handle('get-framework-version', () => VERSION);
+
+// IPC: command-line (`slp`) install status + on-demand install of the PATH symlinks
+ipcMain.handle('command-line-status', () => getCommandLineStatus());
+ipcMain.handle('command-line-install', () => installCommandLine());
+ipcMain.handle('command-line-uninstall', () => uninstallCommandLine());
 
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {
