@@ -17,6 +17,21 @@ interface ModelBrandIconProps {
     size?: number;
 }
 
+// Friendly maker/vendor name for a model, so non-technical users recognize the
+// brand behind a cryptic model id (e.g. "qwen2.5-vl" → "Alibaba"). Returns null
+// when we don't recognize the family, so callers can hide the label.
+export function brandName(name: string): string | null {
+    const n = (name || '').toLowerCase();
+    if (n.includes('gemma') || n.includes('gemini') || n.includes('google')) return 'Google';
+    if (n.includes('qwen')) return 'Alibaba';
+    if (n.includes('mixtral') || n.includes('mistral') || n.includes('ministral')) return 'Mistral AI';
+    if (n.includes('deepseek')) return 'DeepSeek';
+    if (n.includes('llama') || n.includes('meta')) return 'Meta';
+    if (n.includes('phi')) return 'Microsoft';
+    if (n.includes('smol') || n.includes('hf')) return 'Hugging Face';
+    return null;
+}
+
 // Map a model name to its provider's brand icon. Falls back to a neutral cube
 // mark for anything we don't recognize.
 export default function ModelBrandIcon({ name, size = 14 }: ModelBrandIconProps) {
