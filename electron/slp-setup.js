@@ -413,7 +413,6 @@ async function installService(onProgress) {
   if (isNonEmptyFile(slpBinary)) {
     console.log('[SLP Setup] Version', VERSION, 'already installed, skipping download');
     if (onProgress) onProgress({ status: 'installing', message: 'Already installed.' });
-    linkBinary(slpBinary);
     return;
   }
 
@@ -503,8 +502,8 @@ async function installService(onProgress) {
     fs.appendFileSync(installedFile, VERSION + '\n');
   }
 
-  // ── Step 6: Expose `slp` on the command line (mirrors install.sh) ─────────
-  linkBinary(slpBinary);
+  // Command-line access (`slp` on PATH) is no longer wired up automatically —
+  // the user opts in from Settings → Command Line Tool (installCommandLine()).
 
   console.log('[SLP Setup] Install complete — binary at', slpBinary);
 }
@@ -701,6 +700,145 @@ function getCurrentVersion() {
   return VERSION;
 }
 
+// ── Windows command-line support ─────────────────────────────────────────────
+// Windows has no symlink-on-PATH convention, so we install a `slp.cmd` shim in a
+// dedicated dir and add that dir to the user's PATH. The shim just forwards all
+// args to the installed binary.
+
+/** Directory that holds the `slp.cmd` shim and is added to the user PATH. */
+function getWindowsCliDir() {
+  return path.join(INSTALL_DIR, 'bin');
+}
+
+function getWindowsShimPath() {
+  return path.join(getWindowsCliDir(), 'slp.cmd');
+}
+
+/**
+ * Read the current user's PATH from the registry (HKCU\Environment). Returns ''
+ * when it isn't set. This is the *user* PATH only, not the merged system PATH,
+ * which keeps it short enough for setx.
+ */
+function getWindowsUserPath() {
+  try {
+    const out = require('child_process')
+      .execSync('reg query HKCU\\Environment /v PATH', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString();
+    // Line looks like: "    PATH    REG_EXPAND_SZ    C:\foo;C:\bar"
+    const m = out.match(/\bPATH\b\s+REG_(?:EXPAND_)?SZ\s+(.*)/i);
+    return m ? m[1].trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function samePath(a, b) {
+  const norm = (p) => p.replace(/[\\/]+$/, '').toLowerCase();
+  return norm(a) === norm(b);
+}
+
+/**
+ * Add `dir` to the user's PATH (idempotent) using setx so Windows broadcasts a
+ * WM_SETTINGCHANGE and freshly launched terminals pick it up.
+ */
+function addWindowsDirToPath(dir) {
+  const userPath = getWindowsUserPath();
+  if (userPath.split(';').some((p) => samePath(p, dir))) return;
+  const next = userPath ? `${userPath};${dir}` : dir;
+  require('child_process').execSync(`setx PATH "${next}"`, { stdio: 'pipe' });
+}
+
+function removeWindowsDirFromPath(dir) {
+  const userPath = getWindowsUserPath();
+  if (!userPath) return;
+  const parts = userPath.split(';').filter(Boolean);
+  const kept = parts.filter((p) => !samePath(p, dir));
+  if (kept.length === parts.length) return; // nothing to remove
+  try { require('child_process').execSync(`setx PATH "${kept.join(';')}"`, { stdio: 'pipe' }); } catch {}
+}
+
+/**
+ * Report whether the `slp` command-line is reachable from a shell. On Unix this
+ * is the ~/.local/bin/slp symlink resolving to the installed binary; on Windows
+ * it's the slp.cmd shim forwarding to the installed binary. A stale link/shim
+ * left over from an old version reads as "not installed" so the UI offers a
+ * fresh install.
+ */
+function getCommandLineStatus() {
+  if (process.platform === 'win32') {
+    const shim = getWindowsShimPath();
+    let installed = false;
+    try {
+      installed = fs.existsSync(shim) && fs.readFileSync(shim, 'utf-8').includes(getInstalledBinaryPath());
+    } catch {
+      installed = false;
+    }
+    return { supported: true, installed, linkPath: shim };
+  }
+  const linkPath = path.join(os.homedir(), '.local', 'bin', 'slp');
+  const binary = getInstalledBinaryPath();
+  let installed = false;
+  try {
+    // Resolve through the symlink and compare against the current binary so a
+    // stale link left over from an old version reads as "not installed".
+    installed = fs.existsSync(linkPath) && fs.realpathSync(linkPath) === fs.realpathSync(binary);
+  } catch {
+    installed = false;
+  }
+  return { supported: true, installed, linkPath };
+}
+
+/**
+ * Install the `slp` command-line onto PATH on demand (same links the installer
+ * writes). Returns the shell-reachable link path so the UI can show it.
+ */
+function installCommandLine() {
+  if (process.platform === 'win32') {
+    try {
+      const binary = getInstalledBinaryPath();
+      const dir = getWindowsCliDir();
+      const shim = getWindowsShimPath();
+      fs.mkdirSync(dir, { recursive: true });
+      // Batch shim that forwards all args to the installed binary.
+      fs.writeFileSync(shim, `@echo off\r\n"${binary}" %*\r\n`);
+      addWindowsDirToPath(dir);
+      return { success: true, supported: true, linkPath: shim };
+    } catch (err) {
+      return { success: false, supported: true, error: err.message };
+    }
+  }
+  try {
+    linkBinary(getInstalledBinaryPath());
+    return { success: true, supported: true, linkPath: path.join(os.homedir(), '.local', 'bin', 'slp') };
+  } catch (err) {
+    return { success: false, supported: true, error: err.message };
+  }
+}
+
+/**
+ * Remove the `slp` command-line from PATH. On Unix this unlinks the
+ * ~/.local/bin/slp and ~/.smartloop/slp symlinks; on Windows it deletes the
+ * slp.cmd shim and drops its dir from the user PATH.
+ */
+function uninstallCommandLine() {
+  if (process.platform === 'win32') {
+    try {
+      try { fs.unlinkSync(getWindowsShimPath()); } catch {}
+      removeWindowsDirFromPath(getWindowsCliDir());
+      return { success: true, supported: true };
+    } catch (err) {
+      return { success: false, supported: true, error: err.message };
+    }
+  }
+  try {
+    try { fs.unlinkSync(path.join(os.homedir(), '.local', 'bin', 'slp')); } catch {}
+    try { fs.unlinkSync(path.join(INSTALL_DIR, 'slp')); } catch {}
+    return { success: true, supported: true };
+  } catch (err) {
+    return { success: false, supported: true, error: err.message };
+  }
+}
+
 module.exports = {
   setupSlpService,
   uninstallSlpService,
@@ -713,6 +851,9 @@ module.exports = {
   listInstalledVersions,
   switchVersion,
   getCurrentVersion,
+  getCommandLineStatus,
+  installCommandLine,
+  uninstallCommandLine,
   checkRemoteArchiveHash,
   DEFAULT_INSTALL_DIR,
   get INSTALL_DIR() { return INSTALL_DIR; },

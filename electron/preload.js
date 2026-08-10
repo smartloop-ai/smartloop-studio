@@ -86,6 +86,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getStorageUsage: () => ipcRenderer.invoke('storage-usage'),
   cleanupStorage: (opts) => ipcRenderer.invoke('storage-cleanup', opts),
   getFrameworkVersion: () => ipcRenderer.invoke('get-framework-version'),
+  // Command-line tool (`slp` on PATH) — opt-in install from Settings
+  getCommandLineStatus: () => ipcRenderer.invoke('command-line-status'),
+  installCommandLine: () => ipcRenderer.invoke('command-line-install'),
+  uninstallCommandLine: () => ipcRenderer.invoke('command-line-uninstall'),
   commandExists: (cmd) => ipcRenderer.invoke('command-exists', cmd),
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
