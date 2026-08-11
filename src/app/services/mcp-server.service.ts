@@ -88,6 +88,8 @@ export interface McpServer {
     [key: string]: any;
   };
   remote_config?: McpRemoteConfig;
+  /** Flattened remote URL as returned by GET /v1/projects/{id}/mcp */
+  server_url?: string;
   status?: 'connected' | 'disconnected' | 'connecting' | 'error';
   auth_url?: string;
   metadata?: McpServerMetadata;
@@ -102,6 +104,60 @@ interface McpServerServiceResponse {
   data?: McpServer | McpServer[];
   error?: string;
 }
+
+/** A curated connection from GET /v1/mcp-catalog — always remote + OAuth. */
+export interface McpCatalogEntry {
+  slug: string;
+  display_name: string;
+  description?: string;
+  hosted_by?: 'external' | 'internal';
+  remote_config: { server_url: string; auth_type?: string };
+  icon_url?: string;
+  category?: string;
+  tags?: string[];
+}
+
+/**
+ * Fetch the curated MCP connection catalog (proxied through main so the
+ * renderer never talks to SLP directly).
+ */
+const getMcpCatalog = async (): Promise<{ success: boolean; entries: McpCatalogEntry[]; error?: string }> => {
+  try {
+    const result = await window.electronAPI?.slpMcpCatalog?.();
+    if (!result?.success) {
+      return { success: false, entries: [], error: result?.error || 'Failed to fetch connection catalog' };
+    }
+    return { success: true, entries: (result.entries || []) as McpCatalogEntry[] };
+  } catch (error: any) {
+    console.error('Error fetching MCP catalog:', error);
+    return { success: false, entries: [], error: error.message || 'An error occurred while fetching the catalog' };
+  }
+};
+
+/**
+ * Normalize a server URL so catalog entries can be matched to installed servers.
+ * Drops the scheme, a `www.` prefix and the transport suffix (`/mcp`, `/sse`),
+ * which providers vary between the advertised and the registered URL.
+ */
+export const normalizeMcpUrl = (url?: string): string =>
+  (url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+    .replace(/\/(mcp|sse)$/, '');
+
+/**
+ * The remote URL an installed server was registered with, if any. The list
+ * endpoint flattens it to a top-level `server_url`; other shapes nest it.
+ */
+/** Tools reported for an installed server, across the shapes the API returns. */
+export const getMcpServerTools = (server?: McpServer): McpTool[] =>
+  server?.tools ?? server?.metadata?.tools ?? [];
+
+export const getMcpServerUrl = (server: McpServer): string =>
+  server.server_url || server.remote_config?.server_url || server.config?.url || (server.config as any)?.server_url || '';
 
 /**
  * Extract error message from API response
@@ -544,6 +600,7 @@ const removeMcpServerFromStorage = async (projectId: string, serverId: string): 
  */
 
 export const mcpServerService = {
+  getMcpCatalog,
   getMcpServers,
   getMcpServer,
   deleteMcpServer,

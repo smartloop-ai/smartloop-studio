@@ -1,12 +1,11 @@
-import { Box, IconButton, CircularProgress, Dialog, Tooltip } from '@mui/material';
+import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import CloseIcon from '@mui/icons-material/Close';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useState } from 'react';
-import { McpServer } from '@/app/services/mcp-server.service';
-import { dialogStyles } from '@/app/shared/utils';
+import { McpServer, getMcpServerUrl, getMcpServerTools } from '@/app/services/mcp-server.service';
+import McpToolsDialog from './mcp-tools-dialog';
 
 interface McpServerItemProps {
   server: McpServer;
@@ -33,7 +32,7 @@ export default function McpServerItem({
 
   const displayUrl = isLocal
     ? server.name || 'Local Server'
-    : serverInfo?.website_url || serverInfo?.websiteUrl || server.remote_config?.server_url || server.config?.url || '';
+    : serverInfo?.website_url || serverInfo?.websiteUrl || getMcpServerUrl(server);
 
   const getHostnameFromUrl = (url: string): string => {
     try {
@@ -45,10 +44,7 @@ export default function McpServerItem({
 
   const displayName = serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(displayUrl) || 'MCP Server';
 
-  const icon = serverInfo?.icons?.[0];
-  const iconUrl = icon?.src || (icon as any)?.url;
-
-  const allTools = server.tools ?? server.metadata?.tools ?? [];
+  const allTools = getMcpServerTools(server);
 
   return (
     <>
@@ -151,118 +147,7 @@ export default function McpServerItem({
       </Box>
       </Tooltip>
 
-      {/* Tools Detail Modal */}
-      <Dialog
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: dialogStyles.paper
-        }}
-        BackdropProps={{
-          sx: dialogStyles.backdrop
-        }}
-      >
-        <Box className="relative p-6">
-          <IconButton
-            onClick={() => setModalOpen(false)}
-            sx={{
-              position: 'absolute',
-              right: 12,
-              top: 12,
-              color: 'var(--sl-text-muted)',
-              '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
-            }}
-          >
-            <CloseIcon sx={{ fontSize: 18 }} />
-          </IconButton>
-
-          {/* Header */}
-          <Box className="flex items-center gap-3 mb-4">
-            <Box
-              sx={{
-                width: 36,
-                height: 36,
-                borderRadius: '8px',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                bgcolor: 'var(--sl-bg-surface-1)',
-                overflow: 'hidden',
-              }}
-            >
-              {iconUrl ? (
-                <img
-                  src={iconUrl}
-                  alt={displayName}
-                  className="w-full h-full object-cover rounded-lg"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : isLocal ? (
-                <TerminalIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
-              ) : (
-                <PowerOutlinedIcon sx={{ fontSize: 20, color: 'var(--sl-text-muted)' }} />
-              )}
-            </Box>
-            <Box>
-              <div className="text-sm text-sl-text-primary font-medium">{displayName}</div>
-              {serverInfo?.version && (
-                <div className="text-xs text-sl-text-disabled">v{serverInfo.version}</div>
-              )}
-            </Box>
-          </Box>
-
-          {server.description && (
-            <div className="text-xs text-sl-text-muted mb-4 leading-relaxed">
-              {server.description}
-            </div>
-          )}
-
-          {/* Tools List */}
-          <div className="text-xs text-sl-text-muted font-medium mb-2">
-            Tools ({allTools.length})
-          </div>
-
-          {allTools.length > 0 ? (
-            <Box
-              sx={{
-                maxHeight: 400,
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '2px',
-              }}
-            >
-              {allTools.map((tool: any) => (
-                <Box
-                  key={tool.name}
-                  sx={{
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    bgcolor: 'var(--sl-bg-surface-1)',
-                    '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' },
-                  }}
-                >
-                  <div className="text-xs text-sl-text-primary font-medium">{tool.name}</div>
-                  {tool.description && (
-                    <div className="text-[11px] text-sl-text-disabled leading-snug mt-0.5">
-                      {tool.description}
-                    </div>
-                  )}
-                </Box>
-              ))}
-            </Box>
-          ) : (
-            <div className="text-xs text-sl-text-disabled py-4 text-center">
-              No tools available
-            </div>
-          )}
-        </Box>
-      </Dialog>
+      <McpToolsDialog open={modalOpen} onClose={() => setModalOpen(false)} server={server} />
     </>
   );
 }

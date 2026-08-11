@@ -2256,6 +2256,26 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
+// IPC: Curated MCP connection catalog. SLP owns the caching (workspace.db), so
+// this is a straight proxy — active entries only, in display order.
+ipcMain.handle('slp-mcp-catalog', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/mcp-catalog`);
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.entries || data.data || []);
+    const entries = list
+      .filter((e) => e && e.is_active !== false && e.remote_config?.server_url)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.display_name || '').localeCompare(String(b.display_name || '')));
+    return { success: true, entries };
+  } catch (err) {
+    console.error('[MCP Catalog] Error fetching catalog:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
 // Fetch catalog + workspace state in parallel and merge into a single model list.
 async function fetchModelsWithMerge() {
   const baseUrl = slpService.getLocalBaseUrl();

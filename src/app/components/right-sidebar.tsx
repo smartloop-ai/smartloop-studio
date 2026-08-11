@@ -15,13 +15,14 @@ import { useThemeContext } from '@/app/contexts/ThemeContext';
 import PixelRailIcon from './pixel-rail-icons';
 import McpServerItem from './mcp-server-item';
 import ProjectInstructionsDialog from './project-instructions-dialog';
+import McpCatalogItem from './mcp-catalog-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
@@ -331,6 +332,16 @@ export default function RightSidebar({
   const [mcpDeleteError, setMcpDeleteError] = useState<{ id: string; message: string } | null>(null);
   const [newMcpEnv, setNewMcpEnv] = useState('');
 
+  // Curated connection catalog (remote + OAuth only)
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  // Registration request in flight for this catalog slug
+  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
+  // OAuth window opened for this slug — waiting on the callback
+  const [awaitingAuthSlug, setAwaitingAuthSlug] = useState<string | null>(null);
+  const [catalogItemError, setCatalogItemError] = useState<{ slug: string; message: string } | null>(null);
+
 
   // Sync local folder path and project name when project changes
   useEffect(() => {
@@ -598,6 +609,7 @@ export default function RightSidebar({
         console.log('[MCP Auth] Callback received:', data);
         if (data.error) {
           setMcpError(data.error);
+          setAwaitingAuthSlug(null);
         } else if (data.serverId && selectedProject?.id) {
           console.log('[MCP Auth] Server authorized, refreshing list...');
           loadMcpServers();
@@ -637,6 +649,18 @@ export default function RightSidebar({
     }
   }, [selectedProject?.id, mcpPolling]);
 
+  const loadMcpCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError('');
+    const result = await mcpServerService.getMcpCatalog();
+    if (result.success) {
+      setMcpCatalog(result.entries);
+    } else {
+      setCatalogError(result.error || 'Failed to load connections');
+    }
+    setCatalogLoading(false);
+  }, []);
+
   // Single entry point for opening/closing a rail section, shared by the rail
   // buttons and the keyboard shortcuts so both paths run the same side effects.
   const toggleSection = useCallback((section: RailSection) => {
@@ -645,9 +669,12 @@ export default function RightSidebar({
     const next = activeSection === section ? null : section;
     setActiveSection(next);
     if (next === 'documents') refreshDocuments();
-    if (next === 'mcp') loadMcpServers();
+    if (next === 'mcp') {
+      loadMcpServers();
+      if (mcpCatalog.length === 0) loadMcpCatalog();
+    }
     if (next === 'skills') onRefreshSkills?.();
-  }, [activeSection, docSupported, refreshDocuments, loadMcpServers, onRefreshSkills]);
+  }, [activeSection, docSupported, refreshDocuments, loadMcpServers, mcpCatalog.length, loadMcpCatalog, onRefreshSkills]);
 
   // Cmd/Ctrl+B toggles the whole panel, matching the sidebar-toggle convention
   // users bring from VS Code. Reopening restores whichever section was showing
@@ -741,6 +768,48 @@ export default function RightSidebar({
 
     return () => clearInterval(interval);
   }, [discoveringServerId, selectedProject?.id]);
+
+  // Installed servers keyed by normalized remote URL — how a catalog entry knows
+  // whether it's already connected.
+  const connectedByUrl = useMemo(() => {
+    const map = new Map<string, McpServer>();
+    mcpServers.forEach((s) => {
+      const url = normalizeMcpUrl(getMcpServerUrl(s));
+      if (url) map.set(url, s);
+    });
+    return map;
+  }, [mcpServers]);
+
+  // Servers added by hand (not in the catalog) keep the original list rendering.
+  const customMcpServers = useMemo(() => {
+    const catalogUrls = new Set(mcpCatalog.map((e) => normalizeMcpUrl(e.remote_config?.server_url)));
+    return mcpServers.filter((s) => {
+      const url = normalizeMcpUrl(getMcpServerUrl(s));
+      return !url || !catalogUrls.has(url);
+    });
+  }, [mcpServers, mcpCatalog]);
+
+  // Fetch the catalog the first time the Connections section is opened.
+  const catalogRequestedRef = useRef(false);
+  useEffect(() => {
+    if (activeSection !== 'mcp' || catalogRequestedRef.current) return;
+    catalogRequestedRef.current = true;
+    loadMcpCatalog();
+  }, [activeSection, loadMcpCatalog]);
+
+  // Drop the "authorizing" state once the server lands, or when polling gives up.
+  // A server that arrives without tools yet gets picked up by discovery polling.
+  useEffect(() => {
+    if (!awaitingAuthSlug) return;
+    const entry = mcpCatalog.find((e) => e.slug === awaitingAuthSlug);
+    const server = connectedByUrl.get(normalizeMcpUrl(entry?.remote_config?.server_url));
+    if (server) {
+      setAwaitingAuthSlug(null);
+      if (getMcpServerTools(server).length === 0) setDiscoveringServerId(server.id);
+    } else if (!mcpPolling) {
+      setAwaitingAuthSlug(null);
+    }
+  }, [awaitingAuthSlug, mcpCatalog, connectedByUrl, mcpPolling]);
 
   const isRemoteMcpInput = (input: string): boolean => {
     const trimmed = input.trim();
@@ -873,6 +942,63 @@ export default function RightSidebar({
       setMcpError(error.message || 'An error occurred');
     } finally {
       setIsAddingMcp(false);
+    }
+  };
+
+  // Connect a curated catalog entry — same remote registration path as the URL
+  // box, using the entry's own server_url.
+  const handleConnectCatalogEntry = async (entry: McpCatalogEntry) => {
+    const serverUrl = entry.remote_config?.server_url;
+    if (!selectedProject?.id || !serverUrl) return;
+
+    setCatalogItemError(null);
+    setConnectingSlug(entry.slug);
+
+    try {
+      const result = await mcpServerService.registerMcpServer(selectedProject.id, {
+        server_type: 'remote',
+        server_url: serverUrl,
+        name: entry.display_name,
+        return_url: 'smartloop://mcp-authorization',
+      });
+
+      if (!result.success || !result.data) {
+        setCatalogItemError({ slug: entry.slug, message: result.error || 'Failed to connect' });
+        return;
+      }
+
+      const data = result.data as Record<string, any>;
+
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        mcpServerCountRef.current = mcpServers.length;
+        setMcpPolling(true);
+        setAwaitingAuthSlug(entry.slug);
+
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
+      } else {
+        const serverId = data.id || data.server_id;
+        if (serverId) {
+          await persistMcpServerToDb({
+            id: serverId,
+            project_id: selectedProject.id,
+            name: data.name || entry.display_name,
+            server_type: 'remote',
+            config: { server_url: serverUrl },
+          });
+        }
+        await loadMcpServers();
+        if (serverId) setDiscoveringServerId(serverId);
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error connecting catalog entry:', error);
+      setCatalogItemError({ slug: entry.slug, message: error.message || 'An error occurred' });
+    } finally {
+      setConnectingSlug(null);
     }
   };
 
@@ -1477,9 +1603,65 @@ export default function RightSidebar({
                 </Box>
               </Box>
 
-              {mcpServers.length > 0 && (
+              {/* Curated connections — one click starts the provider's OAuth flow */}
+              {catalogLoading && mcpCatalog.length === 0 && (
+                <Box className="flex items-center gap-2 py-3">
+                  <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
+                  <span className="text-[11px] text-sl-text-disabled">Loading connections…</span>
+                </Box>
+              )}
+
+              {mcpCatalog.length > 0 && (
+                <>
+                  <span className="block text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider px-1">
+                    Available
+                  </span>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {mcpCatalog.map((entry) => {
+                      const connected = connectedByUrl.get(normalizeMcpUrl(entry.remote_config?.server_url));
+                      return (
+                        <McpCatalogItem
+                          key={entry.slug}
+                          entry={entry}
+                          connected={connected}
+                          connecting={connectingSlug === entry.slug}
+                          awaitingAuth={awaitingAuthSlug === entry.slug}
+                          error={
+                            catalogItemError?.slug === entry.slug
+                              ? catalogItemError.message
+                              : (connected && mcpDeleteError?.id === connected.id ? mcpDeleteError.message : '')
+                          }
+                          onConnect={handleConnectCatalogEntry}
+                          onDisconnect={handleDeleteMcpServer}
+                        />
+                      );
+                    })}
+                  </Box>
+                </>
+              )}
+
+              {catalogError && !catalogLoading && (
+                <Box className="flex items-center gap-2 px-1">
+                  <span className="text-[10px] text-sl-text-disabled">Couldn’t load connections.</span>
+                  <span
+                    role="button"
+                    onClick={loadMcpCatalog}
+                    className="text-[10px] cursor-pointer"
+                    style={{ color: 'var(--sl-brand-primary)' }}
+                  >
+                    Retry
+                  </span>
+                </Box>
+              )}
+
+              {customMcpServers.length > 0 && (
                 <Box sx={{ mt: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {mcpServers.map((server, index) => {
+                  {mcpCatalog.length > 0 && (
+                    <span className="block text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider px-1">
+                      Custom
+                    </span>
+                  )}
+                  {customMcpServers.map((server, index) => {
                     const isSystem = !!(server as any).system;
                     return (
                       <McpServerItem
@@ -1509,7 +1691,7 @@ export default function RightSidebar({
 
               {/* Help Text */}
               <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-4">
-                MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
+                Connections are MCP (Model Context Protocol) servers that extend the capabilities of your assistant by providing additional tools and resources.
               </p>
             </div>
           )}

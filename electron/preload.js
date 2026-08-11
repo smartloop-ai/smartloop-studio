@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpFetchUser: () => ipcRenderer.invoke('slp-fetch-user'),
   slpUpdateUserSettings: (settings) => ipcRenderer.invoke('slp-update-user-settings', settings),
   slpListModels: () => ipcRenderer.invoke('slp-list-models'),
+  slpMcpCatalog: () => ipcRenderer.invoke('slp-mcp-catalog'),
   slpInitModel: (modelName) => ipcRenderer.invoke('slp-init-model', modelName),
   slpSetModelEnabled: (modelName, enabled) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled),
   onModelInitProgress: (callback) => {
