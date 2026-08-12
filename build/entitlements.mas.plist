@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!--
+      Mac App Store entitlements. MUST run under App Sandbox.
+      NOTE: the hardened-runtime code-signing entitlements used by the
+      Developer ID build (cs.disable-library-validation, cs.allow-jit,
+      cs.allow-unsigned-executable-memory, cs.allow-dyld-environment-variables)
+      are NOT permitted in MAS builds and are intentionally omitted here.
+    -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Outbound HTTP to api/app.smartloop.ai (OAuth, releases). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Bundled SLP binds a loopback port for the local OpenAI-compatible API. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- User-picked docs for indexing / RAG, and Downloads access. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!--
+      Enable ONLY if the feature actually ships in the MAS build. Each of these
+      requires a matching *UsageDescription string in Info.plist or review will
+      reject. Left disabled by default to keep the review surface minimal.
+
+      <key>com.apple.security.device.audio-input</key><true/>
+      <key>com.apple.security.device.camera</key><true/>
+      <key>com.apple.security.personal-information.addressbook</key><true/>
+      <key>com.apple.security.personal-information.calendars</key><true/>
+      <key>com.apple.security.personal-information.location</key><true/>
+      <key>com.apple.security.personal-information.photos-library</key><true/>
+    -->
+  </dict>
+</plist>

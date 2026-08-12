@@ -9,7 +9,8 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
+const { isSandboxed } = require('./build-mode');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -127,8 +128,17 @@ ipcMain.handle('download-document', async (event, filePath) => {
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
-// SLP install directory is always ~/.smartloop/ regardless of where the app is installed.
-// This keeps the binary, config, and data in a consistent, well-known location.
+// SLP data directory. In the Developer-ID build (dmg) this stays ~/.smartloop/
+// (the default inside slp-setup), keeping the binary, config, and data in a
+// consistent, well-known location — even though the binary is now bundled and
+// copied there instead of downloaded. In the sandboxed Mac App Store build the
+// app may only write inside its container, so relocate all SLP state under
+// userData (~/Library/Containers/ai.smartloop.studio/Data/…).
+if (isSandboxed()) {
+  const slpDataDir = path.join(app.getPath('userData'), 'slp');
+  setInstallDir(slpDataDir);
+  console.log('[SLP] Sandboxed build — SLP data dir relocated to container:', slpDataDir);
+}
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
@@ -175,7 +185,7 @@ ipcMain.handle('save-temp-file', async (event, fileName, buffer) => {
 ipcMain.handle('read-asset-data-url', async (event, assetId) => {
   try {
     if (!/^[a-zA-Z0-9-]+$/.test(assetId || '')) return { success: false, error: 'Invalid asset id' };
-    const assetDir = path.join(os.homedir(), '.smartloop', 'assets', assetId);
+    const assetDir = path.join(slpService.getSlpDir(), 'assets', assetId);
     const metaPath = path.join(assetDir, 'metadata.json');
     if (!fs.existsSync(metaPath)) return { success: false, error: 'Asset not found' };
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
@@ -458,7 +468,7 @@ function copyDirRecursive(src, dest, skipDirs = []) {
 
 // Helper: read the SLP config.json and find the workspace project directory for a given project ID
 function getSlpProjectDir(projectId) {
-  const configPath = path.join(os.homedir(), '.smartloop', 'config.json');
+  const configPath = path.join(slpService.getSlpDir(), 'config.json');
   if (!fs.existsSync(configPath)) return null;
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -468,7 +478,7 @@ function getSlpProjectDir(projectId) {
     const match = projects.find(p => p.id === projectId);
     if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
     // Fallback: try the conventional path
-    const conventionalDir = path.join(os.homedir(), '.smartloop', workspaceId, projectId);
+    const conventionalDir = path.join(slpService.getSlpDir(), workspaceId, projectId);
     return fs.existsSync(conventionalDir) ? conventionalDir : null;
   } catch {
     return null;
@@ -805,7 +815,7 @@ ipcMain.handle('get-home-dir', () => os.homedir());
 // Blank project template — downloaded from GitHub releases and cached locally
 const TEMPLATE_VERSION = 'v1.0.0';
 const TEMPLATE_RELEASE_URL = `https://github.com/smartloop-ai/blank-project-template/archive/refs/tags/${TEMPLATE_VERSION}.zip`;
-const TEMPLATE_CACHE_DIR = path.join(os.homedir(), '.smartloop', 'templates');
+const TEMPLATE_CACHE_DIR = path.join(slpService.getSlpDir(), 'templates');
 const TEMPLATE_CACHE_PATH = path.join(TEMPLATE_CACHE_DIR, 'project_1.zip');
 
 async function downloadBlankTemplate() {

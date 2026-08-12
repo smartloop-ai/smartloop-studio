@@ -121,6 +121,9 @@ function getLast() {
  */
 function updaterSupported() {
   if (!app.isPackaged) return false;
+  // Mac App Store build: updates are delivered by the store, and electron-updater
+  // cannot self-install inside the sandbox. Never self-update here.
+  if (process.mas === true) return false;
   switch (process.platform) {
     case 'darwin':
     case 'win32':

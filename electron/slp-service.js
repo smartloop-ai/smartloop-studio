@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
 const { getInstallDir, getInstalledBinaryPath, isNonEmptyFile } = require('./slp-setup');
+const { isSandboxed } = require('./build-mode');
 
 const DEFAULT_SLP_PORT = 38540;
 
@@ -13,6 +14,22 @@ let startedByApp = false;
 
 function getSlpDir() {
   return getInstallDir();
+}
+
+/**
+ * Environment for spawning the SLP binary. SLP resolves its home/data dir from
+ * the SLP_HOME env var (see smartloop/config/app_settings.py home_dir),
+ * defaulting to ~/.smartloop. Setting it explicitly makes state (server.port,
+ * server.log, config, models, workspaces, conversations) land in whatever
+ * getSlpDir() points at. In the Developer-ID build that's still ~/.smartloop
+ * (no behavior change); in the sandboxed MAS build main.js points it at the
+ * app's userData container, the only writable location. SLP defaults its API
+ * host to 0.0.0.0; in the bundled/sandboxed build bind loopback only.
+ */
+function slpEnv() {
+  const env = { ...process.env, SLP_HOME: getSlpDir() };
+  if (isSandboxed()) env.SLP_API_HOST = '127.0.0.1';
+  return env;
 }
 
 function getSlpBinaryPath() {
@@ -131,7 +148,8 @@ async function startService() {
 
   // Start as a child process — use pipe and manually redirect output to log file
   const proc = spawn(slpBinary, ['agent', 'start', '--port', String(targetPort)], {
-    env: { ...process.env },
+    env: slpEnv(),
+    cwd: getSlpDir(),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -222,7 +240,8 @@ async function stopService() {
     try {
       await new Promise((resolve, reject) => {
         execFile(slpBinary, ['agent', 'stop'], {
-          env: { ...process.env },
+          env: slpEnv(),
+          cwd: getSlpDir(),
           timeout: 10000,
           windowsHide: true,
         }, (error) => {

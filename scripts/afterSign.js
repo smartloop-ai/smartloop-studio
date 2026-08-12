@@ -21,6 +21,15 @@ exports.default = async function afterSign(context) {
   // Only needed on macOS
   if (context.electronPlatformName !== 'darwin') return;
 
+  // Skip for Mac App Store builds: MAS signs with the Apple Distribution
+  // identity + embedded provisioning profile (handled by electron-builder's
+  // mas signer), not Developer ID, and is never notarized here. Re-signing the
+  // Python bundle with Developer ID would break the store signature.
+  if (process.env.MAS_BUILD) {
+    console.log('[afterSign] MAS_BUILD set — skipping Developer ID Python re-sign.');
+    return;
+  }
+
   const { appOutDir, packager } = context;
   const appName = packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
