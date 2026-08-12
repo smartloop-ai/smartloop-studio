@@ -15,6 +15,8 @@ interface McpServerItemProps {
   autoConnect?: boolean;
   discovering?: boolean;
   isSystem?: boolean;
+  /** Show a "Custom" tag marking this as a hand-added (non-curated) server. */
+  isCustom?: boolean;
   deleteError?: string;
 }
 
@@ -23,6 +25,7 @@ export default function McpServerItem({
   onDelete,
   discovering = false,
   isSystem = false,
+  isCustom = false,
   deleteError = '',
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -111,7 +114,7 @@ export default function McpServerItem({
                 '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
               }}
             >
-              <DeleteOutlineIcon sx={{ fontSize: 12 }} />
+              <DeleteOutlineIcon sx={{ fontSize: 14 }} />
             </IconButton>
           </Box>
 
@@ -122,10 +125,22 @@ export default function McpServerItem({
             </span>
           )}
 
-          {/* Metadata row: URL + tool count */}
+          {/* Metadata row: Custom tag + URL + tool count */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+            {isCustom && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{ border: '1px solid rgba(253,186,116,0.35)', color: '#fdba74' }}
+              >
+                Custom
+              </span>
+            )}
             {displayUrl && (
-              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }} title={displayUrl}>
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-wide"
+                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}
+                title={displayUrl}
+              >
                 {displayUrl}
               </span>
             )}
@@ -137,7 +152,7 @@ export default function McpServerItem({
             ) : allTools.length > 0 ? (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                style={{ border: '1px solid rgba(96,165,253,0.35)', color: '#93c5fd' }}
               >
                 {allTools.length} {allTools.length === 1 ? 'tool' : 'tools'}
               </span>
