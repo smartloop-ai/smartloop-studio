@@ -159,6 +159,47 @@ export const getMcpServerTools = (server?: McpServer): McpTool[] =>
 export const getMcpServerUrl = (server: McpServer): string =>
   server.server_url || server.remote_config?.server_url || server.config?.url || (server.config as any)?.server_url || '';
 
+export type TagColor = { color: string; border: string };
+
+// Palette for free-form tag labels (e.g. catalog categories). Text color + a
+// border at ~35% of it, matching the Models panel's capability pills.
+const TAG_PALETTE: TagColor[] = [
+  { color: '#93c5fd', border: 'rgba(147,197,253,0.35)' }, // blue
+  { color: '#86efac', border: 'rgba(134,239,172,0.35)' }, // green
+  { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' }, // purple
+  { color: '#fdba74', border: 'rgba(253,186,116,0.35)' }, // amber
+  { color: '#f9a8d4', border: 'rgba(249,168,212,0.35)' }, // pink
+  { color: '#67e8f9', border: 'rgba(103,232,249,0.35)' }, // cyan
+  { color: '#fca5a5', border: 'rgba(252,165,165,0.35)' }, // red
+  { color: '#bef264', border: 'rgba(190,242,100,0.35)' }, // lime
+  { color: '#5eead4', border: 'rgba(94,234,212,0.35)' },  // teal
+  { color: '#fcd34d', border: 'rgba(252,211,77,0.35)' },  // gold
+  { color: '#a5b4fc', border: 'rgba(165,180,252,0.35)' }, // indigo
+  { color: '#fb923c', border: 'rgba(251,146,60,0.35)' },  // orange
+  { color: '#d8b4fe', border: 'rgba(216,180,254,0.35)' }, // violet
+  { color: '#7dd3fc', border: 'rgba(125,211,252,0.35)' }, // sky
+];
+
+const TAG_FALLBACK: TagColor = { color: 'var(--sl-text-faint)', border: 'var(--sl-border-default)' };
+
+/**
+ * Assign a distinct palette color to each unique tag name in `names`, so no two
+ * labels in the same list share a color (until the palette is exhausted). Names
+ * are normalized + sorted first, keeping the mapping stable across renders.
+ */
+export const buildTagColorMap = (names: (string | undefined)[]): Map<string, TagColor> => {
+  const unique = Array.from(
+    new Set(names.map((n) => (n || '').trim().toLowerCase()).filter(Boolean)),
+  ).sort();
+  const map = new Map<string, TagColor>();
+  unique.forEach((name, i) => map.set(name, TAG_PALETTE[i % TAG_PALETTE.length]));
+  return map;
+};
+
+/** Look up a name's assigned color, falling back to a neutral pill. */
+export const tagColorFrom = (map: Map<string, TagColor>, name?: string): TagColor =>
+  map.get((name || '').trim().toLowerCase()) || TAG_FALLBACK;
+
 /**
  * Extract error message from API response
  * Handles FastAPI/Pydantic validation errors which can be arrays of objects

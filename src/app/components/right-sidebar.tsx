@@ -22,7 +22,7 @@ import '../styles/markdown-editor.css';
 import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools, buildTagColorMap, tagColorFrom } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
@@ -779,6 +779,13 @@ export default function RightSidebar({
     });
     return map;
   }, [mcpServers]);
+
+  // One distinct color per catalog category, assigned across the whole list so
+  // no two categories share a color.
+  const categoryColorMap = useMemo(
+    () => buildTagColorMap(mcpCatalog.map((e) => e.category)),
+    [mcpCatalog],
+  );
 
   // Servers added by hand (not in the catalog) keep the original list rendering.
   const customMcpServers = useMemo(() => {
@@ -1545,15 +1552,96 @@ export default function RightSidebar({
           {/* MCP Servers Section */}
           {activeSection === 'mcp' && (
             <div className="space-y-3">
-              {/* Add MCP Server Form - Always Visible */}
-              <Box
-                sx={{
-                  padding: '10px',
-                  borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-5)',
-                  border: '1px solid var(--sl-border-subtle)',
-                }}
+              {/* Intro — what connections are, in the spirit of Claude Desktop */}
+              <p className="m-0 px-1 text-[11px] leading-relaxed text-sl-text-muted">
+                Connections let your assistant work with tools and data beyond this app. Connect one below to give it new capabilities through an MCP (Model Context Protocol) server.
+              </p>
+
+              {catalogLoading && mcpCatalog.length === 0 && (
+                <Box className="flex items-center gap-2 py-3">
+                  <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
+                  <span className="text-[11px] text-sl-text-disabled">Loading connections…</span>
+                </Box>
+              )}
+
+              {/* Main list — curated connections first, then custom (hand-added)
+                  servers tagged "Custom" so they read differently from ours. */}
+              {(mcpCatalog.length > 0 || customMcpServers.length > 0) && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {mcpCatalog.map((entry) => {
+                    const connected = connectedByUrl.get(normalizeMcpUrl(entry.remote_config?.server_url));
+                    return (
+                      <McpCatalogItem
+                        key={entry.slug}
+                        entry={entry}
+                        connected={connected}
+                        connecting={connectingSlug === entry.slug}
+                        awaitingAuth={awaitingAuthSlug === entry.slug}
+                        error={
+                          catalogItemError?.slug === entry.slug
+                            ? catalogItemError.message
+                            : (connected && mcpDeleteError?.id === connected.id ? mcpDeleteError.message : '')
+                        }
+                        onConnect={handleConnectCatalogEntry}
+                        onDisconnect={handleDeleteMcpServer}
+                        categoryColor={tagColorFrom(categoryColorMap, entry.category)}
+                      />
+                    );
+                  })}
+
+                  {customMcpServers.map((server, index) => {
+                    const isSystem = !!(server as any).system;
+                    return (
+                      <McpServerItem
+                        key={server.id || `mcp-${index}`}
+                        server={server}
+                        projectId={selectedProject?.id || ''}
+                        onDelete={handleDeleteMcpServer}
+                        discovering={discoveringServerId === server.id}
+                        isSystem={isSystem}
+                        isCustom={!isSystem}
+                        deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
+                        onServerUpdate={(updatedServer) => {
+                          setMcpServers(prev => {
+                            const newServers = prev.map(s =>
+                              s.id === updatedServer.id ? updatedServer : s
+                            );
+                            if (selectedProject?.id) {
+                              mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
+                            }
+                            return newServers;
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </Box>
+              )}
+
+              {catalogError && !catalogLoading && (
+                <Box className="flex items-center gap-2 px-1">
+                  <span className="text-[10px] text-sl-text-disabled">Couldn’t load connections.</span>
+                  <span
+                    role="button"
+                    onClick={loadMcpCatalog}
+                    className="text-[10px] cursor-pointer"
+                    style={{ color: 'var(--sl-brand-primary)' }}
+                  >
+                    Retry
+                  </span>
+                </Box>
+              )}
+
+              {/* Add-your-own — always pinned to the bottom, styled like the
+                  Models panel's "Need more power?" card to set it apart. */}
+              <div
+                className="rounded-xl"
+                style={{ marginTop: '48px', padding: '16px', backgroundColor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-subtle)' }}
               >
+                <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
+                <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
+                  Connect any MCP server by URL, or a package name to run one locally.
+                </p>
                 <TextField
                   size="small"
                   placeholder="URL or package name"
@@ -1592,107 +1680,16 @@ export default function RightSidebar({
                   }}
                 />
                 {/* Fixed-height slot so swapping hint ↔ error never shifts the UI */}
-                <Box className="text-[10px] mt-1 px-1" sx={{ minHeight: '58px' }}>
+                <Box className="text-[10px] mt-1 px-1" sx={{ minHeight: '42px' }}>
                   {mcpError ? (
                     <span className="text-red-400 whitespace-pre-line break-words">{mcpError}</span>
                   ) : (
                     <span className="text-sl-text-disabled">
-                      Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
+                      e.g. https://mcp.example.com, or a package like yahoo-finance-mcp <br />— Press Enter to add
                     </span>
                   )}
                 </Box>
-              </Box>
-
-              {/* Curated connections — one click starts the provider's OAuth flow */}
-              {catalogLoading && mcpCatalog.length === 0 && (
-                <Box className="flex items-center gap-2 py-3">
-                  <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
-                  <span className="text-[11px] text-sl-text-disabled">Loading connections…</span>
-                </Box>
-              )}
-
-              {mcpCatalog.length > 0 && (
-                <>
-                  <span className="block text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider px-1">
-                    Available
-                  </span>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {mcpCatalog.map((entry) => {
-                      const connected = connectedByUrl.get(normalizeMcpUrl(entry.remote_config?.server_url));
-                      return (
-                        <McpCatalogItem
-                          key={entry.slug}
-                          entry={entry}
-                          connected={connected}
-                          connecting={connectingSlug === entry.slug}
-                          awaitingAuth={awaitingAuthSlug === entry.slug}
-                          error={
-                            catalogItemError?.slug === entry.slug
-                              ? catalogItemError.message
-                              : (connected && mcpDeleteError?.id === connected.id ? mcpDeleteError.message : '')
-                          }
-                          onConnect={handleConnectCatalogEntry}
-                          onDisconnect={handleDeleteMcpServer}
-                        />
-                      );
-                    })}
-                  </Box>
-                </>
-              )}
-
-              {catalogError && !catalogLoading && (
-                <Box className="flex items-center gap-2 px-1">
-                  <span className="text-[10px] text-sl-text-disabled">Couldn’t load connections.</span>
-                  <span
-                    role="button"
-                    onClick={loadMcpCatalog}
-                    className="text-[10px] cursor-pointer"
-                    style={{ color: 'var(--sl-brand-primary)' }}
-                  >
-                    Retry
-                  </span>
-                </Box>
-              )}
-
-              {customMcpServers.length > 0 && (
-                <Box sx={{ mt: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {mcpCatalog.length > 0 && (
-                    <span className="block text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider px-1">
-                      Custom
-                    </span>
-                  )}
-                  {customMcpServers.map((server, index) => {
-                    const isSystem = !!(server as any).system;
-                    return (
-                      <McpServerItem
-                        key={server.id || `mcp-${index}`}
-                        server={server}
-                        projectId={selectedProject?.id || ''}
-                        onDelete={handleDeleteMcpServer}
-                        discovering={discoveringServerId === server.id}
-                        isSystem={isSystem}
-                        deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
-                        onServerUpdate={(updatedServer) => {
-                          setMcpServers(prev => {
-                            const newServers = prev.map(s =>
-                              s.id === updatedServer.id ? updatedServer : s
-                            );
-                            if (selectedProject?.id) {
-                              mcpServerService.saveMcpServersToStorage(selectedProject.id, newServers);
-                            }
-                            return newServers;
-                          });
-                        }}
-                      />
-                    );
-                  })}
-                </Box>
-              )}
-
-              {/* Help Text */}
-              <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-4">
-                Connections are MCP (Model Context Protocol) servers that extend the capabilities of your assistant by providing additional tools and resources.
-              </p>
+              </div>
             </div>
           )}
 

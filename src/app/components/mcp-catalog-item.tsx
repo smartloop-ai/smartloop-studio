@@ -1,9 +1,9 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useState } from 'react';
-import { McpCatalogEntry, McpServer, getMcpServerTools } from '@/app/services/mcp-server.service';
+import { McpCatalogEntry, McpServer, getMcpServerTools, TagColor } from '@/app/services/mcp-server.service';
 import McpToolsDialog from './mcp-tools-dialog';
 
 interface McpCatalogItemProps {
@@ -16,6 +16,8 @@ interface McpCatalogItemProps {
   error?: string;
   onConnect: (entry: McpCatalogEntry) => void;
   onDisconnect: (server: McpServer) => void;
+  /** Distinct color assigned to this entry's category by the parent list. */
+  categoryColor?: TagColor;
 }
 
 export default function McpCatalogItem({
@@ -26,6 +28,7 @@ export default function McpCatalogItem({
   error = '',
   onConnect,
   onDisconnect,
+  categoryColor,
 }: McpCatalogItemProps) {
   const [iconFailed, setIconFailed] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -124,7 +127,7 @@ export default function McpCatalogItem({
                   '&:hover': { color: 'var(--sl-status-error)' },
                 }}
               >
-                <LinkOffIcon sx={{ fontSize: 14 }} />
+                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
               </IconButton>
             )}
           </Box>
@@ -156,7 +159,7 @@ export default function McpCatalogItem({
             ) : (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}
               >
                 Connect
               </span>
@@ -165,14 +168,22 @@ export default function McpCatalogItem({
             {isConnected && toolCount > 0 && (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                style={{ border: '1px solid rgba(96,165,253,0.35)', color: '#93c5fd' }}
               >
                 {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
               </span>
             )}
 
             {entry.category && (
-              <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{entry.category}</span>
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{
+                  border: `1px solid ${categoryColor?.border || 'var(--sl-border-default)'}`,
+                  color: categoryColor?.color || 'var(--sl-text-faint)',
+                }}
+              >
+                {entry.category}
+              </span>
             )}
           </Box>
         </Box>
