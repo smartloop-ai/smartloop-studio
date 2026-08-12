@@ -15,8 +15,6 @@ interface McpServerItemProps {
   autoConnect?: boolean;
   discovering?: boolean;
   isSystem?: boolean;
-  /** Show a "Custom" tag marking this as a hand-added (non-curated) server. */
-  isCustom?: boolean;
   deleteError?: string;
 }
 
@@ -25,7 +23,6 @@ export default function McpServerItem({
   onDelete,
   discovering = false,
   isSystem = false,
-  isCustom = false,
   deleteError = '',
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -128,16 +125,8 @@ export default function McpServerItem({
             </span>
           )}
 
-          {/* Metadata row: Custom tag + Local/URL + tool count */}
+          {/* Metadata row: Local/URL + tool count */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-            {isCustom && (
-              <span
-                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid rgba(253,186,116,0.35)', color: '#fdba74' }}
-              >
-                Custom
-              </span>
-            )}
             {isLocal && (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"

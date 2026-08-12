@@ -1589,6 +1589,16 @@ export default function RightSidebar({
                     );
                   })}
 
+                  {/* Section header separating curated from hand-added servers */}
+                  {mcpCatalog.length > 0 && customMcpServers.length > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: '6px', mb: '2px' }}>
+                      <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider whitespace-nowrap">
+                        Added by you
+                      </span>
+                      <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--sl-border-subtle)' }} />
+                    </Box>
+                  )}
+
                   {customMcpServers.map((server, index) => {
                     const isSystem = !!(server as any).system;
                     return (
@@ -1599,7 +1609,6 @@ export default function RightSidebar({
                         onDelete={handleDeleteMcpServer}
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
-                        isCustom={!isSystem}
                         deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
                           setMcpServers(prev => {
@@ -1636,7 +1645,7 @@ export default function RightSidebar({
                   Models panel's "Need more power?" card to set it apart. */}
               <div
                 className="rounded-xl"
-                style={{ marginTop: '48px', padding: '16px', backgroundColor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-subtle)' }}
+                style={{ marginTop: '16px', padding: '16px', backgroundColor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-subtle)' }}
               >
                 <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
                 <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
