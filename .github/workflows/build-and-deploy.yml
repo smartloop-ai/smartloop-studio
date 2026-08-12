@@ -230,9 +230,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Stage SLP framework
-        uses: ./.github/actions/stage-slp
-
+      # Linux does NOT bundle SLP (framework ~5.5 GB with CUDA/Triton) — it keeps
+      # downloading it from the CDN at runtime, so no stage-slp step here.
       - name: Build for Linux
         run: make build-electron-linux
         env:
