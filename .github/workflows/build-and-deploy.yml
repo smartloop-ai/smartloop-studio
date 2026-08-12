@@ -230,6 +230,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Stage SLP framework
+        uses: ./.github/actions/stage-slp
+
       - name: Build for Linux
         run: make build-electron-linux
         env:
@@ -336,6 +339,9 @@ jobs:
             if (-not (Test-Path (Join-Path $dir $p.Probe))) { throw "$($p.Name) prewarm failed: $($p.Probe) not found" }
             Write-Host "$($p.Name) $($p.Version) ready"
           }
+
+      - name: Stage SLP framework
+        uses: ./.github/actions/stage-slp
 
       - name: Build for Windows
         run: npm run electron-build-win
