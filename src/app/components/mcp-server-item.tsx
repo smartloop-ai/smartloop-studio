@@ -33,8 +33,11 @@ export default function McpServerItem({
   const isLocal = server.server_type === 'local';
   const serverInfo = server.server_info;
 
+  // Remote servers show their endpoint; local ones have no URL — the package
+  // name is already the title, so showing it again as a "URL" pill just
+  // duplicates it. Local servers get a "Local" tag instead (below).
   const displayUrl = isLocal
-    ? server.name || 'Local Server'
+    ? ''
     : serverInfo?.website_url || serverInfo?.websiteUrl || getMcpServerUrl(server);
 
   const getHostnameFromUrl = (url: string): string => {
@@ -125,7 +128,7 @@ export default function McpServerItem({
             </span>
           )}
 
-          {/* Metadata row: Custom tag + URL + tool count */}
+          {/* Metadata row: Custom tag + Local/URL + tool count */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
             {isCustom && (
               <span
@@ -133,6 +136,14 @@ export default function McpServerItem({
                 style={{ border: '1px solid rgba(253,186,116,0.35)', color: '#fdba74' }}
               >
                 Custom
+              </span>
+            )}
+            {isLocal && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{ border: '1px solid rgba(94,234,212,0.35)', color: '#5eead4' }}
+              >
+                Local
               </span>
             )}
             {displayUrl && (
