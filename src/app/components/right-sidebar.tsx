@@ -8,6 +8,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -787,6 +788,13 @@ export default function RightSidebar({
     [mcpCatalog],
   );
 
+  // One distinct color per LLM-generated custom-server tag, assigned across the
+  // whole custom list so no two tags share a color.
+  const customTagColorMap = useMemo(
+    () => buildTagColorMap(mcpServers.flatMap((s) => s.tags || [])),
+    [mcpServers],
+  );
+
   // Servers added by hand (not in the catalog) keep the original list rendering.
   const customMcpServers = useMemo(() => {
     const catalogUrls = new Set(mcpCatalog.map((e) => normalizeMcpUrl(e.remote_config?.server_url)));
@@ -823,6 +831,29 @@ export default function RightSidebar({
     return trimmed.startsWith('http://') || trimmed.startsWith('https://');
   };
 
+  // Fast client-side dedupe so re-adding the same server shows an inline notice
+  // instead of silently creating a second entry. The backend is authoritative
+  // (it 409s on a real conflict); this just spares an obvious round trip. Remote
+  // servers match on normalized URL; local ones on the typed package/command,
+  // checked against name + persisted command/args.
+  const findDuplicateMcp = (input: string): McpServer | undefined => {
+    const trimmed = input.trim();
+    if (isRemoteMcpInput(trimmed)) {
+      const target = normalizeMcpUrl(trimmed);
+      if (!target) return undefined;
+      return mcpServers.find((s) => normalizeMcpUrl(getMcpServerUrl(s)) === target);
+    }
+    const key = trimmed.toLowerCase();
+    return mcpServers.find((s) => {
+      if (s.server_type && s.server_type !== 'local') return false;
+      const cfg: any = s.config || {};
+      const args: string[] = Array.isArray(cfg.args) ? cfg.args : [];
+      return [s.name, cfg.command, ...args]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase() === key);
+    });
+  };
+
   // Persist a registered MCP server to SQLite (best-effort — registration with
   // the service is the source of truth, this keeps a local record).
   const persistMcpServerToDb = async (server: {
@@ -842,6 +873,12 @@ export default function RightSidebar({
   const handleAddMcpServer = async () => {
     const input = newMcpInput.trim();
     if (!selectedProject?.id || !input) return;
+
+    const duplicate = findDuplicateMcp(input);
+    if (duplicate) {
+      setMcpError(`"${duplicate.name || input}" is already added to this project.`);
+      return;
+    }
 
     setIsAddingMcp(true);
     setMcpError('');
@@ -870,6 +907,13 @@ export default function RightSidebar({
           setNewMcpInput('');
           mcpServerCountRef.current = mcpServers.length;
           setMcpPolling(true);
+
+          // If the typed URL is actually one of our curated connections, light up
+          // that tile as "Authorizing" during the flow instead of leaving it on
+          // "Connect". The awaiting-auth effect clears it once the server lands.
+          const target = normalizeMcpUrl(input);
+          const matchedEntry = mcpCatalog.find((e) => normalizeMcpUrl(e.remote_config?.server_url) === target);
+          if (matchedEntry) setAwaitingAuthSlug(matchedEntry.slug);
 
           console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
           const electronWindow = window as any;
@@ -1591,12 +1635,9 @@ export default function RightSidebar({
 
                   {/* Section header separating curated from hand-added servers */}
                   {mcpCatalog.length > 0 && customMcpServers.length > 0 && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: '6px', mb: '2px' }}>
-                      <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider whitespace-nowrap">
-                        Added by you
-                      </span>
-                      <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--sl-border-subtle)' }} />
-                    </Box>
+                    <h4 className="text-[11px] font-bold text-sl-text-muted uppercase tracking-widest m-0 mt-3 mb-1 px-1">
+                      Added by you
+                    </h4>
                   )}
 
                   {customMcpServers.map((server, index) => {
@@ -1609,6 +1650,8 @@ export default function RightSidebar({
                         onDelete={handleDeleteMcpServer}
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
+                        isCustom={!isSystem}
+                        tagColors={customTagColorMap}
                         deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
                           setMcpServers(prev => {
@@ -1651,6 +1694,8 @@ export default function RightSidebar({
                 <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
                   Connect any MCP server by URL, or a package name to run one locally.
                 </p>
+                {/* Inset container — nests the input so it reads as embedded */}
+                <div className="rounded-lg" style={{ backgroundColor: 'var(--sl-black-alpha-20)', padding: '8px' }}>
                 <TextField
                   size="small"
                   placeholder="URL or package name"
@@ -1667,11 +1712,28 @@ export default function RightSidebar({
                   disabled={isAddingMcp}
                   fullWidth
                   InputProps={{
-                    endAdornment: isAddingMcp ? (
+                    endAdornment: (
                       <InputAdornment position="end">
-                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                        {isAddingMcp ? (
+                          <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+                        ) : (
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            aria-label="Add connection"
+                            disabled={!newMcpInput.trim()}
+                            onClick={handleAddMcpServer}
+                            sx={{
+                              padding: '2px',
+                              color: newMcpInput.trim() ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                              '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.4 },
+                            }}
+                          >
+                            <ArrowForwardIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        )}
                       </InputAdornment>
-                    ) : null,
+                    ),
                   }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
@@ -1689,15 +1751,22 @@ export default function RightSidebar({
                   }}
                 />
                 {/* Fixed-height slot so swapping hint ↔ error never shifts the UI */}
-                <Box className="text-[10px] mt-1 px-1" sx={{ minHeight: '42px' }}>
+                <Box className="text-[10px] mt-1.5 px-1" sx={{ minHeight: '62px' }}>
                   {mcpError ? (
                     <span className="text-red-400 whitespace-pre-line break-words">{mcpError}</span>
                   ) : (
-                    <span className="text-sl-text-disabled">
-                      e.g. https://mcp.example.com, or a package like yahoo-finance-mcp <br />— Press Enter to add
-                    </span>
+                    <div className="text-sl-text-disabled leading-snug">
+                      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-baseline">
+                        <span className="font-semibold uppercase tracking-wide text-sl-text-muted">URL</span>
+                        <span>remote server, e.g. <code className="font-mono text-sl-text-muted">https://mcp.example.com</code></span>
+                        <span className="font-semibold uppercase tracking-wide text-sl-text-muted">Package</span>
+                        <span>run locally via <code className="font-mono text-sl-text-muted">uvx</code>, e.g. <code className="font-mono text-sl-text-muted">yahoo-finance-mcp</code></span>
+                      </div>
+                      <div className="mt-1.5 italic">Requires <code className="font-mono not-italic text-sl-text-muted">uv</code> installed on your machine.</div>
+                    </div>
                   )}
                 </Box>
+                </div>
               </div>
             </div>
           )}
