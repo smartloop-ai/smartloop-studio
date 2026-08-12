@@ -131,4 +131,5 @@ dist
 .DS_Store
 dist-web/
 build/slp/
+build/embedded.provisionprofile
 electron/data/slp/*/
