@@ -47,9 +47,10 @@ function bundledSlpDir() {
   return path.join(process.resourcesPath || '', 'slp');
 }
 
-/** The bundled SLP binary path (macOS only ships arm64 in MAS). */
+/** The bundled SLP binary path (slp.exe on Windows, slp elsewhere). */
 function bundledSlpBinaryPath() {
-  return path.join(bundledSlpDir(), 'slp');
+  const name = process.platform === 'win32' ? 'slp.exe' : 'slp';
+  return path.join(bundledSlpDir(), name);
 }
 
 /** True when a bundled SLP binary is actually present on disk. */
