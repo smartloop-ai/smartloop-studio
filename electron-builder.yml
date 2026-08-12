@@ -51,6 +51,28 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true
+  # macOS bundles TWO extra resources. NOTE: a platform-level extraResources
+  # REPLACES the top-level one (electron-builder does not merge them), so the
+  # data/ entry from the top level must be repeated here or it is dropped.
+  #   1. data/ — the same bundled assets as every platform (blank-project
+  #      template), minus the SLP framework.
+  #   2. slp/ — the SLP framework (arm64 binary + Python runtime) shipped INSIDE
+  #      the app for BOTH the direct-download (dmg) and MAS builds; the size is
+  #      acceptable and it removes the first-launch download. CI stages it at
+  #      build/slp/ before packaging; it lands at Contents/Resources/slp, which
+  #      electron/build-mode.js resolves via process.resourcesPath and copies
+  #      into the install dir on first run. The `mas` block below inherits this.
+  # Windows/Linux are unaffected (top-level extraResources; runtime download).
+  extraResources:
+    - from: electron/data/
+      to: data/
+      filter:
+        - "**/*"
+        - "!slp/**"
+    - from: build/slp/
+      to: slp/
+      filter:
+        - "**/*"
   target:
     - target: dmg
       arch:
@@ -58,6 +80,17 @@ mac:
     - target: zip
       arch:
         - arm64
+# Mac App Store build. NOT part of mac.target above, so normal `--mac` builds
+# stay Developer ID (dmg/zip). Build the store .pkg explicitly with:
+#   MAS_BUILD=1 electron-builder --mac mas
+# Inherits everything from `mac` (including the bundled SLP extraResources) and
+# only overrides signing: sandbox entitlements + provisioning profile, no
+# hardened runtime, no notarization (the store notarizes on ingestion).
+mas:
+  hardenedRuntime: false
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  provisioningProfile: build/embedded.provisionprofile
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}

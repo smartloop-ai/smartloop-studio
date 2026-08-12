@@ -61,6 +61,7 @@ help-electron:
 	@echo "  make build-electron-linux    - Build Electron app for Linux (AppImage, deb)"
 	@echo "  make build-electron-windows  - Build Electron app for Windows (NSIS setup)"
 	@echo "  make build-electron-mac      - Build Electron app for macOS (DMG, zip)"
+	@echo "  make build-electron-mas      - Build Electron app for the Mac App Store (.pkg)"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
@@ -126,8 +127,26 @@ build-electron-windows: clean-electron
 	npm run electron-pack-win
 	@echo "✅ Done! Your app is in the dist/ folder"
 
-# Build Electron app for macOS
-build-electron-mac: clean-electron
+# Stage the SLP framework into build/slp/ so macOS builds can bundle it
+# (electron-builder.yml mac.extraResources ships it inside the .app for both the
+# dmg and the MAS build). Uses an APFS clone (cp -c) from the locally installed
+# SLP — instant, no extra disk. CI stages build/slp/ its own way (fresh
+# download/build) before packaging. No-op if build/slp is already populated.
+stage-slp:
+	@if [ -x "build/slp/slp" ]; then \
+		echo "✅ build/slp already staged"; \
+	elif [ -d "$(HOME)/.smartloop/$(SLP_VERSION)" ]; then \
+		echo "📦 Staging SLP $(SLP_VERSION) → build/slp (APFS clone)..."; \
+		rm -rf build/slp && mkdir -p build/slp; \
+		cp -cR "$(HOME)/.smartloop/$(SLP_VERSION)/." build/slp/; \
+		echo "✅ Staged $$(du -sh build/slp | cut -f1) into build/slp"; \
+	else \
+		echo "❌ No SLP at ~/.smartloop/$(SLP_VERSION). Launch the app once to install it, or stage build/slp/ manually (CI does this)."; \
+		exit 1; \
+	fi
+
+# Build Electron app for macOS (Developer ID: DMG, zip). SLP is bundled.
+build-electron-mac: clean-electron stage-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -135,6 +154,18 @@ build-electron-mac: clean-electron
 	@echo "🍎 Packaging Electron app for macOS..."
 	npm run electron-pack-mac
 	@echo "✅ Done! Your app is in the dist/ folder"
+
+# Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
+# Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
+# The store notarizes on ingestion, so no local notarization is done.
+build-electron-mas: clean-electron stage-slp
+	@echo "📦 Installing dependencies..."
+	npm install
+	@echo "🔨 Building Vite app..."
+	npm run build
+	@echo "🍎 Packaging Electron app for the Mac App Store..."
+	npm run electron-pack-mas
+	@echo "✅ Done! Your .pkg is in the dist/ folder — upload it via Transporter"
 
 # Run Electron app in development mode
 run-electron-dev:

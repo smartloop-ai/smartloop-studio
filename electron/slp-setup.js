@@ -6,6 +6,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
+const { useBundledSlp, bundledSlpDir } = require('./build-mode');
 
 const VERSION = '1.0.10';
 // SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
@@ -334,6 +335,10 @@ function getArchiveUrl() {
  * exists yet).
  */
 function checkRemoteArchiveHash() {
+  // Bundled build: SLP is versioned with the app and updated through the store,
+  // never re-fetched from the CDN. Report "no remote change" so the startup
+  // flow skips the reinstall path entirely.
+  if (useBundledSlp()) return Promise.resolve(false);
   const archiveUrl = getArchiveUrl();
   return new Promise((resolve) => {
     const mod = archiveUrl.startsWith('https') ? https : http;
@@ -406,6 +411,32 @@ function compareEtag(res) {
 // Install steps
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Copy the SLP framework that ships inside the app bundle
+ * (Contents/Resources/slp) into the writable version dir. Used by bundled/MAS
+ * builds instead of downloading — the App Store forbids fetching native code at
+ * runtime, so the framework is shipped and copied to the standard install path.
+ * The destination layout matches the extracted archive (binary at
+ * <versionRoot>/slp), so the rest of installService is shared.
+ */
+async function copyBundledSlp(versionRoot, onProgress) {
+  const srcDir = bundledSlpDir();
+  console.log('[SLP Setup] Installing bundled SLP from', srcDir);
+  if (onProgress) onProgress({ status: 'installing', message: 'Installing Framework...' });
+
+  if (!fs.existsSync(srcDir)) {
+    throw new Error(`Bundled SLP not found at ${srcDir} — the app was packaged without build/slp/`);
+  }
+
+  // Copy the framework's contents into the version dir (dest becomes a mirror
+  // of the bundle's slp/ folder). Preserve symlinks (dereference:false, the
+  // default): PyInstaller's _internal ships framework symlinks whose structure
+  // and code signatures must stay intact for the binary to run.
+  fs.cpSync(srcDir, versionRoot, { recursive: true, verbatimSymlinks: true });
+
+  if (onProgress) onProgress({ status: 'installing', percent: 100, message: 'Installing Framework... 100%' });
+}
+
 async function installService(onProgress) {
   const { plat, arch } = detectPlatform();
 
@@ -416,53 +447,61 @@ async function installService(onProgress) {
     return;
   }
 
+  const isWindows = plat === 'windows';
+
   for (const dir of [INSTALL_DIR, getCacheDir()]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // ── Step 1: Determine archive name & URL ─────────────────────────────────
-  const isWindows = plat === 'windows';
-  const ext = isWindows ? 'zip' : 'tar.gz';
-  const archiveUrl = getArchiveUrl();
-  const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
-
-  // ── Step 2: Download archive ─────────────────────────────────────────────
-  await doDownload(archiveUrl, cachedArchive, onProgress);
-  await storeRemoteEtag();
-
-  // ── Step 3: Extract to version dir ───────────────────────────────────────
-  console.log('[SLP Setup] Extracting...');
-  if (onProgress) onProgress({ status: 'installing', message: 'Extracting...' });
-
+  // Populate a clean version dir. The binary must land at <versionRoot>/slp.
   const versionRoot = path.join(INSTALL_DIR, VERSION);
   fs.mkdirSync(versionRoot, { recursive: true });
   for (const f of fs.readdirSync(versionRoot)) {
     fs.rmSync(path.join(versionRoot, f), { recursive: true, force: true });
   }
 
-  // Extract straight into the version dir — no temp copy. The SLP bundle is
-  // large (hundreds of MB), so a temp dir on a small tmpfs would overflow
-  // ("Disk quota exceeded"). If the archive wraps everything in a top-level
-  // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
-  const listFlag = isWindows ? '-tf' : '-tzf';
-  const listing = await runAsync('tar', [listFlag, cachedArchive]);
-  const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
-  const totalEntries = entries.length;
-  const topLevel = new Set(entries.map((l) => l.split('/')[0]));
-  const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
+  if (useBundledSlp()) {
+    // Bundled build (MAS/cross-platform): the SLP framework ships inside the
+    // app at Contents/Resources/slp — copy it into the writable version dir.
+    // From here on the flow is identical to the downloaded build (verify,
+    // hash, version tracking, CLI install), so there is one code path.
+    await copyBundledSlp(versionRoot, onProgress);
+  } else {
+    // Downloaded build: fetch + extract the archive into the version dir.
+    const ext = isWindows ? 'zip' : 'tar.gz';
+    const archiveUrl = getArchiveUrl();
+    const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
 
-  // Extract with -v so tar prints one line per entry; counting those lines
-  // against the known total gives a deterministic extraction percentage.
-  const extractArgs = [isWindows ? '-xvf' : '-xvzf', cachedArchive, '-C', versionRoot];
-  if (stripWrapper) extractArgs.push('--strip-components=1');
-  try {
-    await runWithLineProgress('tar', extractArgs, (done) => {
-      if (!onProgress || totalEntries === 0) return;
-      const pct = Math.min(100, Math.round((done / totalEntries) * 100));
-      onProgress({ status: 'installing', percent: pct, message: `Extracting Framework... ${pct}%` });
-    });
-  } finally {
-    try { fs.unlinkSync(cachedArchive); } catch {}
+    await doDownload(archiveUrl, cachedArchive, onProgress);
+    await storeRemoteEtag();
+
+    console.log('[SLP Setup] Extracting...');
+    if (onProgress) onProgress({ status: 'installing', message: 'Extracting...' });
+
+    // Extract straight into the version dir — no temp copy. The SLP bundle is
+    // large (hundreds of MB), so a temp dir on a small tmpfs would overflow
+    // ("Disk quota exceeded"). If the archive wraps everything in a top-level
+    // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
+    const listFlag = isWindows ? '-tf' : '-tzf';
+    const listing = await runAsync('tar', [listFlag, cachedArchive]);
+    const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
+    const totalEntries = entries.length;
+    const topLevel = new Set(entries.map((l) => l.split('/')[0]));
+    const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
+
+    // Extract with -v so tar prints one line per entry; counting those lines
+    // against the known total gives a deterministic extraction percentage.
+    const extractArgs = [isWindows ? '-xvf' : '-xvzf', cachedArchive, '-C', versionRoot];
+    if (stripWrapper) extractArgs.push('--strip-components=1');
+    try {
+      await runWithLineProgress('tar', extractArgs, (done) => {
+        if (!onProgress || totalEntries === 0) return;
+        const pct = Math.min(100, Math.round((done / totalEntries) * 100));
+        onProgress({ status: 'installing', percent: pct, message: `Extracting Framework... ${pct}%` });
+      });
+    } finally {
+      try { fs.unlinkSync(cachedArchive); } catch {}
+    }
   }
 
   // ── Step 4: Verify binary ────────────────────────────────────────────────
@@ -470,7 +509,7 @@ async function installService(onProgress) {
   if (onProgress) onProgress({ status: 'installing', message: 'Preparing for first use...' });
 
   if (!isNonEmptyFile(slpBinary)) {
-    throw new Error(`Binary missing or empty at ${slpBinary} after extraction — download may be truncated`);
+    throw new Error(`Binary missing or empty at ${slpBinary} after install — the archive/bundle may be incomplete`);
   }
 
   if (!isWindows) {

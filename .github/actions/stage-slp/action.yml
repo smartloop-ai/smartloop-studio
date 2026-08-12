@@ -1,0 +1,36 @@
+name: Stage SLP framework
+description: >
+  Download the macOS (arm64) SLP framework and stage it at build/slp/ so
+  electron-builder can bundle it into the .app (electron-builder.yml
+  mac.extraResources). Mirrors the runtime download in electron/slp-setup.js,
+  but at build time. The version is read from electron/slp-setup.js.
+
+runs:
+  using: composite
+  steps:
+    - name: Download and stage SLP framework
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
+        if [ -z "$VERSION" ]; then echo "::error::Could not read SLP VERSION from electron/slp-setup.js"; exit 1; fi
+        URL="https://dl.smartloop.ai/slp/${VERSION}/darwin-arm64-slp.tar.gz"
+        echo "Staging SLP ${VERSION} from ${URL}"
+
+        rm -rf build/slp && mkdir -p build/slp
+        curl -fSL --retry 3 --retry-delay 5 -o /tmp/slp.tar.gz "$URL"
+        tar -xzf /tmp/slp.tar.gz -C build/slp
+        rm -f /tmp/slp.tar.gz
+
+        # The archive may wrap everything in a top-level slp/ directory
+        # (slp-setup.js strips it the same way). If build/slp/slp is a directory
+        # containing the binary, flatten it so the binary lands at build/slp/slp.
+        if [ -d build/slp/slp ] && [ -x build/slp/slp/slp ]; then
+          shopt -s dotglob
+          mv build/slp/slp/* build/slp/
+          rmdir build/slp/slp
+        fi
+
+        chmod +x build/slp/slp
+        if [ ! -x build/slp/slp ]; then echo "::error::SLP binary missing at build/slp/slp after staging"; exit 1; fi
+        echo "Staged $(du -sh build/slp | cut -f1) into build/slp"
