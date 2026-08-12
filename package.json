@@ -1,6 +1,6 @@
 {
   "name": "smartloop-studio",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "description": "SmartLoop Studio",
   "author": {
     "name": "Smartloop Inc",
@@ -24,6 +24,7 @@
     "electron-pack": "electron-builder",
     "electron-pack-win": "electron-builder --win",
     "electron-pack-mac": "electron-builder --mac",
+    "electron-pack-mas": "cross-env MAS_BUILD=1 electron-builder --mac mas",
     "electron-pack-linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
   },

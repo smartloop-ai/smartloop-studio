@@ -2,8 +2,15 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { app } = require('electron');
+const { isSandboxed } = require('./build-mode');
 
-const DB_DIR = path.join(os.homedir(), '.smartloop');
+// studio.db lives next to the SLP state. In the Developer-ID build that's
+// ~/.smartloop; in the sandboxed MAS build ~/.smartloop is not writable, so it
+// moves under the app's userData container (same dir main.js points SLP at).
+const DB_DIR = isSandboxed()
+  ? path.join(app.getPath('userData'), 'slp')
+  : path.join(os.homedir(), '.smartloop');
 const DB_PATH = path.join(DB_DIR, 'studio.db');
 
 let db = null;
