@@ -27,23 +27,29 @@ runs:
         URL="https://dl.smartloop.ai/slp/${VERSION}/${PLAT}-${ARCH}-slp.${EXT}"
         echo "Staging SLP ${VERSION} (${PLAT}-${ARCH}) from ${URL}"
 
-        rm -rf build/slp && mkdir -p build/slp
-        arc="$(mktemp -d)/slp.${EXT}"
+        # Use workspace-relative dirs so paths are valid for both bash and
+        # (on Windows) PowerShell — MSYS would mangle absolute /tmp paths passed
+        # into powershell.exe.
+        rm -rf build/slp .slp-stage && mkdir -p build/slp .slp-stage/x
+        arc=".slp-stage/slp.${EXT}"
         curl -fSL --retry 3 --retry-delay 5 -o "$arc" "$URL"
 
-        # Extract to a temp dir first. The archive wraps the framework in a
+        # Extract to a staging dir first. The archive wraps the framework in a
         # top-level slp/ directory, so moving its CONTENTS into build/slp avoids
         # the slp binary colliding with the slp/ wrapper. Handle both wrapped and
-        # flat archives. bsdtar (macOS/Windows runners' `tar`) reads zip too.
-        tmp="$(mktemp -d)"
-        if [ "$EXT" = "zip" ]; then tar -xf "$arc" -C "$tmp"; else tar -xzf "$arc" -C "$tmp"; fi
-        rm -f "$arc"
-        src="$tmp"
-        if [ -d "$tmp/slp" ] && [ -e "$tmp/slp/$BIN" ]; then src="$tmp/slp"; fi
+        # flat archives. zip is Windows-only, where git-bash `tar` is GNU tar and
+        # cannot read zip — use PowerShell's Expand-Archive there.
+        if [ "$EXT" = "zip" ]; then
+          powershell -NoProfile -NonInteractive -Command "Expand-Archive -Force -LiteralPath '$arc' -DestinationPath '.slp-stage/x'"
+        else
+          tar -xzf "$arc" -C .slp-stage/x
+        fi
+        src=".slp-stage/x"
+        if [ -d ".slp-stage/x/slp" ] && [ -e ".slp-stage/x/slp/$BIN" ]; then src=".slp-stage/x/slp"; fi
         shopt -s dotglob
         mv "$src"/* build/slp/
         shopt -u dotglob
-        rm -rf "$tmp"
+        rm -rf .slp-stage
 
         [ "$BIN" = "slp" ] && chmod +x "build/slp/$BIN" || true
         if [ ! -e "build/slp/$BIN" ]; then echo "::error::SLP binary missing at build/slp/$BIN after staging"; exit 1; fi
