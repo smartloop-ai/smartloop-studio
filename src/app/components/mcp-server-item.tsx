@@ -4,7 +4,7 @@ import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useState } from 'react';
-import { McpServer, getMcpServerUrl, getMcpServerTools } from '@/app/services/mcp-server.service';
+import { McpServer, getMcpServerUrl, getMcpServerTools, TagColor, tagColorFrom } from '@/app/services/mcp-server.service';
 import McpToolsDialog from './mcp-tools-dialog';
 
 interface McpServerItemProps {
@@ -15,6 +15,10 @@ interface McpServerItemProps {
   autoConnect?: boolean;
   discovering?: boolean;
   isSystem?: boolean;
+  /** Show a gold "Custom" tag marking this as a hand-added server. */
+  isCustom?: boolean;
+  /** Distinct colors for this server's tags, assigned across the whole list. */
+  tagColors?: Map<string, TagColor>;
   deleteError?: string;
 }
 
@@ -23,6 +27,8 @@ export default function McpServerItem({
   onDelete,
   discovering = false,
   isSystem = false,
+  isCustom = false,
+  tagColors,
   deleteError = '',
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
@@ -54,18 +60,20 @@ export default function McpServerItem({
       <Tooltip title={deleteError || ''} arrow placement="top">
       <Box
         onClick={() => setModalOpen(true)}
-        className="rounded-xl"
+        className="rounded-xl group"
         sx={{
           padding: '12px 14px',
           border: deleteError ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
-          bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : 'transparent',
+          // Custom cards get a subtle inset fill so they read as nested against
+          // the panel, distinct from the transparent curated catalog cards.
+          bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : 'var(--sl-white-alpha-5)',
           display: 'flex',
           gap: 1.25,
           transition: 'box-shadow 0.15s ease, background 0.15s ease',
           cursor: 'pointer',
           '&:hover': {
             boxShadow: deleteError ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
-            bgcolor: deleteError ? 'rgba(248,113,113,0.12)' : 'transparent',
+            bgcolor: deleteError ? 'rgba(248,113,113,0.12)' : 'var(--sl-white-alpha-7)',
           },
         }}
       >
@@ -83,39 +91,45 @@ export default function McpServerItem({
               {displayName}
             </span>
 
-            {/* Info Icon - opens tools modal */}
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                setModalOpen(true);
-              }}
-              sx={{
-                color: 'var(--sl-text-faint)',
-                padding: '2px',
-                '&:hover': { color: 'var(--sl-brand-primary)' },
-              }}
+            {/* Row actions — fade in on card hover to keep the card clean */}
+            <Box
+              className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
             >
-              <InfoOutlinedIcon sx={{ fontSize: 12 }} />
-            </IconButton>
+              {/* Info Icon - opens tools modal */}
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setModalOpen(true);
+                }}
+                sx={{
+                  color: 'var(--sl-text-faint)',
+                  padding: '2px',
+                  '&:hover': { color: 'var(--sl-brand-primary)' },
+                }}
+              >
+                <InfoOutlinedIcon sx={{ fontSize: 12 }} />
+              </IconButton>
 
-            {/* Delete Icon */}
-            <IconButton
-              size="small"
-              disabled={isSystem}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(server);
-              }}
-              sx={{
-                color: 'var(--sl-text-faint)',
-                padding: '2px',
-                '&:hover': { color: isSystem ? 'var(--sl-text-faint)' : 'var(--sl-status-error)' },
-                '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
-              }}
-            >
-              <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-            </IconButton>
+              {/* Delete Icon */}
+              <IconButton
+                size="small"
+                disabled={isSystem}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(server);
+                }}
+                sx={{
+                  color: 'var(--sl-text-faint)',
+                  padding: '2px',
+                  '&:hover': { color: isSystem ? 'var(--sl-text-faint)' : 'var(--sl-status-error)' },
+                  '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
+                }}
+              >
+                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Box>
           </Box>
 
           {/* Description */}
@@ -125,16 +139,36 @@ export default function McpServerItem({
             </span>
           )}
 
-          {/* Metadata row: Local/URL + tool count */}
+          {/* Metadata row: Custom + Local/URL + tool count */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+            {isCustom && (
+              <span
+                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{ border: '1px solid color-mix(in srgb, var(--sl-status-warning) 35%, transparent)', color: 'var(--sl-status-warning)', backgroundColor: 'color-mix(in srgb, var(--sl-status-warning) 8%, transparent)' }}
+              >
+                Custom
+              </span>
+            )}
             {isLocal && (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid rgba(94,234,212,0.35)', color: '#5eead4' }}
+                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' }}
               >
                 Local
               </span>
             )}
+            {(server.tags || []).map((tag) => {
+              const c = tagColorFrom(tagColors ?? new Map(), tag);
+              return (
+                <span
+                  key={tag}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                  style={{ border: `1px solid ${c.border}`, color: c.color }}
+                >
+                  {tag}
+                </span>
+              );
+            })}
             {displayUrl && (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-wide"

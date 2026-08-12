@@ -62,16 +62,20 @@ export default function McpCatalogItem({
           },
         }}
       >
-        {/* Provider icon, falling back to the generic connection glyph */}
+        {/* Provider icon in a tinted chip, falling back to the generic glyph */}
         <Box
           sx={{
-            width: 22,
-            height: 22,
+            width: 28,
+            height: 28,
             mt: '1px',
             flexShrink: 0,
+            borderRadius: '6px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            backgroundColor: isConnected ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-7)',
+            border: '1px solid',
+            borderColor: isConnected ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)',
             color: isConnected ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
           }}
         >
@@ -158,8 +162,8 @@ export default function McpCatalogItem({
               </span>
             ) : (
               <span
-                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)' }}
+                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                style={{ border: '1px solid var(--sl-white-alpha-15)', color: 'var(--sl-text-primary)' }}
               >
                 Connect
               </span>

@@ -81,6 +81,8 @@ export interface McpServer {
   id: string;
   name: string;
   description?: string;
+  /** LLM-generated topical tags for hand-added servers (1–3). */
+  tags?: string[];
   server_type?: 'local' | 'remote';
   env?: Record<string, string>;
   config?: {
