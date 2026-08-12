@@ -1,9 +1,9 @@
 name: Stage SLP framework
 description: >
-  Download the macOS (arm64) SLP framework and stage it at build/slp/ so
-  electron-builder can bundle it into the .app (electron-builder.yml
-  mac.extraResources). Mirrors the runtime download in electron/slp-setup.js,
-  but at build time. The version is read from electron/slp-setup.js.
+  Download the SLP framework for the current runner OS and stage it at build/slp/
+  so electron-builder can bundle it into the app (electron-builder.yml
+  extraResources). Mirrors the runtime download in electron/slp-setup.js, but at
+  build time. The version is read from electron/slp-setup.js.
 
 runs:
   using: composite
@@ -14,26 +14,37 @@ runs:
         set -euo pipefail
         VERSION=$(sed -n "s/^const VERSION = '\(.*\)';$/\1/p" electron/slp-setup.js)
         if [ -z "$VERSION" ]; then echo "::error::Could not read SLP VERSION from electron/slp-setup.js"; exit 1; fi
-        URL="https://dl.smartloop.ai/slp/${VERSION}/darwin-arm64-slp.tar.gz"
-        echo "Staging SLP ${VERSION} from ${URL}"
+
+        # Map the runner OS to the framework artifact (mirrors detectPlatform()
+        # in electron/slp-setup.js). Windows ships a .zip + slp.exe; the rest a
+        # .tar.gz + slp.
+        case "${RUNNER_OS:-}" in
+          macOS)   PLAT=darwin  ARCH=arm64 EXT=tar.gz BIN=slp ;;
+          Linux)   PLAT=linux   ARCH=amd64 EXT=tar.gz BIN=slp ;;
+          Windows) PLAT=windows ARCH=amd64 EXT=zip    BIN=slp.exe ;;
+          *) echo "::error::Unsupported RUNNER_OS='${RUNNER_OS:-}'"; exit 1 ;;
+        esac
+        URL="https://dl.smartloop.ai/slp/${VERSION}/${PLAT}-${ARCH}-slp.${EXT}"
+        echo "Staging SLP ${VERSION} (${PLAT}-${ARCH}) from ${URL}"
 
         rm -rf build/slp && mkdir -p build/slp
-        curl -fSL --retry 3 --retry-delay 5 -o /tmp/slp.tar.gz "$URL"
+        arc="$(mktemp -d)/slp.${EXT}"
+        curl -fSL --retry 3 --retry-delay 5 -o "$arc" "$URL"
 
         # Extract to a temp dir first. The archive wraps the framework in a
         # top-level slp/ directory, so moving its CONTENTS into build/slp avoids
-        # the build/slp/slp binary colliding with the slp/ wrapper (which is what
-        # broke a direct extract). Handle both wrapped and flat archives.
+        # the slp binary colliding with the slp/ wrapper. Handle both wrapped and
+        # flat archives. bsdtar (macOS/Windows runners' `tar`) reads zip too.
         tmp="$(mktemp -d)"
-        tar -xzf /tmp/slp.tar.gz -C "$tmp"
-        rm -f /tmp/slp.tar.gz
+        if [ "$EXT" = "zip" ]; then tar -xf "$arc" -C "$tmp"; else tar -xzf "$arc" -C "$tmp"; fi
+        rm -f "$arc"
         src="$tmp"
-        if [ -d "$tmp/slp" ] && [ -x "$tmp/slp/slp" ]; then src="$tmp/slp"; fi
+        if [ -d "$tmp/slp" ] && [ -e "$tmp/slp/$BIN" ]; then src="$tmp/slp"; fi
         shopt -s dotglob
         mv "$src"/* build/slp/
         shopt -u dotglob
         rm -rf "$tmp"
 
-        chmod +x build/slp/slp
-        if [ ! -x build/slp/slp ]; then echo "::error::SLP binary missing at build/slp/slp after staging"; exit 1; fi
+        [ "$BIN" = "slp" ] && chmod +x "build/slp/$BIN" || true
+        if [ ! -e "build/slp/$BIN" ]; then echo "::error::SLP binary missing at build/slp/$BIN after staging"; exit 1; fi
         echo "Staged $(du -sh build/slp | cut -f1) into build/slp"

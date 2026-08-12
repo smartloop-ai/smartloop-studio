@@ -7,13 +7,22 @@ directories:
   buildResources: build
 asar: true
 extraResources:
-  # Bundle data assets (e.g. the blank-project template) but NOT the SLP
-  # framework — that is downloaded at runtime by slp-setup.js.
+  # Bundle data assets (e.g. the blank-project template), minus any slp/ subdir.
   - from: electron/data/
     to: data/
     filter:
       - "**/*"
       - "!slp/**"
+  # Bundle the SLP framework (platform-specific binary + runtime) inside the app
+  # on EVERY platform, so it is copied to the install dir on first launch
+  # (electron/build-mode.js → copyBundledSlp) instead of downloaded from the CDN.
+  # CI stages the correct per-OS framework at build/slp/ before packaging
+  # (.github/actions/stage-slp). This applies to mac/win/linux; the mas block
+  # inherits it too.
+  - from: build/slp/
+    to: slp/
+    filter:
+      - "**/*"
 protocols:
   name: smartloop
   schemes:
@@ -51,28 +60,8 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true
-  # macOS bundles TWO extra resources. NOTE: a platform-level extraResources
-  # REPLACES the top-level one (electron-builder does not merge them), so the
-  # data/ entry from the top level must be repeated here or it is dropped.
-  #   1. data/ — the same bundled assets as every platform (blank-project
-  #      template), minus the SLP framework.
-  #   2. slp/ — the SLP framework (arm64 binary + Python runtime) shipped INSIDE
-  #      the app for BOTH the direct-download (dmg) and MAS builds; the size is
-  #      acceptable and it removes the first-launch download. CI stages it at
-  #      build/slp/ before packaging; it lands at Contents/Resources/slp, which
-  #      electron/build-mode.js resolves via process.resourcesPath and copies
-  #      into the install dir on first run. The `mas` block below inherits this.
-  # Windows/Linux are unaffected (top-level extraResources; runtime download).
-  extraResources:
-    - from: electron/data/
-      to: data/
-      filter:
-        - "**/*"
-        - "!slp/**"
-    - from: build/slp/
-      to: slp/
-      filter:
-        - "**/*"
+  # extraResources (data/ + bundled slp/) are inherited from the top level and
+  # apply to every platform, so no mac-specific override is needed here.
   target:
     - target: dmg
       arch:
