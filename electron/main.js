@@ -10,7 +10,7 @@ const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { isSandboxed } = require('./build-mode');
+const { isSandboxed, useBundledSlp } = require('./build-mode');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
 const slpService = require('./slp-service');
@@ -2806,14 +2806,19 @@ if (!gotTheLock) {
             console.log('[SLP] System capability:', cap.label);
             // Move off the "verifying" message immediately so it doesn't linger
             // while the first network request is in flight.
-            updateSplashProgress({ status: 'installing', message: 'Downloading components…' });
+            updateSplashProgress({ status: 'installing', message: useBundledSlp() ? 'Installing components…' : 'Downloading components…' });
             await setupSlpService((progress) => updateSplashProgress(progress));
             if (!database.isFullyInstalled()) {
               for (let step = 0; step < 4; step++) {
                 database.setInstallStepComplete(step);
               }
             }
-          } else if (splashWindow && !splashWindow.isDestroyed()) {
+          } else if (!useBundledSlp() && splashWindow && !splashWindow.isDestroyed()) {
+            // Non-bundled builds (Windows/Linux) download the framework from the
+            // CDN, so check whether a newer archive is available and reinstall if
+            // so. Bundled builds (macOS) ship the framework inside the app and
+            // update it only via an app update — no remote version check or
+            // re-download.
             const currentVersion = getCurrentVersion();
             updateSplashProgress({ status: 'preparing', message: `Checking for updates (${currentVersion})...` });
             const hasRemoteUpdate = await checkRemoteArchiveHash();
