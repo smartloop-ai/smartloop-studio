@@ -19,17 +19,20 @@ runs:
 
         rm -rf build/slp && mkdir -p build/slp
         curl -fSL --retry 3 --retry-delay 5 -o /tmp/slp.tar.gz "$URL"
-        tar -xzf /tmp/slp.tar.gz -C build/slp
-        rm -f /tmp/slp.tar.gz
 
-        # The archive may wrap everything in a top-level slp/ directory
-        # (slp-setup.js strips it the same way). If build/slp/slp is a directory
-        # containing the binary, flatten it so the binary lands at build/slp/slp.
-        if [ -d build/slp/slp ] && [ -x build/slp/slp/slp ]; then
-          shopt -s dotglob
-          mv build/slp/slp/* build/slp/
-          rmdir build/slp/slp
-        fi
+        # Extract to a temp dir first. The archive wraps the framework in a
+        # top-level slp/ directory, so moving its CONTENTS into build/slp avoids
+        # the build/slp/slp binary colliding with the slp/ wrapper (which is what
+        # broke a direct extract). Handle both wrapped and flat archives.
+        tmp="$(mktemp -d)"
+        tar -xzf /tmp/slp.tar.gz -C "$tmp"
+        rm -f /tmp/slp.tar.gz
+        src="$tmp"
+        if [ -d "$tmp/slp" ] && [ -x "$tmp/slp/slp" ]; then src="$tmp/slp"; fi
+        shopt -s dotglob
+        mv "$src"/* build/slp/
+        shopt -u dotglob
+        rm -rf "$tmp"
 
         chmod +x build/slp/slp
         if [ ! -x build/slp/slp ]; then echo "::error::SLP binary missing at build/slp/slp after staging"; exit 1; fi
