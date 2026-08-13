@@ -8,9 +8,8 @@ directories:
 asar: true
 extraResources:
   # Data assets (e.g. the blank-project template) bundled on every platform,
-  # minus any slp/ subdir. Linux inherits ONLY this — the SLP framework stays a
-  # runtime CDN download on Linux because it is ~5.5 GB (bundled CUDA/Triton),
-  # too large to ship in an AppImage/deb. macOS and Windows add slp/ below.
+  # minus any slp/ subdir. Each platform block (mac/win/linux) adds the bundled
+  # SLP framework (slp/) via the &res_slp anchor.
   - &res_data
     from: electron/data/
     to: data/
@@ -104,6 +103,13 @@ linux:
   category: Development
   executableName: smartloop-studio
   artifactName: studio-${version}-${arch}.${ext}
+  # Bundle SLP on Linux too — the Linux framework was slimmed (~0.96 GB, CUDA
+  # removed), so it's now comparable to mac/Windows and viable to ship in the
+  # AppImage/deb. Repeat the data entry since platform extraResources replaces
+  # the top-level one.
+  extraResources:
+    - *res_data
+    - *res_slp
   target:
     - target: AppImage
       arch:
