@@ -101,10 +101,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
   slpFetchUser: () => ipcRenderer.invoke('slp-fetch-user'),
   slpUpdateUserSettings: (settings) => ipcRenderer.invoke('slp-update-user-settings', settings),
-  slpListModels: () => ipcRenderer.invoke('slp-list-models'),
+  slpListModels: (projectId) => ipcRenderer.invoke('slp-list-models', projectId),
   slpMcpCatalog: () => ipcRenderer.invoke('slp-mcp-catalog'),
-  slpInitModel: (modelName) => ipcRenderer.invoke('slp-init-model', modelName),
-  slpSetModelEnabled: (modelName, enabled) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled),
+  slpInitModel: (modelName, projectId) => ipcRenderer.invoke('slp-init-model', modelName, projectId),
+  slpSetModelEnabled: (modelName, enabled, projectId) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled, projectId),
   onModelInitProgress: (callback) => {
     ipcRenderer.on('model-init-progress', (event, data) => callback(data));
   },
@@ -112,7 +112,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('model-init-progress');
   },
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
-  slpCancelModelDownload: (modelName) => ipcRenderer.invoke('slp-cancel-model-download', modelName),
+  slpCancelModelDownload: (modelName, projectId) => ipcRenderer.invoke('slp-cancel-model-download', modelName, projectId),
   onModelDownloadProgress: (callback) => {
     ipcRenderer.on('model-download-progress', (event, data) => callback(data));
   },

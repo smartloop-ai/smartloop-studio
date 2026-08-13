@@ -391,7 +391,7 @@ export default function Chat(props: {
     };
     (async () => {
       try {
-        const res = await window.electronAPI?.slpListModels();
+        const res = await window.electronAPI?.slpListModels(props.project?.id ?? null);
         if (res?.success) applyModels(res.models);
       } catch (e) {
         console.warn('[Chat] Failed to list models for capability detection:', e);
@@ -876,7 +876,7 @@ export default function Chat(props: {
             const loadRes = await fetch(`${localBaseUrl}/v1/models/load`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ model_name: selectedModel }),
+              body: JSON.stringify({ model_name: selectedModel, project_id: projectId }),
             });
             if (loadRes.ok && loadRes.body) {
               const reader = loadRes.body.getReader();

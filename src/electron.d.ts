@@ -89,17 +89,17 @@ export interface ElectronAPI {
   slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
   slpFetchUser: () => Promise<{ success: boolean; user?: any }>;
   slpUpdateUserSettings: (settings: Record<string, any>) => Promise<{ success: boolean; user?: any; error?: string }>;
-  slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpListModels: (projectId?: string | null) => Promise<{ success: boolean; models?: any[]; error?: string }>;
   slpMcpCatalog: () => Promise<{ success: boolean; entries?: any[]; error?: string }>;
-  slpInitModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
-  slpSetModelEnabled: (modelName: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
+  slpInitModel: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
+  slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
   onModelInitProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean; stage?: string }) => void) => void;
   removeModelInitProgressListener: () => void;
   slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
-  slpCancelModelDownload: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+  slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
   onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
   removeModelDownloadProgressListener: () => void;
-  onModelsUpdated: (callback: (data: { models: any[] }) => void) => void;
+  onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => void;
   removeModelsUpdatedListener: () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;

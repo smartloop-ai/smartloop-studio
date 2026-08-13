@@ -114,7 +114,7 @@ export default function Home() {
               const res = await fetch(`${baseUrl}/v1/models/load`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model_name: modelName }),
+                body: JSON.stringify({ model_name: modelName, project_id: selectedProject.id }),
               });
 
               if (res.ok && res.body) {
