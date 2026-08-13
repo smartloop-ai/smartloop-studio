@@ -3,6 +3,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import SearchIcon from '@mui/icons-material/Search';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CheckIcon from '@mui/icons-material/Check';
 import { useEffect, useMemo, useState } from 'react';
 import { McpServer, getMcpServerTools } from '@/app/services/mcp-server.service';
 import { dialogStyles } from '@/app/shared/utils';
@@ -26,6 +28,7 @@ const FILTER_THRESHOLD = 8;
 export default function McpToolsDialog({ open, onClose, server, nameOverride, iconOverride }: McpToolsDialogProps) {
   const [iconFailed, setIconFailed] = useState(false);
   const [query, setQuery] = useState('');
+  const [copiedTool, setCopiedTool] = useState<string | null>(null);
 
   // The dialog stays mounted while closed — drop the filter so it reopens clean.
   useEffect(() => {
@@ -35,6 +38,12 @@ export default function McpToolsDialog({ open, onClose, server, nameOverride, ic
   const isLocal = server.server_type === 'local';
   const serverInfo = server.server_info;
   const displayName = nameOverride || serverInfo?.title || serverInfo?.name || server.name || 'MCP Server';
+  // The reference name is what the server was registered under (`server.name`) —
+  // that's the identifier skills use to call this server (e.g. `yfmcp`), while
+  // the title is what we display in the listing. Casing doesn't affect tool
+  // resolution: the backend matches server/tool names case-insensitively.
+  const serverName = server.name;
+  const showServerName = Boolean(serverName && serverName !== displayName);
   const icon = serverInfo?.icons?.[0];
   const iconUrl = iconOverride || icon?.src || (icon as any)?.url;
   const tools = getMcpServerTools(server);
@@ -107,6 +116,38 @@ export default function McpToolsDialog({ open, onClose, server, nameOverride, ic
             >
               {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
             </span>
+            {showServerName && (
+              <span
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                style={{
+                  border: '1px solid var(--sl-border-default)',
+                  color: 'var(--sl-text-faint)',
+                  fontFamily: 'monospace',
+                  letterSpacing: '0',
+                }}
+                title={`Referenced as ${serverName}.tool_name in skills`}
+              >
+                {serverName}
+                <IconButton
+                  size="small"
+                  title={copiedTool === serverName ? 'Copied' : 'Copy reference name'}
+                  onClick={() => {
+                    navigator.clipboard.writeText(serverName);
+                    setCopiedTool(serverName);
+                    setTimeout(() => setCopiedTool(null), 1500);
+                  }}
+                  sx={{
+                    color: copiedTool === serverName ? 'var(--sl-status-success)' : 'inherit',
+                    padding: '0',
+                    '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'transparent' },
+                  }}
+                >
+                  {copiedTool === serverName
+                    ? <CheckIcon sx={{ fontSize: 10 }} />
+                    : <ContentCopyIcon sx={{ fontSize: 10 }} />}
+                </IconButton>
+              </span>
+            )}
             {serverInfo?.version && (
               <span className="text-[11px] text-sl-text-faint">v{serverInfo.version}</span>
             )}
@@ -188,10 +229,14 @@ export default function McpToolsDialog({ open, onClose, server, nameOverride, ic
       <Box className="flex-1 overflow-y-auto sidebar-scroll px-6 py-4">
         {filtered.length > 0 ? (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filtered.map((tool: any) => {
-              const schema = tool.inputSchema || tool.input_schema;
-              const params = schema?.properties ? Object.entries(schema.properties) : [];
-              return (
+                {filtered.map((tool: any) => {
+                  const schema = tool.inputSchema || tool.input_schema;
+                  const params = schema?.properties ? Object.entries(schema.properties) : [];
+                  // Skills call this tool as `<server-name>.<tool-name>`, so the
+                  // copy includes the prefix for a paste-ready reference.
+                  const toolReference = serverName ? `${serverName}.${tool.name}` : tool.name;
+                  const copied = copiedTool === tool.name;
+                  return (
                 <Box
                   key={tool.name}
                   className="rounded-xl"
@@ -203,8 +248,29 @@ export default function McpToolsDialog({ open, onClose, server, nameOverride, ic
                     '&:hover': { boxShadow: 'inset 0 0 0 1px var(--sl-brand-alpha-30)' },
                   }}
                 >
-                  <div className="text-[13px] font-bold font-mono text-sl-text-primary break-all">
-                    {tool.name}
+                  <div className="flex items-center gap-1">
+                    <div className="text-[13px] font-bold font-mono text-sl-text-primary break-all">
+                      {tool.name}
+                    </div>
+                    <IconButton
+                      size="small"
+                      title={copied ? 'Copied' : 'Copy tool reference'}
+                      onClick={() => {
+                        navigator.clipboard.writeText(toolReference);
+                        setCopiedTool(tool.name);
+                        setTimeout(() => setCopiedTool(null), 1500);
+                      }}
+                      sx={{
+                        color: copied ? 'var(--sl-status-success)' : 'var(--sl-text-faint)',
+                        padding: '3px',
+                        flexShrink: 0,
+                        '&:hover': { color: 'var(--sl-brand-primary)', bgcolor: 'transparent' },
+                      }}
+                    >
+                      {copied
+                        ? <CheckIcon sx={{ fontSize: 14 }} />
+                        : <ContentCopyIcon sx={{ fontSize: 14 }} />}
+                    </IconButton>
                   </div>
                   {tool.description && (
                     // Providers ship paragraph-long descriptions (Linear's upload
