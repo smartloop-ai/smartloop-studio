@@ -1,9 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useProjectContext } from '../contexts/ProjectContext';
 
 // Shared state + actions for the local auxiliary model list.
 // Consumed by the Settings "Available Models" table and the chat footer
 // model selector so both stay in sync (enable/disable, download, progress).
+// Model settings are scoped to the selected project (falls back to the
+// workspace/app-default list when no project is selected, e.g. on Settings).
 export function useLocalModels() {
+    const { selectedProject } = useProjectContext();
+    const projectId = selectedProject?.id ?? null;
+
     const [localModels, setLocalModels] = useState<any[]>([]);
     const [localModelsLoading, setLocalModelsLoading] = useState(false);
     const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
@@ -23,7 +29,7 @@ export function useLocalModels() {
         try {
             const api = window.electronAPI;
             if (api?.slpListModels) {
-                const result = await api.slpListModels();
+                const result = await api.slpListModels(projectId);
                 if (result?.success && result.models) {
                     setLocalModels(result.models);
                 }
@@ -33,7 +39,7 @@ export function useLocalModels() {
         } finally {
             setLocalModelsLoading(false);
         }
-    }, []);
+    }, [projectId]);
 
     useEffect(() => {
         const api = window.electronAPI;
@@ -50,13 +56,13 @@ export function useLocalModels() {
         const api = window.electronAPI;
         const modelName = togglingRef.current;
         if (!modelName || !api?.slpCancelModelDownload) return;
-        await api.slpCancelModelDownload(modelName);
+        await api.slpCancelModelDownload(modelName, projectId);
         togglingRef.current = null;
         setToggling(null);
         setDownloadProgress(null);
         setEnabledOverrides(prev => { const next = new Map(prev); next.delete(modelName); return next; });
         await fetchLocalModels();
-    }, [fetchLocalModels]);
+    }, [fetchLocalModels, projectId]);
 
     const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
         const api = window.electronAPI;
@@ -83,7 +89,7 @@ export function useLocalModels() {
         } catch { /* non-fatal */ }
 
         try {
-            await api.slpSetModelEnabled(workspaceName, enabled);
+            await api.slpSetModelEnabled(workspaceName, enabled, projectId);
             await fetchLocalModels();
         } finally {
             togglingRef.current = null;
@@ -91,24 +97,30 @@ export function useLocalModels() {
             setDownloadProgress(null);
             setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
         }
-    }, [fetchLocalModels, localModels, enabledOverrides]);
+    }, [fetchLocalModels, localModels, enabledOverrides, projectId]);
 
+    // Refetch whenever the selected project changes — per-project model settings.
     useEffect(() => {
         fetchLocalModels();
+    }, [fetchLocalModels]);
 
+    useEffect(() => {
         const handleAuthChange = () => fetchLocalModels();
         window.addEventListener('authStateChanged', handleAuthChange);
 
         const api = window.electronAPI;
-        api?.onModelsUpdated?.(({ models }: { models: any[] }) => {
-            if (Array.isArray(models)) setLocalModels(models);
+        api?.onModelsUpdated?.(({ models, projectId: payloadProjectId }: { models: any[]; projectId?: string | null }) => {
+            // Only apply broadcasts for the project we're currently viewing (or the
+            // project-less workspace list) — a background refresh for another
+            // project must not clobber this view's per-project state.
+            if (payloadProjectId === projectId && Array.isArray(models)) setLocalModels(models);
         });
 
         return () => {
             window.removeEventListener('authStateChanged', handleAuthChange);
             api?.removeModelsUpdatedListener?.();
         };
-    }, [fetchLocalModels]);
+    }, [fetchLocalModels, projectId]);
 
     return {
         localModels,

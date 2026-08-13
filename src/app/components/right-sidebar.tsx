@@ -385,7 +385,7 @@ export default function RightSidebar({
   // vision support is detected).
   const refreshModelCaps = useCallback(async () => {
     try {
-      const res = await window.electronAPI?.slpListModels();
+      const res = await window.electronAPI?.slpListModels(selectedProject?.id ?? null);
       if (!res?.success || !Array.isArray(res.models)) return;
       const caps = new Set<string>();
       res.models.forEach((m: any) => {
@@ -393,7 +393,7 @@ export default function RightSidebar({
       });
       setModelCaps(caps);
     } catch { /* leave caps as-is */ }
-  }, []);
+  }, [selectedProject?.id]);
 
   // Baseline capability read on mount / model change / section open. We rely on the
   // toggle event (below) for live updates rather than the raw "models-updated" feed,

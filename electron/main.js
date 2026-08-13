@@ -2117,7 +2117,7 @@ ipcMain.handle('load-model', async () => {
 });
 
 // IPC: init/select a model — downloads + sets up if missing, streams SSE progress
-ipcMain.handle('slp-init-model', async (event, modelName) => {
+ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
@@ -2125,7 +2125,9 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
     const http = require('http');
     const url = new URL(`${baseUrl}/v1/init`);
 
-    const postData = JSON.stringify({ model_name: modelName });
+    const postData = JSON.stringify(projectId
+      ? { model_name: modelName, project_id: projectId }
+      : { model_name: modelName });
 
     const req = http.request({
       hostname: url.hostname,
@@ -2206,48 +2208,55 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
 const activeModelDownloads = new Map();
 
 // IPC: cancel an in-progress model download
-ipcMain.handle('slp-cancel-model-download', async (event, modelName) => {
+ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) => {
   const req = activeModelDownloads.get(modelName);
   if (req) {
     console.log(`[Models] Cancelling download for ${modelName}`);
     req.destroy();
     activeModelDownloads.delete(modelName);
-    invalidateModelsCache();
+    invalidateModelsCache(projectId);
     return { success: true };
   }
   return { success: false, error: 'No active download' };
 });
 
 // IPC: enable/disable a model for orchestrator selection
-// If the model is not in workspace yet, downloads it first, then enables.
-ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
+// If the model is not downloaded yet, downloads it first (scoped to the project
+// when one is given), then enables it on that project. Falls back to the legacy
+// workspace (app-default) endpoints when no project is supplied.
+ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
-  // Check if model exists in workspace
+  // Check the model's per-project (or workspace) downloaded state
   let existsInWorkspace = false;
   try {
-    const wsRes = await fetch(`${baseUrl}/v1/models/workspace`);
+    const stateUrl = projectId
+      ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
+      : `${baseUrl}/v1/models/workspace`;
+    const wsRes = await fetch(stateUrl);
     if (wsRes.ok) {
       const wsData = await wsRes.json();
       const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
       const wsNames = wsList.map(wm => wm.model_name || wm.name);
       const wsMatch = wsList.find(wm => wm.model_name === modelName || wm.name === modelName);
       existsInWorkspace = wsMatch && wsMatch.downloaded;
-      console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
+      console.log(`[Models] set-model-enabled: looking for "${modelName}" in state: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
     } else {
-      console.log(`[Models] set-model-enabled: workspace fetch failed: HTTP ${wsRes.status}`);
+      console.log(`[Models] set-model-enabled: state fetch failed: HTTP ${wsRes.status}`);
     }
   } catch (err) {
-    console.log(`[Models] set-model-enabled: workspace fetch error: ${err.message}`);
+    console.log(`[Models] set-model-enabled: state fetch error: ${err.message}`);
   }
 
   if (!existsInWorkspace && enabled) {
-    console.log(`[Models] ${modelName} not in workspace, initializing via /v1/init...`);
+    console.log(`[Models] ${modelName} not downloaded, initializing via /v1/init...`);
     try {
       const http = require('http');
       const dlUrl = new URL(`${baseUrl}/v1/init`);
-      const postData = JSON.stringify({ model_name: modelName });
+      const postData = JSON.stringify(projectId
+        ? { model_name: modelName, project_id: projectId }
+        : { model_name: modelName });
       await new Promise((resolve, reject) => {
         const req = http.request({
           hostname: dlUrl.hostname,
@@ -2304,9 +2313,12 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
       return { success: false, error: err.message };
     }
 
-    // Re-check workspace for the new name
+    // Re-check model state for the new name
     try {
-      const wsRes2 = await fetch(`${baseUrl}/v1/models/workspace`);
+      const stateUrl = projectId
+        ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
+        : `${baseUrl}/v1/models/workspace`;
+      const wsRes2 = await fetch(stateUrl);
       if (wsRes2.ok) {
         const wsData2 = await wsRes2.json();
         const wsList2 = Array.isArray(wsData2) ? wsData2 : (wsData2.data || wsData2.models || []);
@@ -2319,7 +2331,9 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
   }
 
   try {
-    const url = `${baseUrl}/v1/models/workspace/${modelName}`;
+    const url = projectId
+      ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelName)}`
+      : `${baseUrl}/v1/models/workspace/${encodeURIComponent(modelName)}`;
     console.log(`[Models] PATCH ${url} enabled=${enabled}`);
     const res = await fetch(url, {
       method: 'PATCH',
@@ -2329,7 +2343,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
     const text = await res.text();
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
-      invalidateModelsCache();
+      invalidateModelsCache(projectId);
       try {
         return { success: true, ...JSON.parse(text) };
       } catch {
@@ -2496,18 +2510,24 @@ ipcMain.handle('slp-mcp-catalog', async () => {
   }
 });
 
-// Fetch catalog + workspace state in parallel and merge into a single model list.
-async function fetchModelsWithMerge() {
+// Fetch catalog + per-project model state in parallel and merge into a single
+// model list. Without a project (e.g. on Settings) it falls back to the legacy
+// workspace (app-default) endpoint.
+async function fetchModelsWithMerge(projectId) {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
 
-  const [modelsRes, wsRes] = await Promise.all([
+  const stateUrl = projectId
+    ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
+    : `${baseUrl}/v1/models/workspace`;
+
+  const [modelsRes, stateRes] = await Promise.all([
     fetch(`${baseUrl}/v1/models`).catch((err) => {
       console.warn('[Models] Error fetching catalog:', err.message);
       return null;
     }),
-    fetch(`${baseUrl}/v1/models/workspace`).catch((err) => {
-      console.warn('[Models] Error fetching workspace:', err.message);
+    fetch(stateUrl).catch((err) => {
+      console.warn('[Models] Error fetching model state:', err.message);
       return null;
     }),
   ]);
@@ -2516,20 +2536,20 @@ async function fetchModelsWithMerge() {
   const catalog = await modelsRes.json();
   const models = Array.isArray(catalog) ? catalog : (catalog.data || catalog.models || []);
 
-  const wsMap = new Map();
-  if (wsRes && wsRes.ok) {
-    const wsData = await wsRes.json();
-    const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
-    for (const wm of wsList) {
-      wsMap.set(wm.model_name, wm);
-      if (wm.name && wm.name !== wm.model_name) wsMap.set(wm.name, wm);
-      if (wm.model_id) wsMap.set(wm.model_id, wm);
+  const stateMap = new Map();
+  if (stateRes && stateRes.ok) {
+    const stateData = await stateRes.json();
+    const stateList = Array.isArray(stateData) ? stateData : (stateData.data || stateData.models || []);
+    for (const wm of stateList) {
+      stateMap.set(wm.model_name, wm);
+      if (wm.name && wm.name !== wm.model_name) stateMap.set(wm.name, wm);
+      if (wm.model_id) stateMap.set(wm.model_id, wm);
     }
   }
 
   for (const model of models) {
     const key = model.name || model.id || model.model;
-    const ws = wsMap.get(key) || wsMap.get(model.model_name) || wsMap.get(model.id);
+    const ws = stateMap.get(key) || stateMap.get(model.model_name) || stateMap.get(model.id);
     if (ws) {
       model.enabled = ws.enabled === true;
       model.downloaded = ws.downloaded === true;
@@ -2543,51 +2563,59 @@ async function fetchModelsWithMerge() {
   return models;
 }
 
-// Stale-while-revalidate cache for the merged model list.
-let modelsCache = null; // { data, timestamp }
-let modelsRefreshPromise = null;
+// Stale-while-revalidate cache for the merged model list, keyed by project id
+// (per-project model state must never bleed across projects). A null/undefined
+// key is the project-less (workspace app-default) list, e.g. on Settings.
+let modelsCache = new Map(); // projectId -> { data, timestamp }
+let modelsRefreshPromises = new Map(); // projectId -> in-flight refresh
 const MODELS_FRESH_TTL_MS = 30_000;
 
-function refreshModelsCache() {
-  if (modelsRefreshPromise) return modelsRefreshPromise;
-  modelsRefreshPromise = (async () => {
+function refreshModelsCache(projectId) {
+  if (modelsRefreshPromises.has(projectId)) return modelsRefreshPromises.get(projectId);
+  const promise = (async () => {
     try {
-      const models = await fetchModelsWithMerge();
+      const models = await fetchModelsWithMerge(projectId);
       if (models) {
-        modelsCache = { data: models, timestamp: Date.now() };
+        modelsCache.set(projectId, { data: models, timestamp: Date.now() });
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('models-updated', { models });
+          mainWindow.webContents.send('models-updated', { models, projectId });
         }
       }
       return models;
     } finally {
-      modelsRefreshPromise = null;
+      modelsRefreshPromises.delete(projectId);
     }
   })();
-  return modelsRefreshPromise;
+  modelsRefreshPromises.set(projectId, promise);
+  return promise;
 }
 
-function invalidateModelsCache() {
-  modelsCache = null;
+function invalidateModelsCache(projectId) {
+  if (projectId === undefined) {
+    modelsCache = new Map();
+  } else {
+    modelsCache.delete(projectId);
+  }
 }
 
 // Kept for backwards-compatible startup warmup.
 async function fetchModels() {
-  return refreshModelsCache();
+  return refreshModelsCache(undefined);
 }
 
 // IPC: Fetch available models — fresh cache returns instantly, stale cache
 // returns immediately while a background refresh emits `models-updated`.
-ipcMain.handle('slp-list-models', async () => {
+ipcMain.handle('slp-list-models', async (event, projectId) => {
   const now = Date.now();
-  if (modelsCache && now - modelsCache.timestamp < MODELS_FRESH_TTL_MS) {
-    return { success: true, models: modelsCache.data };
+  const cached = modelsCache.get(projectId);
+  if (cached && now - cached.timestamp < MODELS_FRESH_TTL_MS) {
+    return { success: true, models: cached.data };
   }
-  if (modelsCache) {
-    refreshModelsCache();
-    return { success: true, models: modelsCache.data };
+  if (cached) {
+    refreshModelsCache(projectId);
+    return { success: true, models: cached.data };
   }
-  const models = await refreshModelsCache();
+  const models = await refreshModelsCache(projectId);
   if (!models) return { success: false, error: 'No local service' };
   return { success: true, models };
 });
