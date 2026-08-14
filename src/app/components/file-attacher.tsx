@@ -131,7 +131,7 @@ export default function FileAttacher({
     ];
 
     // Also check file extension as fallback (especially for JSON files)
-    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json', ...(allowImages ? ['.png', '.jpg', '.jpeg'] : [])];
+    const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json', '.md', ...(allowImages ? ['.png', '.jpg', '.jpeg'] : [])];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
 
     const maxSizeBytes = maxFileSize * 1024 * 1024;
@@ -315,7 +315,7 @@ export default function FileAttacher({
       <input
         ref={fileInputRef}
         type="file"
-        accept={`.pdf,.docx,.txt,.csv,.json${allowImages ? ',.png,.jpg,.jpeg' : ''}`}
+        accept={`.pdf,.docx,.txt,.csv,.json,.md${allowImages ? ',.png,.jpg,.jpeg' : ''}`}
         onChange={handleFileInputChange}
         className="hidden"
       />

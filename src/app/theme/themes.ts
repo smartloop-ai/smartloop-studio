@@ -98,6 +98,11 @@ export function applyThemeCssVars(theme: ThemeDefinition) {
   s.setProperty('--sl-brand-active', c.brand.active);
   s.setProperty('--sl-brand-light', c.brand.light);
 
+  // Fill for the Smartloop logo mark: on dark themes it's the app-icon white
+  // (the theme's primary text), on light themes it's the brand primary so the
+  // mark stays visible on a light surface.
+  s.setProperty('--sl-brand-mark', theme.mode === 'light' ? c.brand.primary : c.text.primary);
+
   s.setProperty('--sl-text-primary', c.text.primary);
   s.setProperty('--sl-text-secondary', c.text.secondary);
   s.setProperty('--sl-text-tertiary', c.text.tertiary);

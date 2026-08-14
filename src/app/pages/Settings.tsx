@@ -424,7 +424,7 @@ export default function SettingsPage() {
                     </Box>
 
                     {/* 0. App version / updates */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                    <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
                             // Store-managed (Mac App Store) and unpackaged builds can't self-update
                             // (updaterSupported === false). Show a clean identity card only: the
@@ -432,28 +432,30 @@ export default function SettingsPage() {
                             if (!updaterSupported) {
                                 return (
                                     <div className="flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-3 min-w-0">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
+                                                so it reads cleanly on the dark surface — unlike the PNG
+                                                app-icon tile, which carries its own black background. */}
                                             <div
-                                                className="flex items-center justify-center rounded-xl shrink-0"
-                                                style={{ width: 48, height: 48, backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-default)' }}
+                                                className="flex items-center justify-center shrink-0 rounded-lg p-1"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
                                             >
                                                 <svg
-                                                    width="24"
-                                                    height="24"
+                                                    width={20}
+                                                    height={20}
                                                     viewBox="0 0 24 24"
                                                     fill="none"
-                                                    stroke="var(--sl-brand-primary)"
-                                                    strokeWidth="1.75"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    aria-label="Smartloop"
                                                 >
-                                                    <path d="m7.5 4.27 9 5.15" />
-                                                    <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                                                    <path d="M3.3 7 12 12l8.7-5" />
-                                                    <path d="M12 22V12" />
+                                                    <path
+                                                        d="M10 5H11A6 6 0 0 1 17 11V18H10A6 6 0 0 1 4 12V11A6 6 0 0 1 10 5Z"
+                                                        fill="var(--sl-brand-mark)"
+                                                    />
+                                                    <circle cx="16.7" cy="8.4" r="3" fill="var(--sl-brand-primary)" />
                                                 </svg>
                                             </div>
-                                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                                         </div>
                                         <span
                                             className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg shrink-0"

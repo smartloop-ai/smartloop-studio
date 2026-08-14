@@ -357,7 +357,7 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
       ? path.join(os.homedir(), dirPath.replace(/^~[/\\]?/, ''))
       : dirPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'Directory not found', files: [] };
-    const supportedExts = ['.pdf', '.docx', '.txt', '.csv'];
+    const supportedExts = ['.pdf', '.docx', '.txt', '.csv', '.md'];
     const entries = fs.readdirSync(resolved, { withFileTypes: true });
     const files = [];
     for (const entry of entries) {
@@ -1140,6 +1140,19 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, gener
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'SLP service not running' };
 
+  // Markdown is uploaded but indexed as plain text: hand the backend a .txt so
+  // it uses the text parser (the API reads `source` by file extension). Copy to
+  // a temp .txt and clean it up once the request finishes (see resolve wrapper).
+  let tmpTxt = null;
+  if (filePath && filePath.toLowerCase().endsWith('.md')) {
+    try {
+      const tmp = path.join(require('os').tmpdir(), `${path.basename(filePath, path.extname(filePath))}-${Date.now()}.txt`);
+      fs.copyFileSync(filePath, tmp);
+      filePath = tmp;
+      tmpTxt = tmp;
+    } catch { /* fall back to sending the .md as-is */ }
+  }
+
   const docPath = projectId ? `/v1/projects/${projectId}/documents` : '/v1/documents';
   const url = new URL(`${baseUrl}${docPath}`);
   const bodyObj = { source: filePath };
@@ -1147,7 +1160,11 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, gener
   if (generateFilename) bodyObj.generate_filename = true;
   const body = JSON.stringify(bodyObj);
 
-  return new Promise((resolve) => {
+  return new Promise((rawResolve) => {
+    const resolve = (result) => {
+      if (tmpTxt) { try { fs.unlinkSync(tmpTxt); } catch {} tmpTxt = null; }
+      rawResolve(result);
+    };
     const req = http.request({
       hostname: url.hostname,
       port: url.port,
@@ -2645,8 +2662,8 @@ app.on('open-url', (event, url) => {
 
   // Accept any URL with our protocol
   if (url.startsWith(`${PROTOCOL}://`)) {
-    console.log('[OAuth] Valid protocol URL detected, handling callback');
-    handleOAuthCallback(url);
+    console.log('[OAuth] Valid protocol URL detected, dispatching deep link');
+    handleDeepLink(url);
   } else {
     console.log('[OAuth] Deep link ignored - not our protocol');
   }
@@ -2678,8 +2695,8 @@ if (!gotTheLock) {
 
     // Accept any URL with our protocol
     if (url) {
-      console.log('[OAuth] Valid protocol URL detected, handling callback');
-      handleOAuthCallback(url);
+      console.log('[OAuth] Valid protocol URL detected, dispatching deep link');
+      handleDeepLink(url);
     }
   });
 
@@ -2697,7 +2714,7 @@ if (!gotTheLock) {
       // Delay handling until window is ready
       setTimeout(() => {
         console.log('[OAuth] Handling startup protocol URL');
-        handleOAuthCallback(protocolUrl);
+        handleDeepLink(protocolUrl);
       }, 1000);
     }
 
@@ -2908,6 +2925,31 @@ if (!gotTheLock) {
 }
 
 // Handle OAuth callback
+// Dispatch an incoming `smartloop://` deep link by URL host:
+//   smartloop://open                → show/focus the app window
+//   smartloop://oauth?…             → OAuth login callback (handleOAuthCallback)
+//   smartloop://mcp-authorization?… → MCP auth callback (handleOAuthCallback)
+// Anything else falls through to handleOAuthCallback for backward compatibility
+// with existing callback URL shapes. Called from all three deep-link entry
+// points (open-url on macOS/Linux; second-instance + startup argv on Windows).
+function handleDeepLink(url) {
+  let host = '';
+  try { host = new URL(url).host.toLowerCase(); } catch { /* malformed — treat as callback */ }
+
+  switch (host) {
+    case 'open':
+      console.log('[DeepLink] open — showing main window');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
+      return;
+    default:
+      handleOAuthCallback(url);
+  }
+}
+
 function handleOAuthCallback(url) {
   console.log('[OAuth] Callback received:', url);
 
