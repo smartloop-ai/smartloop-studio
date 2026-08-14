@@ -133,3 +133,5 @@ dist-web/
 build/slp/
 build/embedded.provisionprofile
 electron/data/slp/*/
+dist-devid/
+dist-mas/
