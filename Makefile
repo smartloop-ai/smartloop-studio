@@ -67,7 +67,8 @@ help-electron:
 	@echo "  make build-electron-windows  - Build Electron app for Windows (NSIS setup)"
 	@echo "  make build-electron-mac      - Build Electron app for macOS (DMG, zip)"
 	@echo "  make build-electron-mas      - Build Electron app for the Mac App Store (.pkg)"
-	@echo "  make push-to-mas BUILD=x.y.z - Build the MAS .pkg and upload it to App Store Connect"
+	@echo "  make push-to-mas BUILD=x.y.z - Fetch latest SLP framework (by hash), build MAS .pkg, upload it"
+	@echo "  make stage-slp-latest        - Download the latest SLP framework into build/slp/ (hash-gated)"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
@@ -161,10 +162,19 @@ build-electron-mac: clean-electron stage-slp
 	npm run electron-pack-mac
 	@echo "✅ Done! Your app is in the dist/ folder"
 
+# Stage the LATEST published SLP framework into build/slp/, gated on the CDN
+# archive's hash (its ETag). Only downloads when the remote framework changed
+# since the last stage — otherwise a no-op. Unlike `stage-slp` (APFS clone of a
+# possibly-stale local install), this guarantees the store build ships the
+# current framework. Pass FORCE=1 to re-download regardless.
+stage-slp-latest:
+	@SLP_BASE_URL="$(SLP_BASE_URL)" SLP_VERSION="$(SLP_VERSION)" FORCE="$(FORCE)" \
+		bash scripts/stage-slp-latest.sh
+
 # Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
 # Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
 # The store notarizes on ingestion, so no local notarization is done.
-build-electron-mas: clean-electron stage-slp
+build-electron-mas: clean-electron stage-slp-latest
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -196,7 +206,7 @@ ASC_PROVIDER ?= YXKDJK6637
 APPLE_ID     ?=
 ALTOOL       := DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool
 
-push-to-mas: stage-slp
+push-to-mas: stage-slp-latest
 	@if [ -z "$(BUILD)" ]; then \
 		echo "❌ Set the build number: make push-to-mas BUILD=1.0.353"; \
 		echo "   (marketing version stays package.json's; CFBundleVersion must increase, ≤3 integers)"; exit 1; \
