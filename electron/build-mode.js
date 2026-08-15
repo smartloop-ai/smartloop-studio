@@ -43,8 +43,15 @@ function isSandboxed() {
 
 /** Directory where a bundled SLP framework lives inside the packaged app. */
 function bundledSlpDir() {
-  // extraResources in electron-builder.yml (mas block) copies build/slp → slp
-  return path.join(process.resourcesPath || '', 'slp');
+  // Packaged builds: extraResources (electron-builder.yml) copies build/slp →
+  // <app>/Contents/Resources/slp.
+  const packaged = path.join(process.resourcesPath || '', 'slp');
+  if (fs.existsSync(packaged)) return packaged;
+  // Dev (`make electron-dev`): process.resourcesPath points at Electron's own
+  // Resources dir, which has no bundled SLP. Fall back to the repo's staged
+  // build/slp/ so `SMARTLOOP_FORCE_SANDBOX=1` dev runs can exercise the
+  // run-in-place path (requires `make stage-slp` to have populated build/slp/).
+  return path.join(__dirname, '..', 'build', 'slp');
 }
 
 /** The bundled SLP binary path (slp.exe on Windows, slp elsewhere). */

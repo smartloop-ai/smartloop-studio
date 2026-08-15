@@ -5,7 +5,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ShareIcon from '@mui/icons-material/Share';
+import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
@@ -800,11 +800,11 @@ export default function RightSidebar({
 
 
   const validateFile = (file: File): boolean => {
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
     const maxSize = 50 * 1024 * 1024; // 50MB
 
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT');
+    if (!allowedTypes.includes(file.type) && !/\.md$/i.test(file.name)) {
+      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, MD');
       return false;
     }
 
@@ -1090,7 +1090,7 @@ export default function RightSidebar({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.docx,.txt"
+                    accept=".pdf,.docx,.txt,.md"
                     multiple
                     onChange={handleFileSelect}
                     className="hidden"
@@ -1657,7 +1657,9 @@ export default function RightSidebar({
                   }}
                 >
                   <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
-                  <span style={{
+                  <span
+                    title={localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                    style={{
                     fontSize: '0.75rem',
                     color: 'var(--sl-text-primary)',
                     overflow: 'hidden',
@@ -1665,7 +1667,7 @@ export default function RightSidebar({
                     whiteSpace: 'nowrap',
                     flex: 1,
                   }}>
-                    {localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                    {(localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`).replace(/[/\\]+$/, '').split(/[/\\]/).pop()}
                   </span>
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
@@ -1673,12 +1675,12 @@ export default function RightSidebar({
                 </p>
               </div>
 
-              {/* Share Project — not available for the general/system project */}
+              {/* Download Project — not available for the general/system project */}
               <div>
-                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Share</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Download</div>
                 <Box
                   onClick={async () => {
-                    if (exporting || selectedProject?.system || !selectedProject?.id) return;
+                    if (exporting || !selectedProject?.id) return;
                     setExporting(true);
                     setExportDone(false);
                     try {
@@ -1701,11 +1703,11 @@ export default function RightSidebar({
                     borderRadius: '6px',
                     backgroundColor: 'var(--sl-bg-surface-1)',
                     border: '1px solid var(--sl-border-default)',
-                    cursor: (exporting || selectedProject?.system) ? 'not-allowed' : 'pointer',
-                    opacity: (exporting || selectedProject?.system) ? 0.5 : 1,
+                    cursor: exporting ? 'not-allowed' : 'pointer',
+                    opacity: exporting ? 0.5 : 1,
                     '&:hover': {
                       backgroundColor: 'var(--sl-bg-surface-1)',
-                      borderColor: (exporting || selectedProject?.system) ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
+                      borderColor: exporting ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
                     },
                   }}
                 >
@@ -1714,18 +1716,16 @@ export default function RightSidebar({
                   ) : exportDone ? (
                     <CheckIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
                   ) : (
-                    <ShareIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                    <DownloadIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
                   )}
                   <span className="text-xs text-[var(--sl-text-primary)]">
-                    {exporting ? 'Sharing...' : exportDone ? 'Shared' : (
-                      <>Share <span className="text-[var(--sl-text-muted)] bg-[var(--sl-bg-surface-1)] px-1.5 py-0.5 rounded text-[11px]">{selectedProject.name || 'Project'}</span></>
+                    {exporting ? 'Downloading...' : exportDone ? 'Downloaded' : (
+                      <>Download <span className="text-[var(--sl-text-muted)] bg-[var(--sl-bg-surface-1)] px-1.5 py-0.5 rounded text-[11px]">{selectedProject.name || 'Project'}</span></>
                     )}
                   </span>
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  {selectedProject?.system
-                    ? 'The general chat project can’t be shared.'
-                    : 'Share project and all its contents as a zip file.'}
+                  Download the project and all its contents as a zip file.
                 </p>
               </div>
             </div>

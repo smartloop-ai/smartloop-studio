@@ -20,8 +20,6 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import TerminalIcon from '@mui/icons-material/Terminal';
 
 
 
@@ -249,54 +247,6 @@ export default function SettingsPage() {
         return () => api.removeAgentRestartingListener?.();
     }, []);
 
-    // Command-line tool (`slp` on PATH) — opt-in, installed from this page.
-    type CliStatus = { supported: boolean; installed: boolean; linkPath: string | null };
-    const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
-    const [cliInstalling, setCliInstalling] = useState(false);
-    const [cliError, setCliError] = useState('');
-
-    const loadCliStatus = async () => {
-        const res = await window.electronAPI?.getCommandLineStatus?.();
-        if (res) setCliStatus(res);
-    };
-    useEffect(() => { loadCliStatus(); }, []);
-
-    // Install and uninstall share the exact same flow: swap the icon for a loader,
-    // keep it visible for a consistent minimum so both feel the same (the ops
-    // themselves are near-instant), then confirm or surface the error.
-    const runCliAction = async (
-        action: () => Promise<{ success?: boolean; error?: string } | undefined>,
-        errorMsg: string,
-    ) => {
-        setCliInstalling(true);
-        setCliError('');
-        const startedAt = Date.now();
-        try {
-            const res = await action();
-            const elapsed = Date.now() - startedAt;
-            if (elapsed < 700) await new Promise((r) => setTimeout(r, 700 - elapsed));
-            if (res?.success) {
-                await loadCliStatus();
-            } else {
-                setCliError(res?.error || errorMsg);
-            }
-        } catch (err: any) {
-            setCliError(err?.message || errorMsg);
-        } finally {
-            setCliInstalling(false);
-        }
-    };
-
-    const installCli = () => runCliAction(
-        () => window.electronAPI?.installCommandLine?.() as any,
-        'Could not install the command-line tool.',
-    );
-
-    const uninstallCli = () => runCliAction(
-        () => window.electronAPI?.uninstallCommandLine?.() as any,
-        'Could not uninstall the command-line tool.',
-    );
-
     const loadStorage = async () => {
         const res = await window.electronAPI?.getStorageUsage?.();
         if (res?.success) {
@@ -474,8 +424,49 @@ export default function SettingsPage() {
                     </Box>
 
                     {/* 0. App version / updates */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                    <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
+                            // Store-managed (Mac App Store) and unpackaged builds can't self-update
+                            // (updaterSupported === false). Show a clean identity card only: the
+                            // product name on the left and a large version pill on the right.
+                            if (!updaterSupported) {
+                                return (
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
+                                                so it reads cleanly on the dark surface — unlike the PNG
+                                                app-icon tile, which carries its own black background. */}
+                                            <div
+                                                className="flex items-center justify-center shrink-0 rounded-lg p-1"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
+                                            >
+                                                <svg
+                                                    width={20}
+                                                    height={20}
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    aria-label="Smartloop"
+                                                >
+                                                    <path
+                                                        d="M10 5H11A6 6 0 0 1 17 11V18H10A6 6 0 0 1 4 12V11A6 6 0 0 1 10 5Z"
+                                                        fill="var(--sl-brand-mark)"
+                                                    />
+                                                    <circle cx="16.7" cy="8.4" r="3" fill="var(--sl-brand-primary)" />
+                                                </svg>
+                                            </div>
+                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                                        </div>
+                                        <span
+                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg shrink-0"
+                                            style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
+                                        >
+                                            v{appVersion}
+                                        </span>
+                                    </div>
+                                );
+                            }
+
                             const checkButton = (
                                 <button
                                     onClick={checkForUpdates}
@@ -1099,60 +1090,6 @@ export default function SettingsPage() {
                             Includes token usage, model performance metrics, and session activity. No conversation content or personal data is collected.
                         </p>
                     </Box>
-
-                    {/* Command Line Tool — opt-in `slp` on PATH */}
-                    {cliStatus?.supported && (
-                        <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                            <Box className="flex items-center gap-2 mb-1">
-                                <TerminalIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Command Line Tool</h2>
-                            </Box>
-                            <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                                Install the <code className="font-mono text-[0.9em] px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)', color: 'var(--sl-brand-primary)' }}>slp</code> command so you can manage the agent and
-                                projects, and write scripts to bootstrap your projects, documents, and skills.
-                            </p>
-
-                            <Box className="flex items-center justify-between gap-4 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
-                                <Box className="flex items-center gap-3 min-w-0">
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase shrink-0" style={{
-                                        border: cliStatus.installed ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
-                                        color: cliStatus.installed ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                                        opacity: 0.7,
-                                    }}>
-                                        {cliStatus.installed ? 'Installed' : 'Not installed'}
-                                    </span>
-                                    {cliStatus.linkPath && (
-                                        <span className="text-xs font-mono truncate" style={{ color: 'var(--sl-text-faint)' }}>
-                                            {cliStatus.linkPath}
-                                        </span>
-                                    )}
-                                </Box>
-                                <button
-                                    onClick={cliStatus.installed ? uninstallCli : installCli}
-                                    disabled={cliInstalling}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 shrink-0"
-                                    style={cliStatus.installed
-                                        ? { border: '1px solid var(--sl-danger-alpha-30)', color: 'var(--sl-status-error)', backgroundColor: 'var(--sl-white-alpha-5)' }
-                                        : { border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    {cliInstalling ? (
-                                        <CircularProgress size={16} sx={{ color: cliStatus.installed ? 'var(--sl-status-error)' : 'var(--sl-brand-primary)' }} />
-                                    ) : cliStatus.installed ? (
-                                        <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                                    ) : (
-                                        <TerminalIcon sx={{ fontSize: 16 }} />
-                                    )}
-                                    {cliStatus.installed ? 'Uninstall' : 'Install'}
-                                </button>
-                            </Box>
-                            {cliError && (
-                                <p className="text-[11px] mt-2" style={{ color: 'var(--sl-status-error)' }}>{cliError}</p>
-                            )}
-                            <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
-                                Open a new terminal after installing, then run <span className="font-mono">slp --version</span> to verify.
-                            </p>
-                        </Box>
-                    )}
 
                     {/* 7. Clean — reclaim disk space */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>

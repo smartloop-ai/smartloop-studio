@@ -1,6 +1,11 @@
 # App service Makefile - Build Docker images, sync secrets, deploy Helm charts, and manage cluster rollouts
 BUILD_DIR=bin
 
+# Load local, gitignored config (e.g. Mac App Store publish: APPLE_ID,
+# ASC_PROVIDER) from .env so targets like `push-to-mas` pick it up without
+# command-line args. Missing .env is fine (the leading `-` ignores that).
+-include .env
+
 PROD_PROJECT_ID=smartloop-gcp-us-east
 DEV_PROJECT_ID=chris-smartloop-dev
 
@@ -62,6 +67,7 @@ help-electron:
 	@echo "  make build-electron-windows  - Build Electron app for Windows (NSIS setup)"
 	@echo "  make build-electron-mac      - Build Electron app for macOS (DMG, zip)"
 	@echo "  make build-electron-mas      - Build Electron app for the Mac App Store (.pkg)"
+	@echo "  make push-to-mas BUILD=x.y.z - Build the MAS .pkg and upload it to App Store Connect"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
@@ -167,10 +173,66 @@ build-electron-mas: clean-electron stage-slp
 	npm run electron-pack-mas
 	@echo "✅ Done! Your .pkg is in the dist/ folder — upload it via Transporter"
 
-# Run Electron app in development mode
+# ── Publish to the Mac App Store (TestFlight) in one step ────────────────────
+# Build the MAS .pkg (into dist-mas/, sidestepping any root-owned dist/) and
+# upload it to App Store Connect with altool:
+#
+#   make push-to-mas BUILD=1.0.353
+#
+# BUILD is the CFBundleVersion (build number). The marketing version stays
+# package.json's `version`; the build number must strictly increase across
+# uploads and be at most THREE integer components (Apple rejects 1.0.35.1).
+# So iterate as 1.0.351, 1.0.352, 1.0.353, …
+#
+# Prerequisites:
+#   • Apple Distribution + "3rd Party Mac Developer Installer" certs in the keychain
+#   • build/embedded.provisionprofile (App Store provisioning profile)
+#   • full Xcode installed (altool ships with it, not the CLT)
+#   • app-specific password stored in the keychain as AC_PASSWORD:
+#       xcrun altool --store-password-in-keychain-item AC_PASSWORD -u <apple-id> -p <pw>
+#     altool infers the Apple ID from that item, so APPLE_ID is optional.
+# Overrides: ASC_PROVIDER=<team> APPLE_ID=<apple-id>
+ASC_PROVIDER ?= YXKDJK6637
+APPLE_ID     ?=
+ALTOOL       := DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool
+
+push-to-mas: stage-slp
+	@if [ -z "$(BUILD)" ]; then \
+		echo "❌ Set the build number: make push-to-mas BUILD=1.0.353"; \
+		echo "   (marketing version stays package.json's; CFBundleVersion must increase, ≤3 integers)"; exit 1; \
+	fi
+	@if ! echo "$(BUILD)" | grep -qE '^[0-9]+(\.[0-9]+){0,2}$$'; then \
+		echo "❌ BUILD='$(BUILD)' invalid — CFBundleVersion is up to three dot-separated integers (e.g. 1.0.353)."; exit 1; \
+	fi
+	@echo "🔨 Building Vite app..."
+	npm run build
+	@echo "🍎 Packaging MAS .pkg (build $(BUILD))..."
+	@chmod -R u+w dist-mas/mas-arm64 2>/dev/null || true; rm -rf dist-mas/mas-arm64
+	MAS_BUILD=1 npx electron-builder --mac mas -c.directories.output=dist-mas -c.buildVersion=$(BUILD)
+	@PKG=$$(ls -t dist-mas/mas-arm64/*.pkg 2>/dev/null | head -1); \
+	if [ -z "$$PKG" ]; then echo "❌ No .pkg produced in dist-mas/mas-arm64/"; exit 1; fi; \
+	echo "🔎 $$PKG"; pkgutil --check-signature "$$PKG" | sed -n '1,2p'; \
+	U=""; [ -n "$(APPLE_ID)" ] && U="-u $(APPLE_ID)"; \
+	echo "⬆️  Uploading to App Store Connect (provider $(ASC_PROVIDER))…"; \
+	$(ALTOOL) --upload-app -f "$$PKG" -t macos $$U -p "@keychain:AC_PASSWORD" --asc-provider "$(ASC_PROVIDER)"
+	@echo "✅ Uploaded. Processing takes a few minutes — then assign the build in App Store Connect / TestFlight."
+
+# Run Electron app in development mode.
+# Pass MAS=1 to simulate the Mac App Store build in dev (Vite + Electron
+# hot-reload): SMARTLOOP_FORCE_SANDBOX=1 flips isSandboxed() on, so SLP state
+# relocates to the app container and SLP runs in place from build/slp/ (staged
+# by `make stage-slp`). NOTE: this exercises the sandboxed *code paths*; it does
+# NOT enforce the real macOS App Sandbox (a dev Electron isn't a MAS build), so
+# it won't reproduce spawn EPERM / mimetypes / sem_open — use `mas-dev` for that.
+#   MAS=1 make electron-dev
 run-electron-dev:
 	@echo "🚀 Starting Electron app in development mode..."
+ifdef MAS
+	@echo "🍎 MAS sandbox simulation (SMARTLOOP_FORCE_SANDBOX=1, run-in-place from build/slp/)"
+	SMARTLOOP_FORCE_SANDBOX=1 npm run electron-dev
+else
 	npm run electron-dev
+endif
 
 # Alias for run-electron-dev
 electron-dev: run-electron-dev

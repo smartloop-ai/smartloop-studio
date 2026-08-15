@@ -81,6 +81,21 @@ mas:
   entitlements: build/entitlements.mas.plist
   entitlementsInherit: build/entitlements.mas.inherit.plist
   provisioningProfile: build/embedded.provisionprofile
+# Mac App Store DEVELOPMENT build — a locally-LAUNCHABLE sandboxed .app for
+# testing the App Sandbox without going through TestFlight. Build with:
+#   MAS_BUILD=1 electron-builder --mac mas-dev   (npm run electron-pack-mas-dev)
+# Output: dist/mas-dev-arm64/Smartloop Studio.app — double-click to run it under
+# the REAL sandbox (process.mas === true), so it reproduces spawn EPERM /
+# mimetypes / sem_open exactly like the store build, but unlike the distribution
+# .pkg it launches locally. Requirements (one-time, from the Apple Developer
+# portal): an "Apple Development" signing cert in the keychain, this Mac's device
+# registered, and a "Mac App Development" provisioning profile for
+# ai.smartloop.studio (with the device) saved to build/mas-dev.provisionprofile.
+# Inherits the sandbox entitlements from `mas`.
+masDev:
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  provisioningProfile: build/mas-dev.provisionprofile
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
