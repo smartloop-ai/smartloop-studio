@@ -2579,6 +2579,20 @@ function createWindow() {
 
   // Window is shown explicitly after installation/setup completes
 
+  // A deep link can arrive before the renderer has mounted its IPC listeners
+  // (cold start, slow SLP bootstrap). Mark the renderer ready on did-finish-load
+  // and flush any queued link so callbacks (e.g. mcp-auth) aren't sent into the
+  // void. Fires again on reload/navigation, which is fine. See dispatchDeepLink.
+  mainWindow.webContents.on('did-finish-load', () => {
+    rendererReady = true;
+    if (pendingDeepLink) {
+      const url = pendingDeepLink;
+      pendingDeepLink = null;
+      console.log('[DeepLink] Renderer ready, flushing queued deep link:', url);
+      handleDeepLink(url);
+    }
+  });
+
   // Hide to tray instead of destroying so re-show is instant
   mainWindow.on('close', (event) => {
     if (!app.isQuitting) {
@@ -2590,6 +2604,7 @@ function createWindow() {
   // Only null out on actual destroy (app quit)
   mainWindow.on('closed', () => {
     mainWindow = null;
+    rendererReady = false;
   });
 
   // On focus: check auth status and refresh user profile (throttled)
@@ -2646,12 +2661,15 @@ ipcMain.handle('oauth-login', async (event) => {
 
 
 // Handle deep linking for OAuth callback
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-  }
-} else {
+if (!process.defaultApp) {
+  // Packaged build: always (re)claim smartloop:// for this app (ai.smartloop.studio).
   app.setAsDefaultProtocolClient(PROTOCOL);
+} else if (process.env.SL_REGISTER_PROTOCOL === '1' && process.argv.length >= 2) {
+  // Dev (`electron .`): only register when explicitly opted in. Otherwise the
+  // registration would bind smartloop:// to the generic node_modules Electron
+  // (bundle id com.github.Electron, shared across every Electron project), which
+  // hijacks the scheme so deep links open a bare Electron instead of the app.
+  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
 }
 
 // Handle the protocol on macOS/Linux
@@ -2663,7 +2681,7 @@ app.on('open-url', (event, url) => {
   // Accept any URL with our protocol
   if (url.startsWith(`${PROTOCOL}://`)) {
     console.log('[OAuth] Valid protocol URL detected, dispatching deep link');
-    handleDeepLink(url);
+    dispatchDeepLink(url);
   } else {
     console.log('[OAuth] Deep link ignored - not our protocol');
   }
@@ -2696,7 +2714,7 @@ if (!gotTheLock) {
     // Accept any URL with our protocol
     if (url) {
       console.log('[OAuth] Valid protocol URL detected, dispatching deep link');
-      handleDeepLink(url);
+      dispatchDeepLink(url);
     }
   });
 
@@ -2707,15 +2725,13 @@ if (!gotTheLock) {
     // Open SQLite database
     database.openDatabase();
 
-    // Check for protocol URL in startup args (Windows/Linux)
+    // Check for protocol URL in startup args (Windows/Linux). Queue it via
+    // dispatchDeepLink — createWindow (below) flushes it on did-finish-load
+    // rather than racing a fixed timer.
     const protocolUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (protocolUrl) {
       console.log('[OAuth] Protocol URL found in startup args:', protocolUrl);
-      // Delay handling until window is ready
-      setTimeout(() => {
-        console.log('[OAuth] Handling startup protocol URL');
-        handleDeepLink(protocolUrl);
-      }, 1000);
+      dispatchDeepLink(protocolUrl);
     }
 
     // Create system tray and main window (hidden until ready)
@@ -2924,6 +2940,41 @@ if (!gotTheLock) {
   });
 }
 
+// Deep links can arrive before the renderer has mounted its IPC listeners
+// (cold start, slow SLP bootstrap). Track renderer readiness and queue the most
+// recent link until did-finish-load flushes it (see createWindow), instead of
+// firing on a fixed timer and dropping callbacks into the void.
+let rendererReady = false;
+let pendingDeepLink = null;
+
+function dispatchDeepLink(url) {
+  if (rendererReady && mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    handleDeepLink(url);
+  } else {
+    console.log('[DeepLink] Renderer not ready — queueing:', url);
+    pendingDeepLink = url;
+  }
+}
+
+// Bring the main window to the foreground (handles hidden-to-tray + minimized).
+function focusMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+}
+
+// Guarded send — mainWindow can be truthy but destroyed during teardown.
+function sendToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+    return true;
+  }
+  console.warn('[DeepLink] Renderer unavailable, dropped message on channel:', channel);
+  return false;
+}
+
 // Handle OAuth callback
 // Dispatch an incoming `smartloop://` deep link by URL host:
 //   smartloop://open                → show/focus the app window
@@ -2939,11 +2990,7 @@ function handleDeepLink(url) {
   switch (host) {
     case 'open':
       console.log('[DeepLink] open — showing main window');
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-      }
+      focusMainWindow();
       return;
     default:
       handleOAuthCallback(url);
@@ -2953,47 +3000,40 @@ function handleDeepLink(url) {
 function handleOAuthCallback(url) {
   console.log('[OAuth] Callback received:', url);
 
+  let urlObj;
   try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.hostname || urlObj.pathname.replace(/^\/+/, '');
-
-    // Check if this is an MCP authorization callback
-    if (pathname === 'mcp-authorization') {
-      const serverId = urlObj.searchParams.get('server_id');
-      const error = urlObj.searchParams.get('error');
-
-      console.log('[MCP Auth] Callback - server_id:', serverId || 'none', 'error:', error || 'none');
-
-      if (mainWindow) {
-        if (error) {
-          mainWindow.webContents.send('mcp-auth-callback', { error });
-        } else if (serverId) {
-          mainWindow.webContents.send('mcp-auth-callback', { serverId });
-        } else {
-          mainWindow.webContents.send('mcp-auth-callback', { error: 'No server_id received' });
-        }
-
-        // Focus the main window
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-      }
-      return;
-    }
-
-    // Handle all other deep links (including "open", "oauth/callback") - just focus the window
-    // Tokens are delivered via localhost POST, no need to handle them via URL scheme
-    console.log('[Deep Link] Focusing window for:', pathname);
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    urlObj = new URL(url);
   } catch (err) {
-    console.error('[OAuth] Error parsing callback URL:', err);
-    if (mainWindow) {
-      mainWindow.webContents.send('oauth-callback', { error: err.message });
-    }
+    console.error('[OAuth] Malformed callback URL, ignoring:', err.message);
+    return;
   }
+
+  const action = (urlObj.hostname || urlObj.pathname.replace(/^\/+/, '')).toLowerCase();
+
+  // MCP authorization callback. server_id / error come from an external URL that
+  // any local process can invoke — treat them as untrusted. The renderer must
+  // match server_id against a pending auth flow it initiated before acting on it.
+  if (action === 'mcp-authorization') {
+    const serverId = urlObj.searchParams.get('server_id');
+    const error = urlObj.searchParams.get('error');
+
+    console.log('[MCP Auth] Callback - server_id:', serverId || 'none', 'error:', error || 'none');
+
+    let payload;
+    if (error) payload = { error };
+    else if (serverId) payload = { serverId };
+    else payload = { error: 'No server_id received' };
+
+    sendToRenderer('mcp-auth-callback', payload);
+    focusMainWindow();
+    return;
+  }
+
+  // All other callbacks (including "oauth"): tokens are delivered via localhost
+  // POST, never through the URL scheme, so there's nothing to parse — just
+  // surface the window.
+  console.log('[Deep Link] Focusing window for:', action);
+  focusMainWindow();
 }
 
 app.on('window-all-closed', () => {
