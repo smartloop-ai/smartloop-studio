@@ -6,7 +6,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
-const { useBundledSlp, bundledSlpDir } = require('./build-mode');
+const { useBundledSlp, bundledSlpDir, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
 
 const VERSION = '1.0.10';
 // SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
@@ -63,6 +63,13 @@ function isNonEmptyFile(filePath) {
 }
 
 function getInstalledBinaryPath() {
+  // Sandboxed (MAS) build: run SLP in place from the signed, sealed app bundle
+  // (Contents/Resources/slp). The App Sandbox will not exec a binary copied
+  // into the writable container — copied code fails library validation and is
+  // killed on launch — so never point at INSTALL_DIR here. Writable state still
+  // lands in the container via SLP_HOME (see slp-service.js slpEnv()).
+  if (isSandboxed()) return bundledSlpBinaryPath();
+
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
     if (fs.existsSync(getMarkerFile())) {
@@ -76,6 +83,11 @@ function getInstalledBinaryPath() {
 }
 
 function needsInstall() {
+  // Sandboxed build runs SLP in place from the app bundle (see
+  // getInstalledBinaryPath) — there is nothing to copy or download. The only
+  // requirement is that the bundled binary actually shipped in the .app.
+  if (isSandboxed()) return !isNonEmptyFile(bundledSlpBinaryPath());
+
   try {
     if (!fs.existsSync(getMarkerFile())) return true;
     const installed = fs.readFileSync(getMarkerFile(), 'utf-8').trim();
@@ -621,6 +633,18 @@ function ensureLocalBinOnPath(localBin) {
  * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
 async function setupSlpService(onProgress = null) {
+  // Sandboxed (MAS) build: SLP is run in place from the app bundle, so there is
+  // no copy/download install step. Verify the framework actually shipped, mark
+  // the install complete, and let the startup flow proceed to start the binary.
+  if (isSandboxed()) {
+    if (!isNonEmptyFile(bundledSlpBinaryPath())) {
+      throw new Error(`Bundled SLP binary missing at ${bundledSlpBinaryPath()} — the app was packaged without build/slp/`);
+    }
+    for (let step = 0; step < 4; step++) database.setInstallStepComplete(step);
+    console.log('[SLP Setup] Sandboxed build — running SLP in place from bundle:', bundledSlpBinaryPath());
+    return false;
+  }
+
   if (needsInstall()) {
     console.log('[SLP Setup] Version changed or not installed — resetting install status');
     database.resetInstallStatus();
@@ -804,6 +828,15 @@ function removeWindowsDirFromPath(dir) {
  * fresh install.
  */
 function getCommandLineStatus() {
+  // Sandboxed (Mac App Store) build: the app can't install the CLI onto the
+  // user's PATH. The App Sandbox redirects os.homedir()/$HOME to the app's
+  // container, so any ~/.local/bin (or ~/.smartloop) link and PATH edits land
+  // inside the container where the shell never sees them, and the sandbox can't
+  // write to the real home or /opt/usr/local at all; Apple also forbids a
+  // sandboxed app from installing executables. The `slp` CLI ships separately as
+  // a non-sandboxed build. Report unsupported so Settings hides the section.
+  if (isSandboxed()) return { supported: false, installed: false, linkPath: null };
+
   if (process.platform === 'win32') {
     const shim = getWindowsShimPath();
     let installed = false;
@@ -832,6 +865,11 @@ function getCommandLineStatus() {
  * writes). Returns the shell-reachable link path so the UI can show it.
  */
 function installCommandLine() {
+  // Not supported under the App Sandbox — see getCommandLineStatus().
+  if (isSandboxed()) {
+    return { success: false, supported: false, error: 'The command-line tool is unavailable in the Mac App Store build.' };
+  }
+
   if (process.platform === 'win32') {
     try {
       const binary = getInstalledBinaryPath();
@@ -860,6 +898,14 @@ function installCommandLine() {
  * slp.cmd shim and drops its dir from the user PATH.
  */
 function uninstallCommandLine() {
+  // Not supported under the App Sandbox — see getCommandLineStatus(). Still
+  // best-effort remove any stale in-container link a prior build may have made.
+  if (isSandboxed()) {
+    try { fs.unlinkSync(path.join(os.homedir(), '.local', 'bin', 'slp')); } catch {}
+    try { fs.unlinkSync(path.join(INSTALL_DIR, 'slp')); } catch {}
+    return { success: false, supported: false };
+  }
+
   if (process.platform === 'win32') {
     try {
       try { fs.unlinkSync(getWindowsShimPath()); } catch {}

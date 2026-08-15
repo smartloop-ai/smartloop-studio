@@ -1762,17 +1762,17 @@ export default function Chat(props: {
               pushing the input down. Muted so focus stays on input. Shows the live SSE
               status while generating; when idle, the last known token throughput
               ("unknown" until a first-ever response has been generated). */}
-          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none">
+          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
             {statusText || isLoading ? (
-              <span className="flex items-center gap-1 text-sl-text-disabled">
-                <span className="font-mono">&gt;</span>
-                <span>{statusText || 'Generating response…'}</span>
+              <span className="flex items-center gap-1 text-sl-text-disabled min-w-0 overflow-hidden">
+                <span className="font-mono shrink-0">&gt;</span>
+                <span className="truncate">{statusText || 'Generating response…'}</span>
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-sl-text-disabled">
-                <span className="font-mono">&gt;</span>
-                <span>Token Performance</span>
-                <span className="font-mono">{lastRunTps ?? 0} tok/s</span>
+              <span className="flex items-center gap-1 text-sl-text-disabled min-w-0 overflow-hidden">
+                <span className="font-mono shrink-0">&gt;</span>
+                <span className="truncate">Token Performance</span>
+                <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
               </span>
             )}
           </div>

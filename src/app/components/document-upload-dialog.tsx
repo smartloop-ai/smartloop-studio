@@ -59,11 +59,11 @@ export default function DocumentUploadDialog({
   };
 
   const validateAndSetFile = (file: File) => {
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv'];
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'text/markdown'];
     const maxSize = 10 * 1024 * 1024; // 10MB
 
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV');
+    if (!allowedTypes.includes(file.type) && !/\.md$/i.test(file.name)) {
+      setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, CSV, MD');
       return;
     }
 

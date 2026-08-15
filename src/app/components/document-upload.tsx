@@ -12,11 +12,11 @@ export default function DocumentUpload(props: { onUpload: any }) {
     const onFileSelect = (e: any) => {
         const file = e.files[0];
         const fileSize = file.size;
-        const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'application/vnd.ms-excel'];
+        const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/csv', 'application/vnd.ms-excel', 'text/markdown'];
 
-        if (!allowedTypes.includes(file.type)) {
+        if (!allowedTypes.includes(file.type) && !/\.md$/i.test(file.name)) {
             console.error(`Invalid file type selected: ${file.type}`);
-            setErrorMessage('Invalid file type selected. Supported types: pdf, docx, txt, csv.');
+            setErrorMessage('Invalid file type selected. Supported types: pdf, docx, txt, csv, md.');
             props.onUpload([]);
             return;
         }
@@ -89,7 +89,7 @@ export default function DocumentUpload(props: { onUpload: any }) {
         )}
         <FileUpload
             name="file"
-            accept=".pdf,.docx,.txt,.csv"
+            accept=".pdf,.docx,.txt,.csv,.md"
             onSelect={onFileSelect}
             maxFileSize={5000000}
             invalidFileSizeMessageSummary='Invalid file size. '

@@ -10,7 +10,10 @@ export default function UpdatePill() {
     const { appUpdate } = useAppStatus();
     const navigate = useNavigate();
 
-    const hasUpdate = appUpdate.updateAvailable || appUpdate.state === 'downloaded';
+    // Only when the app can actually self-update. In store-managed (Mac App
+    // Store) and unpackaged builds updaterSupported is false — updates come from
+    // the store, so a "update available" pill would be a dead end. Hide it.
+    const hasUpdate = appUpdate.updaterSupported && (appUpdate.updateAvailable || appUpdate.state === 'downloaded');
     if (!hasUpdate) return null;
 
     return (
