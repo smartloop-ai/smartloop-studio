@@ -2,6 +2,8 @@
 name: pr-release
 description: Create a release PR merging dev into main (via a throwaway release/v<version> branch) titled "<version> release" with a website-ready Release Notes section. Defaults to a patch bump of the version in package.json; pass an explicit version (e.g. /pr-release 1.1.1) to override.
 argument-hint: [version]
+effort: high
+disable-model-invocation: true
 ---
 
 # pr-release
