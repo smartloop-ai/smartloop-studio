@@ -55,6 +55,8 @@
   font-size: 0.875em;
   color: var(--sl-brand-primary);
   font-family: 'Courier New', Courier, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ── Links ───────────────────────────────────────────────────────────────── */
@@ -104,14 +106,16 @@
   margin: 1em 0;
 }
 
-/* Render streamdown tables as a single fixed-layout table so header and body
-   columns stay aligned and the table fits the message width (wrapping cell text
-   rather than overflowing). Overrides the generic block-scroll .chat-content
-   table rules below, which otherwise force display:block and misalign columns. */
+/* Render streamdown tables as a single auto-layout table so header and body
+   columns stay aligned, columns size to their content (short columns like a
+   Priority stay narrow), and the table still fits the message width (wrapping
+   long cell text rather than overflowing). Overrides the generic block-scroll
+   .chat-content table rules below, which otherwise force display:block and
+   misalign columns. */
 .chat-content [data-streamdown="table"] {
   display: table;
   width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
   border-collapse: collapse;
   border-spacing: 0;
   margin: 1em 0;
@@ -144,17 +148,17 @@
   font-weight: 600;
   border-bottom: 2px solid var(--sl-border-default);
   text-align: left;
+  vertical-align: top;
   white-space: normal !important;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .chat-content [data-streamdown="table-cell"] {
   padding: 8px 12px;
   color: var(--sl-text-tertiary);
   border-bottom: none;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  vertical-align: top;
+  overflow-wrap: break-word;
 }
 
 .chat-content [data-streamdown="table-row"]:last-child [data-streamdown="table-cell"] {
@@ -272,6 +276,7 @@
 .chat-content .csv-table th {
   padding: 12px;
   text-align: left;
+  vertical-align: top;
   font-weight: 600;
   color: var(--sl-text-secondary);
   border: 1px solid var(--sl-border-default);
@@ -290,6 +295,7 @@
   padding: 10px 12px;
   color: var(--sl-text-tertiary);
   border: 1px solid var(--sl-border-default);
+  vertical-align: top;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
