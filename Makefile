@@ -75,6 +75,9 @@ help-electron:
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
+	@echo "  make logs-mac                - Tail the Electron main-process log (Mac App Store sandbox)"
+	@echo "  make logs-slp                - Tail the SLP backend service log (mac/win/linux)"
+	@echo "  make logs-slp-mac            - Tail the SLP backend service log (Mac App Store sandbox)"
 	@echo "  make clean-electron          - Clean build artifacts"
 	@echo ""
 	@echo "🐧 Snap Store:"
@@ -403,6 +406,48 @@ logs-dev:
 	if [ ! -f "$$LOG" ]; then \
 		echo "⚠️  Log not created yet: $$LOG"; \
 		echo "   Start the app (make electron-dev) — tailing begins when it appears..."; \
+	fi; \
+	echo "📜 Tailing $$LOG (Ctrl-C to stop)"; \
+	tail -n 200 -F "$$LOG"
+
+# Sandboxed Mac App Store (MAS) build: macOS redirects ~/Library/Logs into the
+# app's sandbox container at ~/Library/Containers/<bundle-id>/Data. electron-log
+# uses app.getName() for the subfolder, which resolves to the package.json
+# "name" (smartloop-studio) even in the packaged build. Same tail -F behavior
+# as logs-dev, just for the installed store app.
+LOG_MAS_CONTAINER=ai.smartloop.studio
+
+logs-mac:
+	@LOG="$(HOME)/Library/Containers/$(LOG_MAS_CONTAINER)/Data/Library/Logs/$(LOG_APP_NAME)/main.log"; \
+	if [ ! -f "$$LOG" ]; then \
+		echo "⚠️  Log not created yet: $$LOG"; \
+		echo "   Start the Mac App Store app — tailing begins when it appears..."; \
+	fi; \
+	echo "📜 Tailing $$LOG (Ctrl-C to stop)"; \
+	tail -n 200 -F "$$LOG"
+
+LOG_SLP_DIR=$(HOME)/.smartloop
+
+# Tail the SLP backend service log live. The backend writes to <SLP_HOME>/server.log
+# via a RotatingFileHandler; `tail -F` follows across rotation. Run alongside `make electron-dev`.
+logs-slp:
+	@LOG="$(LOG_SLP_DIR)/server.log"; \
+	if [ ! -f "$$LOG" ]; then \
+		echo "⚠️  Log not created yet: $$LOG"; \
+		echo "   Start the app (make electron-dev) — tailing begins when it appears..."; \
+	fi; \
+	echo "📜 Tailing $$LOG (Ctrl-C to stop)"; \
+	tail -n 200 -F "$$LOG"
+
+LOG_MAS_SLP_DIR=$(HOME)/Library/Containers/$(LOG_MAS_CONTAINER)/Data/Library/Application Support/$(LOG_APP_NAME)/slp
+
+# Sandboxed MAS build: the SLP backend runs with its home dir relocated into the
+# sandbox container (see electron/main.js), so server.log lives under the slp dir.
+logs-slp-mac:
+	@LOG="$(LOG_MAS_SLP_DIR)/server.log"; \
+	if [ ! -f "$$LOG" ]; then \
+		echo "⚠️  Log not created yet: $$LOG"; \
+		echo "   Start the Mac App Store app — tailing begins when it appears..."; \
 	fi; \
 	echo "📜 Tailing $$LOG (Ctrl-C to stop)"; \
 	tail -n 200 -F "$$LOG"
