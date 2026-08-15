@@ -9,6 +9,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import CloudIcon from '@mui/icons-material/Cloud';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -1750,23 +1752,29 @@ export default function RightSidebar({
                     },
                   }}
                 />
-                {/* Fixed-height slot so swapping hint ↔ error never shifts the UI */}
-                <Box className="text-[10px] mt-1.5 px-1" sx={{ minHeight: '62px' }}>
-                  {mcpError ? (
-                    <span className="text-red-400 whitespace-pre-line break-words">{mcpError}</span>
-                  ) : (
-                    <div className="text-sl-text-disabled leading-snug">
-                      <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-baseline">
-                        <span className="font-semibold uppercase tracking-wide text-sl-text-muted">URL</span>
-                        <span>remote server, e.g. <code className="font-mono text-sl-text-muted">https://mcp.example.com</code></span>
-                        <span className="font-semibold uppercase tracking-wide text-sl-text-muted">Package</span>
-                        <span>run locally via <code className="font-mono text-sl-text-muted">uvx</code>, e.g. <code className="font-mono text-sl-text-muted">yahoo-finance-mcp</code></span>
-                      </div>
-                      <div className="mt-1.5 italic">Requires <code className="font-mono not-italic text-sl-text-muted">uv</code> installed on your machine.</div>
+                </div>
+                {/* Hint and error share one grid cell, so the slot is always as tall
+                    as the taller of the two and swapping them never shifts the UI. */}
+                <Box className="grid text-[10px] mt-2.5 px-1">
+                  <div className={`col-start-1 row-start-1 text-sl-text-disabled leading-snug ${mcpError ? 'invisible' : ''}`}>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center">
+                      <span className="flex items-center gap-1 font-semibold text-sl-text-muted">
+                        <CloudIcon sx={{ fontSize: 12, color: 'var(--sl-text-faint)' }} />
+                        Remote
+                      </span>
+                      <span><code className="font-mono text-sl-text-muted">https://mcp.linear.app/mcp</code></span>
+                      <span className="flex items-center gap-1 font-semibold text-sl-text-muted">
+                        <TerminalIcon sx={{ fontSize: 12, color: 'var(--sl-text-faint)' }} />
+                        Local
+                      </span>
+                      <span><code className="font-mono text-sl-text-muted">yahoo-finance-mcp</code></span>
                     </div>
+                    <div className="mt-2.5 italic">Local servers require <code className="font-mono not-italic font-bold text-sl-text-muted">uv</code> to be installed on your machine.</div>
+                  </div>
+                  {mcpError && (
+                    <span className="col-start-1 row-start-1 text-red-400 whitespace-pre-line break-words">{mcpError}</span>
                   )}
                 </Box>
-                </div>
               </div>
             </div>
           )}
