@@ -1683,27 +1683,72 @@ export default function RightSidebar({
               </div>
 
               {/* Web Search — per-project toggle; patched on the SLP project. */}
+              {(() => {
+                const webSearchOn = currentProjectData?.web_search !== false;
+                return (
               <div>
                 <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Web Search</div>
                 <Box
+                  onClick={() => onWebSearchChange?.(!webSearchOn)}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 1,
-                    padding: '6px 8px 6px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: 'var(--sl-bg-surface-1)',
-                    border: '1px solid var(--sl-border-default)',
+                    gap: 1.25,
+                    padding: '10px 8px 10px 12px',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    transition: 'all 0.25s ease',
+                    backgroundColor: webSearchOn ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
+                    border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
+                    boxShadow: webSearchOn ? '0 0 0 3px var(--sl-brand-alpha-10)' : 'none',
+                    '&:hover': {
+                      borderColor: 'var(--sl-brand-alpha-30)',
+                    },
                   }}
                 >
-                  <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
-                  <span className="text-xs flex-1" style={{ color: 'var(--sl-text-primary)' }}>
-                    Allow web search
-                  </span>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 30,
+                      height: 30,
+                      borderRadius: '8px',
+                      flexShrink: 0,
+                      transition: 'all 0.25s ease',
+                      backgroundColor: webSearchOn ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
+                      border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-subtle)'}`,
+                    }}
+                  >
+                    <TravelExploreIcon sx={{ fontSize: 18, color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)', transition: 'color 0.25s ease' }} />
+                  </Box>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold" style={{ color: 'var(--sl-text-primary)' }}>
+                        Search the web
+                      </span>
+                      <span
+                        className="text-[8px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide"
+                        style={{
+                          border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
+                          color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                          transition: 'all 0.25s ease',
+                        }}
+                      >
+                        {webSearchOn ? 'Live' : 'Off'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] leading-tight" style={{ color: 'var(--sl-text-muted)' }}>
+                      {webSearchOn ? 'Pulling in fresh results as you chat' : 'Answers from the model only'}
+                    </span>
+                  </div>
                   <Switch
                     size="small"
-                    checked={currentProjectData?.web_search !== false}
+                    checked={webSearchOn}
                     onChange={(e) => onWebSearchChange?.(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
                     sx={{
                       '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
                       '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
@@ -1714,6 +1759,8 @@ export default function RightSidebar({
                   When off, the assistant won't look things up on the web for this project.
                 </p>
               </div>
+                );
+              })()}
 
               {/* Download Project — not available for the general/system project */}
               <div>

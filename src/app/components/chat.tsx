@@ -1177,7 +1177,10 @@ export default function Chat(props: {
       setFeedback({});
     }
 
-  }, [props.conversation, props.project, isLoading]);
+    // Depend on the project id, not the whole object: unrelated project patches
+    // (e.g. toggling web_search) hand us a new object reference with the same id,
+    // and reloading here would needlessly reset messages and flicker the view.
+  }, [props.conversation, props.project?.id, isLoading]);
 
   // Fire any pending onConversationUpdate after messages state has committed to DOM
   // (calling it inside a setMessages updater triggers "setState during render" warning)
