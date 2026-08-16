@@ -801,6 +801,16 @@ export default function Home() {
     await refreshProjects();
   };
 
+  const handleWebSearchChange = async (enabled: boolean) => {
+    if (!selectedProject?.id) return;
+    // Web search is a project-level flag owned by the SLP backend; patch it
+    // through the API so the agent honors it on the next chat turn.
+    const result = await updateProjectCtx(selectedProject.id, { web_search: enabled });
+    if (result.success) {
+      setCurrentProjectData((prev: any) => prev ? { ...prev, web_search: enabled } : prev);
+    }
+  };
+
   const handleRenameProject = async (name: string) => {
     if (!selectedProject?.id) return;
     const trimmedName = name.trim();
@@ -1850,6 +1860,7 @@ description: A clear description of what this skill does and when to use it
                     onFolderPathChange={handleFolderPathChange}
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
+                    onWebSearchChange={handleWebSearchChange}
                     user={user}
                     model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}

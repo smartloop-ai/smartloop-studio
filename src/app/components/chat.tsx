@@ -746,12 +746,16 @@ export default function Chat(props: {
         requestBody.cwd = props.project.folder_path;
       }
 
-      // Per-message locale context. Any "/" skill the user picked travels inside
-      // the message content itself (a leading "/<slug>" token), which the SLP
-      // server parses to resolve the skill — no separate skill field is needed.
+      // Per-message locale + time context so the model can answer "what's today"
+      // and localize output. Any "/" skill the user picked travels inside the
+      // message content itself (a leading "/<slug>" token), which the SLP server
+      // parses to resolve the skill — no separate skill field is needed.
+      const now = new Date();
       messageObject.additional_message_params = {
-        user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        user_language: navigator.language,
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        locale: navigator.language,
+        // Unix time (seconds since epoch, UTC) — unambiguous current instant.
+        user_date: Math.floor(now.getTime() / 1000),
       };
 
       const createStream = async () => {
@@ -1449,7 +1453,7 @@ export default function Chat(props: {
                   <React.Fragment key={msg.id}>
                     {msg.role === 'assistant' ?
                       <Box className="flex items-start gap-3 w-full">
-                        <Box className="flex-1">
+                        <Box className="flex-1 min-w-0">
                           <div className="chat-paper p-3 md:p-5 text-sl-text-primary text-sm md:text-base leading-relaxed">
                             <div className="prose max-w-none chat-content">
                               {msg.is_new && !msg.content ? (
@@ -1476,14 +1480,41 @@ export default function Chat(props: {
                                 <div className="flex flex-wrap gap-2">
                                   {msg.citations.map((citation: any, idx: number) => {
                                     const label = citation.document_name || citation.document_id;
+                                    const url = [citation.url, citation.link, citation.source_url, citation.href, citation.web_url]
+                                      .find((v: any) => typeof v === 'string' && v.trim())
+                                      ?.trim() || '';
+                                    const labelIsUrl = typeof label === 'string' && /^(https?:\/\/|www\.)/i.test(label);
+                                    const isLink = !!url || labelIsUrl;
+                                    const linkUrl = url || (labelIsUrl ? label : '');
+                                    // Strip the query string + hash from anything shown in the pill —
+                                    // full URLs (with ?utm_...) otherwise overflow and break the layout.
+                                    const cleanUrl = (u: string) => {
+                                        try {
+                                            const parsed = new URL(/^www\./i.test(u) ? `https://${u}` : u);
+                                            parsed.search = '';
+                                            parsed.hash = '';
+                                            return parsed.toString();
+                                        } catch { return u; }
+                                    };
+                                    const displayLabel = isLink
+                                        ? (/^(https?:\/\/|www\.)/i.test(label || '') ? cleanUrl(label) : (label || cleanUrl(linkUrl)))
+                                        : (label || '');
                                     const folderPath = props.project?.folder_path;
                                     const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
                                     const size = citation.file_size || citation.size;
-                                    const meta = [size ? formatBytes(size) : '', docTypeLabel(label)]
-                                      .filter(Boolean)
-                                      .join(' · ');
+                                    const meta = isLink
+                                      ? (() => {
+                                          try { return new URL(/^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl).hostname.replace(/^www\./, ''); }
+                                          catch { return linkUrl; }
+                                        })()
+                                      : [size ? formatBytes(size) : '', docTypeLabel(label)]
+                                          .filter(Boolean)
+                                          .join(' · ');
                                     const openDoc = () => {
-                                      if (resolvedPath) {
+                                      if (isLink) {
+                                        const target = /^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl;
+                                        window.electronAPI?.openExternal(target);
+                                      } else if (resolvedPath) {
                                         window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
                                       }
                                     };
@@ -1491,39 +1522,54 @@ export default function Chat(props: {
                                       <div
                                         key={idx}
                                         className="group inline-flex items-center gap-2 px-2 py-1 rounded-md border border-sl-border-hover hover:border-sl-brand-primary hover:bg-sl-bg-surface-2 transition-colors cursor-pointer"
-                                        title={resolvedPath || citation.document_id}
+                                        title={isLink ? linkUrl : (resolvedPath || citation.document_id)}
                                         onClick={openDoc}
                                       >
                                         <div
                                           className="flex items-center justify-center w-6 h-6 rounded flex-shrink-0"
                                           style={{ background: 'var(--sl-brand-alpha-15)' }}
                                         >
-                                          <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                          {isLink
+                                            ? <LinkIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                            : <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />}
                                         </div>
                                         <div className="whitespace-nowrap leading-tight">
-                                          <div className="text-[11px] font-semibold text-sl-text-secondary">{label}</div>
-                                          <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide">{meta}</div>
+                                          <div className="text-[11px] font-semibold text-sl-text-secondary truncate" style={{ maxWidth: 200 }}>{displayLabel}</div>
+                                          <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide truncate" style={{ maxWidth: 200 }}>{meta}</div>
                                         </div>
                                         <div className="flex items-center gap-0.5 flex-shrink-0 ml-0.5">
-                                          <Tooltip title="Preview" arrow placement="top">
-                                            <button
-                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
-                                              onClick={(e) => { e.stopPropagation(); openDoc(); }}
-                                            >
-                                              <VisibilityOutlinedIcon sx={{ fontSize: 13 }} />
-                                            </button>
-                                          </Tooltip>
-                                          <Tooltip title="Download" arrow placement="top">
-                                            <button
-                                              className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (resolvedPath) window.electronAPI?.downloadDocument?.(resolvedPath);
-                                              }}
-                                            >
-                                              <SaveAltIcon sx={{ fontSize: 13 }} />
-                                            </button>
-                                          </Tooltip>
+                                          {isLink ? (
+                                            <Tooltip title="Open in browser" arrow placement="top">
+                                              <button
+                                                className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                                onClick={(e) => { e.stopPropagation(); openDoc(); }}
+                                              >
+                                                <VisibilityOutlinedIcon sx={{ fontSize: 13 }} />
+                                              </button>
+                                            </Tooltip>
+                                          ) : (
+                                            <>
+                                              <Tooltip title="Preview" arrow placement="top">
+                                                <button
+                                                  className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                                  onClick={(e) => { e.stopPropagation(); openDoc(); }}
+                                                >
+                                                  <VisibilityOutlinedIcon sx={{ fontSize: 13 }} />
+                                                </button>
+                                              </Tooltip>
+                                              <Tooltip title="Download" arrow placement="top">
+                                                <button
+                                                  className="flex items-center justify-center w-5 h-5 rounded text-sl-text-muted hover:text-sl-brand-primary transition-colors"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (resolvedPath) window.electronAPI?.downloadDocument?.(resolvedPath);
+                                                  }}
+                                                >
+                                                  <SaveAltIcon sx={{ fontSize: 13 }} />
+                                                </button>
+                                              </Tooltip>
+                                            </>
+                                          )}
                                         </div>
                                       </div>
                                     );

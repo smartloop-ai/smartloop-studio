@@ -1,4 +1,5 @@
-import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment } from '@mui/material';
+import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment, Switch } from '@mui/material';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -33,6 +34,7 @@ interface RightSidebarProps {
   onFolderPathChange?: (path: string) => void;
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
+  onWebSearchChange?: (enabled: boolean) => void;
   user: any;
   model?: string;
   activeTab: string;
@@ -87,6 +89,7 @@ export default function RightSidebar({
   onDeleteDocument,
   onColorChange,
   onRenameProject,
+  onWebSearchChange,
   model,
   activeTab,
   onTabChange,
@@ -524,7 +527,12 @@ export default function RightSidebar({
       };
     });
 
-    return [...merged, ...pending];
+    // Indexed docs that don't correspond to a directory file (e.g. uploaded via
+    // the picker — they live in the backend store, not the project folder) would
+    // otherwise be dropped. Surface them so documents stay visible after indexing.
+    const unmatched = serverDocs.filter((d: any) => d.id && !matchedApiIds.has(d.id));
+
+    return [...merged, ...unmatched, ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
   // Load MCP servers from project data
@@ -1252,9 +1260,6 @@ export default function RightSidebar({
                                       {ext}
                                     </span>
                                   )}
-                                  {fileSizeLabel && (
-                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
-                                  )}
                                   {(() => {
                                     const status = isFsOnly ? 'local' : (docIndexStatus || 'pending');
                                     if (status === 'indexed') {
@@ -1304,7 +1309,9 @@ export default function RightSidebar({
                                       </span>
                                     );
                                   })()}
-
+                                  {fileSizeLabel && (
+                                    <span style={{ fontSize: '9px', color: 'var(--sl-text-faint)' }}>{fileSizeLabel}</span>
+                                  )}
                                 </Box>
                               </Box>
                             </Box>
@@ -1672,6 +1679,39 @@ export default function RightSidebar({
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
                   Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
+                </p>
+              </div>
+
+              {/* Web Search — per-project toggle; patched on the SLP project. */}
+              <div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Web Search</div>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    padding: '6px 8px 6px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
+                  }}
+                >
+                  <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
+                  <span className="text-xs flex-1" style={{ color: 'var(--sl-text-primary)' }}>
+                    Allow web search
+                  </span>
+                  <Switch
+                    size="small"
+                    checked={currentProjectData?.web_search !== false}
+                    onChange={(e) => onWebSearchChange?.(e.target.checked)}
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
+                    }}
+                  />
+                </Box>
+                <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
+                  When off, the assistant won't look things up on the web for this project.
                 </p>
               </div>
 
