@@ -1143,10 +1143,17 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, gener
   // Markdown is uploaded but indexed as plain text: hand the backend a .txt so
   // it uses the text parser (the API reads `source` by file extension). Copy to
   // a temp .txt and clean it up once the request finishes (see resolve wrapper).
+  // Preserve the original name via the `filename` field so the document list
+  // keeps showing the .md name/extension instead of the internal .txt copy.
   let tmpTxt = null;
+  let tmpDir = null;
+  let displayName = filePath ? path.basename(filePath) : null;
   if (filePath && filePath.toLowerCase().endsWith('.md')) {
     try {
-      const tmp = path.join(require('os').tmpdir(), `${path.basename(filePath, path.extname(filePath))}-${Date.now()}.txt`);
+      // Unique temp dir so we can keep the original basename (no timestamp) —
+      // the copy is `<name>.txt`, but `filename` below carries the real `<name>.md`.
+      tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'slp-md-'));
+      const tmp = path.join(tmpDir, `${path.basename(filePath, path.extname(filePath))}.txt`);
       fs.copyFileSync(filePath, tmp);
       filePath = tmp;
       tmpTxt = tmp;
@@ -1156,6 +1163,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, gener
   const docPath = projectId ? `/v1/projects/${projectId}/documents` : '/v1/documents';
   const url = new URL(`${baseUrl}${docPath}`);
   const bodyObj = { source: filePath };
+  if (displayName) bodyObj.filename = displayName;
   if (cwd) bodyObj.cwd = cwd;
   if (generateFilename) bodyObj.generate_filename = true;
   const body = JSON.stringify(bodyObj);
@@ -1163,6 +1171,7 @@ ipcMain.handle('slp-add-document', async (event, filePath, projectId, cwd, gener
   return new Promise((rawResolve) => {
     const resolve = (result) => {
       if (tmpTxt) { try { fs.unlinkSync(tmpTxt); } catch {} tmpTxt = null; }
+      if (tmpDir) { try { fs.rmdirSync(tmpDir); } catch {} tmpDir = null; }
       rawResolve(result);
     };
     const req = http.request({

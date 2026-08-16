@@ -20,10 +20,31 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
+import KeyIcon from '@mui/icons-material/Key';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
+
+import { getLocalApiEndpoint } from '@/app/constants';
 
 
 
 const TPS_DAYS = 365;
+
+function BraveLogo({ size = 22 }: { size?: number }) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            role="img"
+            aria-label="Brave"
+            className="flex-shrink-0"
+            style={{ color: 'var(--sl-brand-primary)' }}
+        >
+            <path fill="currentColor" d="M15.68 0l2.096 2.38s1.84-.512 2.709.358c.868.87 1.584 1.638 1.584 1.638l-.562 1.381.715 2.047s-2.104 7.98-2.35 8.955c-.486 1.919-.818 2.66-2.198 3.633-1.38.972-3.884 2.66-4.293 2.916-.409.256-.92.692-1.38.692-.46 0-.97-.436-1.38-.692a185.796 185.796 0 01-4.293-2.916c-1.38-.973-1.712-1.714-2.197-3.633-.247-.975-2.351-8.955-2.351-8.955l.715-2.047-.562-1.381s.716-.768 1.585-1.638c.868-.87 2.708-.358 2.708-.358L8.321 0h7.36zm-3.679 14.936c-.14 0-1.038.317-1.758.69-.72.373-1.242.637-1.409.742-.167.104-.065.301.087.409.152.107 2.194 1.69 2.393 1.866.198.175.489.464.687.464.198 0 .49-.29.688-.464.198-.175 2.24-1.759 2.392-1.866.152-.108.254-.305.087-.41-.167-.104-.689-.368-1.41-.741-.72-.373-1.617-.69-1.757-.69zm0-11.278s-.409.001-1.022.206-1.278.46-1.584.46c-.307 0-2.581-.434-2.581-.434S4.119 7.152 4.119 7.849c0 .697.339.881.68 1.243l2.02 2.149c.192.203.59.511.356 1.066-.235.555-.58 1.26-.196 1.977.384.716 1.042 1.194 1.464 1.115.421-.08 1.412-.598 1.776-.834.364-.237 1.518-1.19 1.518-1.554 0-.365-1.193-1.02-1.413-1.168-.22-.15-1.226-.725-1.247-.95-.02-.227-.012-.293.284-.851.297-.559.831-1.304.742-1.8-.089-.495-.95-.753-1.565-.986-.615-.232-1.799-.671-1.947-.74-.148-.068-.11-.133.339-.175.448-.043 1.719-.212 2.292-.052.573.16 1.552.403 1.632.532.079.13.149.134.067.579-.081.445-.5 2.581-.541 2.96-.04.38-.12.63.288.724.409.094 1.097.256 1.333.256s.924-.162 1.333-.256c.408-.093.329-.344.288-.723-.04-.38-.46-2.516-.541-2.961-.082-.445-.012-.45.067-.579.08-.129 1.059-.372 1.632-.532.573-.16 1.845.009 2.292.052.449.042.487.107.339.175-.148.069-1.332.508-1.947.74-.615.233-1.476.49-1.565.986-.09.496.445 1.241.742 1.8.297.558.304.624.284.85-.02.226-1.026.802-1.247.95-.22.15-1.413.804-1.413 1.169 0 .364 1.154 1.317 1.518 1.554.364.236 1.355.755 1.776.834.422.079 1.08-.4 1.464-1.115.384-.716.039-1.422-.195-1.977-.235-.555.163-.863.355-1.066l2.02-2.149c.341-.362.68-.546.68-1.243 0-.697-2.695-3.96-2.695-3.96s-2.274.436-2.58.436c-.307 0-.972-.256-1.585-.461-.613-.205-1.022-.206-1.022-.206z" />
+        </svg>
+    );
+}
 
 function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; created_at: string }[] }) {
     const dailyMap = new Map<string, number[]>();
@@ -283,6 +304,92 @@ export default function SettingsPage() {
             if (res?.success) await loadStorage();
         } finally {
             setIsCleaning(false);
+        }
+    };
+
+    // Web Search — provider registered on the local SLP (stored encrypted).
+    const [searchProvider, setSearchProvider] = useState<{ provider?: string; configured: boolean; supported: boolean } | null>(null);
+    const [braveKey, setBraveKey] = useState('');
+    const [searchKeyMasked, setSearchKeyMasked] = useState('');
+    const [searchSaving, setSearchSaving] = useState(false);
+    const [searchError, setSearchError] = useState('');
+
+    const maskKey = (key: string) => `${key.slice(0, 4)}${'•'.repeat(8)}`;
+
+    const loadSearchProvider = async () => {
+        const stored = await storageService.getSetting('web_search_key_masked');
+        if (typeof stored === 'string' && stored) setSearchKeyMasked(stored);
+        try {
+            const base = await getLocalApiEndpoint();
+            const res = await fetch(`${base}/v1/search/provider`);
+            if (res.ok) {
+                const data = await res.json();
+                setSearchProvider({
+                    provider: data?.provider ?? undefined,
+                    configured: !!data?.configured,
+                    supported: !!data?.supported,
+                });
+            } else {
+                setSearchProvider({ configured: false, supported: true });
+            }
+        } catch {
+            setSearchProvider({ configured: false, supported: true });
+            setSearchError('Could not reach the local service to check web search.');
+        }
+    };
+    useEffect(() => { loadSearchProvider(); }, []);
+
+    const registerSearchProvider = async (tokenArg?: string) => {
+        const token = (tokenArg ?? braveKey).trim();
+        if (!token) { setSearchError('Enter your Brave Search API key.'); return; }
+        setSearchSaving(true);
+        setSearchError('');
+        try {
+            const base = await getLocalApiEndpoint();
+            const res = await fetch(`${base}/v1/search/provider`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: 'brave', token }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                setSearchError(data?.detail || `Failed to register provider (${res.status}).`);
+            } else {
+                const masked = maskKey(token);
+                setSearchKeyMasked(masked);
+                storageService.setSetting('web_search_key_masked', masked);
+                setBraveKey('');
+                setSearchProvider({ provider: 'brave', configured: true, supported: true });
+            }
+        } catch {
+            setSearchError('Could not reach the local service.');
+        } finally {
+            setSearchSaving(false);
+        }
+    };
+
+    // Pasting an API key registers it immediately — no need to hit Connect.
+    const handleBraveKeyPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+        const pasted = e.clipboardData.getData('text').trim();
+        if (!pasted) return;
+        e.preventDefault();
+        setBraveKey(pasted);
+        registerSearchProvider(pasted);
+    };
+
+    const disconnectSearchProvider = async () => {
+        setSearchSaving(true);
+        setSearchError('');
+        try {
+            const base = await getLocalApiEndpoint();
+            await fetch(`${base}/v1/search/provider`, { method: 'DELETE' });
+            setSearchKeyMasked('');
+            storageService.setSetting('web_search_key_masked', '');
+            setSearchProvider({ provider: undefined, configured: false, supported: true });
+        } catch {
+            setSearchError('Could not reach the local service.');
+        } finally {
+            setSearchSaving(false);
         }
     };
 
@@ -964,6 +1071,90 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
+
+                    {/* 3. Web Search */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-1">
+                            <TravelExploreIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Web Search</h2>
+                        </Box>
+                        <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                            Let the assistant look up the latest information on the web. Web search is powered by Brave Search — connect your API key below to enable it.
+                        </p>
+
+                        {searchProvider === null ? (
+                            <Box className="flex items-center gap-2 py-1.5">
+                                <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
+                                <span className="text-xs" style={{ color: 'var(--sl-text-muted)' }}>Checking web search status…</span>
+                            </Box>
+                        ) : searchProvider.configured ? (
+                            <Box className="flex items-center justify-between gap-3 p-3 rounded-lg" sx={{ bgcolor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)' }}>
+                                <Box className="flex items-center gap-2.5 min-w-0">
+                                    <div className="flex items-center justify-center shrink-0 rounded-lg p-1" style={{ border: '1px solid var(--sl-border-subtle)' }}>
+                                        <BraveLogo size={18} />
+                                    </div>
+                                    <span className="text-sm" style={{ color: 'var(--sl-text-secondary)', fontFamily: 'monospace' }}>
+                                        {searchKeyMasked || 'Brave Search connected'}
+                                    </span>
+                                </Box>
+                                <button
+                                    onClick={disconnectSearchProvider}
+                                    disabled={searchSaving}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors disabled:opacity-50 hover:bg-[var(--sl-bg-surface-1)]"
+                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-secondary)', backgroundColor: 'var(--sl-bg-surface-2)' }}
+                                >
+                                    <LinkOffIcon sx={{ fontSize: 16 }} />
+                                    Disconnect
+                                </button>
+                            </Box>
+                        ) : (
+                            <>
+                                <Box className="flex items-center gap-3 p-3 rounded-lg" sx={{ bgcolor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)' }}>
+                                    <div className="flex items-center justify-center shrink-0 rounded-lg p-1" style={{ border: '1px solid var(--sl-border-subtle)' }}>
+                                        <BraveLogo size={18} />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        value={braveKey}
+                                        onChange={(e) => setBraveKey(e.target.value)}
+                                        onPaste={handleBraveKeyPaste}
+                                        placeholder="Paste your Brave Search API key"
+                                        className="flex-1 min-w-0 bg-transparent outline-none text-sm py-1"
+                                        style={{ color: 'var(--sl-text-primary)' }}
+                                    />
+                                    <button
+                                        onClick={() => registerSearchProvider()}
+                                        disabled={searchSaving}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors disabled:opacity-50 hover:bg-[var(--sl-bg-surface-1)]"
+                                        style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-secondary)', backgroundColor: 'var(--sl-bg-surface-2)' }}
+                                    >
+                                        {searchSaving ? <CircularProgress size={15} sx={{ color: 'var(--sl-text-secondary)' }} /> : <KeyIcon sx={{ fontSize: 16 }} />}
+                                        Connect
+                                    </button>
+                                </Box>
+                            </>
+                        )}
+
+                        {!searchProvider?.supported && searchProvider?.configured === false && searchProvider !== null && (
+                            <p className="text-[11px] mt-2 leading-relaxed" style={{ color: 'var(--sl-status-warning)' }}>
+                                Web search is not supported by your current agent version — update the local agent service first.
+                            </p>
+                        )}
+                        {searchError && (
+                            <p className="text-[11px] mt-2 leading-relaxed" style={{ color: 'var(--sl-status-error)' }}>{searchError}</p>
+                        )}
+                        <p className="text-xs mt-3 px-0.5 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
+                            Get your free Brave API key from{' '}
+                            <button
+                                onClick={() => window.electronAPI?.openExternal?.('https://brave.com/search/api/')}
+                                className="underline underline-offset-2 transition-opacity hover:opacity-70"
+                                style={{ color: 'var(--sl-brand-primary)' }}
+                            >
+                                brave.com/search/api
+                            </button>
+                            {' '}— your key is stored encrypted on your machine.
+                        </p>
+                    </Box>
 
                     {/* 4. Active Model Card — specs + performance graph */}
                     {slpConfig && (() => {
