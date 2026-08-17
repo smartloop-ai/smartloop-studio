@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const database = require('./database');
 const { useBundledSlp, bundledSlpDir, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
 
-const VERSION = '1.0.10';
+const VERSION = '1.1.0';
 // SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
 //   https://dl.smartloop.ai/slp/<version>/<plat>-<arch>-slp.<ext>
 const SLP_BASE_URL = (process.env.SLP_BASE_URL || 'https://dl.smartloop.ai').replace(/\/+$/, '');

@@ -36,6 +36,12 @@
   --sl-status-info: #3b82f6;
   --sl-status-purple: #a855f7;
 
+  /* ── Third-party brands ────────────────────────────────── */
+  /* Brave Orange — a vendor brand color, so it stays fixed across themes
+     rather than following --sl-brand-*. Used by the Brave Search row. */
+  --sl-brave-orange: #fb542b;
+  --sl-brave-alpha-40: rgba(251, 84, 43, 0.4);
+
   /* ── Borders ───────────────────────────────────────────── */
   --sl-border-subtle: #1a1a1a;
   --sl-border-default: #2a2a2a;
