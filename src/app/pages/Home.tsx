@@ -155,7 +155,11 @@ export default function Home() {
       }
     };
     loadModel();
-  }, [selectedProject]);
+    // Keyed on the fields this effect actually reads, not the object: any
+    // project refetch (e.g. after saving a setting) hands back a new object
+    // reference, which would otherwise re-run the health + /models/load round
+    // trip for a project that never changed.
+  }, [selectedProject?.id, selectedProject?.model_name]);
 
   // Project list + selection + bootstrap (auto-create/auto-select) are owned by
   // ProjectContext. Here we only dismiss the loader once the context has
@@ -429,6 +433,20 @@ export default function Home() {
 
     return () => { cancelled = true; };
   }, [selectedProject?.id]);
+
+  // Re-sync the per-project web-search flag whenever the project list refreshes.
+  // The loader above only re-runs on an id change, so without this a value that
+  // changed on the backend (or a project revisited after switching away) would
+  // keep showing whatever currentProjectData was last set to.
+  useEffect(() => {
+    const enabled = selectedProject?.web_search_enabled;
+    if (enabled === undefined) return;
+    setCurrentProjectData((prev: any) =>
+      prev && prev.id === selectedProject?.id && prev.web_search_enabled !== enabled
+        ? { ...prev, web_search_enabled: enabled }
+        : prev
+    );
+  }, [selectedProject?.id, selectedProject?.web_search_enabled]);
 
   // Refresh currentProjectData.documents when a document is uploaded or processing completes
   useEffect(() => {
@@ -805,9 +823,11 @@ export default function Home() {
     if (!selectedProject?.id) return;
     // Web search is a project-level flag owned by the SLP backend; patch it
     // through the API so the agent honors it on the next chat turn.
-    const result = await updateProjectCtx(selectedProject.id, { web_search: enabled });
+    // Field name must match the API schema (`web_search_enabled`) — anything
+    // else is dropped by the PATCH and the toggle silently does nothing.
+    const result = await updateProjectCtx(selectedProject.id, { web_search_enabled: enabled });
     if (result.success) {
-      setCurrentProjectData((prev: any) => prev ? { ...prev, web_search: enabled } : prev);
+      setCurrentProjectData((prev: any) => prev ? { ...prev, web_search_enabled: enabled } : prev);
     }
   };
 

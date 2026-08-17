@@ -1489,27 +1489,26 @@ export default function Chat(props: {
                                     const labelIsUrl = typeof label === 'string' && /^(https?:\/\/|www\.)/i.test(label);
                                     const isLink = !!url || labelIsUrl;
                                     const linkUrl = url || (labelIsUrl ? label : '');
-                                    // Strip the query string + hash from anything shown in the pill —
-                                    // full URLs (with ?utm_...) otherwise overflow and break the layout.
-                                    const cleanUrl = (u: string) => {
+                                    // Show only the base URL (scheme + host) in the pill. Paths,
+                                    // query strings and hashes are what blow the layout out; the
+                                    // full URL stays on the tooltip and is what actually opens.
+                                    const baseUrl = (u: string) => {
                                         try {
                                             const parsed = new URL(/^www\./i.test(u) ? `https://${u}` : u);
-                                            parsed.search = '';
-                                            parsed.hash = '';
-                                            return parsed.toString();
+                                            // `host`, not `hostname`: keeps a non-default port.
+                                            return `${parsed.protocol}//${parsed.host.replace(/^www\./, '')}`;
                                         } catch { return u; }
                                     };
                                     const displayLabel = isLink
-                                        ? (/^(https?:\/\/|www\.)/i.test(label || '') ? cleanUrl(label) : (label || cleanUrl(linkUrl)))
+                                        ? baseUrl(linkUrl || label || '')
                                         : (label || '');
                                     const folderPath = props.project?.folder_path;
                                     const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
                                     const size = citation.file_size || citation.size;
+                                    // Links carry no second line — it used to repeat the hostname,
+                                    // which the label now shows on its own.
                                     const meta = isLink
-                                      ? (() => {
-                                          try { return new URL(/^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl).hostname.replace(/^www\./, ''); }
-                                          catch { return linkUrl; }
-                                        })()
+                                      ? ''
                                       : [size ? formatBytes(size) : '', docTypeLabel(label)]
                                           .filter(Boolean)
                                           .join(' · ');
@@ -1538,7 +1537,9 @@ export default function Chat(props: {
                                         </div>
                                         <div className="whitespace-nowrap leading-tight">
                                           <div className="text-[11px] font-semibold text-sl-text-secondary truncate" style={{ maxWidth: 200 }}>{displayLabel}</div>
-                                          <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide truncate" style={{ maxWidth: 200 }}>{meta}</div>
+                                          {meta && (
+                                            <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide truncate" style={{ maxWidth: 200 }}>{meta}</div>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-0.5 flex-shrink-0 ml-0.5">
                                           {isLink ? (
