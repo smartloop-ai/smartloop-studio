@@ -20,7 +20,7 @@ set -euo pipefail
 
 BASE_URL="${SLP_BASE_URL:-https://dl.smartloop.ai}"
 BASE_URL="${BASE_URL%/}"
-VERSION="${SLP_VERSION:?Set SLP_VERSION (e.g. SLP_VERSION=1.0.10)}"
+VERSION="${SLP_VERSION:?Set SLP_VERSION (e.g. SLP_VERSION=1.1.0)}"
 
 # MAS ships Apple Silicon only, so we always stage darwin-arm64 here.
 ARCHIVE_URL="${BASE_URL}/slp/${VERSION}/darwin-arm64-slp.tar.gz"
