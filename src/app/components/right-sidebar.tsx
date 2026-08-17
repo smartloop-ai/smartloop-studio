@@ -1684,9 +1684,10 @@ export default function RightSidebar({
 
               {/* Web Search — per-project toggle; patched on the SLP project. */}
               {(() => {
-                // Off by default, matching the backend's `web_search_enabled`
-                // default — never show "Live" for a project that isn't.
-                const webSearchOn = currentProjectData?.web_search_enabled === true;
+                // On by default, matching the backend's `web_search_enabled`
+                // default: only an explicit `false` reads as off, so a project
+                // whose config predates the flag shows as enabled.
+                const webSearchOn = currentProjectData?.web_search_enabled !== false;
                 return (
               <div>
                 <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Web Search</div>
