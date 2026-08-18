@@ -889,11 +889,18 @@ export default function RightSidebar({
       if (isRemoteMcpInput(input)) {
         console.log('[MCP] Registering remote server:', input);
 
+        // Typing a curated server's URL by hand should still install it as
+        // curated — the tile-matching below already normalizes for exactly this.
+        const typedEntry = mcpCatalog.find(
+          (e) => normalizeMcpUrl(e.remote_config?.server_url) === normalizeMcpUrl(input),
+        );
+
         const result = await mcpServerService.registerMcpServer(
           selectedProject.id,
           {
             server_type: 'remote',
             server_url: input,
+            ...(typedEntry ? { catalog_slug: typedEntry.slug } : {}),
             return_url: 'smartloop://mcp-authorization',
           }
         );
@@ -1010,6 +1017,10 @@ export default function RightSidebar({
     try {
       const result = await mcpServerService.registerMcpServer(selectedProject.id, {
         server_type: 'remote',
+        // The slug is what makes this a curated install: the backend resolves
+        // the catalog entry and stores its description and tags, so the record
+        // keeps our copy instead of the vendor's and skips LLM enrichment.
+        catalog_slug: entry.slug,
         server_url: serverUrl,
         name: entry.display_name,
         return_url: 'smartloop://mcp-authorization',

@@ -303,6 +303,10 @@ const registerMcpServer = async (projectId: string, options: {
   token?: string;
   env?: Record<string, string>;
   return_url?: string;
+  /** Install a curated catalog entry. The backend resolves the slug and takes
+   *  the server URL, description and tags from the catalog, so curated copy
+   *  can't drift; server_url is still sent as the fallback. */
+  catalog_slug?: string;
 }): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
@@ -330,6 +334,7 @@ const registerMcpServer = async (projectId: string, options: {
     }
     if (options.token) body.token = options.token.trim();
     if (options.return_url) body.return_url = options.return_url;
+    if (options.catalog_slug) body.catalog_slug = options.catalog_slug;
 
     const response = await fetch(apiUrl, {
       method: 'POST',
