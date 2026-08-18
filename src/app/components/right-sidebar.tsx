@@ -35,6 +35,7 @@ interface RightSidebarProps {
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
   onWebSearchChange?: (enabled: boolean) => void;
+  searchConfigured?: boolean;
   user: any;
   model?: string;
   activeTab: string;
@@ -104,6 +105,7 @@ export default function RightSidebar({
   onColorChange,
   onRenameProject,
   onWebSearchChange,
+  searchConfigured,
   model,
   activeTab,
   onTabChange,
@@ -1729,27 +1731,29 @@ export default function RightSidebar({
                 // default: only an explicit `false` reads as off, so a project
                 // whose config predates the flag shows as enabled.
                 const webSearchOn = currentProjectData?.web_search_enabled !== false;
+                const searchReady = searchConfigured !== false;
                 return (
               <div>
                 <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Web Search</div>
                 <Box
-                  onClick={() => onWebSearchChange?.(!webSearchOn)}
+                  onClick={() => searchReady && onWebSearchChange?.(!webSearchOn)}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1.25,
                     padding: '10px 8px 10px 12px',
                     borderRadius: '10px',
-                    cursor: 'pointer',
+                    cursor: searchReady ? 'pointer' : 'default',
                     position: 'relative',
                     overflow: 'hidden',
                     transition: 'all 0.25s ease',
+                    opacity: searchReady ? 1 : 0.4,
                     backgroundColor: webSearchOn ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
                     border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
                     boxShadow: webSearchOn ? '0 0 0 3px var(--sl-brand-alpha-10)' : 'none',
-                    '&:hover': {
+                    '&:hover': searchReady ? {
                       borderColor: 'var(--sl-brand-alpha-30)',
-                    },
+                    } : {},
                   }}
                 >
                   <Box
@@ -1776,21 +1780,24 @@ export default function RightSidebar({
                       <span
                         className="text-[8px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide"
                         style={{
-                          border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
-                          color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                          border: `1px solid ${!searchReady ? 'var(--sl-border-default)' : webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
+                          color: !searchReady ? 'var(--sl-text-faint)' : webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                           transition: 'all 0.25s ease',
                         }}
                       >
-                        {webSearchOn ? 'Live' : 'Off'}
+                        {!searchReady ? 'No key' : webSearchOn ? 'Live' : 'Off'}
                       </span>
                     </div>
                     <span className="text-[10px] leading-tight" style={{ color: 'var(--sl-text-muted)' }}>
-                      {webSearchOn ? 'Pulling in fresh results as you chat' : 'Answers from the model only'}
+                      {!searchReady
+                        ? 'Add a Brave Search API key in Settings'
+                        : webSearchOn ? 'Pulling in fresh results as you chat' : 'Answers from the model only'}
                     </span>
                   </div>
                   <Switch
                     size="small"
                     checked={webSearchOn}
+                    disabled={!searchReady}
                     onChange={(e) => onWebSearchChange?.(e.target.checked)}
                     onClick={(e) => e.stopPropagation()}
                     sx={{
@@ -1800,7 +1807,9 @@ export default function RightSidebar({
                   />
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  When off, the assistant won't look things up on the web for this project.
+                  {searchReady
+                    ? 'When off, the assistant won\'t look things up on the web for this project.'
+                    : 'Connect your Brave Search API key in Settings to enable web search.'}
                 </p>
               </div>
                 );
