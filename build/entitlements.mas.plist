@@ -16,7 +16,22 @@
     <key>com.apple.security.network.client</key>
     <true/>
 
-    <!-- Bundled SLP binds a loopback port for the local OpenAI-compatible API. -->
+    <!--
+      REQUIRED — do not remove. All inference is local: the app spawns the
+      bundled SLP framework (Contents/Resources/slp), which runs a uvicorn HTTP
+      server bound to 127.0.0.1 (slp-service.js forces SLP_API_HOST=127.0.0.1
+      when sandboxed), and the renderer talks to it over http://localhost:<port>
+      via the OpenAI SDK. App Sandbox denies bind()/listen() without this
+      entitlement even on loopback, so dropping it breaks every chat, document
+      index, and model download in the store build.
+
+      App Review's automated scan does NOT see matching functionality here
+      because the listening socket is opened by that child process, not by the
+      Electron binary it scans. Expect the "network.server entitlement but no
+      matching functionality" rejection on submission and reply with the
+      justification in docs/app-store-review.md, which also belongs in App Store
+      Connect → App Review Information → Notes.
+    -->
     <key>com.apple.security.network.server</key>
     <true/>
 
