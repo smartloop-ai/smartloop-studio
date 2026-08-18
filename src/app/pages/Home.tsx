@@ -837,6 +837,14 @@ export default function Home() {
     }
   };
 
+  // Flip web search for the current project. Backs both the Cmd/Ctrl+Shift+S
+  // shortcut and the status bar toggle in chat.tsx; undefined counts as ON, so
+  // the first press on a pre-flag project turns it off rather than re-enabling.
+  const toggleWebSearch = () => {
+    if (!selectedProject?.id) return;
+    handleWebSearchChange(currentProjectData?.web_search_enabled === false);
+  };
+
   const handleRenameProject = async (name: string) => {
     if (!selectedProject?.id) return;
     const trimmedName = name.trim();
@@ -1207,6 +1215,15 @@ description: A clear description of what this skill does and when to use it
         return;
       }
 
+      // Cmd/Ctrl+Shift+S toggles web search for the current project. Matched on
+      // e.code like the KeyT case above, and gated on shiftKey so it doesn't
+      // swallow the plain Cmd/Ctrl+S that saves a skill in the editor/rail.
+      if (e.code === 'KeyS' && e.shiftKey) {
+        e.preventDefault();
+        toggleWebSearch();
+        return;
+      }
+
       if (e.key >= '1' && e.key <= '9') {
         const index = parseInt(e.key, 10) - 1;
         if (index < openTabs.length) {
@@ -1219,7 +1236,7 @@ description: A clear description of what this skill does and when to use it
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openTabs, activeTabId, selectedProject?.id]);
+  }, [openTabs, activeTabId, selectedProject?.id, currentProjectData?.web_search_enabled]);
 
   // Put the caret in the composer. Chat owns the textarea, so reach it by name the
   // same way the quote-selection flow does (chat.tsx) instead of threading a ref
@@ -1896,6 +1913,8 @@ description: A clear description of what this skill does and when to use it
                           onConversationUpdate={handleConversationUpdate}
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
+                          webSearchEnabled={currentProjectData?.web_search_enabled}
+                          onWebSearchChange={handleWebSearchChange}
                         />
                       );
                     })()}
