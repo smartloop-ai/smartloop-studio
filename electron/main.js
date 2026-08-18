@@ -1290,33 +1290,40 @@ ipcMain.handle('get-slp-config', async () => {
   }
 });
 
+/**
+ * Run a command without blocking the main process. Resolves to stdout, or null
+ * on any failure (missing binary, non-zero exit, timeout). Never use the sync
+ * variants for hardware probes — nvidia-smi and system_profiler can take
+ * seconds to return and would freeze the whole app while they do.
+ */
+function runCapture(cmd, args = [], timeout = 3000) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { timeout, encoding: 'utf8' }, (err, stdout) => {
+      resolve(err ? null : String(stdout));
+    });
+  });
+}
+
 // GPU name doesn't change during a session — probe once and cache the promise
 let gpuNamePromise = null;
 function getGpuName() {
   if (gpuNamePromise) return gpuNamePromise;
   gpuNamePromise = (async () => {
-    try {
-      const result = execFileSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits'], { timeout: 3000 }).toString().trim();
-      const name = result.split('\n')[0].trim();
-      if (name) return name;
-    } catch { }
+    const nvidia = await runCapture('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader,nounits']);
+    const nvidiaName = nvidia?.trim().split('\n')[0].trim();
+    if (nvidiaName) return nvidiaName;
 
     if (process.platform === 'linux') {
-      try {
-        const { execSync } = require('child_process');
-        const result = execSync("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display'", { timeout: 3000, shell: true }).toString();
-        const match = result.match(/:\s+(.+)$/m);
-        if (match) return match[1].trim();
-      } catch { }
+      const out = await runCapture('lspci');
+      const line = out?.split('\n').find((l) => /vga|3d|display/i.test(l));
+      const match = line?.match(/:\s+(.+)$/);
+      if (match) return match[1].trim();
     }
 
     if (process.platform === 'darwin') {
-      try {
-        const { execSync } = require('child_process');
-        const result = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model'", { timeout: 3000, shell: true }).toString();
-        const match = result.match(/Chipset Model:\s+(.+)$/m);
-        if (match) return match[1].trim();
-      } catch { }
+      const out = await runCapture('system_profiler', ['SPDisplaysDataType'], 5000);
+      const match = out?.match(/Chipset Model:\s+(.+)$/m);
+      if (match) return match[1].trim();
     }
 
     return null;
@@ -1817,16 +1824,15 @@ function updateSplashProgress(data) {
 }
 
 /**
- * First-launch step: show a visible "verifying system requirements" phase and
- * surface the detected accelerator before the initial download begins.
+ * First-launch step: show the "verifying system requirements" phase. Nothing is
+ * awaited here — the install isn't gated on hardware, so the download starts
+ * immediately and the GPU label is logged from a background probe.
  */
-async function verifyRequirementsOnSplash() {
-  const cap = detectSystemCapability();
-  if (!splashWindow || splashWindow.isDestroyed()) return cap;
+function verifyRequirementsOnSplash() {
   updateSplashProgress({ status: 'verifying', message: 'Verifying system requirements…' });
-  // Brief pause so the verifying step is visible before download / block.
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-  return cap;
+  detectSystemCapability()
+    .then((cap) => console.log('[SLP] System capability:', cap.label))
+    .catch(() => { });
 }
 
 // IPC: load model (called from renderer)
@@ -2448,65 +2454,52 @@ function applySplashTheme() {
   splashWindow.webContents.executeJavaScript(css).catch(() => {});
 }
 
-let cachedSystemCapability = null;
+let systemCapabilityPromise = null;
 
 /**
- * Describe the machine's GPU for display on the splash. SLP runs on Vulkan,
- * which accelerates on Apple Silicon (Metal), NVIDIA, AMD and Intel GPUs, so
- * this is informational labeling only — the install is no longer gated on it.
- * When an NVIDIA GPU is present we surface its VRAM (via nvidia-smi) since that
- * detail is useful; other GPUs are reported generically.
+ * Describe the machine's GPU for logging. SLP runs on Vulkan, which accelerates
+ * on Apple Silicon (Metal), NVIDIA, AMD and Intel GPUs, so this is informational
+ * labeling only — the install is not gated on it. Keep it OFF the startup
+ * critical path: the nvidia-smi probe can take seconds on machines with NVIDIA
+ * drivers installed (hybrid-graphics laptops especially), and it used to run
+ * synchronously, stalling the splash before the download even began.
  * See https://www.smartloop.ai/docs/getting-started/
  */
 function detectSystemCapability() {
-  if (cachedSystemCapability) return cachedSystemCapability;
+  if (systemCapabilityPromise) return systemCapabilityPromise;
 
-  // Test override: SLP_FORCE_TIER=accelerated|limited|cpu forces the result so
-  // every splash/verify branch can be exercised regardless of real hardware.
-  const forced = process.env.SLP_FORCE_TIER;
-  if (forced === 'accelerated' || forced === 'limited' || forced === 'cpu') {
-    const samples = {
-      accelerated: { tier: 'accelerated', label: 'NVIDIA GPU · 8 GB', detail: 'Vulkan acceleration ready' },
-      limited: { tier: 'limited', label: 'NVIDIA GPU · 2.0 GB', detail: 'Low VRAM — smaller models run best' },
-      cpu: { tier: 'cpu', label: 'GPU detected', detail: 'Vulkan acceleration ready' },
-    };
-    cachedSystemCapability = samples[forced];
-    return cachedSystemCapability;
-  }
-
-  const platform = process.platform;
-  const arch = process.arch;
-  let result;
-
-  if (platform === 'darwin' && arch === 'arm64') {
-    // Apple Silicon (M1 or newer) — Metal GPU acceleration.
-    result = { tier: 'accelerated', label: 'Apple Silicon', detail: 'GPU acceleration ready' };
-  } else {
-    // Probe for an NVIDIA GPU via nvidia-smi purely to surface its VRAM. A
-    // failure just means "not NVIDIA" — AMD/Intel GPUs still run under Vulkan.
-    try {
-      const out = execFileSync(
-        'nvidia-smi',
-        ['--query-gpu=memory.total', '--format=csv,noheader,nounits'],
-        { encoding: 'utf8', timeout: 4000 }
-      ).trim();
-      const memMb = parseInt(out.split('\n')[0].trim(), 10);
-      const memGb = memMb / 1024;
-      if (Number.isFinite(memGb) && memGb >= 4) {
-        result = { tier: 'accelerated', label: `NVIDIA GPU · ${Math.round(memGb)} GB`, detail: 'Vulkan acceleration ready' };
-      } else if (Number.isFinite(memGb)) {
-        result = { tier: 'limited', label: `NVIDIA GPU · ${memGb.toFixed(1)} GB`, detail: 'Low VRAM — smaller models run best' };
-      } else {
-        throw new Error('unparsable nvidia-smi output');
-      }
-    } catch (e) {
-      // Not an NVIDIA GPU — AMD/Intel/other, still Vulkan-accelerated.
-      result = { tier: 'accelerated', label: 'GPU', detail: 'Vulkan acceleration ready' };
+  systemCapabilityPromise = (async () => {
+    // Test override: SLP_FORCE_TIER=accelerated|limited|cpu forces the result so
+    // every splash/verify branch can be exercised regardless of real hardware.
+    const forced = process.env.SLP_FORCE_TIER;
+    if (forced === 'accelerated' || forced === 'limited' || forced === 'cpu') {
+      const samples = {
+        accelerated: { tier: 'accelerated', label: 'NVIDIA GPU · 8 GB', detail: 'Vulkan acceleration ready' },
+        limited: { tier: 'limited', label: 'NVIDIA GPU · 2.0 GB', detail: 'Low VRAM — smaller models run best' },
+        cpu: { tier: 'cpu', label: 'GPU detected', detail: 'Vulkan acceleration ready' },
+      };
+      return samples[forced];
     }
-  }
 
-  cachedSystemCapability = result;
-  return result;
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+      // Apple Silicon (M1 or newer) — Metal GPU acceleration, no probe needed.
+      return { tier: 'accelerated', label: 'Apple Silicon', detail: 'GPU acceleration ready' };
+    }
+
+    // Probe for an NVIDIA GPU purely to surface its VRAM. No output just means
+    // "not NVIDIA" — AMD/Intel GPUs still run under Vulkan.
+    const out = await runCapture('nvidia-smi', ['--query-gpu=memory.total', '--format=csv,noheader,nounits']);
+    const memGb = parseInt(out?.trim().split('\n')[0].trim(), 10) / 1024;
+    if (Number.isFinite(memGb) && memGb >= 4) {
+      return { tier: 'accelerated', label: `NVIDIA GPU · ${Math.round(memGb)} GB`, detail: 'Vulkan acceleration ready' };
+    }
+    if (Number.isFinite(memGb)) {
+      return { tier: 'limited', label: `NVIDIA GPU · ${memGb.toFixed(1)} GB`, detail: 'Low VRAM — smaller models run best' };
+    }
+    return { tier: 'accelerated', label: 'GPU', detail: 'Vulkan acceleration ready' };
+  })();
+
+  return systemCapabilityPromise;
 }
 
 function createSplashWindow() {
@@ -2843,11 +2836,9 @@ if (!gotTheLock) {
             // Show the "verifying" beat for continuity, but don't gate the
             // install on GPU vendor: SLP now uses Vulkan, which runs on AMD,
             // Intel and NVIDIA GPUs alike, so the old NVIDIA/CUDA-only check
-            // wrongly blocked capable machines. cap is still used for labeling.
-            const cap = await verifyRequirementsOnSplash();
-            console.log('[SLP] System capability:', cap.label);
-            // Move off the "verifying" message immediately so it doesn't linger
-            // while the first network request is in flight.
+            // wrongly blocked capable machines. The probe runs in the
+            // background — startup never waits on it.
+            verifyRequirementsOnSplash();
             updateSplashProgress({ status: 'installing', message: useBundledSlp() ? 'Installing components…' : 'Downloading components…' });
             await setupSlpService((progress) => updateSplashProgress(progress));
             if (!database.isFullyInstalled()) {
