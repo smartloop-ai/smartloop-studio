@@ -2565,6 +2565,24 @@ function createWindow() {
 
   setupTitlebarAndAttachToWindow(mainWindow);
 
+  // Chrome-style tab shortcuts. Cmd/Ctrl+W has to be claimed here rather than in
+  // the renderer: on macOS the default application menu binds Cmd+W to "Close
+  // Window", and menu accelerators swallow the key before the page ever sees it.
+  // before-input-event runs ahead of both, so we intercept and forward to the UI.
+  // Shift keeps Chrome's meaning — close the window (which hides to tray here).
+  // Both Cmd and Ctrl are accepted on every platform: Ctrl+W is unbound on macOS,
+  // so honoring it too costs nothing and matches muscle memory either way.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.alt) return;
+    if (!(input.meta || input.control) || (input.key || '').toLowerCase() !== 'w') return;
+    event.preventDefault();
+    if (input.shift) {
+      mainWindow.close();
+    } else {
+      mainWindow.webContents.send('shortcut-close-tab');
+    }
+  });
+
   // Remove default menu or create custom menu
   if (process.platform !== 'darwin') {
     Menu.setApplicationMenu(null);
