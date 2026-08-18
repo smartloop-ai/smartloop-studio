@@ -66,6 +66,7 @@ export default function Home() {
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
+  const [searchConfigured, setSearchConfigured] = useState<boolean>(false);
   // Primary orchestrator model for the active project — passed to the sidebar's
   // Models panel so it can filter itself out of the auxiliary list.
   const [currentModel, setCurrentModel] = useState<string>('');
@@ -160,6 +161,26 @@ export default function Home() {
     // reference, which would otherwise re-run the health + /models/load round
     // trip for a project that never changed.
   }, [selectedProject?.id, selectedProject?.model_name]);
+
+  // Check whether the web search provider (Brave) is configured so the chat
+  // toggle can be disabled when no API key is registered.
+  useEffect(() => {
+    const checkSearchProvider = async () => {
+      try {
+        const api = (window as any).electronAPI;
+        const baseUrl = api?.getLocalApiUrl ? await api.getLocalApiUrl() : null;
+        if (!baseUrl) return;
+        const res = await fetch(`${baseUrl}/v1/search/provider`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchConfigured(!!data.configured);
+        }
+      } catch {
+        setSearchConfigured(false);
+      }
+    };
+    checkSearchProvider();
+  }, []);
 
   // Project list + selection + bootstrap (auto-create/auto-select) are owned by
   // ProjectContext. Here we only dismiss the loader once the context has
@@ -826,7 +847,7 @@ export default function Home() {
   };
 
   const handleWebSearchChange = async (enabled: boolean) => {
-    if (!selectedProject?.id) return;
+    if (!selectedProject?.id || !searchConfigured) return;
     // Web search is a project-level flag owned by the SLP backend; patch it
     // through the API so the agent honors it on the next chat turn.
     // Field name must match the API schema (`web_search_enabled`) — anything
@@ -841,7 +862,7 @@ export default function Home() {
   // shortcut and the status bar toggle in chat.tsx; undefined counts as ON, so
   // the first press on a pre-flag project turns it off rather than re-enabling.
   const toggleWebSearch = () => {
-    if (!selectedProject?.id) return;
+    if (!selectedProject?.id || !searchConfigured) return;
     handleWebSearchChange(currentProjectData?.web_search_enabled === false);
   };
 
@@ -1914,6 +1935,7 @@ description: A clear description of what this skill does and when to use it
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
                           webSearchEnabled={currentProjectData?.web_search_enabled}
+                          searchConfigured={searchConfigured}
                           onWebSearchChange={handleWebSearchChange}
                         />
                       );
@@ -1930,6 +1952,7 @@ description: A clear description of what this skill does and when to use it
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
                     onWebSearchChange={handleWebSearchChange}
+                    searchConfigured={searchConfigured}
                     user={user}
                     model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}

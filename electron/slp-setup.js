@@ -64,11 +64,18 @@ function isNonEmptyFile(filePath) {
 
 function getInstalledBinaryPath() {
   // Sandboxed (MAS) build: run SLP in place from the signed, sealed app bundle
-  // (Contents/Resources/slp). The App Sandbox will not exec a binary copied
+  // (process.resourcesPath/slp). The App Sandbox will not exec a binary copied
   // into the writable container — copied code fails library validation and is
   // killed on launch — so never point at INSTALL_DIR here. Writable state still
   // lands in the container via SLP_HOME (see slp-service.js slpEnv()).
   if (isSandboxed()) return bundledSlpBinaryPath();
+
+  // Non-sandboxed bundled build (macOS dmg, Windows, Linux): the SLP framework
+  // ships inside the app via extraResources (process.resourcesPath/slp).
+  // Run it in place from the bundle — copying the entire framework to
+  // ~/.smartloop/<version>/ is slow and can hang the splash screen on
+  // Linux/Windows. Writable state goes to INSTALL_DIR via SLP_HOME.
+  if (useBundledSlp()) return bundledSlpBinaryPath();
 
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
@@ -83,10 +90,11 @@ function getInstalledBinaryPath() {
 }
 
 function needsInstall() {
-  // Sandboxed build runs SLP in place from the app bundle (see
-  // getInstalledBinaryPath) — there is nothing to copy or download. The only
-  // requirement is that the bundled binary actually shipped in the .app.
-  if (isSandboxed()) return !isNonEmptyFile(bundledSlpBinaryPath());
+  // Sandboxed and non-sandboxed bundled builds run SLP in place from the app
+  // bundle via extraResources (process.resourcesPath/slp) — there is nothing
+  // to copy or download. The only requirement is that the bundled binary
+  // actually shipped in the app.
+  if (isSandboxed() || useBundledSlp()) return !isNonEmptyFile(bundledSlpBinaryPath());
 
   try {
     if (!fs.existsSync(getMarkerFile())) return true;

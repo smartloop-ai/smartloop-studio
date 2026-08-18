@@ -161,6 +161,7 @@ export default function Chat(props: {
   // status bar can flip it without opening the rail. Undefined reads as ON, the
   // same default the backend applies to projects predating the flag.
   webSearchEnabled?: boolean,
+  searchConfigured?: boolean,
   onWebSearchChange?: (enabled: boolean) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
@@ -1897,7 +1898,10 @@ export default function Chat(props: {
                 )}
                 {model && (
                   <Tooltip title={model} placement="top" arrow>
-                    <span className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default" style={{ color: 'var(--sl-text-faint)' }}>
+                    <span
+                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
+                      style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                    >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                         <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
                         <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
@@ -1908,16 +1912,19 @@ export default function Chat(props: {
                 )}
                 {props.onWebSearchChange && (
                   <Tooltip
-                    title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
+                    title={props.searchConfigured === false
+                      ? 'Add a Brave Search API key in Settings to enable web search'
+                      : `${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
                     placement="top"
                     arrow
                   >
                     <button
                       type="button"
                       aria-pressed={webSearchOn}
+                      disabled={props.searchConfigured === false}
                       onClick={() => props.onWebSearchChange?.(!webSearchOn)}
-                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2"
-                      style={{ color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }}
+                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
+                      style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="11" cy="11" r="8" />
