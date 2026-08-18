@@ -1150,14 +1150,32 @@ description: A clear description of what this skill does and when to use it
       if (convId === 'new') {
         setConversation(null);
         setChatMessage(null);
-      } else if (convId !== conversation?.id) {
-        const stored = await storageService.getConversation(convId);
-        if (stored) {
-          const messages = await storageService.getMessages(convId);
-          setConversation({ ...stored, messages: messages || [] });
+        // `new=1` stops the URL effect from auto-selecting the latest conversation.
+        if (selectedProject) navigate(`/?project=${selectedProject.id}&new=1`, { replace: true });
+      } else {
+        // Point the URL at the tab so a reload lands here. `replace` because
+        // stepping through tabs shouldn't pile up history entries. The URL effect
+        // re-reads the conversation and persists the selection; the local load
+        // below still runs so the content swaps without waiting a round trip.
+        navigate(
+          selectedProject
+            ? `/?conversation=${convId}&project=${selectedProject.id}`
+            : `/?conversation=${convId}`,
+          { replace: true }
+        );
+        if (convId !== conversation?.id) {
+          const stored = await storageService.getConversation(convId);
+          if (stored) {
+            const messages = await storageService.getMessages(convId);
+            setConversation({ ...stored, messages: messages || [] });
+          }
         }
       }
     }
+    // Document/skill tabs deliberately leave the URL alone: the only URL that
+    // describes them is `?project=<id>`, and the URL effect treats that as
+    // "open this project" and redirects to its latest conversation — which would
+    // bounce the user straight back off the tab they just selected.
   };
 
   const handleCloseTab = (tabId: string) => {
@@ -1217,13 +1235,23 @@ description: A clear description of what this skill does and when to use it
   const closeActiveTabRef = useRef<() => void>(() => { });
   closeActiveTabRef.current = () => { if (activeTabId) handleCloseTab(activeTabId); };
 
+  // Same reasoning for tab selection: handleTabSelect skips reloading when the
+  // target is already the open conversation, so it must see the CURRENT
+  // conversation. The keyboard effect below re-registers on activeTabId, which
+  // changes before the conversation finishes loading — a handler captured there
+  // holds a pre-switch conversation and wrongly no-ops when you step back to the
+  // tab it names. Clicks are immune (React rebinds onClick every render).
+  const selectTabRef = useRef<(tabId: string) => void>(() => { });
+  selectTabRef.current = handleTabSelect;
+
   useEffect(() => {
     window.electronAPI?.onCloseTabShortcut?.(() => closeActiveTabRef.current());
     return () => window.electronAPI?.removeCloseTabShortcutListener?.();
   }, []);
 
   // Cmd/Ctrl+T opens a new conversation tab; Cmd/Ctrl + 1..9 jumps to the nth
-  // open tab. Ctrl+Tab cycling is handled by the conversation/project switcher above.
+  // open tab; Cmd/Ctrl+Shift+[ / ] steps through them. Ctrl+Tab cycling is
+  // handled by the conversation/project switcher above.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -1245,11 +1273,30 @@ description: A clear description of what this skill does and when to use it
         return;
       }
 
+      // Cmd/Ctrl+Shift+[ / ] steps to the previous / next open tab, wrapping at
+      // both ends — the binding browsers use for tab navigation. Matched on
+      // e.code because Shift+bracket reports '{' / '}' as e.key.
+      if (e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        if (openTabs.length === 0) return;
+        const currentIndex = openTabs.findIndex((t) => t.id === activeTabId);
+        // No active tab yet — step in from the near end rather than nowhere.
+        if (currentIndex === -1) {
+          selectTabRef.current(openTabs[0].id);
+          return;
+        }
+        if (openTabs.length < 2) return;
+        const delta = e.code === 'BracketLeft' ? -1 : 1;
+        const nextIndex = (currentIndex + delta + openTabs.length) % openTabs.length;
+        selectTabRef.current(openTabs[nextIndex].id);
+        return;
+      }
+
       if (e.key >= '1' && e.key <= '9') {
         const index = parseInt(e.key, 10) - 1;
         if (index < openTabs.length) {
           e.preventDefault();
-          handleTabSelect(openTabs[index].id);
+          selectTabRef.current(openTabs[index].id);
         }
         return;
       }
@@ -1951,8 +1998,6 @@ description: A clear description of what this skill does and when to use it
                     onFolderPathChange={handleFolderPathChange}
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
-                    onWebSearchChange={handleWebSearchChange}
-                    searchConfigured={searchConfigured}
                     user={user}
                     model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}

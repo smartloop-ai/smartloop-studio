@@ -20,6 +20,9 @@ import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
+const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+const SEARCH_HOTKEY = IS_MAC ? '⌘K' : 'Ctrl+K';
+
 const getColorForProject = (project: any): string => {
   if (project?.color) {
     if (project.color === LEGACY_PINK) return DEFAULT_COLOR;
@@ -367,6 +370,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     }
   };
 
+  // Cmd/Ctrl+K jumps to the project search — the shortcut the input already
+  // advertises. Matched on e.code so a non-QWERTY layout still triggers on the
+  // K key, and selects any existing query so typing replaces it.
+  useEffect(() => {
+    const handleSearchHotkey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.code !== 'KeyK') return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener('keydown', handleSearchHotkey);
+    return () => window.removeEventListener('keydown', handleSearchHotkey);
+  }, []);
+
   const handleProjectClick = async (projectId: string | null) => {
     // Resolve the target project synchronously (localProjects is already in memory)
     // so we can navigate immediately.
@@ -701,7 +719,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
               borderRadius: '3px',
               fontWeight: 500,
               letterSpacing: '0.3px',
-            }}>⌘K</Box>
+            }}>{SEARCH_HOTKEY}</Box>
           )}
         </Box>
       </Box>
