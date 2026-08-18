@@ -178,6 +178,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeNavigateToProjectListener: () => {
     ipcRenderer.removeAllListeners('navigate-to-project');
   },
+  // Chrome-style close-tab shortcut, forwarded from the main process
+  onCloseTabShortcut: (callback) => {
+    ipcRenderer.on('shortcut-close-tab', () => callback());
+  },
+  removeCloseTabShortcutListener: () => {
+    ipcRenderer.removeAllListeners('shortcut-close-tab');
+  },
   // Bootstrap progress
   onBootstrapProgress: (callback) => {
     ipcRenderer.on('bootstrap-progress', (event, data) => callback(data));

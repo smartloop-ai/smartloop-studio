@@ -647,33 +647,39 @@ export default function Home() {
     };
   }, []);
 
-  // Ctrl+Tab / Ctrl+Shift+Tab to switch conversation tabs
+  // Ctrl+Tab cycles conversations within the project; Ctrl+Shift+Tab cycles
+  // projects. Ctrl (not Cmd) on purpose — Cmd+Tab is the macOS app switcher.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'Tab') {
-        e.preventDefault();
-        if (projectConversations.length > 1) {
-          const currentIndex = projectConversations.findIndex(
-            (c: any) => c.id === conversation?.id
-          );
-          const len = projectConversations.length;
-          const nextIndex = e.shiftKey
-            ? (currentIndex - 1 + len) % len
-            : (currentIndex + 1) % len;
-          const nextConv = projectConversations[nextIndex];
-          if (nextConv) {
-            const newUrl = selectedProject
-              ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
-              : `/?conversation=${nextConv.id}`;
-            navigate(newUrl);
-          }
+      if (!e.ctrlKey || e.key !== 'Tab') return;
+      e.preventDefault();
+
+      if (e.shiftKey) {
+        if (projectsList.length > 1) {
+          const currentIndex = projectsList.findIndex((p: any) => p.id === selectedProject?.id);
+          const nextProject = projectsList[(currentIndex + 1) % projectsList.length];
+          if (nextProject && nextProject.id !== selectedProject?.id) selectProject(nextProject.id);
+        }
+        return;
+      }
+
+      if (projectConversations.length > 1) {
+        const currentIndex = projectConversations.findIndex(
+          (c: any) => c.id === conversation?.id
+        );
+        const nextConv = projectConversations[(currentIndex + 1) % projectConversations.length];
+        if (nextConv) {
+          const newUrl = selectedProject
+            ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
+            : `/?conversation=${nextConv.id}`;
+          navigate(newUrl);
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projectConversations, conversation, selectedProject, navigate]);
+  }, [projectConversations, conversation, selectedProject, navigate, projectsList, selectProject]);
 
 
 
@@ -1175,11 +1181,31 @@ description: A clear description of what this skill does and when to use it
 
   const getActiveTab = () => openTabs.find((t) => t.id === activeTabId) || null;
 
-  // Cmd/Ctrl + 1..9 jumps to the nth open tab; Cmd/Ctrl + Tab / Shift+Tab cycles tabs
+  // Cmd/Ctrl+W closes the active tab (Chrome-style). The key is claimed in the
+  // main process because macOS's app menu owns Cmd+W — see electron/main.js.
+  // Kept behind a ref so the IPC listener is registered once but always runs the
+  // current handler, which closes over activeTabId / openTabs.
+  const closeActiveTabRef = useRef<() => void>(() => { });
+  closeActiveTabRef.current = () => { if (activeTabId) handleCloseTab(activeTabId); };
+
+  useEffect(() => {
+    window.electronAPI?.onCloseTabShortcut?.(() => closeActiveTabRef.current());
+    return () => window.electronAPI?.removeCloseTabShortcutListener?.();
+  }, []);
+
+  // Cmd/Ctrl+T opens a new conversation tab; Cmd/Ctrl + 1..9 jumps to the nth
+  // open tab. Ctrl+Tab cycling is handled by the conversation/project switcher above.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.altKey) return;
+
+      // Matched on e.code so a non-QWERTY layout still triggers on the T key.
+      if (e.code === 'KeyT' && !e.shiftKey) {
+        e.preventDefault();
+        handleStartNewConversation();
+        return;
+      }
 
       if (e.key >= '1' && e.key <= '9') {
         const index = parseInt(e.key, 10) - 1;
@@ -1190,19 +1216,22 @@ description: A clear description of what this skill does and when to use it
         return;
       }
 
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        if (openTabs.length > 1) {
-          const currentIdx = openTabs.findIndex((t) => t.id === activeTabId);
-          const delta = e.shiftKey ? -1 : 1;
-          const nextIdx = (currentIdx + delta + openTabs.length) % openTabs.length;
-          handleTabSelect(openTabs[nextIdx].id);
-        }
-      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openTabs, activeTabId]);
+  }, [openTabs, activeTabId, selectedProject?.id]);
+
+  // Put the caret in the composer. Chat owns the textarea, so reach it by name the
+  // same way the quote-selection flow does (chat.tsx) instead of threading a ref
+  // down through Chat -> MessageInput. Retries a few frames because switching from
+  // a document/skill tab mounts Chat fresh, so the textarea isn't there yet.
+  const focusComposer = (framesLeft = 5) => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector('textarea[name="message"]') as HTMLTextAreaElement | null;
+      if (el) { el.focus(); return; }
+      if (framesLeft > 0) focusComposer(framesLeft - 1);
+    });
+  };
 
   const handleStartNewConversation = () => {
     // Clear current conversation to start fresh - conversation will be created when user sends first message
@@ -1210,6 +1239,7 @@ description: A clear description of what this skill does and when to use it
     setChatMessage(null);
     handleOpenTab({ id: 'conv-new', type: 'conversation', title: 'New Conversation' });
     storageService.clearSelectedConversation();
+    focusComposer();
 
     // Update URL with new=1 to signal explicit new conversation (not auto-select)
     if (selectedProject) {

@@ -15,6 +15,10 @@ export interface OpenTab {
   data?: any;
 }
 
+const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+const NEW_TAB_HOTKEY = IS_MAC ? '\u2318T' : 'Ctrl+T';
+const CLOSE_TAB_HOTKEY = IS_MAC ? '\u2318W' : 'Ctrl+W';
+
 const TAB_ICONS: Record<TabType, React.ReactNode> = {
   conversation: <ChatBubbleOutlineIcon sx={{ fontSize: 14 }} />,
   document: <DescriptionOutlinedIcon sx={{ fontSize: 14 }} />,
@@ -66,13 +70,20 @@ export default function ContentTabs({
               <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1">
                 {tab.title}
               </span>
-              <CloseIcon
+              {/* Wrapped in a span because SVG ignores the `title` attribute — the
+                  browser only renders a tooltip for it on an HTML element. The
+                  shortcut hint is shown on the active tab only, since Cmd/Ctrl+W
+                  closes whichever tab is active, not the one under the cursor. */}
+              <span
+                title={isActive ? `Close  ${CLOSE_TAB_HOTKEY}` : 'Close'}
                 onClick={(e) => {
                   e.stopPropagation();
                   onTabClose(tab.id);
                 }}
-                className="text-[14px] opacity-0 group-hover:opacity-100 transition-all duration-150 cursor-pointer hover:text-red-500 flex-shrink-0"
-              />
+                className="flex items-center flex-shrink-0"
+              >
+                <CloseIcon className="text-[14px] opacity-0 group-hover:opacity-100 transition-all duration-150 cursor-pointer hover:text-red-500" />
+              </span>
             </div>
           );
         })}
@@ -84,7 +95,7 @@ export default function ContentTabs({
           style={{ ['--tw-hover-color' as any]: 'var(--sl-brand-primary)' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sl-brand-primary)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = '')}
-          title="New conversation"
+          title={`New conversation  ${NEW_TAB_HOTKEY}`}
         >
           <AddBoxIcon className="text-[20px]" />
         </button>
