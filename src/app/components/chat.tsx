@@ -140,6 +140,11 @@ const rehypeLocalFileLinks = () => (tree: any) => {
 
 const chatRehypePlugins = [rehypeLocalFileLinks, ...Object.values(defaultRehypePlugins)];
 
+// Hint for the status bar's web search toggle, in the same form the right rail
+// uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
+const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u21e7S' : 'Ctrl+Shift+S';
+
 export default function Chat(props: {
   project?: any,
   initialMessage?: string | null,
@@ -151,9 +156,18 @@ export default function Chat(props: {
   onConversationCreated?: (conversation: any) => void,
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
-  onCreateSkill?: (name: string) => void
+  onCreateSkill?: (name: string) => void,
+  // Per-project web search flag, mirrored from the right rail's toggle so the
+  // status bar can flip it without opening the rail. Undefined reads as ON, the
+  // same default the backend applies to projects predating the flag.
+  webSearchEnabled?: boolean,
+  onWebSearchChange?: (enabled: boolean) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
+
+  // Web search reads ON unless explicitly disabled — the same default the right
+  // rail applies, so a project whose config predates the flag shows as enabled.
+  const webSearchOn = props.webSearchEnabled !== false;
 
   const [formData, setFormData] = useState({
     message: "",
@@ -1807,12 +1821,8 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="relative flex-none px-3 md:px-4 pt-6 pb-3 bg-sl-bg-base border-t border-sl-border-subtle">
-          {/* Overlays the footer's top padding so it uses existing space instead of
-              pushing the input down. Muted so focus stays on input. Shows the live SSE
-              status while generating; when idle, the last known token throughput
-              ("unknown" until a first-ever response has been generated). */}
-          <div className="absolute z-10 top-1.5 left-3 md:left-4 right-3 md:right-4 flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
+        <footer className="relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base border-t border-sl-border-subtle">
+          <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
             {statusText || isLoading ? (
               <span className="flex items-center gap-1 text-sl-text-disabled min-w-0 overflow-hidden">
                 <span className="font-mono shrink-0">&gt;</span>
@@ -1863,7 +1873,7 @@ export default function Chat(props: {
             skills={skillList}
             onCreateSkill={props.onCreateSkill}
           />
-          <div className="flex items-center gap-2.5 mt-2 px-1 text-[10px] text-sl-text-faint leading-none">
+          <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
               <>
                 {indexingProgress ? (
@@ -1886,18 +1896,39 @@ export default function Chat(props: {
                   </span>
                 )}
                 {model && (
-                  <span className="flex items-center gap-1 font-mono">
-                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                      <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="var(--sl-text-faint)" strokeWidth="0.75" fill="none" />
-                      <path d="M8 6.5v8" stroke="var(--sl-text-faint)" strokeWidth="0.5" />
-                      <path d="M2 4l6 2.5L14 4" stroke="var(--sl-text-faint)" strokeWidth="0.5" fill="none" />
-                    </svg>
-                    <span>{model}</span>
-                  </span>
+                  <Tooltip title={model} placement="top" arrow>
+                    <span className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default" style={{ color: 'var(--sl-text-faint)' }}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                        <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
+                        <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                      </svg>
+                    </span>
+                  </Tooltip>
                 )}
-                <span className="flex items-center gap-2.5 ml-auto">
+                {props.onWebSearchChange && (
+                  <Tooltip
+                    title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
+                    placement="top"
+                    arrow
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={webSearchOn}
+                      onClick={() => props.onWebSearchChange?.(!webSearchOn)}
+                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2"
+                      style={{ color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                )}
+                <span className="flex items-center gap-1.5 ml-auto">
                   <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
-                  <span><span className="text-sl-text-disabled">[ctrl+tab]</span> <span className="text-sl-text-faint">switch conversation</span></span>
+                  <span><span className="text-sl-text-disabled">[{WEB_SEARCH_HOTKEY}]</span> <span className="text-sl-text-faint">search on/off</span></span>
                 </span>
               </>
             ) : (
