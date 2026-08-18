@@ -1,5 +1,4 @@
-import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment, Switch } from '@mui/material';
-import TravelExploreIcon from '@mui/icons-material/TravelExplore';
+import { Box, IconButton, CircularProgress, Tooltip, TextField, InputAdornment } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -34,8 +33,6 @@ interface RightSidebarProps {
   onFolderPathChange?: (path: string) => void;
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
-  onWebSearchChange?: (enabled: boolean) => void;
-  searchConfigured?: boolean;
   user: any;
   model?: string;
   activeTab: string;
@@ -104,8 +101,6 @@ export default function RightSidebar({
   onDeleteDocument,
   onColorChange,
   onRenameProject,
-  onWebSearchChange,
-  searchConfigured,
   model,
   activeTab,
   onTabChange,
@@ -150,6 +145,11 @@ export default function RightSidebar({
     );
   };
   const [activeSection, setActiveSection] = useState<'models' | 'documents' | 'mcp' | 'skills' | 'settings' | null>('models');
+  // Section to reopen with Cmd/Ctrl+B after the panel is closed.
+  const lastSectionRef = useRef<Exclude<typeof activeSection, null>>('models');
+  useEffect(() => {
+    if (activeSection) lastSectionRef.current = activeSection;
+  }, [activeSection]);
   // Combined capabilities of the currently ENABLED models. Documents need "dp"
   // (document processing) and Skills need "skills"; the matching rail section is
   // disabled when no enabled model provides it. Null = not loaded yet (don't gate
@@ -159,7 +159,6 @@ export default function RightSidebar({
   const [modelCaps, setModelCaps] = useState<Set<string> | null>(null);
   const docSupported = modelCaps === null || modelCaps.size === 0 || modelCaps.has('dp');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
-  const [searchQuery] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -618,6 +617,27 @@ export default function RightSidebar({
     if (next === 'mcp') loadMcpServers();
     if (next === 'skills') onRefreshSkills?.();
   }, [activeSection, docSupported, refreshDocuments, loadMcpServers, onRefreshSkills]);
+
+  // Cmd/Ctrl+B toggles the whole panel, matching the sidebar-toggle convention
+  // users bring from VS Code. Reopening restores whichever section was showing
+  // last (see lastSectionRef) rather than snapping back to Models. Matched on
+  // e.code so a non-QWERTY layout still triggers on the B key.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.code !== 'KeyB') return;
+      e.preventDefault();
+      if (activeSection) {
+        setActiveSection(null);
+        return;
+      }
+      const last = lastSectionRef.current;
+      // Documents is unreachable when no enabled model can process them.
+      toggleSection(last === 'documents' && !docSupported ? 'models' : last);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeSection, docSupported, toggleSection]);
 
   // Cmd/Ctrl+Shift+1..5 toggles the rail sections. Matched on e.code because
   // Shift+<digit> reports a punctuation e.key, and Cmd/Ctrl+1..9 alone is
@@ -1203,12 +1223,6 @@ export default function RightSidebar({
                   {effectiveDocuments.length > 0 && (
                     <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {effectiveDocuments
-                        .filter((doc: any) => {
-                          if (!searchQuery) return true;
-                          const query = searchQuery.toLowerCase();
-                          const filename = ((doc.source || doc.path || '').split('/').pop() || doc.filename || doc.name || '').toLowerCase();
-                          return filename.includes(query);
-                        })
                         .map((doc: any, i: number) => {
                           const rowId = doc.id || `doc-${i}`;
                           // Use filesystem file info when available for original name/size
@@ -1724,96 +1738,6 @@ export default function RightSidebar({
                   Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
                 </p>
               </div>
-
-              {/* Web Search — per-project toggle; patched on the SLP project. */}
-              {(() => {
-                // On by default, matching the backend's `web_search_enabled`
-                // default: only an explicit `false` reads as off, so a project
-                // whose config predates the flag shows as enabled.
-                const webSearchOn = currentProjectData?.web_search_enabled !== false;
-                const searchReady = searchConfigured !== false;
-                return (
-              <div>
-                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Web Search</div>
-                <Box
-                  onClick={() => searchReady && onWebSearchChange?.(!webSearchOn)}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.25,
-                    padding: '10px 8px 10px 12px',
-                    borderRadius: '10px',
-                    cursor: searchReady ? 'pointer' : 'default',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    transition: 'all 0.25s ease',
-                    opacity: searchReady ? 1 : 0.4,
-                    backgroundColor: webSearchOn ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
-                    border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
-                    boxShadow: webSearchOn ? '0 0 0 3px var(--sl-brand-alpha-10)' : 'none',
-                    '&:hover': searchReady ? {
-                      borderColor: 'var(--sl-brand-alpha-30)',
-                    } : {},
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 30,
-                      height: 30,
-                      borderRadius: '8px',
-                      flexShrink: 0,
-                      transition: 'all 0.25s ease',
-                      backgroundColor: webSearchOn ? 'var(--sl-brand-alpha-20)' : 'var(--sl-white-alpha-5)',
-                      border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-subtle)'}`,
-                    }}
-                  >
-                    <TravelExploreIcon sx={{ fontSize: 18, color: webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)', transition: 'color 0.25s ease' }} />
-                  </Box>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold" style={{ color: 'var(--sl-text-primary)' }}>
-                        Search the web
-                      </span>
-                      <span
-                        className="text-[8px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide"
-                        style={{
-                          border: `1px solid ${!searchReady ? 'var(--sl-border-default)' : webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}`,
-                          color: !searchReady ? 'var(--sl-text-faint)' : webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                          transition: 'all 0.25s ease',
-                        }}
-                      >
-                        {!searchReady ? 'No key' : webSearchOn ? 'Live' : 'Off'}
-                      </span>
-                    </div>
-                    <span className="text-[10px] leading-tight" style={{ color: 'var(--sl-text-muted)' }}>
-                      {!searchReady
-                        ? 'Add a Brave Search API key in Settings'
-                        : webSearchOn ? 'Pulling in fresh results as you chat' : 'Answers from the model only'}
-                    </span>
-                  </div>
-                  <Switch
-                    size="small"
-                    checked={webSearchOn}
-                    disabled={!searchReady}
-                    onChange={(e) => onWebSearchChange?.(e.target.checked)}
-                    onClick={(e) => e.stopPropagation()}
-                    sx={{
-                      '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
-                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
-                    }}
-                  />
-                </Box>
-                <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  {searchReady
-                    ? 'When off, the assistant won\'t look things up on the web for this project.'
-                    : 'Connect your Brave Search API key in Settings to enable web search.'}
-                </p>
-              </div>
-                );
-              })()}
 
               {/* Download Project — not available for the general/system project */}
               <div>
