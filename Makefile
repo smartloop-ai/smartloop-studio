@@ -69,6 +69,7 @@ help-electron:
 	@echo "  make build-electron-mas      - Build Electron app for the Mac App Store (.pkg)"
 	@echo "  make push-to-mas BUILD=x.y.z - Fetch latest SLP framework (by hash), build MAS .pkg, upload it"
 	@echo "  make stage-slp-latest        - Download the latest SLP framework into build/slp/ (hash-gated)"
+	@echo "  make check-slp-symbols       - Fail if staged build/slp references deprecated Apple APIs"
 	@echo "  make build-electron          - Build Electron app for current platform"
 	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
@@ -172,10 +173,36 @@ stage-slp-latest:
 	@SLP_BASE_URL="$(SLP_BASE_URL)" SLP_VERSION="$(SLP_VERSION)" FORCE="$(FORCE)" \
 		bash scripts/stage-slp-latest.sh
 
+# Preflight for any Mac App Store build: refuse to package an SLP framework that
+# references the deprecated Accelerate LAPACK helpers. App Review's binary scan
+# rejects them ("non-public or deprecated APIs: _dcabs1_, _lsame_,
+# _xerbla_array__"), and we bundle the framework verbatim, so a pre-fix build
+# staged from the CDN would be rejected days later instead of here. Only an
+# *undefined* reference counts — a bundled OpenBLAS that defines these symbols
+# itself is not an Apple API reference. See docs/app-store-review.md.
+DEPRECATED_APPLE_SYMS := _dcabs1_|_lsame_|_xerbla_array__
+
+check-slp-symbols:
+	@if [ ! -d build/slp ]; then echo "❌ build/slp not staged — run 'make stage-slp-latest' first"; exit 1; fi
+	@echo "🔎 Scanning build/slp for deprecated Accelerate LAPACK symbols..."
+	@hits=$$(find build/slp -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
+		| xargs -0 -n1 sh -c 'nm -arch all "$$0" 2>/dev/null \
+			| grep -qE "^ +U ($(DEPRECATED_APPLE_SYMS))$$" && echo "$$0"' \
+		| sort); \
+	if [ -n "$$hits" ]; then \
+		echo "❌ These bundled binaries reference deprecated Accelerate LAPACK APIs:"; \
+		echo "$$hits" | sed 's/^/   /'; \
+		echo "   App Review will reject this build. Stage an SLP framework built"; \
+		echo "   after the smartloop-repo OpenBLAS scipy fix (make stage-slp-latest FORCE=1)."; \
+		exit 1; \
+	fi
+	@echo "✅ No references to deprecated Accelerate LAPACK APIs."
+
 # Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
 # Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
 # The store notarizes on ingestion, so no local notarization is done.
 build-electron-mas: clean-electron stage-slp-latest
+	@$(MAKE) check-slp-symbols
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -215,6 +242,7 @@ push-to-mas: stage-slp-latest
 	@if ! echo "$(BUILD)" | grep -qE '^[0-9]+(\.[0-9]+){0,2}$$'; then \
 		echo "❌ BUILD='$(BUILD)' invalid — CFBundleVersion is up to three dot-separated integers (e.g. 1.0.353)."; exit 1; \
 	fi
+	@$(MAKE) check-slp-symbols
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🍎 Packaging MAS .pkg (build $(BUILD))..."
