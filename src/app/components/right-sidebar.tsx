@@ -82,6 +82,20 @@ const mapProjectSkills = (data: any) => {
     .filter((s: any) => s.name && !DEPRECATED_SKILL_NAMES.has(normSkillName(s.name)));
 };
 
+// Right-rail sections in rail order — index N maps to Cmd/Ctrl+Shift+(N+1).
+const SECTION_HOTKEYS = ['models', 'documents', 'mcp', 'skills', 'settings'] as const;
+
+const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+const hotkeyLabel = (n: number) => (IS_MAC ? `\u2318\u21e7${n}` : `Ctrl+Shift+${n}`);
+
+/** Tooltip content for a rail button: label plus its keyboard shortcut. */
+const railTip = (label: string, n: number) => (
+  <span className="flex items-center gap-1.5">
+    {label}
+    <span className="text-[10px] font-mono opacity-60">{hotkeyLabel(n)}</span>
+  </span>
+);
+
 export default function RightSidebar({
   selectedProject,
   currentProjectData,
@@ -590,6 +604,33 @@ export default function RightSidebar({
       }
     }
   }, [selectedProject?.id, mcpPolling]);
+
+  // Single entry point for opening/closing a rail section, shared by the rail
+  // buttons and the keyboard shortcuts so both paths run the same side effects.
+  const toggleSection = useCallback((section: typeof SECTION_HOTKEYS[number]) => {
+    if (section === 'documents' && !docSupported) return;
+    if (section === 'mcp') setMcpError('');
+    const next = activeSection === section ? null : section;
+    setActiveSection(next);
+    if (next === 'documents') refreshDocuments();
+    if (next === 'mcp') loadMcpServers();
+    if (next === 'skills') onRefreshSkills?.();
+  }, [activeSection, docSupported, refreshDocuments, loadMcpServers, onRefreshSkills]);
+
+  // Cmd/Ctrl+Shift+1..5 toggles the rail sections. Matched on e.code because
+  // Shift+<digit> reports a punctuation e.key, and Cmd/Ctrl+1..9 alone is
+  // already taken by conversation-tab switching in Home.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
+      const match = /^Digit([1-5])$/.exec(e.code);
+      if (!match) return;
+      e.preventDefault();
+      toggleSection(SECTION_HOTKEYS[Number(match[1]) - 1]);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleSection]);
 
   // Poll for new MCP servers while waiting (OAuth flow)
   useEffect(() => {
@@ -1835,10 +1876,10 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
-        <Tooltip title="Models" placement="left">
+        <Tooltip title={railTip('Models', 1)} placement="left">
           <span className={'cursor-default'}>
             <IconButton
-              onClick={() => setActiveSection(activeSection === 'models' ? null : 'models')}
+              onClick={() => toggleSection('models')}
               sx={{
                 color: activeSection === 'models' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
@@ -1860,15 +1901,11 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={docSupported ? 'Documents' : 'Enable a document-capable model to use documents'} placement="left">
+        <Tooltip title={docSupported ? railTip('Documents', 2) : 'Enable a document-capable model to use documents'} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               disabled={!docSupported}
-              onClick={() => {
-                const next = activeSection === 'documents' ? null : 'documents';
-                setActiveSection(next);
-                if (next === 'documents') refreshDocuments();
-              }}
+              onClick={() => toggleSection('documents')}
               sx={{
                 color: (activeSection === 'documents' || activeTab === 'document') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
@@ -1896,15 +1933,10 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="Connections" placement="left">
+        <Tooltip title={railTip('Connections', 3)} placement="left">
           <span>
             <IconButton
-              onClick={() => {
-                setMcpError('');
-                const next = activeSection === 'mcp' ? null : 'mcp';
-                setActiveSection(next);
-                if (next === 'mcp') loadMcpServers();
-              }}
+              onClick={() => toggleSection('mcp')}
               sx={{
                 color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
@@ -1926,14 +1958,10 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={"Skills"} placement="left">
+        <Tooltip title={railTip('Skills', 4)} placement="left">
           <span className={'cursor-default'}>
             <IconButton
-              onClick={() => {
-                const next = activeSection === 'skills' ? null : 'skills';
-                setActiveSection(next);
-                if (next === 'skills') onRefreshSkills?.();
-              }}
+              onClick={() => toggleSection('skills')}
               sx={{
                 color: (activeSection === 'skills' || activeTab === 'skill') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
@@ -1965,10 +1993,10 @@ export default function RightSidebar({
         <Box sx={{ flex: 1 }} />
 
         {/* Project Settings gear icon */}
-        <Tooltip title="Project Settings" placement="left">
+        <Tooltip title={railTip('Project Settings', 5)} placement="left">
           <span className={'cursor-default'}>
             <IconButton
-              onClick={() => setActiveSection(activeSection === 'settings' ? null : 'settings')}
+              onClick={() => toggleSection('settings')}
               sx={{
                 color: activeSection === 'settings' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
