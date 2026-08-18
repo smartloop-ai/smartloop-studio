@@ -162,11 +162,12 @@ build-electron-mac: clean-electron stage-slp
 	npm run electron-pack-mac
 	@echo "✅ Done! Your app is in the dist/ folder"
 
-# Stage the LATEST published SLP framework into build/slp/, gated on the CDN
-# archive's hash (its ETag). Only downloads when the remote framework changed
-# since the last stage — otherwise a no-op. Unlike `stage-slp` (APFS clone of a
-# possibly-stale local install), this guarantees the store build ships the
-# current framework. Pass FORCE=1 to re-download regardless.
+# Stage the LATEST published SLP framework into build/slp/. Gated on the CDN
+# archive's ETag (only downloads when the remote framework changed since the last
+# stage — otherwise a no-op) and verified against the MD5 the bucket advertises in
+# x-goog-hash, so a truncated transfer can't reach the store. Unlike `stage-slp`
+# (APFS clone of a possibly-stale local install), this guarantees the store build
+# ships the current framework. Pass FORCE=1 to re-download regardless.
 stage-slp-latest:
 	@SLP_BASE_URL="$(SLP_BASE_URL)" SLP_VERSION="$(SLP_VERSION)" FORCE="$(FORCE)" \
 		bash scripts/stage-slp-latest.sh
