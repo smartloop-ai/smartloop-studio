@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   // Open a folder in Finder / file manager
-  openInFinder: (path) => ipcRenderer.invoke('open-in-finder', path),
+  openInFinder: (path, options) => ipcRenderer.invoke('open-in-finder', path, options),
   // Reveal a specific file in Finder / Explorer
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   // Open a document reference (citation) with the system's native viewer

@@ -56,11 +56,45 @@ ipcMain.handle('open-external', async (event, url) => {
 });
 
 // Open a folder in the system file manager (Finder on macOS)
-ipcMain.handle('open-in-finder', async (event, folderPath) => {
+// Expand a leading ~ to the home directory. Paths reach the main process from
+// the renderer and from SLP responses in both forms.
+function resolveHomePath(p) {
+  return p.startsWith('~') ? path.join(os.homedir(), p.replace(/^~[/\\]?/, '')) : p;
+}
+
+// Chromium launches the platform opener (xdg-open, Finder, Explorer) with the
+// target's PARENT DIRECTORY as the child process's working directory. If that
+// directory is missing the launch fails a CHECK — "Check failed:
+// chdir(current_directory) == 0" — which aborts the whole app, not just the
+// open. So nothing may reach shell.openPath / showItemInFolder unverified.
+function pathOpenable(resolved) {
+  try {
+    return fs.existsSync(resolved) && fs.existsSync(path.dirname(resolved));
+  } catch (err) {
+    return false;
+  }
+}
+
+ipcMain.handle('open-in-finder', async (event, folderPath, options) => {
   if (folderPath) {
-    const resolved = folderPath.startsWith('~')
-      ? folderPath.replace('~', require('os').homedir())
-      : folderPath;
+    const resolved = resolveHomePath(folderPath);
+    // SLP creates a project's directory lazily — on the first document or file
+    // written into it — so a fresh project points at a path that isn't on disk
+    // yet and shell.openPath would fail ("No such file or directory"). Callers
+    // opening a project directory pass createIfMissing so the click lands
+    // somewhere real; file paths (citations, downloads) never do.
+    if (options?.createIfMissing && !fs.existsSync(resolved)) {
+      try {
+        fs.mkdirSync(resolved, { recursive: true });
+      } catch (err) {
+        console.warn('[open-in-finder] Failed to create', resolved, err.message);
+        return false;
+      }
+    }
+    if (!pathOpenable(resolved)) {
+      console.warn('[open-in-finder] Path does not exist:', resolved);
+      return false;
+    }
     await shell.openPath(resolved);
     return true;
   }
@@ -71,9 +105,11 @@ ipcMain.handle('open-in-finder', async (event, folderPath) => {
 ipcMain.handle('open-document-reference', async (event, filePath, documentId, projectId) => {
   console.log('[Document Reference] Opening:', { filePath, documentId, projectId });
   if (filePath) {
-    const resolved = filePath.startsWith('~')
-      ? filePath.replace('~', require('os').homedir())
-      : filePath;
+    const resolved = resolveHomePath(filePath);
+    if (!pathOpenable(resolved)) {
+      console.warn('[Document Reference] File no longer exists:', resolved);
+      return { success: false, error: 'File no longer exists on disk' };
+    }
     const result = await shell.openPath(resolved);
     if (result) {
       console.warn('[Document Reference] Failed to open:', result);
@@ -88,9 +124,11 @@ ipcMain.handle('open-document-reference', async (event, filePath, documentId, pr
 // Reveal a file in Finder / Explorer
 ipcMain.handle('show-item-in-folder', async (event, filePath) => {
   if (filePath) {
-    const resolved = filePath.startsWith('~')
-      ? filePath.replace('~', require('os').homedir())
-      : filePath;
+    const resolved = resolveHomePath(filePath);
+    if (!pathOpenable(resolved)) {
+      console.warn('[show-item-in-folder] Path does not exist:', resolved);
+      return false;
+    }
     shell.showItemInFolder(resolved);
     return true;
   }
@@ -995,8 +1033,12 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
     const baseUrl = slpService.getLocalBaseUrl();
     if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
 
-    const trimmedName = updates?.name?.trim();
+    // System projects (e.g. General) keep their name — drop any rename here so
+    // every caller (UI, IPC, future automation) hits the same rule.
+    const isSystemProject = !!database.getProject(projectId)?.system;
+    const trimmedName = isSystemProject ? undefined : updates?.name?.trim();
     const apiUpdates = { ...updates };
+    if (isSystemProject) delete apiUpdates.name;
     if (trimmedName) apiUpdates.name = trimmedName.toLowerCase().replace(/\s+/g, '_');
 
     const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, {

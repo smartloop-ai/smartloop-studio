@@ -264,6 +264,21 @@
     resize: none;
     padding: 0 0
   }
+
+  /* Chromium draws its own focus ring in the platform accent color — on Linux
+     that comes from the GTK theme and often lands on a yellow/orange that
+     belongs to no part of our palette (most visible on the model cards and
+     their icon buttons). Suppress it and draw a brand ring instead, only for
+     keyboard focus so a plain click no longer outlines anything. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--sl-brand-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 @tailwind components;

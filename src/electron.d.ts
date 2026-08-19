@@ -155,7 +155,7 @@ export interface ElectronAPI {
   // Native clipboard (bypasses web clipboard restrictions in Electron)
   writeClipboard: (text: string) => void;
   readClipboard: () => string;
-  openInFinder: (filePath: string) => void;
+  openInFinder: (filePath: string, options?: { createIfMissing?: boolean }) => void;
   showItemInFolder: (filePath: string) => Promise<boolean>;
   openDocumentReference: (filePath: string, documentId?: string, projectId?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   downloadDocument: (filePath: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;

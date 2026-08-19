@@ -24,6 +24,7 @@ import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
 import DocumentViewer from '@/app/components/document-viewer';
 import UpdatePill from '@/app/components/update-pill';
+import KeybindsDialog from '@/app/components/keybinds-dialog';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
 // Deprecated built-in skills hidden everywhere (compared by normalized name).
@@ -54,6 +55,7 @@ export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showKeybinds, setShowKeybinds] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -868,6 +870,9 @@ export default function Home() {
 
   const handleRenameProject = async (name: string) => {
     if (!selectedProject?.id) return;
+    // System projects (e.g. General) keep their name — the backend and several
+    // lookups key off it, so renaming is disabled everywhere.
+    if (selectedProject.system === true) return;
     const trimmedName = name.trim();
     if (!trimmedName) return;
     // Name goes through the API; the context refreshes off the projects-changed broadcast.
@@ -1247,6 +1252,20 @@ description: A clear description of what this skill does and when to use it
   useEffect(() => {
     window.electronAPI?.onCloseTabShortcut?.(() => closeActiveTabRef.current());
     return () => window.electronAPI?.removeCloseTabShortcutListener?.();
+  }, []);
+
+  // Shift+? opens the keybinds list — the one hint the chat status bar has
+  // room for. Skipped while typing so a literal "?" still reaches the input.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      e.preventDefault();
+      setShowKeybinds((prev) => !prev);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   // Cmd/Ctrl+T opens a new conversation tab; Cmd/Ctrl + 1..9 jumps to the nth
@@ -1873,6 +1892,8 @@ description: A clear description of what this skill does and when to use it
           </Dialog>
 
 
+          <KeybindsDialog open={showKeybinds} onClose={() => setShowKeybinds(false)} />
+
           <Box className="min-h-screen bg-sl-bg-base text-sl-text-primary">
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-sl-bg-base">
@@ -1891,7 +1912,7 @@ description: A clear description of what this skill does and when to use it
                         }}
                       />
                       <Box className="flex-1 min-w-0">
-                        {selectedProject ? (
+                        {selectedProject && selectedProject.system !== true ? (
                           <input
                             key={`${selectedProject.id}-${selectedProject.name}`}
                             defaultValue={selectedProject.name}
@@ -1917,7 +1938,7 @@ description: A clear description of what this skill does and when to use it
                           />
                         ) : (
                           <div className="text-xl md:text-2xl font-bold text-sl-text-primary truncate">
-                            General
+                            {selectedProject?.name || 'General'}
                           </div>
                         )}
                       </Box>
