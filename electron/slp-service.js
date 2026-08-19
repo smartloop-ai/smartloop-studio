@@ -11,6 +11,7 @@ let serviceHealthy = false;
 let serviceProcess = null;
 let logStream = null;
 let startedByApp = false;
+let libraryCwd = null;
 
 function getSlpDir() {
   return getInstallDir();
@@ -85,6 +86,10 @@ function getPort() {
   return DEFAULT_SLP_PORT;
 }
 
+function getCwd() {
+  return libraryCwd;
+}
+
 /**
  * Check if the SLP service is running and healthy.
  * Marks the service ready if healthy.
@@ -95,6 +100,10 @@ async function checkHealth() {
     const res = await fetch(`http://localhost:${DEFAULT_SLP_PORT}/health`);
     if (res.ok) {
       serviceHealthy = true;
+      try {
+        const health = await res.json();
+        if (health?.cwd) libraryCwd = health.cwd;
+      } catch { /* health response not JSON or no cwd */ }
       return true;
     }
   } catch {
@@ -129,6 +138,10 @@ async function startService() {
       console.log('[SLP] Service already running on port', targetPort);
       serviceHealthy = true;
       startedByApp = true;
+      try {
+        const health = await res.json();
+        if (health?.cwd) libraryCwd = health.cwd;
+      } catch { /* no cwd in health */ }
       return true;
     }
   } catch {
@@ -208,6 +221,10 @@ async function startService() {
           clearInterval(pollInterval);
           serviceHealthy = true;
           startedByApp = true;
+          try {
+            const health = await res.json();
+            if (health?.cwd) libraryCwd = health.cwd;
+          } catch { /* no cwd in health */ }
           console.log('[SLP] Service started on port', targetPort);
           resolve(true);
           return;
@@ -335,6 +352,7 @@ module.exports = {
   isServiceReady,
   getLogPath,
   getPort,
+  getCwd,
   checkHealth,
   startService,
   stopService,

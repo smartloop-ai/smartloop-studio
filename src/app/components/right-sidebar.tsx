@@ -1727,7 +1727,7 @@ export default function RightSidebar({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    padding: '8px 12px',
+                    padding: '6px 10px',
                     borderRadius: '6px',
                     backgroundColor: 'var(--sl-bg-surface-1)',
                     border: '1px solid var(--sl-border-default)',
@@ -1741,14 +1741,9 @@ export default function RightSidebar({
                   <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
                   <span
                     title={projectFolderPath || 'No directory assigned yet'}
-                    style={{
-                    fontSize: '0.75rem',
-                    color: 'var(--sl-text-primary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}>
+                    className="text-[10px] text-sl-text-muted truncate"
+                    style={{ fontFamily: 'monospace', flex: 1 }}
+                  >
                     {projectFolderPath
                       ? projectFolderPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
                       : 'Not assigned'}

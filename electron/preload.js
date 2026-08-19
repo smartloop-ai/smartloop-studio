@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),
   // Local SLP service
   getLocalApiUrl: () => ipcRenderer.invoke('get-local-api-url'),
+  getSlpCwd: () => ipcRenderer.invoke('get-slp-cwd'),
   slpAddDocument: (filePath, projectId, cwd, generateFilename) => ipcRenderer.invoke('slp-add-document', filePath, projectId, cwd, generateFilename),
   onSlpDocumentProgress: (callback) => {
     ipcRenderer.on('slp-document-progress', (event, data) => callback(data));

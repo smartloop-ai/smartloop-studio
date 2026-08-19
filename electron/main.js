@@ -674,10 +674,6 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const projectName = overrides?.name || manifest?.project?.name || 'Imported Project';
     const projectColor = overrides?.color || manifest?.project?.color || null;
-    const projectSlug = projectName.trim().toLowerCase().replace(/\s+/g, '_');
-
-    // Use cwd if provided, otherwise construct from project slug
-    const newFolderPath = overrides?.cwd || path.join(os.homedir(), 'smartloop', projectSlug);
 
     // Register the project with the SLP backend via its import API
     const baseUrl = slpService.getLocalBaseUrl();
@@ -720,7 +716,8 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const createdProject = await importRes.json();
     const newProjectId = createdProject.id;
-    const resolvedFolderPath = createdProject.cwd || newFolderPath;
+    const healthCwd = slpService.getCwd();
+    const resolvedFolderPath = (healthCwd ? path.join(healthCwd, newProjectId) : null) || createdProject.cwd || overrides?.cwd;
 
     // Save UI metadata (display name, color) to SQLite
     database.upsertProject({
@@ -919,10 +916,12 @@ function broadcastProjectsChanged() {
 function enrichProjects(apiProjects) {
   const localMeta = database.getAllProjects();
   const metaMap = new Map(localMeta.map((m) => [m.id, m]));
+  const healthCwd = slpService.getCwd();
 
   const enriched = apiProjects.map((p) => {
     const meta = metaMap.get(p.id);
-    const folderPath = p.cwd || meta?.folder_path || null;
+    // Prefer health.cwd + project_id → API cwd → local DB folder_path
+    const folderPath = (healthCwd ? path.join(healthCwd, p.id) : null) || p.cwd || meta?.folder_path || null;
 
     // Ensure every project has a local metadata row so UI-only fields (color,
     // folder_path) can be persisted. The system "general_chat" project is created
@@ -1002,7 +1001,8 @@ ipcMain.handle('projects-create', async (event, params) => {
 
     if (res.status === 200 || res.status === 201) {
       const project = await res.json();
-      const folderPath = project.cwd || params.folder_path;
+      const healthCwd = slpService.getCwd();
+      const folderPath = (healthCwd ? path.join(healthCwd, project.id) : null) || project.cwd || params.folder_path;
 
       database.upsertProject({ id: project.id, name: trimmedName, color, system, folder_path: folderPath });
       database.addMcpServer({
@@ -1049,17 +1049,19 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
 
     if (res.status === 200) {
       const project = await res.json();
+      const healthCwd = slpService.getCwd();
+      const resolvedCwd = (healthCwd ? path.join(healthCwd, projectId) : null) || project.cwd;
 
       const metaUpdates = {};
       if (trimmedName) metaUpdates.name = trimmedName;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
-      if (project.cwd) metaUpdates.folder_path = project.cwd;
+      if (resolvedCwd) metaUpdates.folder_path = resolvedCwd;
       if (Object.keys(metaUpdates).length > 0) {
         database.updateProject(projectId, metaUpdates);
       }
 
       broadcastProjectsChanged();
-      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color, folder_path: project.cwd } };
+      return { success: true, data: { ...project, name: trimmedName || project.name, color: updates.color ?? project.color, folder_path: resolvedCwd } };
     }
 
     const errorData = await res.json().catch(() => ({}));
@@ -1173,6 +1175,10 @@ ipcMain.handle('command-line-uninstall', () => uninstallCommandLine());
 // IPC: get local API URL
 ipcMain.handle('get-local-api-url', async () => {
   return slpService.getLocalBaseUrl();
+});
+
+ipcMain.handle('get-slp-cwd', async () => {
+  return slpService.getCwd();
 });
 
 // IPC: add document via local SLP (proxied through main process to avoid CORS/Broken Pipe)
