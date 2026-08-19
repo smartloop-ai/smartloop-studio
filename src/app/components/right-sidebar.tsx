@@ -1727,11 +1727,12 @@ export default function RightSidebar({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
-                    padding: '6px 10px',
+                    padding: '8px 12px',
                     borderRadius: '6px',
                     backgroundColor: 'var(--sl-bg-surface-1)',
                     border: '1px solid var(--sl-border-default)',
                     cursor: projectFolderPath ? 'pointer' : 'default',
+                    minHeight: '36px',
                     '&:hover': {
                       backgroundColor: 'var(--sl-bg-surface-1)',
                       borderColor: projectFolderPath ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)',
