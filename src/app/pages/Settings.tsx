@@ -998,7 +998,7 @@ export default function SettingsPage() {
                                     </tr>
                                     {/* Dynamic rows from health endpoint */}
                                     {serverHealth?.details && Object.entries(serverHealth.details)
-                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded', 'ctx_size', 'n_ctx'].includes(key))
+                                        .filter(([key]) => !['status', 'model', 'flash_attn', 'quantization', 'model_name', 'indexing', 'model_loaded', 'ctx_size', 'n_ctx', 'cwd'].includes(key))
                                         .map(([key, value]) => {
                                             let displayValue: React.ReactNode;
                                             const keyLower = key.toLowerCase();
