@@ -144,6 +144,10 @@ const chatRehypePlugins = [rehypeLocalFileLinks, ...Object.values(defaultRehypeP
 // uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
 const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u21e7S' : 'Ctrl+Shift+S';
+// The status bar has room for two hints, so instead of listing bindings it
+// points at the full list: "?" opens the keybinds dialog (handler in
+// Home.tsx). Labelled as the bare character — typing it already needs Shift.
+const KEYBINDS_HOTKEY = '?';
 
 export default function Chat(props: {
   project?: any,
@@ -1518,7 +1522,13 @@ export default function Chat(props: {
                                         ? baseUrl(linkUrl || label || '')
                                         : (label || '');
                                     const folderPath = props.project?.folder_path;
-                                    const resolvedPath = label && folderPath ? `${folderPath}/documents/${label}` : '';
+                                    // Prefer a path the backend gave us; only fall back to the
+                                    // <project>/documents/<name> convention when it didn't.
+                                    const citedPath = [citation.file_path, citation.path, citation.source_path]
+                                      .find((v: any) => typeof v === 'string' && v.trim())
+                                      ?.trim() || '';
+                                    const resolvedPath = citedPath
+                                      || (label && folderPath ? `${folderPath}/documents/${label}` : '');
                                     const size = citation.file_size || citation.size;
                                     // Links carry no second line — it used to repeat the hostname,
                                     // which the label now shows on its own.
@@ -1532,7 +1542,10 @@ export default function Chat(props: {
                                         const target = /^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl;
                                         window.electronAPI?.openExternal(target);
                                       } else if (resolvedPath) {
-                                        window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id);
+                                        window.electronAPI?.openDocumentReference?.(resolvedPath, citation.document_id, props.project?.id)
+                                          ?.then((res: any) => {
+                                            if (res && !res.success) console.warn('[Citation] Could not open', resolvedPath, res.error);
+                                          });
                                       }
                                     };
                                     return (
@@ -1935,7 +1948,7 @@ export default function Chat(props: {
                 )}
                 <span className="flex items-center gap-1.5 ml-auto">
                   <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
-                  <span><span className="text-sl-text-disabled">[{WEB_SEARCH_HOTKEY}]</span> <span className="text-sl-text-faint">search on/off</span></span>
+                  <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
                 </span>
               </>
             ) : (
