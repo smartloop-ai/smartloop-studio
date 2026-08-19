@@ -20,9 +20,6 @@ import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
-const SEARCH_HOTKEY = IS_MAC ? '⌘K' : 'Ctrl+K';
-
 const getColorForProject = (project: any): string => {
   if (project?.color) {
     if (project.color === LEGACY_PINK) return DEFAULT_COLOR;
@@ -708,18 +705,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             >
               <CloseIcon sx={{ fontSize: 14 }} />
             </IconButton>
-          )}
-          {!searchQuery && (
-            <Box sx={{
-              fontSize: '11px',
-              color: 'var(--sl-text-faint)',
-              bgcolor: 'var(--sl-white-alpha-7)',
-              px: 0.7,
-              py: 0.3,
-              borderRadius: '3px',
-              fontWeight: 500,
-              letterSpacing: '0.3px',
-            }}>{SEARCH_HOTKEY}</Box>
           )}
         </Box>
       </Box>

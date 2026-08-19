@@ -166,6 +166,12 @@ export default function RightSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [localFolderPath, setLocalFolderPath] = useState('');
   const [localProjectName, setLocalProjectName] = useState('');
+  // The project's directory as the backend reports it (`cwd`, mirrored into
+  // folder_path). Never guessed from the project name — the real location is
+  // whatever SLP chose, and a guess opens a path that doesn't exist.
+  const projectFolderPath = localFolderPath || selectedProject?.folder_path || '';
+  // System projects (e.g. General) have a fixed name — the rename field is read-only.
+  const isSystemProject = selectedProject?.system === true;
 
   // Inline skill editing
   const [_hoveredSkillIndex, setHoveredSkillIndex] = useState<number | null>(null);
@@ -1633,8 +1639,10 @@ export default function RightSidebar({
                 <TextField
                   size="small"
                   value={localProjectName}
+                  disabled={isSystemProject}
                   onChange={(e) => setLocalProjectName(e.target.value)}
                   onBlur={() => {
+                    if (isSystemProject) return;
                     const trimmed = localProjectName.trim();
                     if (trimmed && trimmed !== selectedProject?.name) {
                       onRenameProject?.(trimmed);
@@ -1642,9 +1650,11 @@ export default function RightSidebar({
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      const trimmed = localProjectName.trim();
-                      if (trimmed && trimmed !== selectedProject?.name) {
-                        onRenameProject?.(trimmed);
+                      if (!isSystemProject) {
+                        const trimmed = localProjectName.trim();
+                        if (trimmed && trimmed !== selectedProject?.name) {
+                          onRenameProject?.(trimmed);
+                        }
                       }
                       (e.target as HTMLInputElement).blur();
                     }
@@ -1663,10 +1673,16 @@ export default function RightSidebar({
                       color: 'var(--sl-text-primary)',
                       padding: '8px 12px',
                       '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
+                      '&.Mui-disabled': {
+                        color: 'var(--sl-text-muted)',
+                        WebkitTextFillColor: 'var(--sl-text-muted)',
+                      },
                     },
                   }}
                 />
-                <div className="text-[10px] text-sl-text-faint mt-1">Press Enter to save</div>
+                <div className="text-[10px] text-sl-text-faint mt-1">
+                  {isSystemProject ? 'Default project cannot be renamed' : 'Press Enter to save'}
+                </div>
               </div>
 
               {/* Project Color */}
@@ -1697,13 +1713,15 @@ export default function RightSidebar({
                 </Box>
               </div>
 
-              {/* Working Directory */}
+              {/* Project Directory */}
               <div>
-                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Working Directory</div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Project Directory</div>
                 <Box
                   onClick={() => {
-                    const path = localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`;
-                    (window as any).electronAPI?.openInFinder?.(path);
+                    if (!projectFolderPath) return;
+                    // createIfMissing: SLP only makes the directory when it first
+                    // writes into it, so a new project's folder may not exist yet.
+                    (window as any).electronAPI?.openInFinder?.(projectFolderPath, { createIfMissing: true });
                   }}
                   sx={{
                     display: 'flex',
@@ -1713,16 +1731,16 @@ export default function RightSidebar({
                     borderRadius: '6px',
                     backgroundColor: 'var(--sl-bg-surface-1)',
                     border: '1px solid var(--sl-border-default)',
-                    cursor: 'pointer',
+                    cursor: projectFolderPath ? 'pointer' : 'default',
                     '&:hover': {
                       backgroundColor: 'var(--sl-bg-surface-1)',
-                      borderColor: 'var(--sl-brand-alpha-30)',
+                      borderColor: projectFolderPath ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)',
                     },
                   }}
                 >
                   <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
                   <span
-                    title={localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`}
+                    title={projectFolderPath || 'No directory assigned yet'}
                     style={{
                     fontSize: '0.75rem',
                     color: 'var(--sl-text-primary)',
@@ -1731,11 +1749,13 @@ export default function RightSidebar({
                     whiteSpace: 'nowrap',
                     flex: 1,
                   }}>
-                    {(localFolderPath || `~/smartloop/${(selectedProject?.name || 'project').toLowerCase().replace(/\s+/g, '_')}`).replace(/[/\\]+$/, '').split(/[/\\]/).pop()}
+                    {projectFolderPath
+                      ? projectFolderPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
+                      : 'Not assigned'}
                   </span>
                 </Box>
                 <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  Click to open in Finder. Sent as working directory (<code>cwd</code>) with each chat message.
+                  Click to open. Documents and files for this project live here.
                 </p>
               </div>
 
