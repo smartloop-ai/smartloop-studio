@@ -5,9 +5,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, CircularProgress, Tooltip } from "@mui/material";
 import OpenAI from 'openai';
 
-import { Streamdown, defaultRehypePlugins } from 'streamdown';
+import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
 import "streamdown/styles.css";
-import { visit } from 'unist-util-visit';
+import { visit, SKIP } from 'unist-util-visit';
 import { createCodePlugin } from "@streamdown/code";
 const code = createCodePlugin({
   themes: ['github-light', 'github-dark'],
@@ -121,9 +121,26 @@ interface OpenTabRequest {
 // hands the real path to the OS file opener.
 const LOCAL_LINK_TARGET_RE = /^(?:file:\/\/|~[\\/]|\/[^/]|[a-zA-Z]:[\\/]|\\\\)/;
 
+// mdast-util-to-hast normalizes link URLs on the way to hast, so by the time this
+// runs a path's spaces are already `%20` and its backslashes `%5C`. Decoding first
+// keeps us from re-encoding that (`%20` -> `%2520`, which the click handler would
+// hand to the OS as a literal "%20" in the filename) and restores the drive-letter
+// and `~` shapes LOCAL_LINK_TARGET_RE matches on. Malformed escapes are left as-is.
+const decodeTarget = (target: string): string => {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
+};
+
 const toLocalOpenUrl = (target: unknown): string | null => {
-  if (typeof target !== 'string' || !LOCAL_LINK_TARGET_RE.test(target)) return null;
-  const path = /^file:\/\//i.test(target) ? target.replace(/^file:\/\/\/?/i, '') : target;
+  if (typeof target !== 'string') return null;
+  const decoded = decodeTarget(target);
+  if (!LOCAL_LINK_TARGET_RE.test(decoded)) return null;
+  // Strip only the scheme + authority: `file:///Users/x` -> `/Users/x`. Consuming
+  // the third slash too would yield the relative `Users/x`, which resolves nowhere.
+  const path = decoded.replace(/^file:\/\//i, '');
   return `https://sl.local/open?p=${encodeURIComponent(path)}`;
 };
 
@@ -139,6 +156,52 @@ const rehypeLocalFileLinks = () => (tree: any) => {
 };
 
 const chatRehypePlugins = [rehypeLocalFileLinks, ...Object.values(defaultRehypePlugins)];
+
+// A CommonMark link destination that is not wrapped in <> may not contain spaces,
+// so `[name](/Users/me/Library/Application Support/.../out.md)` never parses as a
+// link at all — it survives as literal text and rehypeLocalFileLinks (which only
+// visits real anchor nodes) never sees it. This bites only the sandboxed Mac App
+// Store build, whose container path contains "Application Support"; the Developer
+// ID build writes to ~/.smartloop/... and has no spaces, which is why generated
+// file links render there and not in the store build.
+//
+// Recover those links at the remark stage, where mdast still distinguishes prose
+// from code: visiting `text` nodes leaves `code`/`inlineCode` content untouched,
+// preserving the same code-block safety the rehype pass was written for.
+const LOCAL_LINK_TEXT_RE =
+  /\[([^\]\n]*)\]\(((?:file:\/\/|~[\\/]|\/[^/]|[a-zA-Z]:[\\/]|\\\\)[^)\n]*)\)/g;
+
+const remarkLocalFileLinks = () => (tree: any) => {
+  visit(tree, 'text', (node: any, index: number | undefined, parent: any) => {
+    if (!parent || index === undefined || !node.value) return;
+    if (!node.value.includes('](')) return;
+
+    const children: any[] = [];
+    let last = 0;
+    LOCAL_LINK_TEXT_RE.lastIndex = 0;
+    for (let m = LOCAL_LINK_TEXT_RE.exec(node.value); m; m = LOCAL_LINK_TEXT_RE.exec(node.value)) {
+      const [match, label, target] = m;
+      // Destinations without spaces already parse as links on their own; leaving
+      // them to the normal pipeline keeps this plugin to the one case it fixes.
+      if (!target.includes(' ')) continue;
+      if (m.index > last) children.push({ type: 'text', value: node.value.slice(last, m.index) });
+      children.push({
+        type: 'link',
+        url: target,
+        children: [{ type: 'text', value: label || target.split(/[\\/]/).pop() }],
+      });
+      last = m.index + match.length;
+    }
+    if (!children.length) return;
+    if (last < node.value.length) children.push({ type: 'text', value: node.value.slice(last) });
+
+    parent.children.splice(index, 1, ...children);
+    return [SKIP, index + children.length];
+  });
+};
+
+const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkPlugins)];
+
 
 // Hint for the status bar's web search toggle, in the same form the right rail
 // uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
@@ -1488,6 +1551,7 @@ export default function Chat(props: {
                                   controls={false}
                                   linkSafety={{ enabled: false }}
                                   rehypePlugins={chatRehypePlugins}
+                                  remarkPlugins={chatRemarkPlugins}
                                   plugins={{ code, mermaid, math, cjk }}>
                                   {msg.content || ''}
                                 </Streamdown>
