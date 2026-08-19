@@ -1661,6 +1661,19 @@ export default function RightSidebar({
                   }}
                   placeholder="Project name"
                   fullWidth
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <FolderOpenIcon
+                          sx={{ fontSize: 16, color: 'var(--sl-text-muted)', cursor: 'pointer', '&:hover': { color: 'var(--sl-brand-primary)' } }}
+                          onClick={() => {
+                            if (!projectFolderPath) return;
+                            (window as any).electronAPI?.openInFinder?.(projectFolderPath, { createIfMissing: true });
+                          }}
+                        />
+                      </InputAdornment>
+                    ),
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'var(--sl-bg-surface-1)',
@@ -1711,48 +1724,6 @@ export default function RightSidebar({
                     />
                   ))}
                 </Box>
-              </div>
-
-              {/* Project Directory */}
-              <div>
-                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Project Directory</div>
-                <Box
-                  onClick={() => {
-                    if (!projectFolderPath) return;
-                    // createIfMissing: SLP only makes the directory when it first
-                    // writes into it, so a new project's folder may not exist yet.
-                    (window as any).electronAPI?.openInFinder?.(projectFolderPath, { createIfMissing: true });
-                  }}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: 'var(--sl-bg-surface-1)',
-                    border: '1px solid var(--sl-border-default)',
-                    cursor: projectFolderPath ? 'pointer' : 'default',
-                    minHeight: '36px',
-                    '&:hover': {
-                      backgroundColor: 'var(--sl-bg-surface-1)',
-                      borderColor: projectFolderPath ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)',
-                    },
-                  }}
-                >
-                  <FolderOpenIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0 }} />
-                  <span
-                    title={projectFolderPath || 'No directory assigned yet'}
-                    className="text-[10px] text-sl-text-muted truncate"
-                    style={{ fontFamily: 'monospace', flex: 1 }}
-                  >
-                    {projectFolderPath
-                      ? projectFolderPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop()
-                      : 'Not assigned'}
-                  </span>
-                </Box>
-                <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-                  Click to open. Documents and files for this project live here.
-                </p>
               </div>
 
               {/* Download Project — not available for the general/system project */}
