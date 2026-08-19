@@ -61,6 +61,7 @@ export interface ElectronAPI {
   // SLP service
   getSlpConfig: () => Promise<any>;
   getLocalApiUrl: () => Promise<string | null>;
+  getSlpCwd: () => Promise<string | null>;
   onSlpServiceReady: (callback: (data: any) => void) => void;
   // Chrome-style close-tab shortcut (Cmd/Ctrl+W), forwarded from the main process
   onCloseTabShortcut: (callback: () => void) => void;
