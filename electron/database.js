@@ -181,6 +181,13 @@ function openDatabase() {
     console.log('[DB] Added folder_path column to projects');
   }
 
+  // Migration: add instructions column to projects (per-project system instructions
+  // sent with every chat turn — see chat.tsx sendMessage)
+  if (!projectCols.find(c => c.name === 'instructions')) {
+    db.exec("ALTER TABLE projects ADD COLUMN instructions TEXT");
+    console.log('[DB] Added instructions column to projects');
+  }
+
   // Migration: seed default local MCP server for existing projects that don't have one
   const existingProjects = db.prepare('SELECT id, name FROM projects').all();
   const insertMcp = db.prepare(`
@@ -227,21 +234,22 @@ function ensureFolderPath(folderPath) {
   }
 }
 
-function upsertProject({ id, name, color, temperature, system, folder_path }) {
+function upsertProject({ id, name, color, temperature, system, folder_path, instructions }) {
   const d = openDatabase();
   const now = new Date().toISOString();
   const resolvedPath = ensureFolderPath(folder_path);
   d.prepare(`
-    INSERT INTO projects (id, name, color, temperature, system, folder_path, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO projects (id, name, color, temperature, system, folder_path, instructions, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       color = COALESCE(excluded.color, projects.color),
       temperature = COALESCE(excluded.temperature, projects.temperature),
       system = COALESCE(excluded.system, projects.system),
       folder_path = COALESCE(excluded.folder_path, projects.folder_path),
+      instructions = COALESCE(excluded.instructions, projects.instructions),
       updated_at = excluded.updated_at
-  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, resolvedPath || null, now, now);
+  `).run(id, name, color || null, temperature ?? 0.3, system ? 1 : 0, resolvedPath || null, instructions ?? null, now, now);
   return getProject(id);
 }
 
@@ -265,6 +273,9 @@ function updateProject(id, updates) {
   if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
   if (updates.temperature !== undefined) { fields.push('temperature = ?'); values.push(updates.temperature); }
   if (updates.folder_path !== undefined) { fields.push('folder_path = ?'); values.push(ensureFolderPath(updates.folder_path)); }
+  // Instructions are cleared by saving an empty string — store NULL so a blank
+  // save reads back the same as "never set".
+  if (updates.instructions !== undefined) { fields.push('instructions = ?'); values.push(updates.instructions || null); }
 
   if (fields.length === 0) return getProject(id);
 
@@ -289,6 +300,7 @@ function formatProject(row) {
     temperature: row.temperature,
     system: !!row.system,
     folder_path: row.folder_path || null,
+    instructions: row.instructions || '',
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

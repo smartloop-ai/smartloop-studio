@@ -848,6 +848,17 @@ export default function Home() {
     await refreshProjects();
   };
 
+  // Project instructions are local-only metadata (SQLite `projects.instructions`);
+  // the SLP API has no field for them. chat.tsx reads them off the enriched
+  // project and sends them as a system message on every turn, so the refresh
+  // below is what makes a save take effect on the next message.
+  const handleInstructionsChange = async (instructions: string) => {
+    if (!selectedProject?.id) return;
+    await storageService.updateProjectMeta(selectedProject.id, { instructions });
+    setCurrentProjectData((prev: any) => prev ? { ...prev, instructions } : prev);
+    await refreshProjects();
+  };
+
   const handleWebSearchChange = async (enabled: boolean) => {
     if (!selectedProject?.id || !searchConfigured) return;
     // Web search is a project-level flag owned by the SLP backend; patch it
@@ -2021,6 +2032,7 @@ description: A clear description of what this skill does and when to use it
                     onFolderPathChange={handleFolderPathChange}
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
+                    onInstructionsChange={handleInstructionsChange}
                     user={user}
                     model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}
