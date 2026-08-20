@@ -272,7 +272,7 @@ class StorageService {
     }
   }
 
-  async updateProjectMeta(projectId: string, updates: { name?: string; color?: string; temperature?: number; folder_path?: string }): Promise<any> {
+  async updateProjectMeta(projectId: string, updates: { name?: string; color?: string; temperature?: number; folder_path?: string; instructions?: string }): Promise<any> {
     if (!this.db) return null;
     try {
       return await this.db.updateProject(projectId, updates);

@@ -934,7 +934,9 @@ function enrichProjects(apiProjects) {
       database.updateProject(p.id, { folder_path: folderPath });
     }
 
-    return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
+    // `instructions` is a local-only field (the SLP API has no concept of it) —
+    // the renderer sends it as a system message on every chat turn.
+    return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath, instructions: meta?.instructions || '' };
   });
 
   return enriched;
@@ -1039,6 +1041,8 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
     const trimmedName = isSystemProject ? undefined : updates?.name?.trim();
     const apiUpdates = { ...updates };
     if (isSystemProject) delete apiUpdates.name;
+    // Instructions live only in SQLite; the API would drop the field anyway.
+    delete apiUpdates.instructions;
     if (trimmedName) apiUpdates.name = trimmedName.toLowerCase().replace(/\s+/g, '_');
 
     const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, {
@@ -1055,6 +1059,7 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
       const metaUpdates = {};
       if (trimmedName) metaUpdates.name = trimmedName;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
+      if (updates.instructions !== undefined) metaUpdates.instructions = updates.instructions;
       if (resolvedCwd) metaUpdates.folder_path = resolvedCwd;
       if (Object.keys(metaUpdates).length > 0) {
         database.updateProject(projectId, metaUpdates);
