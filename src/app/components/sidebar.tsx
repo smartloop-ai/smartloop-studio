@@ -382,9 +382,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     return () => window.removeEventListener('keydown', handleSearchHotkey);
   }, []);
 
+  // Leave the Settings page for wherever it was opened from. location.key is
+  // 'default' only for the first entry in this session's history — there is no
+  // previous page to return to then, so fall back to the projects view.
+  const leaveSettings = () => {
+    if (location.key === 'default') navigate('/');
+    else navigate(-1);
+  };
+
   // Cmd/Ctrl+, opens the Settings page — the platform convention for
   // preferences. The Shift variant is the project-scoped counterpart and opens
   // the Project Settings rail section (right-sidebar.tsx), so bail on it here.
+  // Pressing it again on Settings goes back, so the key that opened the page
+  // also closes it; otherwise there is no way back to a project from the
+  // keyboard. The nav button and menu item stay pure navigation — a control
+  // labelled "Settings" toggling you off the page would read as a misfire.
   // Goes through handleSettings to honour the same model-loading guard as the
   // nav button.
   useEffect(() => {
@@ -392,11 +404,30 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
       if (e.code !== 'Comma') return;
       e.preventDefault();
-      handleSettings();
+      if (location.pathname === '/settings') leaveSettings();
+      else handleSettings();
     };
     window.addEventListener('keydown', handleSettingsHotkey);
     return () => window.removeEventListener('keydown', handleSettingsHotkey);
-  }, [modelLoading]);
+  }, [modelLoading, location.pathname, location.key]);
+
+  // Esc is the other half of that gesture. Dialogs and focused fields get first
+  // claim on the key — MUI closes a modal on Esc without stopping propagation,
+  // so without these guards closing a dialog on the Settings page would also
+  // navigate away from it.
+  useEffect(() => {
+    if (location.pathname !== '/settings') return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('.MuiModal-root')) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      e.preventDefault();
+      leaveSettings();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [location.pathname, location.key]);
 
   const handleProjectClick = async (projectId: string | null) => {
     // Resolve the target project synchronously (localProjects is already in memory)
