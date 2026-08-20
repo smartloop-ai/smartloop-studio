@@ -1339,11 +1339,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                     },
                   }}
                 />
-                <Typography sx={{ fontSize: '11px', color: 'var(--sl-text-faint)', mt: 0.75, pl: 0.5 }}>
-                  {createProjectName.trim()
-                    ? '~/smartloop/' + createProjectName.trim().toLowerCase().replace(/\s+/g, '_')
-                    : '~/smartloop/<project>'}
-                </Typography>
               </Box>
 
               {/* Color Picker */}
