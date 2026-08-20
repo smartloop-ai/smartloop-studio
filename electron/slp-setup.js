@@ -89,6 +89,23 @@ function getInstalledBinaryPath() {
   return path.join(getVersionDir(), binaryName);
 }
 
+/**
+ * True when an SLP framework is actually present on disk and runnable.
+ *
+ * getInstalledBinaryPath() already resolves the right location for every build
+ * shape — the signed bundle for a sandboxed (MAS) build, Contents/Resources/slp
+ * for the other bundled builds, INSTALL_DIR (~/.smartloop) only when nothing is
+ * bundled — so this is a presence check, not a path guess.
+ *
+ * Deliberately NOT needsInstall(). That answers "should we fetch/copy SLP?",
+ * which is also true for a framework that is present and working but a version
+ * behind. Callers that just want to know whether there is something to run must
+ * not treat "an upgrade is available" as "nothing is installed".
+ */
+function verifyFramework() {
+  return isNonEmptyFile(getInstalledBinaryPath());
+}
+
 function needsInstall() {
   // Sandboxed and non-sandboxed bundled builds run SLP in place from the app
   // bundle via extraResources (process.resourcesPath/slp) — there is nothing
@@ -724,6 +741,14 @@ function uninstallSlpService() {
  * Reads the `installed` file and filters to versions with a valid binary.
  */
 function listInstalledVersions() {
+  // Bundled builds ship the framework inside the app, so INSTALL_DIR holds no
+  // version dirs to walk — scanning it here reported "no versions installed"
+  // while SLP was running happily from the bundle. The app's own VERSION is the
+  // only one on offer, and it exists exactly when the bundled binary shipped.
+  if (useBundledSlp()) {
+    return isNonEmptyFile(bundledSlpBinaryPath()) ? [VERSION] : [];
+  }
+
   const installedFile = path.join(INSTALL_DIR, 'installed');
   if (!fs.existsSync(installedFile)) return [];
 
@@ -744,6 +769,18 @@ function listInstalledVersions() {
  * Returns { success, error? }.
  */
 function switchVersion(version) {
+  // Nothing to switch between when the framework is sealed inside the app — the
+  // version moves with an app update. Accept the version we are already on so a
+  // no-op call succeeds, and say why for anything else rather than failing with
+  // a misleading "binary not found" against a path this build never uses.
+  if (useBundledSlp()) {
+    if (version === VERSION) return { success: true };
+    return {
+      success: false,
+      error: `This build runs SLP ${VERSION} from inside the app — update the app to change versions.`,
+    };
+  }
+
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   const binaryPath = path.join(INSTALL_DIR, version, binaryName);
 
@@ -939,6 +976,7 @@ module.exports = {
   needsUpgrade,
   isNonEmptyFile,
   getInstalledBinaryPath,
+  verifyFramework,
   getInstallDir,
   setInstallDir,
   listInstalledVersions,
