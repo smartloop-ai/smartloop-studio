@@ -5,10 +5,12 @@ import { dialogStyles } from '@/app/shared/utils';
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
 const MOD = IS_MAC ? '⌘' : 'Ctrl';
 const SHIFT = IS_MAC ? '⇧' : 'Shift';
+const ALT = IS_MAC ? '⌥' : 'Alt';
 
 // Every binding the app registers, grouped the way the UI is laid out. Handlers
-// live in Home.tsx (tabs, conversations, web search), sidebar.tsx (search) and
-// right-sidebar.tsx (panel sections) — keep this list in step with them.
+// live in Home.tsx (tabs, conversations, web search), sidebar.tsx (search,
+// settings) and right-sidebar.tsx (panel sections) — keep this list in step
+// with them.
 const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
   {
     title: 'Conversations',
@@ -27,10 +29,20 @@ const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
     items: [
       { keys: `${MOD}+K`, label: 'Search projects' },
       { keys: `${MOD}+B`, label: 'Toggle right panel' },
-      { keys: `${MOD}+${SHIFT}+1…5`, label: 'Models / Documents / MCP / Skills / Settings' },
-      { keys: `${MOD}+${SHIFT}+S`, label: 'Toggle web search' },
+      { keys: `${MOD}+,`, label: 'Settings' },
+      { keys: `${MOD}+${ALT}+S`, label: 'Toggle web search' },
       { keys: `${MOD}+S`, label: 'Save skill (in editor)' },
       { keys: '?', label: 'Show this list' },
+    ],
+  },
+  {
+    title: 'Right panel',
+    items: [
+      { keys: `${MOD}+${SHIFT}+M`, label: 'Models' },
+      { keys: `${MOD}+${SHIFT}+D`, label: 'Documents' },
+      { keys: `${MOD}+${SHIFT}+C`, label: 'Connections' },
+      { keys: `${MOD}+${SHIFT}+S`, label: 'Skills' },
+      { keys: `${MOD}+${SHIFT}+,`, label: 'Project settings' },
     ],
   },
 ];

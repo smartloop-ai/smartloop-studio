@@ -382,6 +382,22 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     return () => window.removeEventListener('keydown', handleSearchHotkey);
   }, []);
 
+  // Cmd/Ctrl+, opens the Settings page — the platform convention for
+  // preferences. The Shift variant is the project-scoped counterpart and opens
+  // the Project Settings rail section (right-sidebar.tsx), so bail on it here.
+  // Goes through handleSettings to honour the same model-loading guard as the
+  // nav button.
+  useEffect(() => {
+    const handleSettingsHotkey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.code !== 'Comma') return;
+      e.preventDefault();
+      handleSettings();
+    };
+    window.addEventListener('keydown', handleSettingsHotkey);
+    return () => window.removeEventListener('keydown', handleSettingsHotkey);
+  }, [modelLoading]);
+
   const handleProjectClick = async (projectId: string | null) => {
     // Resolve the target project synchronously (localProjects is already in memory)
     // so we can navigate immediately.

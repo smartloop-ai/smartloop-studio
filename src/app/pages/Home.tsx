@@ -1274,21 +1274,23 @@ description: A clear description of what this skill does and when to use it
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
+
+      // Cmd/Ctrl+Alt+S toggles web search for the current project. Alt rather
+      // than Shift because Cmd/Ctrl+Shift+S opens the Skills rail section — the
+      // Cmd/Ctrl+Shift family is reserved for panels (right-sidebar.tsx).
+      // Checked before the altKey bail-out below, which guards the rest.
+      if (e.code === 'KeyS' && e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        toggleWebSearch();
+        return;
+      }
+
       if (e.altKey) return;
 
       // Matched on e.code so a non-QWERTY layout still triggers on the T key.
       if (e.code === 'KeyT' && !e.shiftKey) {
         e.preventDefault();
         handleStartNewConversation();
-        return;
-      }
-
-      // Cmd/Ctrl+Shift+S toggles web search for the current project. Matched on
-      // e.code like the KeyT case above, and gated on shiftKey so it doesn't
-      // swallow the plain Cmd/Ctrl+S that saves a skill in the editor/rail.
-      if (e.code === 'KeyS' && e.shiftKey) {
-        e.preventDefault();
-        toggleWebSearch();
         return;
       }
 
