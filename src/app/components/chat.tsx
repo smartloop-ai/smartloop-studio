@@ -810,13 +810,22 @@ export default function Chat(props: {
         }
       } catch { }
 
+      // Project instructions (Project Settings → Instructions) ride along on
+      // every turn as a system message — the SLP server folds any system message
+      // in the request into its own system prompt. They live in SQLite as local
+      // project metadata, so there's nothing server-side to keep in sync.
+      const projectInstructions = (props.project?.instructions || '').trim();
+      const outboundMessages: any[] = projectInstructions
+        ? [{ role: 'system', content: projectInstructions }, messageObject]
+        : [messageObject];
+
       // Create streaming chat completion
       // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
       // Use body override to include custom fields (session_id, project_id)
       // that the OpenAI SDK would otherwise strip from the first arg
       const requestBody: any = {
         model: selectedModel,
-        messages: [messageObject],
+        messages: outboundMessages,
         stream: true,
         session_id: conversationId,
         temperature,
@@ -843,7 +852,7 @@ export default function Chat(props: {
       const createStream = async () => {
         return await openai.chat.completions.create({
           model: selectedModel,
-          messages: [messageObject],
+          messages: outboundMessages,
           stream: true,
           temperature,
         }, {
