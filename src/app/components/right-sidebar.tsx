@@ -80,17 +80,30 @@ const mapProjectSkills = (data: any) => {
     .filter((s: any) => s.name && !DEPRECATED_SKILL_NAMES.has(normSkillName(s.name)));
 };
 
-// Right-rail sections in rail order — index N maps to Cmd/Ctrl+Shift+(N+1).
-const SECTION_HOTKEYS = ['models', 'documents', 'mcp', 'skills', 'settings'] as const;
+type RailSection = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+
+// Cmd/Ctrl+Shift+<first letter of the section's label> opens a rail section —
+// the VS Code convention, and unlike the digits these replaced, Shift+3/4 no
+// longer collide with the macOS screenshot hotkeys. 'mcp' keys off its UI
+// label, Connections. Project Settings takes Comma rather than a letter so it
+// pairs with Cmd/Ctrl+, (app Settings page, sidebar.tsx) — Shift scopes it
+// down to the current project.
+const SECTION_HOTKEYS: Record<string, RailSection> = {
+  KeyM: 'models',
+  KeyD: 'documents',
+  KeyC: 'mcp',
+  KeyS: 'skills',
+  Comma: 'settings',
+};
 
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
-const hotkeyLabel = (n: number) => (IS_MAC ? `\u2318\u21e7${n}` : `Ctrl+Shift+${n}`);
+const hotkeyLabel = (letter: string) => (IS_MAC ? `\u2318\u21e7${letter}` : `Ctrl+Shift+${letter}`);
 
 /** Tooltip content for a rail button: label plus its keyboard shortcut. */
-const railTip = (label: string, n: number) => (
+const railTip = (label: string, letter?: string) => (
   <span className="flex items-center gap-1.5">
     {label}
-    <span className="text-[10px] font-mono opacity-60">{hotkeyLabel(n)}</span>
+    {letter && <span className="text-[10px] font-mono opacity-60">{hotkeyLabel(letter)}</span>}
   </span>
 );
 
@@ -614,7 +627,7 @@ export default function RightSidebar({
 
   // Single entry point for opening/closing a rail section, shared by the rail
   // buttons and the keyboard shortcuts so both paths run the same side effects.
-  const toggleSection = useCallback((section: typeof SECTION_HOTKEYS[number]) => {
+  const toggleSection = useCallback((section: RailSection) => {
     if (section === 'documents' && !docSupported) return;
     if (section === 'mcp') setMcpError('');
     const next = activeSection === section ? null : section;
@@ -645,16 +658,16 @@ export default function RightSidebar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeSection, docSupported, toggleSection]);
 
-  // Cmd/Ctrl+Shift+1..5 toggles the rail sections. Matched on e.code because
-  // Shift+<digit> reports a punctuation e.key, and Cmd/Ctrl+1..9 alone is
-  // already taken by conversation-tab switching in Home.
+  // Cmd/Ctrl+Shift+M/D/C/S/, toggles the rail sections. Matched on e.code so a
+  // non-QWERTY layout still triggers on the same physical keys, and gated on
+  // altKey so Cmd/Ctrl+Alt+S (web search, Home.tsx) doesn't open Skills.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
-      const match = /^Digit([1-5])$/.exec(e.code);
-      if (!match) return;
+      const section = SECTION_HOTKEYS[e.code];
+      if (!section) return;
       e.preventDefault();
-      toggleSection(SECTION_HOTKEYS[Number(match[1]) - 1]);
+      toggleSection(section);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1796,7 +1809,7 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
-        <Tooltip title={railTip('Models', 1)} placement="left">
+        <Tooltip title={railTip('Models', 'M')} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               onClick={() => toggleSection('models')}
@@ -1821,7 +1834,7 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={docSupported ? railTip('Documents', 2) : 'Enable a document-capable model to use documents'} placement="left">
+        <Tooltip title={docSupported ? railTip('Documents', 'D') : 'Enable a document-capable model to use documents'} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               disabled={!docSupported}
@@ -1853,7 +1866,7 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={railTip('Connections', 3)} placement="left">
+        <Tooltip title={railTip('Connections', 'C')} placement="left">
           <span>
             <IconButton
               onClick={() => toggleSection('mcp')}
@@ -1878,7 +1891,7 @@ export default function RightSidebar({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={railTip('Skills', 4)} placement="left">
+        <Tooltip title={railTip('Skills', 'S')} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               onClick={() => toggleSection('skills')}
@@ -1913,7 +1926,7 @@ export default function RightSidebar({
         <Box sx={{ flex: 1 }} />
 
         {/* Project Settings gear icon */}
-        <Tooltip title={railTip('Project Settings', 5)} placement="left">
+        <Tooltip title={railTip('Project Settings', ',')} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               onClick={() => toggleSection('settings')}

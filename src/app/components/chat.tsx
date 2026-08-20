@@ -206,7 +206,7 @@ const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkP
 // Hint for the status bar's web search toggle, in the same form the right rail
 // uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
-const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u21e7S' : 'Ctrl+Shift+S';
+const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : 'Ctrl+Alt+S';
 // The status bar has room for two hints, so instead of listing bindings it
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
