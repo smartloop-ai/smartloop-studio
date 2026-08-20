@@ -9,7 +9,7 @@ const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsInstall, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
+const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
 const { isSandboxed, useBundledSlp } = require('./build-mode');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
@@ -2825,7 +2825,19 @@ if (!gotTheLock) {
     // ──────────────────────────────────────────────────────────────
     const serviceReady = await slpService.checkHealth();
 
-    if (serviceReady) {
+    // A live service is only worth adopting if the framework is actually on
+    // disk. The two can disagree: a leftover process keeps answering the health
+    // check after its framework has been deleted. Adopting it looked fine
+    // (straight to the main window, no splash) right up until that orphan died,
+    // and the branch below also wrote "install complete" into the DB, so the app
+    // kept insisting it was installed with nothing left to run.
+    //
+    // verifyFramework() and not !needsInstall(): needsInstall() is also true for
+    // a framework that is present and serving but a version behind, and a
+    // pending upgrade is no reason to kill a healthy service at startup.
+    const frameworkPresent = verifyFramework();
+
+    if (serviceReady && frameworkPresent) {
       // Service is already running (local or external) — go straight to main
       console.log('[SLP] Service healthy — skipping download/version check, going to main window');
 
@@ -2872,9 +2884,19 @@ if (!gotTheLock) {
         splashWindow = null;
       }
     } else {
-      // Service is not running. Do the version check now: fetch/install SLP
-      // only when there's nothing installed or the bundled version is newer
-      // than what's on disk. Otherwise just start the installed binary.
+      // Either nothing is running, or something is running that we refused to
+      // adopt above. Stop the orphan first — it holds the port this process is
+      // about to bind, and it is running code we no longer have on disk.
+      if (serviceReady) {
+        console.warn('[SLP] Service is answering but no framework is on disk — stopping it and reinstalling');
+        try { await slpService.stopService(); } catch (error) {
+          console.warn('[SLP] Could not stop the orphaned service:', error.message);
+        }
+      }
+
+      // Do the version check now: fetch/install SLP only when there's nothing
+      // installed or the bundled version is newer than what's on disk.
+      // Otherwise just start the installed binary.
       const mustInstall = needsInstall();
       const isFreshInstall = !fs.existsSync(slpService.getSlpBinaryPath());
 

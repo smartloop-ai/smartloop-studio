@@ -107,7 +107,7 @@ stop:
 	fi
 
 # Build Electron app for current platform
-build-electron: clean-electron
+build-electron: clean-electron stage-slp require-staged-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -116,7 +116,7 @@ build-electron: clean-electron
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron
+build-electron-linux: clean-electron require-staged-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -126,7 +126,7 @@ build-electron-linux: clean-electron
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron
+build-electron-windows: clean-electron require-staged-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -135,13 +135,32 @@ build-electron-windows: clean-electron
 	npm run electron-pack-win
 	@echo "✅ Done! Your app is in the dist/ folder"
 
+# Fail the build when build/slp/ holds no SLP binary. EVERY platform block in
+# electron-builder.yml pulls the framework from build/slp/ via the &res_slp
+# anchor — mac and mas, but Windows and Linux too — so an unstaged tree quietly
+# packages an app with no agent inside it. That failure is invisible until a
+# user's first launch, which is far too late; catch it here, where the fix is
+# one command away.
+require-staged-slp:
+	@if [ ! -s "build/slp/slp" ] && [ ! -s "build/slp/slp.exe" ]; then \
+		echo "❌ build/slp is not staged — this build would ship WITHOUT the SLP framework."; \
+		echo "   macOS:         make stage-slp          (clone ~/.smartloop/$(SLP_VERSION))"; \
+		echo "                  make stage-slp-latest   (fetch the published darwin-arm64 build)"; \
+		echo "   Windows/Linux: stage build/slp/ from that platform's framework (CI does this)."; \
+		exit 1; \
+	fi
+	@echo "✅ build/slp staged ($$(du -sh build/slp | cut -f1))"
+
 # Stage the SLP framework into build/slp/ so macOS builds can bundle it
 # (electron-builder.yml mac.extraResources ships it inside the .app for both the
 # dmg and the MAS build). Uses an APFS clone (cp -c) from the locally installed
 # SLP — instant, no extra disk. CI stages build/slp/ its own way (fresh
 # download/build) before packaging. No-op if build/slp is already populated.
 stage-slp:
-	@if [ -x "build/slp/slp" ]; then \
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "ℹ️  stage-slp clones the macOS framework — skipping on $$(uname -s)."; \
+		echo "   Stage build/slp/ from this platform's own framework (CI does this)."; \
+	elif [ -x "build/slp/slp" ]; then \
 		echo "✅ build/slp already staged"; \
 	elif [ -d "$(HOME)/.smartloop/$(SLP_VERSION)" ]; then \
 		echo "📦 Staging SLP $(SLP_VERSION) → build/slp (APFS clone)..."; \
@@ -153,8 +172,18 @@ stage-slp:
 		exit 1; \
 	fi
 
+# Best-effort staging for dev runs. `make electron-dev` wants the framework in
+# build/slp/ so a dev session exercises the same bundled run-in-place path the
+# shipped app uses, but it must NOT be a precondition for starting: with nothing
+# to clone the app simply downloads SLP on first launch, which is exactly what a
+# fresh machine does. Packaging is where a missing framework is fatal — that is
+# require-staged-slp's job, not this one.
+stage-slp-dev:
+	@$(MAKE) --no-print-directory stage-slp 2>/dev/null || \
+		echo "⚠️  No framework staged — starting anyway; the app will download SLP on first launch."
+
 # Build Electron app for macOS (Developer ID: DMG, zip). SLP is bundled.
-build-electron-mac: clean-electron stage-slp
+build-electron-mac: clean-electron stage-slp require-staged-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -201,7 +230,7 @@ check-slp-symbols:
 # Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
 # Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
 # The store notarizes on ingestion, so no local notarization is done.
-build-electron-mas: clean-electron stage-slp-latest
+build-electron-mas: clean-electron stage-slp-latest require-staged-slp
 	@$(MAKE) check-slp-symbols
 	@echo "📦 Installing dependencies..."
 	npm install
@@ -264,7 +293,7 @@ push-to-mas: stage-slp-latest
 # NOT enforce the real macOS App Sandbox (a dev Electron isn't a MAS build), so
 # it won't reproduce spawn EPERM / mimetypes / sem_open — use `mas-dev` for that.
 #   MAS=1 make electron-dev
-run-electron-dev:
+run-electron-dev: stage-slp-dev
 	@echo "🚀 Starting Electron app in development mode..."
 ifdef MAS
 	@echo "🍎 MAS sandbox simulation (SMARTLOOP_FORCE_SANDBOX=1, run-in-place from build/slp/)"
