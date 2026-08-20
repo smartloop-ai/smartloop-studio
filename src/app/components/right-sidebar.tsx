@@ -287,11 +287,15 @@ export default function RightSidebar({
     return () => { if (skillAutoSaveTimerRef.current) clearTimeout(skillAutoSaveTimerRef.current); };
   }, [skillContent, skillHasUnsavedChanges, handleSkillSave]);
 
-  // Ctrl/Cmd+S for skill save
+  // Ctrl/Cmd+S for skill save. e.code plus the Alt/Shift bail-out keeps this off
+  // the other two S bindings — Ctrl+Alt+S (web search) and Ctrl+Shift+S (the
+  // Skills section just below). Alt is the one that actually collided: on
+  // Windows/Linux e.key stays 's' under Alt, so toggling web search with the
+  // editor open also saved.
   useEffect(() => {
     if (editingSkillIndex === null && !editingSkillIsNew) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyS') {
         e.preventDefault();
         if (skillHasUnsavedChanges && skillContent.trim()) handleSkillSave();
       }

@@ -29,20 +29,11 @@ const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
     items: [
       { keys: `${MOD}+K`, label: 'Search projects' },
       { keys: `${MOD}+B`, label: 'Toggle right panel' },
+      { keys: `${MOD}+${SHIFT}+M / D / C / S`, label: 'Models / Documents / Connections / Skills' },
+      { keys: `${MOD}+${SHIFT}+,`, label: 'Project settings' },
       { keys: `${MOD}+,`, label: 'Settings' },
       { keys: `${MOD}+${ALT}+S`, label: 'Toggle web search' },
       { keys: `${MOD}+S`, label: 'Save skill (in editor)' },
-      { keys: '?', label: 'Show this list' },
-    ],
-  },
-  {
-    title: 'Right panel',
-    items: [
-      { keys: `${MOD}+${SHIFT}+M`, label: 'Models' },
-      { keys: `${MOD}+${SHIFT}+D`, label: 'Documents' },
-      { keys: `${MOD}+${SHIFT}+C`, label: 'Connections' },
-      { keys: `${MOD}+${SHIFT}+S`, label: 'Skills' },
-      { keys: `${MOD}+${SHIFT}+,`, label: 'Project settings' },
     ],
   },
 ];
@@ -57,29 +48,26 @@ export default function KeybindsDialog({ open, onClose }: { open: boolean; onClo
       PaperProps={{ sx: dialogStyles.paper }}
       BackdropProps={{ sx: dialogStyles.backdrop }}
     >
-      <Box className="p-6">
-        <Box className="flex items-center justify-between mb-5">
-          <h3 className="text-sl-text-primary text-lg font-semibold">Keybinds</h3>
+      <Box className="p-5">
+        <Box className="flex items-center justify-between mb-4">
+          <h3 className="text-sl-text-primary text-sm font-semibold">Keybinds</h3>
           <IconButton size="small" onClick={onClose} sx={{ color: 'var(--sl-text-muted)' }}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Box>
 
-        <Box className="flex flex-col gap-5">
+        <Box className="flex flex-col gap-4">
           {GROUPS.map((group) => (
-            <Box key={group.title} className="flex flex-col gap-2">
-              <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider">
+            <Box key={group.title} className="flex flex-col gap-1">
+              <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-1">
                 {group.title}
               </div>
               {group.items.map((item) => (
-                <Box key={item.keys + item.label} className="flex items-center justify-between gap-4">
+                <Box key={item.keys + item.label} className="flex items-center justify-between gap-4 py-0.5">
                   <span className="text-[12px] text-sl-text-secondary">{item.label}</span>
                   <span
-                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase flex-shrink-0"
-                    style={{
-                      border: '1px solid var(--sl-border-default)',
-                      color: 'var(--sl-text-muted)',
-                    }}
+                    className="text-[11px] font-mono flex-shrink-0"
+                    style={{ color: 'var(--sl-text-muted)' }}
                   >
                     {item.keys}
                   </span>
