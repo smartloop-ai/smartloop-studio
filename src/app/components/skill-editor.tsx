@@ -206,10 +206,16 @@ export default function SkillEditor({
   useEffect(() => { isNewRef.current = isNew; }, [isNew]);
   useEffect(() => { onSaveSkillsRef.current = onSaveSkills; }, [onSaveSkills]);
 
-  // Keyboard shortcut: Ctrl/Cmd+S to save immediately
+  // Keyboard shortcut: Ctrl/Cmd+S to save immediately. Matched on e.code so a
+  // non-QWERTY layout still triggers on the S key, and Alt/Shift are excluded so
+  // the other two S bindings don't also land here — Ctrl+Alt+S toggles web
+  // search and Ctrl+Shift+S opens the Skills rail section. Mac is safe either
+  // way (Opt+S types 'ß', Shift+S types 'S'), but on Windows/Linux e.key stays
+  // 's' under Alt, so without this guard toggling web search with the editor
+  // open would fire a save too.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyS') {
         e.preventDefault();
         if (hasUnsavedChanges && content.trim()) {
           handleSave();
