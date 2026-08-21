@@ -1593,183 +1593,60 @@ ipcMain.handle('slp-list-versions', async () => {
 });
 
 // ── Storage / free-up-space ────────────────────────────────────────────────
-// Model vendors kept when freeing space: the bundled orchestra model (default
-// chat model) and the embeddings model (needed for RAG/indexing).
-const KEEP_MODEL_VENDORS = ['smartloop-ai', 'embeddings'];
+// The framework owns everything under ~/.smartloop — the workspace record, the
+// downloaded models, its own log — so it decides what is safe to delete and
+// does the deleting in-process via /v1/storage/*.  These handlers only proxy.
+//
+// That ownership is also why there is no stop → delete → start dance here any
+// more: the service unloads the models it is about to remove and rewrites its
+// own config, so it never has to be taken down to keep files and state in step.
 
-// Recursively sum the byte size of a file or directory. Missing paths → 0.
-function dirSize(target) {
-  let total = 0;
-  let stat;
-  try { stat = fs.lstatSync(target); } catch { return 0; }
-  if (stat.isSymbolicLink()) return 0;           // don't follow / count symlinks
-  if (stat.isFile()) return stat.size;
-  if (!stat.isDirectory()) return 0;
-  let entries;
-  try { entries = fs.readdirSync(target); } catch { return 0; }
-  for (const name of entries) total += dirSize(path.join(target, name));
-  return total;
-}
-
-// The workspace models directory (~/.smartloop/<workspaceId>/models).
-// Returns null if the workspace/models dir can't be resolved.
-function getModelsDir() {
-  const workspaceDir = getWorkspaceDir();
-  if (!workspaceDir) return null;
-  const modelsDir = path.join(workspaceDir, 'models');
-  return fs.existsSync(modelsDir) ? modelsDir : null;
-}
-
-// Removable model vendor dirs (everything except the kept vendors).
-function getRemovableModelDirs() {
-  const modelsDir = getModelsDir();
-  if (!modelsDir) return [];
-  let vendors;
-  try { vendors = fs.readdirSync(modelsDir, { withFileTypes: true }); } catch { return []; }
-  return vendors
-    .filter(e => e.isDirectory() && !KEEP_MODEL_VENDORS.includes(e.name))
-    .map(e => path.join(modelsDir, e.name));
-}
-
-// Installed SLP version dirs that aren't the current one (safe to delete).
-function getRemovableVersionDirs() {
-  const installDir = slpService.getSlpDir();
-  const current = getCurrentVersion();
-  let entries;
-  try { entries = fs.readdirSync(installDir, { withFileTypes: true }); } catch { return []; }
-  return entries
-    .filter(e => e.isDirectory() && /^\d+\.\d+\.\d+$/.test(e.name) && e.name !== current)
-    .map(e => path.join(installDir, e.name));
-}
-
-// Log + cache paths that can be cleared.
-function getLogCachePaths() {
-  const installDir = slpService.getSlpDir();
-  return {
-    log: path.join(installDir, 'server.log'),
-    cache: path.join(installDir, 'cache'),
-  };
-}
-
-// After deleting model files, mark those models not-downloaded in config.json.
-// The backend tracks download/enabled state there (workspace.models[]) and trusts
-// it on startup rather than rescanning disk — without this, deleted models keep
-// showing as downloaded/available in the picker. Must run while the service is
-// stopped so its own shutdown-write doesn't clobber the edit. Kept models
-// (orchestra + embeddings) are left untouched.
-function markRemovedModelsInConfig() {
-  try {
-    const configPath = path.join(slpService.getSlpDir(), 'config.json');
-    if (!fs.existsSync(configPath)) return;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const models = config?.workspace?.models;
-    if (!Array.isArray(models)) return;
-    let changed = false;
-    for (const m of models) {
-      const name = String(m.model_name || m.name || '').toLowerCase();
-      const keep = name.includes('orchestra') || name.includes('embed');
-      if (keep || m.downloaded === false) continue;
-      m.downloaded = false;
-      m.enabled = false;
-      m.is_active = false;
-      changed = true;
-      console.log(`[Storage] Marked ${m.model_name || m.name} as removed in config`);
-    }
-    if (changed) fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  } catch (err) {
-    console.log(`[Storage] markRemovedModelsInConfig error: ${err.message}`);
-  }
-}
-
-// IPC: report reclaimable disk usage, broken down by category.
+// IPC: report disk usage under the SLP home, broken down by category.
 ipcMain.handle('storage-usage', async () => {
   try {
-    const models = getRemovableModelDirs().reduce((sum, d) => sum + dirSize(d), 0);
-    const versions = getRemovableVersionDirs().reduce((sum, d) => sum + dirSize(d), 0);
-    const { log, cache } = getLogCachePaths();
-    const logsCache = dirSize(log) + dirSize(cache);
-    return {
-      success: true,
-      total: dirSize(slpService.getSlpDir()),   // whole ~/.smartloop footprint
-      models,
-      versions,
-      logsCache,
-      reclaimable: models + versions + logsCache,
-    };
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const res = await fetch(`${baseUrl}/v1/storage/usage`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      return { success: false, error: data?.detail || `Storage usage failed (${res.status})` };
+    }
+    return { success: true, data: await res.json() };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
 
-// IPC: free up space. Stops the SLP service, deletes the selected categories,
-// then restarts so the backend re-syncs its model list from disk.
+// IPC: free up space.  `opts` is the request body verbatim — which categories
+// to clean (and optionally which model ids) is the renderer's decision.
 ipcMain.handle('storage-cleanup', async (event, opts = {}) => {
-  const { models = false, versions = false, logsCache = false } = opts;
   try {
-    const before = dirSize(slpService.getSlpDir());
-    // Pause the health poller so its scheduled ticks don't overwrite the
-    // "restarting" status below with running/unreachable during the restart.
-    healthMonitor.stop();
-    // Stop first so file deletion + the config edit below aren't clobbered by
-    // the backend's shutdown-write of config.json.
-    await slpService.stopService();
-    // Signal the Settings "Agent" panel that a restart is in progress. Sent on a
-    // dedicated channel (not health-update) so it doesn't look like the service
-    // dropped — which would make ProjectContext reconcile and reload the whole UI.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('agent-restarting', { restarting: true });
-    }
-    await new Promise(r => setTimeout(r, 500));
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
 
-    if (models) {
-      for (const dir of getRemovableModelDirs()) fs.rmSync(dir, { recursive: true, force: true });
-      // Reflect the deletion in config.json (the backend's source of truth) so
-      // removed models no longer report as downloaded/available on restart.
-      markRemovedModelsInConfig();
-    }
-    if (versions) {
-      for (const dir of getRemovableVersionDirs()) fs.rmSync(dir, { recursive: true, force: true });
-    }
-    if (logsCache) {
-      const { log, cache } = getLogCachePaths();
-      try { fs.truncateSync(log, 0); } catch {}
-      try {
-        for (const name of fs.readdirSync(cache)) {
-          fs.rmSync(path.join(cache, name), { recursive: true, force: true });
-        }
-      } catch {}
+    const res = await fetch(`${baseUrl}/v1/storage/cleanup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(opts),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { success: false, error: data?.detail || `Cleanup failed (${res.status})` };
     }
 
-    const started = await slpService.startService();
-    refreshTray();
-    // Clear the restarting flag and resume the poller. Because the poller was
-    // paused across the restart, its resume tick reports `running` with the
-    // previous status also `running` — so ProjectContext sees no transition and
-    // doesn't reload the UI; only the Agent panel's badge updates.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('agent-restarting', { restarting: false });
-    }
-    healthMonitor.start(() => mainWindow);
-    // Rebuild the model list and push `models-updated` so the picker drops the
-    // removed models (they now read as not-downloaded / unselected) instead of
-    // still offering them from a stale cache.
-    if (models) {
+    // A model the framework marked as removed is no longer downloaded, so the
+    // cached picker list is stale — rebuild it and push `models-updated`.
+    if (data?.models_marked?.length) {
       invalidateModelsCache();
       refreshModelsCache();
     }
-    const after = dirSize(slpService.getSlpDir());
-    return { success: true, freed: Math.max(0, before - after), serviceStarted: started };
+    return { success: true, data };
   } catch (err) {
-    // Best-effort: try to bring the service back up even if deletion failed.
-    try {
-      await slpService.startService();
-      refreshTray();
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('agent-restarting', { restarting: false });
-      healthMonitor.start(() => mainWindow);
-    } catch {}
     return { success: false, error: err.message };
   }
 });
+
 
 // IPC: switch to a different SLP version (restarts service)
 ipcMain.handle('slp-switch-version', async (event, version) => {
