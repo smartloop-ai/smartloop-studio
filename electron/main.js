@@ -34,6 +34,10 @@ const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
 const APP_URL = process.env.VITE_APP_URL || 'https://app.smartloop.ai';
 const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
+// Marketing-site intake the in-app contact form posts to. The request runs here
+// in the main process, not the renderer: the endpoint sends no
+// Access-Control-Allow-Origin, so a renderer fetch is blocked by Chromium.
+const CONTACT_API_URL = process.env.VITE_CONTACT_API_URL || 'https://smartloop.ai/api/early-access';
 
 // Machine ID IPC handler
 ipcMain.handle('get-machine-id', async () => {
@@ -53,6 +57,42 @@ ipcMain.handle('open-external', async (event, url) => {
     return true;
   }
   return false;
+});
+
+// Submit the in-app contact form. Keeping this in main means the app never
+// links out to a web form (which App Store review treats poorly) and sidesteps
+// the endpoint's missing CORS headers. Returns { success } or { success: false, error }.
+ipcMain.handle('contact-submit', async (event, payload) => {
+  const name = String(payload?.name || '').trim();
+  const email = String(payload?.email || '').trim();
+  const notes = String(payload?.notes || '').trim();
+
+  if (!name || !email || !notes) {
+    return { success: false, error: 'Name, email and message are all required.' };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { success: false, error: 'That email address doesn\'t look right.' };
+  }
+
+  try {
+    const res = await fetch(CONTACT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, notes }),
+    });
+
+    if (res.ok) return { success: true };
+
+    // Surface the server's own message when it sends one; a bare status is
+    // useless to the person staring at the form.
+    const detail = await res.json().catch(() => null);
+    const message = detail?.error || detail?.message || detail?.detail;
+    console.warn('[Contact] Submit failed:', res.status, message || '(no message)');
+    return { success: false, error: message || `Couldn't send your message (${res.status}). Please try again.` };
+  } catch (err) {
+    console.error('[Contact] Error submitting form:', err.message);
+    return { success: false, error: 'Could not reach Smartloop. Check your connection and try again.' };
+  }
 });
 
 // Open a folder in the system file manager (Finder on macOS)

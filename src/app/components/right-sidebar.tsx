@@ -1170,7 +1170,7 @@ export default function RightSidebar({
           {/* Section Title */}
           <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
             <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
-              {activeSection === 'models' ? 'Auxiliary Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'models' ? 'Available Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
 
