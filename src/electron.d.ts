@@ -42,6 +42,75 @@ export interface ModelActionResult {
 
 export interface AuthResult { success: boolean; user?: any; error?: string }
 
+/** One reclaimable (or protected) item within a storage category. */
+export interface StorageItem {
+  path: string;
+  bytes: number;
+  files: number;
+  removable: boolean;
+  /** Why this item is being kept, when it isn't removable. */
+  keep_reason: string | null;
+  /** Models only. */
+  model_id?: string;
+  model_name?: string | null;
+  downloaded?: boolean;
+  enabled?: boolean;
+  is_active?: boolean;
+  loaded?: boolean;
+  registered?: boolean;
+  /** Versions only. */
+  version?: string;
+  /** Logs only: 'truncate' for server.log, 'delete' for its backups. */
+  action?: 'truncate' | 'delete';
+  /** Orphan projects only. */
+  project_id?: string;
+  /** Conversations only (reported, never deleted). */
+  session_id?: string;
+  tracked?: boolean;
+}
+
+export interface StorageCategory {
+  bytes: number;
+  files: number;
+  reclaimable: number;
+  kept: number;
+  items: StorageItem[];
+}
+
+/** Response of GET /v1/storage/usage. */
+export interface StorageUsage {
+  home_dir: string;
+  total: number;
+  files: number;
+  reclaimable: number;
+  kept: number;
+  categories: Record<string, StorageCategory>;
+}
+
+/** Body of POST /v1/storage/cleanup. Omitted categories are left alone. */
+export interface StorageCleanupRequest {
+  models?: boolean;
+  /** Restrict the model sweep to these ids; omit for every removable model. */
+  model_ids?: string[];
+  versions?: boolean;
+  logs?: boolean;
+  cache?: boolean;
+  orphan_projects?: boolean;
+  dry_run?: boolean;
+}
+
+export interface StorageCleanupResult {
+  dry_run: boolean;
+  freed: number;
+  freed_by_category: Record<string, number>;
+  deleted: Array<{ category: string; path: string; bytes: number }>;
+  failed: Array<{ category: string; path: string; error: string }>;
+  models_marked: string[];
+  /** Something couldn't be removed while still in use; a restart will finish it. */
+  restart_required: boolean;
+  usage: StorageUsage;
+}
+
 export interface ElectronAPI {
   sendMessage: (channel: string, data: any) => void;
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
@@ -168,18 +237,10 @@ export interface ElectronAPI {
     freeMemGb: number;
     gpu: string | null;
   }>;
-  // Storage / free-up-space
-  getStorageUsage: () => Promise<{
-    success: boolean;
-    total?: number;
-    models?: number;
-    versions?: number;
-    logsCache?: number;
-    reclaimable?: number;
-    error?: string;
-  }>;
-  cleanupStorage: (opts: { models?: boolean; versions?: boolean; logsCache?: boolean }) =>
-    Promise<{ success: boolean; freed?: number; serviceStarted?: boolean; error?: string }>;
+  // Storage / free-up-space — proxied to the framework's /v1/storage endpoints
+  getStorageUsage: () => Promise<{ success: boolean; data?: StorageUsage; error?: string }>;
+  cleanupStorage: (opts: StorageCleanupRequest) =>
+    Promise<{ success: boolean; data?: StorageCleanupResult; error?: string }>;
   // Save file via native save dialog
   saveFileDialog: (defaultName: string, content: string, defaultDir?: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
   // Projects: centralized /v1/projects access (list + CRUD in main process)
@@ -213,4 +274,3 @@ declare global {
 }
 
 export { };
-
