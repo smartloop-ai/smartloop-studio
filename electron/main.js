@@ -206,12 +206,14 @@ ipcMain.handle('download-document', async (event, filePath) => {
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
-// SLP data directory. In the Developer-ID build (dmg) this stays ~/.smartloop/
-// (the default inside slp-setup), keeping the binary, config, and data in a
-// consistent, well-known location — even though the binary is now bundled and
-// copied there instead of downloaded. In the sandboxed Mac App Store build the
-// app may only write inside its container, so relocate all SLP state under
-// userData (~/Library/Containers/ai.smartloop.studio/Data/…).
+// SLP data directory — SLP's home (SLP_HOME), not where the framework lives:
+// the framework runs in place from inside the app on every platform, so this
+// holds only the state SLP itself manages (server.port, server.log, config,
+// models, workspaces, studio.db). In the Developer-ID build (dmg), Windows and
+// Linux it stays ~/.smartloop/ (the default inside slp-setup), a consistent,
+// well-known location. In the sandboxed Mac App Store build the app may only
+// write inside its container, so relocate all SLP state under userData
+// (~/Library/Containers/ai.smartloop.studio/Data/…).
 if (isSandboxed()) {
   const slpDataDir = path.join(app.getPath('userData'), 'slp');
   setInstallDir(slpDataDir);
