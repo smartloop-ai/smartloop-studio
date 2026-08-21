@@ -206,12 +206,14 @@ ipcMain.handle('download-document', async (event, filePath) => {
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
-// SLP data directory. In the Developer-ID build (dmg) this stays ~/.smartloop/
-// (the default inside slp-setup), keeping the binary, config, and data in a
-// consistent, well-known location — even though the binary is now bundled and
-// copied there instead of downloaded. In the sandboxed Mac App Store build the
-// app may only write inside its container, so relocate all SLP state under
-// userData (~/Library/Containers/ai.smartloop.studio/Data/…).
+// SLP data directory — SLP's home (SLP_HOME), not where the framework lives:
+// the framework runs in place from inside the app on every platform, so this
+// holds only the state SLP itself manages (server.port, server.log, config,
+// models, workspaces, studio.db). In the Developer-ID build (dmg), Windows and
+// Linux it stays ~/.smartloop/ (the default inside slp-setup), a consistent,
+// well-known location. In the sandboxed Mac App Store build the app may only
+// write inside its container, so relocate all SLP state under userData
+// (~/Library/Containers/ai.smartloop.studio/Data/…).
 if (isSandboxed()) {
   const slpDataDir = path.join(app.getPath('userData'), 'slp');
   setInstallDir(slpDataDir);
@@ -544,23 +546,67 @@ function copyDirRecursive(src, dest, skipDirs = []) {
   }
 }
 
-// Helper: read the SLP config.json and find the workspace project directory for a given project ID
-function getSlpProjectDir(projectId) {
-  const configPath = path.join(slpService.getSlpDir(), 'config.json');
-  if (!fs.existsSync(configPath)) return null;
+// Helper: the SLP config.json (SLP_HOME/config.json), or null if unreadable.
+function readSlpConfig() {
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const projects = config?.workspace?.projects || [];
-    const match = projects.find(p => p.id === projectId);
-    if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
-    // Fallback: try the conventional path
-    const conventionalDir = path.join(slpService.getSlpDir(), workspaceId, projectId);
-    return fs.existsSync(conventionalDir) ? conventionalDir : null;
+    const configPath = path.join(slpService.getSlpDir(), 'config.json');
+    if (!fs.existsSync(configPath)) return null;
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   } catch {
     return null;
   }
+}
+
+// Helper: the active workspace directory (SLP_HOME/<workspaceId>), which is
+// where SLP keeps per-project dirs, the models dir, and workspace.db. Prefer
+// the explicit workspace_dir config.json records; fall back to the conventional
+// SLP_HOME/<workspaceId>. Null when there is no workspace yet.
+function getWorkspaceDir() {
+  const config = readSlpConfig();
+  const recorded = config?.workspace?.workspace_dir;
+  if (recorded) return resolveHomePath(recorded);
+  const workspaceId = config?.workspace?.id;
+  return workspaceId ? path.join(slpService.getSlpDir(), workspaceId) : null;
+}
+
+// Helper: read the SLP config.json and find the workspace project directory for
+// a given project ID. Returns null unless the directory is actually on disk —
+// callers that need the intended path for a project SLP hasn't materialized yet
+// want resolveProjectDir() instead.
+function getSlpProjectDir(projectId) {
+  const config = readSlpConfig();
+  if (!config) return null;
+  const match = (config?.workspace?.projects || []).find(p => p.id === projectId);
+  if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const conventionalDir = path.join(workspaceDir, projectId);
+  return fs.existsSync(conventionalDir) ? conventionalDir : null;
+}
+
+/**
+ * Where a project's files live: <SLP_HOME>/<workspaceId>/<projectId>.
+ *
+ * NOT health.cwd + projectId. health.cwd is SLP_HOME (~/.smartloop) — the
+ * workspace id sits between it and the project dir, so joining the two gave a
+ * path one level too high. Nothing was there, and because the folder button
+ * opens with createIfMissing the click silently created an empty directory
+ * beside SLP's own state and opened that instead of the project. The same value
+ * is sent as `cwd` on every chat turn, so file/shell skills were pointed at the
+ * empty directory too.
+ *
+ * SLP creates a project's directory lazily (first document or file written), so
+ * fall back to the conventional path when it isn't on disk yet rather than
+ * giving up — that is the path SLP will use, and the one to create on click.
+ * apiCwd (the API's own `cwd` field) is the last resort; it is usually "".
+ */
+function resolveProjectDir(projectId, apiCwd) {
+  if (!projectId) return apiCwd || null;
+  const onDisk = getSlpProjectDir(projectId);
+  if (onDisk) return onDisk;
+  const workspaceDir = getWorkspaceDir();
+  if (workspaceDir) return path.join(workspaceDir, projectId);
+  return apiCwd || null;
 }
 
 // IPC: export a project via SLP API + SQLite state
@@ -756,8 +802,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const createdProject = await importRes.json();
     const newProjectId = createdProject.id;
-    const healthCwd = slpService.getCwd();
-    const resolvedFolderPath = (healthCwd ? path.join(healthCwd, newProjectId) : null) || createdProject.cwd || overrides?.cwd;
+    const resolvedFolderPath = resolveProjectDir(newProjectId, createdProject.cwd) || overrides?.cwd;
 
     // Save UI metadata (display name, color) to SQLite
     database.upsertProject({
@@ -956,12 +1001,11 @@ function broadcastProjectsChanged() {
 function enrichProjects(apiProjects) {
   const localMeta = database.getAllProjects();
   const metaMap = new Map(localMeta.map((m) => [m.id, m]));
-  const healthCwd = slpService.getCwd();
 
   const enriched = apiProjects.map((p) => {
     const meta = metaMap.get(p.id);
-    // Prefer health.cwd + project_id → API cwd → local DB folder_path
-    const folderPath = (healthCwd ? path.join(healthCwd, p.id) : null) || p.cwd || meta?.folder_path || null;
+    // Workspace project dir → API cwd → local DB folder_path
+    const folderPath = resolveProjectDir(p.id, p.cwd) || meta?.folder_path || null;
 
     // Ensure every project has a local metadata row so UI-only fields (color,
     // folder_path) can be persisted. The system "general_chat" project is created
@@ -969,8 +1013,10 @@ function enrichProjects(apiProjects) {
     // would silently no-op (UPDATE ... WHERE id matches nothing).
     if (!meta) {
       database.upsertProject({ id: p.id, name: p.name, color: null, system: p.system, folder_path: folderPath });
-    } else if (folderPath && !meta.folder_path) {
-      // Backfill folder_path from the API response when SQLite lacks it.
+    } else if (folderPath && meta.folder_path !== folderPath) {
+      // Keep SQLite in step with the resolved path — it backfills a missing one
+      // and repairs a stale one (rows written before project dirs were resolved
+      // through the workspace point at a path that never existed).
       database.updateProject(p.id, { folder_path: folderPath });
     }
 
@@ -1043,8 +1089,7 @@ ipcMain.handle('projects-create', async (event, params) => {
 
     if (res.status === 200 || res.status === 201) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const folderPath = (healthCwd ? path.join(healthCwd, project.id) : null) || project.cwd || params.folder_path;
+      const folderPath = resolveProjectDir(project.id, project.cwd) || params.folder_path;
 
       database.upsertProject({ id: project.id, name: trimmedName, color, system, folder_path: folderPath });
       database.addMcpServer({
@@ -1093,8 +1138,7 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
 
     if (res.status === 200) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const resolvedCwd = (healthCwd ? path.join(healthCwd, projectId) : null) || project.cwd;
+      const resolvedCwd = resolveProjectDir(projectId, project.cwd);
 
       const metaUpdates = {};
       if (trimmedName) metaUpdates.name = trimmedName;
@@ -1510,18 +1554,13 @@ function dirSize(target) {
   return total;
 }
 
-// The workspace models directory (~/.smartloop/<workspaceId>/models), read from
-// config.json. Returns null if the workspace/models dir can't be resolved.
+// The workspace models directory (~/.smartloop/<workspaceId>/models).
+// Returns null if the workspace/models dir can't be resolved.
 function getModelsDir() {
-  try {
-    const configPath = path.join(slpService.getSlpDir(), 'config.json');
-    if (!fs.existsSync(configPath)) return null;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const modelsDir = path.join(slpService.getSlpDir(), workspaceId, 'models');
-    return fs.existsSync(modelsDir) ? modelsDir : null;
-  } catch { return null; }
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const modelsDir = path.join(workspaceDir, 'models');
+  return fs.existsSync(modelsDir) ? modelsDir : null;
 }
 
 // Removable model vendor dirs (everything except the kept vendors).
@@ -1719,21 +1758,30 @@ const { bootstrapProgress } = require('./bootstrap-progress.js');
  * Determine whether the SLP service needs bootstrapping — i.e. it has no
  * projects yet or no model loaded. Returns true on any error (assume needed).
  */
+/** GET a JSON body from the local service, or null on any failure. */
+function getServiceJson(urlStr) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    const u = new URL(urlStr);
+    http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
+}
+
+/** Projects the service reports, or null when the call fails. */
+async function getProjects(baseUrl) {
+  const data = await getServiceJson(`${baseUrl}/v1/projects`);
+  if (!data) return null;
+  return Array.isArray(data) ? data : (data.projects || []);
+}
+
 async function checkNeedsBootstrap(baseUrl) {
   try {
-    const http = require('http');
-    const getJson = (urlStr) => new Promise((resolve) => {
-      const u = new URL(urlStr);
-      http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
-        let body = '';
-        res.on('data', (c) => { body += c; });
-        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-      }).on('error', () => resolve(null));
-    });
-
-    const projectsData = await getJson(`${baseUrl}/v1/projects`);
-    const projects = Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []);
-    const health = (await getJson(`${baseUrl}/health`)) || {};
+    const projects = (await getProjects(baseUrl)) || [];
+    const health = (await getServiceJson(`${baseUrl}/health`)) || {};
 
     const hasProjects = projects.length > 0;
     const hasModel = health.status === 'healthy';
@@ -1747,7 +1795,7 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
-async function bootstrapSlpService(baseUrl) {
+async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
     const http = require('http');
@@ -1784,6 +1832,9 @@ async function bootstrapSlpService(baseUrl) {
                 console.log('[SLP] Bootstrap:', progress.status);
               }
 
+              // Let the caller know the stream is alive (stall watchdog).
+              if (onProgress) onProgress(progress);
+
               // Send to splash screen only when main window isn't visible yet
               if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
                 updateSplashProgress(data);
@@ -1804,7 +1855,12 @@ async function bootstrapSlpService(baseUrl) {
         console.log('[SLP] Bootstrap completed');
 
         // Send a final completed event so the renderer clears the progress UI
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        // and reloads the project list (bootstrap creates the default project).
+        // Not gated on window visibility: on a first run the window is still
+        // hidden behind the splash here, but its renderer is loaded and
+        // listening — and it is the run that most needs the reload, since the
+        // project list it fetched on mount was empty.
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
           mainWindow.webContents.send('bootstrap-progress', {
             percent: 100, status: 'Ready', model: '', downloading: false
           });
@@ -1926,6 +1982,123 @@ function verifyRequirementsOnSplash() {
   detectSystemCapability()
     .then((cap) => console.log('[SLP] System capability:', cap.label))
     .catch(() => { });
+}
+
+/**
+ * Close the splash and bring up the main window, starting the pollers that
+ * need a live renderer. Every startup path ends here, so the ordering (splash
+ * down, window up, service-ready sent, pollers started) lives in one place.
+ */
+function revealMainWindow(baseUrl) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  setAppReady(true);
+  mainWindow.show();
+  mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+  healthMonitor.start(() => mainWindow);
+  releaseChecker.start(() => mainWindow, () => refreshTray());
+  fetchModels();
+}
+
+// A bootstrap that stops emitting SSE progress must not trap the user behind a
+// frozen splash forever — if nothing arrives for this long, give up on the
+// splash and open the main window (bootstrap keeps running server-side).
+const BOOTSTRAP_STALL_MS = 10 * 60 * 1000;
+
+/** Wait for the service to stop answering /health. False if it never does. */
+async function waitForServiceDown(timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await slpService.checkHealth())) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * Run bootstrap to completion, guarded by a stall watchdog. Never rejects: a
+ * failed or stalled bootstrap hands control back so the caller can carry on and
+ * open the main window.
+ */
+async function runBootstrap(baseUrl) {
+  await new Promise((resolve) => {
+    let stallTimer = null;
+    const done = () => { clearTimeout(stallTimer); resolve(); };
+    const bumpStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        console.warn('[SLP] Bootstrap stalled — giving up on the splash while it continues');
+        resolve();
+      }, BOOTSTRAP_STALL_MS);
+    };
+
+    bumpStall();
+    bootstrapSlpService(baseUrl, bumpStall)
+      .then(() => { refreshTray(); })
+      .catch((error) => { console.error('[SLP] Bootstrap failed:', error.message); })
+      .finally(done);
+  });
+}
+
+/**
+ * First run: SLP is installed and answering, but has no model and no project
+ * yet, so there is nothing usable behind the main window. Keep the splash up
+ * and let bootstrap (which downloads the default model, ~770 MB) stream its
+ * progress into it — bootstrapSlpService routes SSE progress to the splash for
+ * as long as the main window stays hidden — and only return once it finishes.
+ *
+ * This applies to every platform. All three now bundle the SLP framework, so
+ * needsInstall() is false on a fresh machine and the install splash is skipped
+ * entirely; bootstrap is the only first-launch work left. Without this gate the
+ * splash closed the moment the service answered and the user landed in an empty
+ * chat — no model, no project — while the model downloaded invisibly.
+ *
+ * Returns the base URL to use from here on: the repair path below restarts the
+ * service, which can hand back a different port.
+ */
+async function bootstrapOnSplash(baseUrl) {
+  if (!splashWindow || splashWindow.isDestroyed()) createStartingSplash();
+  updateSplashProgress({ status: 'preparing', message: 'Setting up your workspace...' });
+
+  await runBootstrap(baseUrl);
+
+  // Bootstrap can report "completed" and still leave the workspace empty: a
+  // service that kept running after its data dir was wiped (the agent outlives
+  // the app) answers /health with the old model still loaded, so bootstrap
+  // skips the work and returns a project it no longer has. The app then opened
+  // on an empty workspace — no projects, nothing to chat with. Restart the
+  // service so it re-reads what is actually on disk, then bootstrap for real.
+  //
+  // Only an empty list counts as evidence — a failed call tells us nothing.
+  const projects = await getProjects(baseUrl);
+  if (projects === null || projects.length > 0) return baseUrl;
+
+  console.warn('[SLP] Bootstrap reported success but the workspace has no projects — restarting the service and retrying');
+  updateSplashProgress({ status: 'preparing', message: 'Repairing workspace...' });
+
+  try {
+    await slpService.stopService();
+    if (!(await waitForServiceDown())) {
+      // Another process owns this port (an agent from a different install), so
+      // restarting ours changes nothing — leave it and open the window.
+      console.warn('[SLP] A service we cannot stop is holding the port — skipping the retry');
+      return baseUrl;
+    }
+    if (!(await slpService.startService())) {
+      console.error('[SLP] Service failed to restart during workspace repair');
+      return baseUrl;
+    }
+    const repairedUrl = slpService.getLocalBaseUrl() || baseUrl;
+    await runBootstrap(repairedUrl);
+    return repairedUrl;
+  } catch (error) {
+    console.error('[SLP] Workspace repair failed:', error.message);
+    return baseUrl;
+  }
 }
 
 // IPC: load model (called from renderer)
@@ -2893,41 +3066,22 @@ if (!gotTheLock) {
         }
       }
 
-      const baseUrl = slpService.getLocalBaseUrl();
+      let baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
       const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        setAppReady(true);
-        mainWindow.show();
-        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-        healthMonitor.start(() => mainWindow);
-        releaseChecker.start(() => mainWindow, () => refreshTray());
-      }
-
       // Download blank project template in the background
       downloadBlankTemplate().catch(err => console.warn('[Template] Background download failed:', err.message));
 
+      // A healthy service with no model/project is still a first run: show the
+      // setup progress on the splash instead of an empty chat window.
       if (needsBootstrap) {
-        console.log('[SLP] Bootstrapping in background');
-        (async () => {
-          try {
-            await bootstrapSlpService(baseUrl);
-            refreshTray();
-          } catch (error) {
-            console.error('[SLP] Bootstrap failed:', error.message);
-          } finally {
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-          }
-        })();
-      } else if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
+        console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+        baseUrl = await bootstrapOnSplash(baseUrl);
       }
+
+      revealMainWindow(baseUrl);
     } else {
       // Either nothing is running, or something is running that we refused to
       // adopt above. Stop the orphan first — it holds the port this process is
@@ -3013,7 +3167,7 @@ if (!gotTheLock) {
             return;
           }
 
-          const baseUrl = slpService.getLocalBaseUrl();
+          let baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
@@ -3021,32 +3175,15 @@ if (!gotTheLock) {
           // Download blank project template while splash is still visible
           await downloadBlankTemplate().catch(err => console.warn('[Template] Download failed:', err.message));
 
-          // Show main window immediately once the service is ready; bootstrap
-          // continues in the background so startup feels faster.
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAppReady(true);
-            mainWindow.show();
-            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            healthMonitor.start(() => mainWindow);
-            releaseChecker.start(() => mainWindow, () => refreshTray());
-            fetchModels();
+          // First run (no model, no project): hold the splash through bootstrap
+          // so the model download is visible, then open the main window. When
+          // there is nothing to bootstrap, open it right away.
+          if (needsBootstrap) {
+            console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+            baseUrl = await bootstrapOnSplash(baseUrl);
           }
 
-          if (needsBootstrap) {
-            console.log('[SLP] Bootstrap needed — running in background');
-            (async () => {
-              try {
-                await bootstrapSlpService(baseUrl);
-                refreshTray();
-              } catch (error) {
-                console.error('[SLP] Bootstrap failed:', error.message);
-              }
-            })();
-          }
+          revealMainWindow(baseUrl);
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });

@@ -6,10 +6,12 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
-const { useBundledSlp, bundledSlpDir, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
+const { useBundledSlp, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
 
 const VERSION = '1.1.0';
-// SLP framework is downloaded at runtime (not bundled). Mirrors install.sh:
+// Every packaged build bundles the SLP framework and runs it in place (see
+// getInstalledBinaryPath). This CDN layout is only for the no-bundle fallback,
+// and mirrors install.sh:
 //   https://dl.smartloop.ai/slp/<version>/<plat>-<arch>-slp.<ext>
 const SLP_BASE_URL = (process.env.SLP_BASE_URL || 'https://dl.smartloop.ai').replace(/\/+$/, '');
 function getDownloadBaseUrl() { return `${SLP_BASE_URL}/slp/${VERSION}`; }
@@ -63,20 +65,17 @@ function isNonEmptyFile(filePath) {
 }
 
 function getInstalledBinaryPath() {
-  // Sandboxed (MAS) build: run SLP in place from the signed, sealed app bundle
-  // (process.resourcesPath/slp). The App Sandbox will not exec a binary copied
-  // into the writable container — copied code fails library validation and is
-  // killed on launch — so never point at INSTALL_DIR here. Writable state still
-  // lands in the container via SLP_HOME (see slp-service.js slpEnv()).
-  if (isSandboxed()) return bundledSlpBinaryPath();
-
-  // Non-sandboxed bundled build (macOS dmg, Windows, Linux): the SLP framework
-  // ships inside the app via extraResources (process.resourcesPath/slp).
-  // Run it in place from the bundle — copying the entire framework to
-  // ~/.smartloop/<version>/ is slow and can hang the splash screen on
-  // Linux/Windows. Writable state goes to INSTALL_DIR via SLP_HOME.
+  // Bundled build — every packaged platform (macOS dmg + MAS, Windows, Linux):
+  // the framework ships inside the app via extraResources
+  // (process.resourcesPath/slp) and runs IN PLACE from there. It is never
+  // copied to INSTALL_DIR: the copy is slow enough to hang the splash on
+  // Windows/Linux, and under the App Sandbox a copied binary fails library
+  // validation and is killed on launch. Writable state goes to INSTALL_DIR via
+  // SLP_HOME (see slp-service.js slpEnv()).
   if (useBundledSlp()) return bundledSlpBinaryPath();
 
+  // No bundled framework (source checkout, or a package missing its
+  // extraResources): fall back to whatever was downloaded into INSTALL_DIR.
   const binaryName = process.platform === 'win32' ? 'slp.exe' : 'slp';
   try {
     if (fs.existsSync(getMarkerFile())) {
@@ -93,9 +92,9 @@ function getInstalledBinaryPath() {
  * True when an SLP framework is actually present on disk and runnable.
  *
  * getInstalledBinaryPath() already resolves the right location for every build
- * shape — the signed bundle for a sandboxed (MAS) build, Contents/Resources/slp
- * for the other bundled builds, INSTALL_DIR (~/.smartloop) only when nothing is
- * bundled — so this is a presence check, not a path guess.
+ * shape — the app bundle (Contents/Resources/slp) whenever a framework shipped
+ * with the app, INSTALL_DIR (~/.smartloop) only when nothing is bundled — so
+ * this is a presence check, not a path guess.
  *
  * Deliberately NOT needsInstall(). That answers "should we fetch/copy SLP?",
  * which is also true for a framework that is present and working but a version
@@ -107,11 +106,10 @@ function verifyFramework() {
 }
 
 function needsInstall() {
-  // Sandboxed and non-sandboxed bundled builds run SLP in place from the app
-  // bundle via extraResources (process.resourcesPath/slp) — there is nothing
-  // to copy or download. The only requirement is that the bundled binary
-  // actually shipped in the app.
-  if (isSandboxed() || useBundledSlp()) return !isNonEmptyFile(bundledSlpBinaryPath());
+  // Bundled builds run SLP in place from the app bundle via extraResources
+  // (process.resourcesPath/slp) — there is nothing to copy or download. The
+  // only requirement is that the bundled binary actually shipped in the app.
+  if (useBundledSlp()) return !isNonEmptyFile(bundledSlpBinaryPath());
 
   try {
     if (!fs.existsSync(getMarkerFile())) return true;
@@ -449,31 +447,11 @@ function compareEtag(res) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Copy the SLP framework that ships inside the app bundle
- * (Contents/Resources/slp) into the writable version dir. Used by bundled/MAS
- * builds instead of downloading — the App Store forbids fetching native code at
- * runtime, so the framework is shipped and copied to the standard install path.
- * The destination layout matches the extracted archive (binary at
- * <versionRoot>/slp), so the rest of installService is shared.
+ * Download and install the SLP framework into INSTALL_DIR. Only reached by a
+ * build that shipped WITHOUT a bundled framework — every packaged build bundles
+ * it and runs it in place (see setupSlpService), so this is the fallback for a
+ * source checkout or a package whose extraResources went missing.
  */
-async function copyBundledSlp(versionRoot, onProgress) {
-  const srcDir = bundledSlpDir();
-  console.log('[SLP Setup] Installing bundled SLP from', srcDir);
-  if (onProgress) onProgress({ status: 'installing', message: 'Installing Framework...' });
-
-  if (!fs.existsSync(srcDir)) {
-    throw new Error(`Bundled SLP not found at ${srcDir} — the app was packaged without build/slp/`);
-  }
-
-  // Copy the framework's contents into the version dir (dest becomes a mirror
-  // of the bundle's slp/ folder). Preserve symlinks (dereference:false, the
-  // default): PyInstaller's _internal ships framework symlinks whose structure
-  // and code signatures must stay intact for the binary to run.
-  fs.cpSync(srcDir, versionRoot, { recursive: true, verbatimSymlinks: true });
-
-  if (onProgress) onProgress({ status: 'installing', percent: 100, message: 'Installing Framework... 100%' });
-}
-
 async function installService(onProgress) {
   const { plat, arch } = detectPlatform();
 
@@ -497,48 +475,40 @@ async function installService(onProgress) {
     fs.rmSync(path.join(versionRoot, f), { recursive: true, force: true });
   }
 
-  if (useBundledSlp()) {
-    // Bundled build (MAS/cross-platform): the SLP framework ships inside the
-    // app at Contents/Resources/slp — copy it into the writable version dir.
-    // From here on the flow is identical to the downloaded build (verify,
-    // hash, version tracking, CLI install), so there is one code path.
-    await copyBundledSlp(versionRoot, onProgress);
-  } else {
-    // Downloaded build: fetch + extract the archive into the version dir.
-    const ext = isWindows ? 'zip' : 'tar.gz';
-    const archiveUrl = getArchiveUrl();
-    const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
+  // Fetch + extract the archive into the version dir.
+  const ext = isWindows ? 'zip' : 'tar.gz';
+  const archiveUrl = getArchiveUrl();
+  const cachedArchive = path.join(getCacheDir(), `slp-${VERSION}-${plat}-${arch}.${ext}`);
 
-    await doDownload(archiveUrl, cachedArchive, onProgress);
-    await storeRemoteEtag();
+  await doDownload(archiveUrl, cachedArchive, onProgress);
+  await storeRemoteEtag();
 
-    console.log('[SLP Setup] Extracting...');
-    if (onProgress) onProgress({ status: 'installing', message: 'Extracting...' });
+  console.log('[SLP Setup] Extracting...');
+  if (onProgress) onProgress({ status: 'installing', message: 'Extracting...' });
 
-    // Extract straight into the version dir — no temp copy. The SLP bundle is
-    // large (hundreds of MB), so a temp dir on a small tmpfs would overflow
-    // ("Disk quota exceeded"). If the archive wraps everything in a top-level
-    // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
-    const listFlag = isWindows ? '-tf' : '-tzf';
-    const listing = await runAsync('tar', [listFlag, cachedArchive]);
-    const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
-    const totalEntries = entries.length;
-    const topLevel = new Set(entries.map((l) => l.split('/')[0]));
-    const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
+  // Extract straight into the version dir — no temp copy. The SLP bundle is
+  // large (hundreds of MB), so a temp dir on a small tmpfs would overflow
+  // ("Disk quota exceeded"). If the archive wraps everything in a top-level
+  // slp/ dir, strip it so the binary lands at <versionRoot>/slp.
+  const listFlag = isWindows ? '-tf' : '-tzf';
+  const listing = await runAsync('tar', [listFlag, cachedArchive]);
+  const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
+  const totalEntries = entries.length;
+  const topLevel = new Set(entries.map((l) => l.split('/')[0]));
+  const stripWrapper = topLevel.size === 1 && topLevel.has('slp');
 
-    // Extract with -v so tar prints one line per entry; counting those lines
-    // against the known total gives a deterministic extraction percentage.
-    const extractArgs = [isWindows ? '-xvf' : '-xvzf', cachedArchive, '-C', versionRoot];
-    if (stripWrapper) extractArgs.push('--strip-components=1');
-    try {
-      await runWithLineProgress('tar', extractArgs, (done) => {
-        if (!onProgress || totalEntries === 0) return;
-        const pct = Math.min(100, Math.round((done / totalEntries) * 100));
-        onProgress({ status: 'installing', percent: pct, message: `Extracting Framework... ${pct}%` });
-      });
-    } finally {
-      try { fs.unlinkSync(cachedArchive); } catch {}
-    }
+  // Extract with -v so tar prints one line per entry; counting those lines
+  // against the known total gives a deterministic extraction percentage.
+  const extractArgs = [isWindows ? '-xvf' : '-xvzf', cachedArchive, '-C', versionRoot];
+  if (stripWrapper) extractArgs.push('--strip-components=1');
+  try {
+    await runWithLineProgress('tar', extractArgs, (done) => {
+      if (!onProgress || totalEntries === 0) return;
+      const pct = Math.min(100, Math.round((done / totalEntries) * 100));
+      onProgress({ status: 'installing', percent: pct, message: `Extracting Framework... ${pct}%` });
+    });
+  } finally {
+    try { fs.unlinkSync(cachedArchive); } catch {}
   }
 
   // ── Step 4: Verify binary ────────────────────────────────────────────────
@@ -653,20 +623,31 @@ function ensureLocalBinOnPath(localBin) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Run the full setup: install SLP to ~/.smartloop/.
+ * Run the full setup so the app has a runnable SLP framework.
+ *
+ * Every packaged build — macOS (dmg and MAS), Windows, Linux — ships the
+ * framework inside the app via extraResources and runs it IN PLACE from there.
+ * Nothing is ever copied or downloaded: copying a ~1 GB framework to
+ * ~/.smartloop doubled the disk cost and stalled the splash for minutes on
+ * Windows/Linux, and the App Sandbox refuses to exec a copy anyway (copied code
+ * fails library validation). SLP owns everything under SLP_HOME — server.port,
+ * server.log, config, models, workspaces, studio.db — and that is the only
+ * writable state the app creates (see slp-service.js slpEnv()).
+ *
+ * So for a packaged build this is just a presence check. The download path
+ * below is the fallback for a build with no bundled framework (a source
+ * checkout, or a package whose extraResources went missing).
+ *
  * @param {function} onProgress - Optional callback for splash screen progress updates.
  * @returns {Promise<boolean>} true if setup was performed, false if already up-to-date.
  */
 async function setupSlpService(onProgress = null) {
-  // Sandboxed (MAS) build: SLP is run in place from the app bundle, so there is
-  // no copy/download install step. Verify the framework actually shipped, mark
-  // the install complete, and let the startup flow proceed to start the binary.
-  if (isSandboxed()) {
+  if (useBundledSlp()) {
     if (!isNonEmptyFile(bundledSlpBinaryPath())) {
       throw new Error(`Bundled SLP binary missing at ${bundledSlpBinaryPath()} — the app was packaged without build/slp/`);
     }
     for (let step = 0; step < 4; step++) database.setInstallStepComplete(step);
-    console.log('[SLP Setup] Sandboxed build — running SLP in place from bundle:', bundledSlpBinaryPath());
+    console.log('[SLP Setup] Running SLP in place from the app bundle:', bundledSlpBinaryPath());
     return false;
   }
 

@@ -3,12 +3,6 @@
 ; electron-builder template already pulls it in.
 !include LogicLib.nsh
 
-; Single-source the SLP version from electron/slp-setup.js at compile time so
-; the installer can never drift from what the app expects.
-!searchparse /file "${PROJECT_DIR}\electron\slp-setup.js" "const VERSION = '" SLP_VERSION "';"
-
-!define SLP_ARCHIVE_URL "https://dl.smartloop.ai/slp/${SLP_VERSION}/windows-amd64-slp.zip"
-
 ; electron-builder's install section starts with `SetDetailsPrint none` and
 ; customInstall only runs after the old-version uninstall and app-file
 ; extraction — so the whole first phase of the install showed a bare progress
@@ -34,16 +28,17 @@ Var pid
   !insertmacro _CHECK_APP_RUNNING
 !macroend
 
-; The SLP framework now ships INSIDE the app bundle (electron-builder.yml
-; extraResources → resources\slp) and is copied to %USERPROFILE%\.smartloop on
-; first launch (electron/build-mode.js → copyBundledSlp in slp-setup.js). The
-; installer therefore no longer downloads it from the CDN — nothing to do here.
+; The SLP framework ships INSIDE the app bundle (electron-builder.yml
+; extraResources → resources\slp) and is run in place from there — never
+; downloaded, never copied out (electron/slp-setup.js getInstalledBinaryPath).
+; The installer therefore has nothing to install beyond the app itself.
 !macro customInstall
 !macroend
 
-; On uninstall, remove everything the app put on the machine: the SLP
-; framework, models, and local DB under %USERPROFILE%\.smartloop, plus the
-; Electron user-data folder (electron-store, caches). Guarded by ${isUpdated}
+; On uninstall, remove everything the app put on the machine outside its own
+; install dir: SLP's home (%USERPROFILE%\.smartloop — models, config, local DB;
+; the framework itself goes away with the app), plus the Electron user-data
+; folder (electron-store, caches). Guarded by ${isUpdated}
 ; because electron-builder runs the old uninstaller with --updated during an
 ; in-place upgrade — data must survive updates and only go on real uninstall.
 !macro customUnInstall

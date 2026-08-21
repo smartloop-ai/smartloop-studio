@@ -33,8 +33,8 @@ Actions → **Release Prod** → **Run workflow**. Inputs (both optional):
 - `electron_version` — the app version in `package.json`. Blank = patch bump.
 - `agent_version` — the SLP framework version. Blank = patch bump.
 
-The `open-pr` job computes the next versions and edits four files:
-`package.json`, `electron/slp-setup.js`, `Makefile`, `build/install-slp.ps1`.
+The `open-pr` job computes the next versions and edits three files:
+`package.json`, `electron/slp-setup.js`, `Makefile`.
 It pushes a `release-prod-<ver>` branch and opens a **"Release prod: …"** PR into
 `main`.
 
@@ -92,8 +92,8 @@ the version *string*, so clients already on `<ver>` will not re-download a rebui
 
 `bump-framework.yml` is a second, older way to open a version-bump PR. Merging its
 PR also changes `package.json` on `main`, so it **also** trips `release-prod`'s
-`detect-release` and triggers a build. But it does **not** update
-`build/install-slp.ps1` or bump the agent version the way the Release Prod dispatch
-does, so it can produce a subtly inconsistent release commit.
+`detect-release` and triggers a build. But it does **not** bump the agent version
+(`electron/slp-setup.js`, `Makefile`) the way the Release Prod dispatch does, so
+it can produce a subtly inconsistent release commit.
 
 **Use the Release Prod dispatch (Step 1) as the canonical path.**
