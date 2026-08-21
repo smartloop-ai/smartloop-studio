@@ -135,3 +135,11 @@ build/embedded.provisionprofile
 electron/data/slp/*/
 dist-devid/
 dist-mas/
+
+# Snap packaging build artifacts (packaging/snap is the snapcraft project dir).
+# The staged .deb is a copy of dist/, and the packed .snap is ~800MB.
+packaging/snap/*.snap
+packaging/snap/studio-*.deb
+packaging/snap/parts/
+packaging/snap/stage/
+packaging/snap/prime/

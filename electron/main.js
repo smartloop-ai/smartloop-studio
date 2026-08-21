@@ -6,7 +6,8 @@ const { setupTitlebarAndAttachToWindow } = require('custom-electron-titlebar/mai
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execFile, execFileSync } = require('child_process');
+const { execFile } = require('child_process');
+const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
@@ -455,6 +456,53 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
 });
 
 // IPC: extract conversations from a zip file (reads workspace.json or falls back to conversations/*.jsonl)
+// ── Zip handling ─────────────────────────────────────────────────────────
+// In-process, via adm-zip. These used to shell out — `tar` on Windows, `unzip`
+// / `zip` everywhere else — which failed two ways:
+//   - Linux ships GNU tar, which cannot read a zip at all ("This does not look
+//     like a tar archive") and, worse, ignores `-a` on write and emits a TAR
+//     named .zip. `unzip`/`zip` are not installed by default on many distros
+//     either, so creating a project died on `spawnSync unzip ENOENT`.
+//   - The sandboxed MAS build cannot exec system binaries.
+// Nothing here spawns a process, so every platform behaves the same.
+
+// Read one member's text, matching either an exact name or any depth-1 wrapper
+// (`*/name`) — exported archives sometimes carry a single top-level directory.
+function readZipEntryText(zipFilePath, entryName) {
+  const zip = new AdmZip(zipFilePath);
+  const entry = zip.getEntry(entryName)
+    || zip.getEntries().find((e) => !e.isDirectory && e.entryName.endsWith(`/${entryName}`));
+  return entry ? zip.readAsText(entry) : null;
+}
+
+// Every file member's path within the archive.
+function listZipEntries(zipFilePath) {
+  return new AdmZip(zipFilePath).getEntries()
+    .filter((e) => !e.isDirectory)
+    .map((e) => e.entryName);
+}
+
+// Extract the whole archive into targetDir, overwriting what is there.
+function extractZip(zipFilePath, targetDir) {
+  new AdmZip(zipFilePath).extractAllTo(targetDir, true);
+}
+
+// Zip a directory's contents, with entries at the archive root (no "./" prefix
+// and no wrapper dir — the SLP import API expects files at the top level).
+// Finder droppings are skipped at every depth, not just the top.
+const ZIP_JUNK = /(^|[/\\])(\.DS_Store|__MACOSX)([/\\]|$)/;
+function zipDirectory(sourceDir, zipFilePath) {
+  const zip = new AdmZip();
+  const keep = (entryPath) => !ZIP_JUNK.test(entryPath);
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!keep(entry.name)) continue;
+    const full = path.join(sourceDir, entry.name);
+    if (entry.isDirectory()) zip.addLocalFolder(full, entry.name, keep);
+    else zip.addLocalFile(full);
+  }
+  zip.writeZip(zipFilePath);
+}
+
 ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
   try {
     const resolved = zipPath.startsWith('~')
@@ -462,17 +510,11 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
       : zipPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
 
-    const { execFileSync } = require('child_process');
-    const isWin = process.platform === 'win32';
-
     // Try reading workspace.json (v3+), project.json (v2), or manifest.json (SLP template) from the zip
-    // Use wildcard to handle zips with a top-level directory wrapper
     for (const manifestName of ['workspace.json', 'project.json', 'manifest.json']) {
       try {
-        const content = isWin
-          ? execFileSync('tar', ['-xOf', resolved, '--wildcards', `*/${manifestName}`, manifestName], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString()
-          : execFileSync('unzip', ['-p', resolved, manifestName, `*/${manifestName}`], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString();
-        if (content.trim()) {
+        const content = readZipEntryText(resolved, manifestName);
+        if (content && content.trim()) {
           const manifest = JSON.parse(content);
           if (manifest.conversations && manifest.conversations.length > 0) {
             const conversations = manifest.conversations.map((conv, i) => {
@@ -491,26 +533,13 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
     }
 
     // Legacy fallback: read conversations/*.jsonl entries
-    const listOutput = isWin
-      ? execFileSync('tar', ['-tf', resolved], { timeout: 10000 }).toString()
-      : execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
-    const conversationFiles = listOutput
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => /conversations\/[^/]+\.jsonl$/.test(line))
-      .map(line => {
-        if (isWin) return line || null;
-        const match = line.match(/(conversations\/[^\s]+\.jsonl)$/);
-        return match ? match[1] : null;
-      })
-      .filter(Boolean);
+    const conversationFiles = listZipEntries(resolved)
+      .filter(name => /conversations\/[^/]+\.jsonl$/.test(name));
 
     const conversations = [];
     for (const filePath of conversationFiles) {
       try {
-        const content = isWin
-          ? execFileSync('tar', ['-xOf', resolved, filePath], { timeout: 10000 }).toString()
-          : execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
+        const content = readZipEntryText(resolved, filePath) || '';
         const lines = content.split('\n').filter(l => l.trim());
         const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
         const convId = path.basename(filePath, '.jsonl');
@@ -632,11 +661,7 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const slpZipPath = path.join(tmpDir, `slp-export-${projectId}.zip`);
     const arrayBuf = await exportRes.arrayBuffer();
     fs.writeFileSync(slpZipPath, Buffer.from(arrayBuf));
-    if (process.platform === 'win32') {
-      execFileSync('tar', ['-xf', slpZipPath, '-C', exportDir], { timeout: 120000 });
-    } else {
-      execFileSync('unzip', ['-o', slpZipPath, '-d', exportDir], { timeout: 120000 });
-    }
+    extractZip(slpZipPath, exportDir);
     fs.unlinkSync(slpZipPath);
 
     // Augment with SQLite state (conversations, messages, MCP servers, folders, tabs)
@@ -691,14 +716,7 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const zipPath = path.join(tmpDir, zipFileName);
 
     if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-    if (process.platform === 'win32') {
-      // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
-      // Pass entry names explicitly so paths aren't prefixed with "./"
-      const entries = fs.readdirSync(exportDir);
-      execFileSync('tar', ['-a', '-cf', zipPath, '-C', exportDir, ...entries], { timeout: 120000 });
-    } else {
-      execFileSync('zip', ['-r', zipPath, '.'], { cwd: exportDir, timeout: 120000 });
-    }
+    zipDirectory(exportDir, zipPath);
     fs.rmSync(exportDir, { recursive: true, force: true });
 
     const downloadsDir = require('electron').app.getPath('downloads');
@@ -732,11 +750,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const tmpDir = path.join(os.tmpdir(), `smartloop-import-${Date.now()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
-    if (process.platform === 'win32') {
-      execFileSync('tar', ['-xf', resolved, '-C', tmpDir], { timeout: 120000 });
-    } else {
-      execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
-    }
+    extractZip(resolved, tmpDir);
 
     // If the zip contains a single top-level directory, unwrap it
     let contentDir = tmpDir;
@@ -772,14 +786,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     let importZipPath = resolved;
     if (contentDir !== tmpDir) {
       importZipPath = path.join(tmpDir, 'repacked-import.zip');
-      if (process.platform === 'win32') {
-        // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
-        // Pass entry names explicitly so paths aren't prefixed with "./"
-        const entries = fs.readdirSync(contentDir);
-        execFileSync('tar', ['-a', '-cf', importZipPath, '-C', contentDir, ...entries], { timeout: 120000 });
-      } else {
-        execFileSync('zip', ['-r', importZipPath, '.'], { cwd: contentDir, timeout: 120000 });
-      }
+      zipDirectory(contentDir, importZipPath);
     }
 
     const fileBuffer = fs.readFileSync(importZipPath);
