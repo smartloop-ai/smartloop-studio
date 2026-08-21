@@ -1,0 +1,120 @@
+name: smartloop-studio
+title: Smartloop Studio
+summary: Local AI Assistant
+description: |
+  Smartloop Studio is your ultimate local AI mission control — it runs agents locally on your
+  device to extract information, generate new content, create skills, and
+  connect to external systems.
+
+  Run quantized open models directly on the hardware you already own. No token
+  costs, no cloud dependency, and no data leaving your machine — most everyday
+  tasks keep working fully offline.
+
+  Features:
+
+  * Small language models — run quantized open models directly on your
+    hardware. No cloud required, no data leaves your machine.
+  * Open models, local agents — spin up autonomous agents powered by open
+    models that plan and execute tasks entirely on your device.
+  * Create skills — turn your repeatable work into reusable skills that
+    automate tasks and shape how your AI responds.
+  * Personalized projects — create projects tailored to your needs, with your
+    own documents, skills and connected tools.
+  * Connect to external systems — Linear, Notion and Google Calendar, to get
+    the most out of your data.
+  * OpenAI compatible API — a drop-in replacement for the OpenAI API. Point any
+    existing integration at your local instance.
+
+  Supported models include the Google Gemma family, Qwen2-VL for vision, and
+  the slp-orchestra-mini orchestration model.
+
+  Nothing leaves your device. Nothing to leak.
+
+  Free to use, with an optional Pro plan for larger models, exclusive
+  orchestration updates and priority support.
+
+  Note: to let Smartloop Studio read files on external or removable drives,
+  connect the interface once with:
+
+      snap connect smartloop-studio:removable-media
+website: https://smartloop.ai
+contact: support@smartloop.ai
+
+# Kept in sync with package.json by `make build-snap` — don't hand-edit.
+version: 1.0.39
+base: core24
+grade: stable
+confinement: strict
+license: Proprietary
+icon: snap/icon.png
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+
+apps:
+  smartloop-studio:
+    command: opt/smartloop-studio/smartloop-studio --no-sandbox
+    desktop: usr/share/applications/smartloop-studio.desktop
+    # The gnome extension supplies GTK3/NSS/pango/cairo/atk/cups/alsa from the
+    # gnome-46-2404 platform snap, wires up the desktop-launch command-chain
+    # (Wayland/X11 sockets, XDG dirs, themes, fonts, GIO/pixbuf caches, portals)
+    # and adds the desktop, desktop-legacy, gsettings, opengl, wayland and x11
+    # plugs, so those must not be declared by hand.
+    extensions: [gnome]
+    plugs:
+      - network
+      - network-bind
+      - home
+      - removable-media
+      - audio-playback
+      - cups
+      # Grants the AppArmor rule Chromium needs for its shared-memory segments
+      # (owner /{dev,run}/shm/{,.}org.chromium.* mrw). Without it Electron dies
+      # with "Creating shared memory in /dev/shm/.org.chromium.Chromium.* failed:
+      # Permission denied". Left at the default allow-sandbox: false since the
+      # app already runs with --no-sandbox.
+      - browser-support
+      # The bundled `slp` agent is a PyInstaller Python app whose
+      # multiprocessing.Lock() calls sem_open(), creating /dev/shm/sem.mp-*.
+      # The strict template only allows sem.snap.<name>.*, so that is denied and
+      # the agent dies with PermissionError in multiprocessing/synchronize.py
+      # (joblib degrades to serial mode for the same reason). A private /dev/shm
+      # lets it use arbitrary semaphore names.
+      - shared-memory
+
+plugs:
+  shared-memory:
+    interface: shared-memory
+    private: true
+
+parts:
+  studio:
+    plugin: dump
+    # The .deb this snap wraps is built from THIS repo (`make build-electron-linux`)
+    # and staged here by `make build-snap`, rather than downloaded from
+    # dl.smartloop.ai. Building locally means the snap ships exactly the tree that
+    # was just built, with no wait for the CDN publish and no chance of the snap
+    # and the .deb drifting apart.
+    #
+    # The path is relative to the snapcraft PROJECT dir (packaging/snap/), not to
+    # this file — craft-parts resolves local sources against the directory
+    # snapcraft was invoked from. The filename is deliberately version-free so
+    # only `version:` above changes between releases.
+    source: studio-amd64.deb
+    source-type: deb
+    override-build: |
+      craftctl default
+      # snapcraft cannot parse a command path containing a space
+      mv "$CRAFT_PART_INSTALL/opt/Smartloop Studio" "$CRAFT_PART_INSTALL/opt/smartloop-studio"
+    stage-packages:
+      # Only the libraries Electron needs that gnome-46-2404 and core24 do not
+      # provide; everything else deliberately comes from the platform snap so
+      # GTK modules, themes and loaders stay version-matched.
+      - libx11-6
+      - libxcb1
+      - libxdamage1
+      - libxext6
+      - libxfixes3
+      - libgbm1

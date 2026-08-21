@@ -71,12 +71,18 @@ help-electron:
 	@echo "  make stage-slp-latest        - Download the latest SLP framework into build/slp/ (hash-gated)"
 	@echo "  make check-slp-symbols       - Fail if staged build/slp references deprecated Apple APIs"
 	@echo "  make build-electron          - Build Electron app for current platform"
-	@echo ""
 	@echo "  make stop                    - Stop the running SLP service"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
 	@echo "  make clean-electron          - Clean build artifacts"
+	@echo ""
+	@echo "🐧 Snap Store:"
+	@echo ""
+	@echo "  make build-snap              - Build the Linux .deb (if needed) and pack the snap"
+	@echo "  make push-to-snap            - ...and upload it to the Snap Store (SNAP_CHANNEL=stable)"
+	@echo "  make clean-snap              - Clean snapcraft artifacts and the staged .deb"
+	@echo ""
 	@echo ""
 	@echo ""
 
@@ -200,6 +206,7 @@ build-electron-mac: clean-electron stage-slp require-staged-slp
 # ships the current framework. Pass FORCE=1 to re-download regardless.
 stage-slp-latest:
 	@SLP_BASE_URL="$(SLP_BASE_URL)" SLP_VERSION="$(SLP_VERSION)" FORCE="$(FORCE)" \
+		SLP_PLATFORM="$(SLP_PLATFORM)" SLP_ARCH="$(SLP_ARCH)" \
 		bash scripts/stage-slp-latest.sh
 
 # Preflight for any Mac App Store build: refuse to package an SLP framework that
@@ -284,6 +291,78 @@ push-to-mas: stage-slp-latest
 	echo "⬆️  Uploading to App Store Connect (provider $(ASC_PROVIDER))…"; \
 	$(ALTOOL) --upload-app -f "$$PKG" -t macos $$U -p "@keychain:AC_PASSWORD" --asc-provider "$(ASC_PROVIDER)"
 	@echo "✅ Uploaded. Processing takes a few minutes — then assign the build in App Store Connect / TestFlight."
+
+# ── Publish to the Snap Store ────────────────────────────────────────────────
+# The snap wraps this repo's Linux .deb. It used to pull the PUBLISHED .deb from
+# dl.smartloop.ai, which meant the snap could only be cut after the CDN upload
+# and could silently wrap a different build than the one sitting in dist/.
+# packaging/snap/ now takes the .deb straight out of dist/ instead:
+#
+#   make build-snap                      # build the .deb (if needed) + pack the snap
+#   make push-to-snap                    # ...and upload it to latest/stable
+#   make push-to-snap SNAP_CHANNEL=beta  # release to another channel
+#
+# Prerequisites:
+#   • snapcraft with an initialized LXD build provider (sudo snap install
+#     snapcraft --classic; lxd init; usermod -aG lxd $USER)
+#   • `snapcraft login` for the upload
+#   • build/slp staged — build-electron-linux refuses to package without it
+# Packing takes a while and needs several GB of free disk.
+SNAP_DIR      = packaging/snap
+SNAP_NAME     = smartloop-studio
+SNAP_ARCH     = amd64
+SNAP_CHANNEL ?= stable
+SNAP_YAML     = $(SNAP_DIR)/snap/snapcraft.yaml
+# package.json is the single source of truth for the marketing version;
+# stage-snap-deb writes it into snapcraft.yaml so the two cannot drift.
+APP_VERSION  := $(shell grep -m1 '"version"' package.json | sed 's/.*: *"\([^"]*\)".*/\1/')
+LINUX_DEB     = dist/studio-$(APP_VERSION)-$(SNAP_ARCH).deb
+# Staged under a version-free name so `version:` is the only line that changes
+# in snapcraft.yaml from one release to the next.
+SNAP_DEB      = $(SNAP_DIR)/studio-$(SNAP_ARCH).deb
+SNAP_FILE     = $(SNAP_DIR)/$(SNAP_NAME)_$(APP_VERSION)_$(SNAP_ARCH).snap
+
+# Put the Linux .deb where snapcraft can reach it and sync the version.
+# snapcraft only sees files inside its own project dir, so dist/ cannot be
+# referenced from snapcraft.yaml — the .deb has to be copied in.
+stage-snap-deb:
+	@if [ ! -f "$(LINUX_DEB)" ]; then \
+		echo "📦 $(LINUX_DEB) not built yet — staging the Linux SLP framework, then building it..."; \
+		$(MAKE) stage-slp-latest SLP_PLATFORM=linux SLP_ARCH=amd64 || exit 1; \
+		$(MAKE) build-electron-linux || exit 1; \
+	fi
+	@if [ ! -s "$(LINUX_DEB)" ]; then echo "❌ Expected $(LINUX_DEB), but it is missing or empty"; exit 1; fi
+	@echo "📋 Staging $(LINUX_DEB) → $(SNAP_DEB) ($$(du -h '$(LINUX_DEB)' | cut -f1))"
+	@cp -f "$(LINUX_DEB)" "$(SNAP_DEB)"
+	@sed -i -e "s|^version: .*|version: $(APP_VERSION)|" "$(SNAP_YAML)"
+	@grep -q "^version: $(APP_VERSION)$$" "$(SNAP_YAML)" || { echo "❌ Version bump to $(APP_VERSION) failed in $(SNAP_YAML)"; exit 1; }
+	@echo "🔖 $(SNAP_YAML) pinned to version $(APP_VERSION)"
+
+# Pack the snap from the staged .deb. `snapcraft clean` first: the dump part is
+# keyed on the source path, which no longer changes between versions, so a stale
+# pull would otherwise repackage the previous release's .deb.
+build-snap: stage-snap-deb
+	@command -v snapcraft >/dev/null || { echo "❌ snapcraft not installed — sudo snap install snapcraft --classic"; exit 1; }
+	@echo "🐧 Packing $(SNAP_NAME) $(APP_VERSION) — this takes a while..."
+	cd $(SNAP_DIR) && snapcraft clean && snapcraft pack
+	@if [ ! -s "$(SNAP_FILE)" ]; then echo "❌ snapcraft did not produce $(SNAP_FILE)"; exit 1; fi
+	@echo "✅ Built $$(du -h '$(SNAP_FILE)' | cut -f1) → $(SNAP_FILE)"
+
+# Build and publish in one step. --release makes the new revision current on
+# that channel as part of the upload, so there is no separate release call.
+push-to-snap: build-snap
+	@snapcraft whoami >/dev/null 2>&1 || { echo "❌ Not logged in to the Snap Store — run: snapcraft login"; exit 1; }
+	@echo "⬆️  Uploading $(SNAP_FILE) → latest/$(SNAP_CHANNEL)"
+	snapcraft upload --release=$(SNAP_CHANNEL) "$(SNAP_FILE)"
+	@snapcraft status $(SNAP_NAME) || true
+	@echo "✅ $(SNAP_NAME) $(APP_VERSION) is live on latest/$(SNAP_CHANNEL)"
+
+# Drop the snapcraft lifecycle dirs plus the staged .deb and packed .snap.
+clean-snap:
+	@echo "🧹 Cleaning snap build artifacts..."
+	@cd $(SNAP_DIR) && snapcraft clean >/dev/null 2>&1 || true
+	@rm -f $(SNAP_DIR)/*.snap "$(SNAP_DEB)"
+	@echo "✅ Snap artifacts cleaned"
 
 # Run Electron app in development mode.
 # Pass MAS=1 to simulate the Mac App Store build in dev (Vite + Electron
