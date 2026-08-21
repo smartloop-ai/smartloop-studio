@@ -214,6 +214,10 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
     const isLight = theme.mode === 'light';
     // Contact is an in-app form, not a link out to the website — see contact-dialog.tsx.
     const [contactOpen, setContactOpen] = useState(false);
+    // Signed-in only, so the intake isn't an anonymous spam channel. A guest has
+    // no email (useAuth stands in `{ name: 'Local', guest: true }`), which is the
+    // same test the panel already uses for account-gated actions.
+    const canContact = !!user?.email;
     const isAdmin = !!user?.admin;
     // Internal models are only sent to eligible users, so their presence in the
     // catalog marks the user as internal-eligible — those users can also download
@@ -602,25 +606,44 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
             )}
 
             {/* Upsell — always shown (kept even when signed in, so users can still
-                reach out to upgrade for more models / higher limits). */}
+                reach out to upgrade for more models / higher limits). The contact
+                action itself is account-gated; see canContact. */}
             <div
                 className="rounded-xl mt-4"
                 style={{ padding: '16px', backgroundColor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-subtle)' }}
             >
                 <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Need more power?</h4>
                 <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
-                    Have a model you'd like us to support, or want us alongside you on your journey? Send us a message and our team will get back to you.
+                    Have a model you'd like us to support, or want us alongside you on your journey?{' '}
+                    {canContact
+                        ? 'Send us a message and our team will get back to you.'
+                        : 'Sign in and send us a message — our team will get back to you.'}
                 </p>
-                <button
-                    onClick={() => setContactOpen(true)}
-                    className="text-[12px] font-semibold inline-flex items-center gap-1"
-                    style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                >
-                    Contact us <span aria-hidden>→</span>
-                </button>
+                {/* The span carries the tooltip: a disabled button emits no mouse
+                    events, so a Tooltip wrapped directly around it never fires. */}
+                <Tooltip title={canContact ? '' : 'Sign in to send us a message'} placement="top" arrow>
+                    <span className="inline-flex">
+                        <button
+                            onClick={canContact ? () => setContactOpen(true) : undefined}
+                            disabled={!canContact}
+                            className="text-[12px] font-semibold inline-flex items-center gap-1"
+                            style={{
+                                // Recedes by color rather than an opacity wash, which
+                                // reads as invisible on light themes (see the locked-card dim).
+                                color: canContact ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                background: 'none',
+                                border: 'none',
+                                cursor: canContact ? 'pointer' : 'not-allowed',
+                                padding: 0,
+                            }}
+                        >
+                            Contact us <span aria-hidden>→</span>
+                        </button>
+                    </span>
+                </Tooltip>
             </div>
 
-            <ContactDialog open={contactOpen} onClose={() => setContactOpen(false)} user={user} />
+            <ContactDialog open={contactOpen && canContact} onClose={() => setContactOpen(false)} user={user} />
         </div>
     );
 }
