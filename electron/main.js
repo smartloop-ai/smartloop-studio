@@ -1719,21 +1719,30 @@ const { bootstrapProgress } = require('./bootstrap-progress.js');
  * Determine whether the SLP service needs bootstrapping — i.e. it has no
  * projects yet or no model loaded. Returns true on any error (assume needed).
  */
+/** GET a JSON body from the local service, or null on any failure. */
+function getServiceJson(urlStr) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    const u = new URL(urlStr);
+    http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
+}
+
+/** Projects the service reports, or null when the call fails. */
+async function getProjects(baseUrl) {
+  const data = await getServiceJson(`${baseUrl}/v1/projects`);
+  if (!data) return null;
+  return Array.isArray(data) ? data : (data.projects || []);
+}
+
 async function checkNeedsBootstrap(baseUrl) {
   try {
-    const http = require('http');
-    const getJson = (urlStr) => new Promise((resolve) => {
-      const u = new URL(urlStr);
-      http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
-        let body = '';
-        res.on('data', (c) => { body += c; });
-        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-      }).on('error', () => resolve(null));
-    });
-
-    const projectsData = await getJson(`${baseUrl}/v1/projects`);
-    const projects = Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []);
-    const health = (await getJson(`${baseUrl}/health`)) || {};
+    const projects = (await getProjects(baseUrl)) || [];
+    const health = (await getServiceJson(`${baseUrl}/health`)) || {};
 
     const hasProjects = projects.length > 0;
     const hasModel = health.status === 'healthy';
@@ -1747,7 +1756,7 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
-async function bootstrapSlpService(baseUrl) {
+async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
     const http = require('http');
@@ -1784,6 +1793,9 @@ async function bootstrapSlpService(baseUrl) {
                 console.log('[SLP] Bootstrap:', progress.status);
               }
 
+              // Let the caller know the stream is alive (stall watchdog).
+              if (onProgress) onProgress(progress);
+
               // Send to splash screen only when main window isn't visible yet
               if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
                 updateSplashProgress(data);
@@ -1804,7 +1816,12 @@ async function bootstrapSlpService(baseUrl) {
         console.log('[SLP] Bootstrap completed');
 
         // Send a final completed event so the renderer clears the progress UI
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        // and reloads the project list (bootstrap creates the default project).
+        // Not gated on window visibility: on a first run the window is still
+        // hidden behind the splash here, but its renderer is loaded and
+        // listening — and it is the run that most needs the reload, since the
+        // project list it fetched on mount was empty.
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
           mainWindow.webContents.send('bootstrap-progress', {
             percent: 100, status: 'Ready', model: '', downloading: false
           });
@@ -1926,6 +1943,123 @@ function verifyRequirementsOnSplash() {
   detectSystemCapability()
     .then((cap) => console.log('[SLP] System capability:', cap.label))
     .catch(() => { });
+}
+
+/**
+ * Close the splash and bring up the main window, starting the pollers that
+ * need a live renderer. Every startup path ends here, so the ordering (splash
+ * down, window up, service-ready sent, pollers started) lives in one place.
+ */
+function revealMainWindow(baseUrl) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  setAppReady(true);
+  mainWindow.show();
+  mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+  healthMonitor.start(() => mainWindow);
+  releaseChecker.start(() => mainWindow, () => refreshTray());
+  fetchModels();
+}
+
+// A bootstrap that stops emitting SSE progress must not trap the user behind a
+// frozen splash forever — if nothing arrives for this long, give up on the
+// splash and open the main window (bootstrap keeps running server-side).
+const BOOTSTRAP_STALL_MS = 10 * 60 * 1000;
+
+/** Wait for the service to stop answering /health. False if it never does. */
+async function waitForServiceDown(timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await slpService.checkHealth())) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * Run bootstrap to completion, guarded by a stall watchdog. Never rejects: a
+ * failed or stalled bootstrap hands control back so the caller can carry on and
+ * open the main window.
+ */
+async function runBootstrap(baseUrl) {
+  await new Promise((resolve) => {
+    let stallTimer = null;
+    const done = () => { clearTimeout(stallTimer); resolve(); };
+    const bumpStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        console.warn('[SLP] Bootstrap stalled — giving up on the splash while it continues');
+        resolve();
+      }, BOOTSTRAP_STALL_MS);
+    };
+
+    bumpStall();
+    bootstrapSlpService(baseUrl, bumpStall)
+      .then(() => { refreshTray(); })
+      .catch((error) => { console.error('[SLP] Bootstrap failed:', error.message); })
+      .finally(done);
+  });
+}
+
+/**
+ * First run: SLP is installed and answering, but has no model and no project
+ * yet, so there is nothing usable behind the main window. Keep the splash up
+ * and let bootstrap (which downloads the default model, ~770 MB) stream its
+ * progress into it — bootstrapSlpService routes SSE progress to the splash for
+ * as long as the main window stays hidden — and only return once it finishes.
+ *
+ * This applies to every platform. All three now bundle the SLP framework, so
+ * needsInstall() is false on a fresh machine and the install splash is skipped
+ * entirely; bootstrap is the only first-launch work left. Without this gate the
+ * splash closed the moment the service answered and the user landed in an empty
+ * chat — no model, no project — while the model downloaded invisibly.
+ *
+ * Returns the base URL to use from here on: the repair path below restarts the
+ * service, which can hand back a different port.
+ */
+async function bootstrapOnSplash(baseUrl) {
+  if (!splashWindow || splashWindow.isDestroyed()) createStartingSplash();
+  updateSplashProgress({ status: 'preparing', message: 'Setting up your workspace...' });
+
+  await runBootstrap(baseUrl);
+
+  // Bootstrap can report "completed" and still leave the workspace empty: a
+  // service that kept running after its data dir was wiped (the agent outlives
+  // the app) answers /health with the old model still loaded, so bootstrap
+  // skips the work and returns a project it no longer has. The app then opened
+  // on an empty workspace — no projects, nothing to chat with. Restart the
+  // service so it re-reads what is actually on disk, then bootstrap for real.
+  //
+  // Only an empty list counts as evidence — a failed call tells us nothing.
+  const projects = await getProjects(baseUrl);
+  if (projects === null || projects.length > 0) return baseUrl;
+
+  console.warn('[SLP] Bootstrap reported success but the workspace has no projects — restarting the service and retrying');
+  updateSplashProgress({ status: 'preparing', message: 'Repairing workspace...' });
+
+  try {
+    await slpService.stopService();
+    if (!(await waitForServiceDown())) {
+      // Another process owns this port (an agent from a different install), so
+      // restarting ours changes nothing — leave it and open the window.
+      console.warn('[SLP] A service we cannot stop is holding the port — skipping the retry');
+      return baseUrl;
+    }
+    if (!(await slpService.startService())) {
+      console.error('[SLP] Service failed to restart during workspace repair');
+      return baseUrl;
+    }
+    const repairedUrl = slpService.getLocalBaseUrl() || baseUrl;
+    await runBootstrap(repairedUrl);
+    return repairedUrl;
+  } catch (error) {
+    console.error('[SLP] Workspace repair failed:', error.message);
+    return baseUrl;
+  }
 }
 
 // IPC: load model (called from renderer)
@@ -2893,41 +3027,22 @@ if (!gotTheLock) {
         }
       }
 
-      const baseUrl = slpService.getLocalBaseUrl();
+      let baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
       const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        setAppReady(true);
-        mainWindow.show();
-        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-        healthMonitor.start(() => mainWindow);
-        releaseChecker.start(() => mainWindow, () => refreshTray());
-      }
-
       // Download blank project template in the background
       downloadBlankTemplate().catch(err => console.warn('[Template] Background download failed:', err.message));
 
+      // A healthy service with no model/project is still a first run: show the
+      // setup progress on the splash instead of an empty chat window.
       if (needsBootstrap) {
-        console.log('[SLP] Bootstrapping in background');
-        (async () => {
-          try {
-            await bootstrapSlpService(baseUrl);
-            refreshTray();
-          } catch (error) {
-            console.error('[SLP] Bootstrap failed:', error.message);
-          } finally {
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-          }
-        })();
-      } else if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
+        console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+        baseUrl = await bootstrapOnSplash(baseUrl);
       }
+
+      revealMainWindow(baseUrl);
     } else {
       // Either nothing is running, or something is running that we refused to
       // adopt above. Stop the orphan first — it holds the port this process is
@@ -3013,7 +3128,7 @@ if (!gotTheLock) {
             return;
           }
 
-          const baseUrl = slpService.getLocalBaseUrl();
+          let baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
@@ -3021,32 +3136,15 @@ if (!gotTheLock) {
           // Download blank project template while splash is still visible
           await downloadBlankTemplate().catch(err => console.warn('[Template] Download failed:', err.message));
 
-          // Show main window immediately once the service is ready; bootstrap
-          // continues in the background so startup feels faster.
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAppReady(true);
-            mainWindow.show();
-            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            healthMonitor.start(() => mainWindow);
-            releaseChecker.start(() => mainWindow, () => refreshTray());
-            fetchModels();
+          // First run (no model, no project): hold the splash through bootstrap
+          // so the model download is visible, then open the main window. When
+          // there is nothing to bootstrap, open it right away.
+          if (needsBootstrap) {
+            console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+            baseUrl = await bootstrapOnSplash(baseUrl);
           }
 
-          if (needsBootstrap) {
-            console.log('[SLP] Bootstrap needed — running in background');
-            (async () => {
-              try {
-                await bootstrapSlpService(baseUrl);
-                refreshTray();
-              } catch (error) {
-                console.error('[SLP] Bootstrap failed:', error.message);
-              }
-            })();
-          }
+          revealMainWindow(baseUrl);
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });
