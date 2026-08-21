@@ -20,6 +20,20 @@ import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { LogoMark } from '@/app/components/logo';
 
+import type { StorageCleanupRequest, StorageUsage } from '@/electron';
+
+// Categories the Clean panel offers, in bar order.  Keys match the API's
+// category keys and the cleanup request flags; anything the framework reports
+// but that isn't listed here (e.g. conversations, which are never deletable)
+// counts towards the kept remainder instead.
+const CLEANABLE = [
+    { key: 'models', label: 'Models', color: 'var(--sl-brand-primary)' },
+    { key: 'versions', label: 'Versions', color: 'rgb(96,165,250)' },
+    { key: 'logs', label: 'Logs', color: 'var(--sl-status-warning)' },
+    { key: 'cache', label: 'Cache', color: 'rgb(167,139,250)' },
+    { key: 'orphan_projects', label: 'Unused projects', color: 'rgb(94,234,212)' },
+] as const satisfies ReadonlyArray<{ key: keyof StorageCleanupRequest; label: string; color: string }>;
+
 
 
 const TPS_DAYS = 365;
@@ -250,11 +264,13 @@ export default function SettingsPage() {
     // distinct from the app's own version shown in the header badge.
     const [agentVersion, setAgentVersion] = useState<string>('');
 
-    // Storage / free-up-space
-    type StorageUsage = { total: number; models: number; versions: number; logsCache: number; reclaimable: number };
+    // Storage / free-up-space.  The framework reports the categories and what
+    // is reclaimable in each (GET /v1/storage/usage); this panel only renders
+    // them, so a new category needs no change here beyond a label and a colour.
     const [storage, setStorage] = useState<StorageUsage | null>(null);
-    const [cleanupSel, setCleanupSel] = useState({ models: true, versions: true, logsCache: true });
+    const [cleanupSel, setCleanupSel] = useState<Set<string>>(new Set(CLEANABLE.map((c) => c.key)));
     const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanupError, setCleanupError] = useState('');
     // Transient restart indicator for the Agent panel (driven by a dedicated IPC
     // channel so it doesn't disturb global health/project state).
     const [agentRestarting, setAgentRestarting] = useState(false);
@@ -267,23 +283,25 @@ export default function SettingsPage() {
 
     const loadStorage = async () => {
         const res = await window.electronAPI?.getStorageUsage?.();
-        if (res?.success) {
-            setStorage({
-                total: res.total ?? 0,
-                models: res.models ?? 0,
-                versions: res.versions ?? 0,
-                logsCache: res.logsCache ?? 0,
-                reclaimable: res.reclaimable ?? 0,
-            });
+        if (res?.success && res.data) {
+            setStorage(res.data);
+            setCleanupError('');
+        } else {
+            setStorage(null);
+            setCleanupError(res?.error || 'Could not read storage usage.');
         }
     };
     useEffect(() => { loadStorage(); }, []);
 
-    const selectedReclaim = storage
-        ? (cleanupSel.models ? storage.models : 0)
-        + (cleanupSel.versions ? storage.versions : 0)
-        + (cleanupSel.logsCache ? storage.logsCache : 0)
-        : 0;
+    const reclaimableOf = (key: string) => storage?.categories?.[key]?.reclaimable ?? 0;
+    const selectedReclaim = CLEANABLE.reduce(
+        (sum, c) => sum + (cleanupSel.has(c.key) ? reclaimableOf(c.key) : 0), 0,
+    );
+    const toggleCategory = (key: string) => setCleanupSel((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+    });
 
     const formatBytes = (bytes: number) => {
         if (!bytes || bytes < 1024) return `${bytes || 0} B`;
@@ -296,9 +314,22 @@ export default function SettingsPage() {
 
     const runCleanup = async () => {
         setIsCleaning(true);
+        setCleanupError('');
         try {
-            const res = await window.electronAPI?.cleanupStorage?.(cleanupSel);
-            if (res?.success) await loadStorage();
+            const request: StorageCleanupRequest = {};
+            for (const c of CLEANABLE) {
+                if (cleanupSel.has(c.key)) request[c.key] = true;
+            }
+            const res = await window.electronAPI?.cleanupStorage?.(request);
+            if (!res?.success) {
+                setCleanupError(res?.error || 'Cleanup failed.');
+                return;
+            }
+            // The framework returns a fresh report, so there's no need to re-ask.
+            if (res.data?.usage) setStorage(res.data.usage);
+            if (res.data?.restart_required) {
+                setCleanupError('Some files were still in use. Restart the agent to finish freeing them.');
+            }
         } finally {
             setIsCleaning(false);
         }
@@ -975,18 +1006,17 @@ export default function SettingsPage() {
                             <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Clean up</h2>
                         </Box>
                         <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                            Reclaim disk space used by Smartloop. The default <span className="font-mono">slp-orchestra</span>{' '}
-                            and embedding models are always kept, and the agent restarts when you free up space.
+                            Reclaim disk space used by Smartloop. Models you have selected are kept, as are the
+                            default <span className="font-mono">slp-orchestra</span> and embedding models. The agent
+                            keeps running while it cleans up.
                         </p>
 
                         {(() => {
-                            const cats = [
-                                { key: 'models' as const, label: 'Models', color: 'var(--sl-brand-primary)' },
-                                { key: 'versions' as const, label: 'Versions', color: 'rgb(96,165,250)' },
-                                { key: 'logsCache' as const, label: 'Logs', color: 'var(--sl-status-warning)' },
-                            ];
+                            // Only categories the framework actually reported, so the bar
+                            // never shows a segment for something this build can't clean.
+                            const cats = CLEANABLE.filter((c) => storage?.categories?.[c.key]);
                             const totalFolder = storage ? storage.total : 0;
-                            const totalAll = storage ? storage.models + storage.versions + storage.logsCache : 0;
+                            const totalAll = cats.reduce((sum, c) => sum + reclaimableOf(c.key), 0);
                             const kept = Math.max(0, totalFolder - totalAll);   // non-reclaimable footprint
                             const pct = (n: number) => (totalFolder > 0 ? (n / totalFolder) * 100 : 0);
                             return (
@@ -1018,8 +1048,9 @@ export default function SettingsPage() {
                                         }}
                                     >
                                         {cats.map((c) => {
-                                            const size = storage ? storage[c.key] : 0;
+                                            const size = reclaimableOf(c.key);
                                             if (size <= 0) return null;
+                                            const on = cleanupSel.has(c.key);
                                             return (
                                                 <div
                                                     key={c.key}
@@ -1028,8 +1059,8 @@ export default function SettingsPage() {
                                                         // Floor tiny slices so a few-MB category is still visible.
                                                         width: `${pct(size)}%`,
                                                         minWidth: 6,
-                                                        backgroundColor: cleanupSel[c.key] ? c.color : 'var(--sl-white-alpha-8)',
-                                                        opacity: cleanupSel[c.key] ? 1 : 0.4,
+                                                        backgroundColor: on ? c.color : 'var(--sl-white-alpha-8)',
+                                                        opacity: on ? 1 : 0.4,
                                                         transition: 'background-color 0.15s ease, opacity 0.15s ease',
                                                     }}
                                                 />
@@ -1050,15 +1081,13 @@ export default function SettingsPage() {
                                         categories toggle inclusion; deselected ones dim. */}
                                     <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3">
                                         {cats.map((c) => {
-                                            const size = storage ? storage[c.key] : 0;
-                                            // Models stays actionable at 0 B so it can still reconcile the
-                                            // backend config; versions/logs have nothing to do when empty.
-                                            const disabled = !storage || isCleaning || (c.key !== 'models' && size === 0);
-                                            const on = cleanupSel[c.key] && !(!storage || (c.key !== 'models' && size === 0));
+                                            const size = reclaimableOf(c.key);
+                                            const disabled = !storage || isCleaning || size === 0;
+                                            const on = cleanupSel.has(c.key) && !disabled;
                                             return (
                                                 <button
                                                     key={c.key}
-                                                    onClick={() => setCleanupSel((s) => ({ ...s, [c.key]: !s[c.key] }))}
+                                                    onClick={() => toggleCategory(c.key)}
                                                     disabled={disabled}
                                                     className="flex items-center gap-1.5 text-xs transition-opacity"
                                                     style={{ opacity: on ? 1 : 0.4, cursor: disabled ? 'not-allowed' : 'pointer' }}
@@ -1080,10 +1109,10 @@ export default function SettingsPage() {
                                     </div>
 
                                     {/* Clean action */}
-                                    <div className="flex justify-start">
+                                    <div className="flex items-center gap-3 justify-start">
                                         <button
                                             onClick={runCleanup}
-                                            disabled={isCleaning || !(cleanupSel.models || cleanupSel.versions || cleanupSel.logsCache)}
+                                            disabled={isCleaning || selectedReclaim === 0}
                                             className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                         >
@@ -1099,6 +1128,11 @@ export default function SettingsPage() {
                                                 </>
                                             )}
                                         </button>
+                                        {cleanupError && (
+                                            <span className="text-xs" style={{ color: 'var(--sl-status-warning)' }}>
+                                                {cleanupError}
+                                            </span>
+                                        )}
                                     </div>
                                 </>
                             );
