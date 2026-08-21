@@ -10,6 +10,7 @@ import TagRoundedIcon from '@mui/icons-material/TagRounded';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
+import ContactDialog from './contact-dialog';
 import '../styles/aux-models.css';
 
 interface AuxiliaryModelsPanelProps {
@@ -151,10 +152,6 @@ const TIER_INFO: Record<string, string> = {
     Internal: 'Internal model — available to your account',
 };
 
-// Note: the main-process open-external handler only permits http(s), so this
-// must be a web URL (a mailto: is silently rejected).
-const contactUs = () => (window as any).electronAPI?.openExternal?.('mailto:hello@smartloop.ai');
-
 // Sidebar panel listing the enabled auxiliary models as cards. Each card's
 // leading circle reflects the model's lifecycle state (enabled, off, needs
 // download, downloading, or locked); the whole card toggles/downloads on click.
@@ -208,6 +205,8 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
 
     // Admins (superusers) can download any model, including plan-gated pro/premium ones.
     const [user] = useAuthContext();
+    // Contact is an in-app form, not a link out to the website — see contact-dialog.tsx.
+    const [contactOpen, setContactOpen] = useState(false);
     const isAdmin = !!user?.admin;
     // Internal models are only sent to eligible users, so their presence in the
     // catalog marks the user as internal-eligible — those users can also download
@@ -593,13 +592,15 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     Have a model you'd like us to support, or want us alongside you on your journey? Send us a message and our team will get back to you.
                 </p>
                 <button
-                    onClick={contactUs}
+                    onClick={() => setContactOpen(true)}
                     className="text-[12px] font-semibold inline-flex items-center gap-1"
                     style={{ color: 'var(--sl-brand-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                 >
                     Contact us <span aria-hidden>→</span>
                 </button>
             </div>
+
+            <ContactDialog open={contactOpen} onClose={() => setContactOpen(false)} user={user} />
         </div>
     );
 }

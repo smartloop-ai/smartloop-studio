@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Open external URL in default browser
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  // In-app contact form → marketing-site intake, posted from main (see main.js).
+  submitContact: (payload) => ipcRenderer.invoke('contact-submit', payload),
   // Open a folder in Finder / file manager
   openInFinder: (path, options) => ipcRenderer.invoke('open-in-finder', path, options),
   // Reveal a specific file in Finder / Explorer
