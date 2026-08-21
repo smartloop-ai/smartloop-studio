@@ -105,26 +105,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpMcpCatalog: () => ipcRenderer.invoke('slp-mcp-catalog'),
   slpInitModel: (modelName, projectId) => ipcRenderer.invoke('slp-init-model', modelName, projectId),
   slpSetModelEnabled: (modelName, enabled, projectId) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled, projectId),
-  onModelInitProgress: (callback) => {
-    ipcRenderer.on('model-init-progress', (event, data) => callback(data));
-  },
-  removeModelInitProgressListener: () => {
-    ipcRenderer.removeAllListeners('model-init-progress');
-  },
   slpDownloadModel: (modelName) => ipcRenderer.invoke('slp-download-model', modelName),
+  slpLoadModel: (modelName, projectId) => ipcRenderer.invoke('slp-load-model', modelName, projectId),
   slpCancelModelDownload: (modelName, projectId) => ipcRenderer.invoke('slp-cancel-model-download', modelName, projectId),
   slpGetDownloadState: () => ipcRenderer.invoke('slp-get-download-state'),
+  // These two return an unsubscribe closure that removes only their own
+  // listener. A shared removeAllListeners() would let any unmounting component
+  // silently kill every other subscriber on the channel.
   onModelDownloadProgress: (callback) => {
-    ipcRenderer.on('model-download-progress', (event, data) => callback(data));
-  },
-  removeModelDownloadProgressListener: () => {
-    ipcRenderer.removeAllListeners('model-download-progress');
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('model-download-progress', handler);
+    return () => ipcRenderer.off('model-download-progress', handler);
   },
   onModelsUpdated: (callback) => {
-    ipcRenderer.on('models-updated', (event, data) => callback(data));
-  },
-  removeModelsUpdatedListener: () => {
-    ipcRenderer.removeAllListeners('models-updated');
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('models-updated', handler);
+    return () => ipcRenderer.off('models-updated', handler);
   },
   // SLP version management
   slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
@@ -190,12 +186,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeCloseTabShortcutListener: () => {
     ipcRenderer.removeAllListeners('shortcut-close-tab');
   },
-  // Bootstrap progress
+  // Bootstrap progress. Returns an unsubscribe closure (see the model channels
+  // above) — ModelStatusContext consumes this and must not wipe the channel.
   onBootstrapProgress: (callback) => {
-    ipcRenderer.on('bootstrap-progress', (event, data) => callback(data));
-  },
-  removeBootstrapProgressListener: () => {
-    ipcRenderer.removeAllListeners('bootstrap-progress');
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('bootstrap-progress', handler);
+    return () => ipcRenderer.off('bootstrap-progress', handler);
   },
   onBootstrapComplete: (callback) => {
     ipcRenderer.on('bootstrap-complete', () => callback());
