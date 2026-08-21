@@ -99,9 +99,10 @@ masDev:
 win:
   icon: public/img/logo.png
   artifactName: studio-Setup-${version}.${ext}
-  # Bundle SLP inside the app on Windows too (installer no longer downloads it;
-  # see build/installer.nsh). Repeat the data entry since a platform-level
-  # extraResources replaces the top-level one.
+  # Bundle SLP inside the app on Windows too — it runs in place from
+  # resources\slp, so the installer downloads nothing (see build/installer.nsh).
+  # Repeat the data entry since a platform-level extraResources replaces the
+  # top-level one.
   extraResources:
     - *res_data
     - *res_slp
@@ -133,10 +134,10 @@ linux:
       arch:
         - x64
 nsis:
-  # customInstall downloads/installs the SLP framework during setup (see
-  # build/install-slp.ps1) so first launch skips the in-app download.
-  # customUnInstall removes ~/.smartloop and the Electron user-data folder on
-  # real uninstalls (kept during --updated upgrades).
+  # customInstall is empty: the SLP framework ships in resources\slp and runs in
+  # place, so setup has nothing extra to install. customUnInstall removes
+  # ~/.smartloop (SLP's home) and the Electron user-data folder on real
+  # uninstalls (kept during --updated upgrades).
   include: build/installer.nsh
   # Dark-theme branded left banner for the assisted installer/uninstaller
   # welcome and finish pages (164x314 BMP, Smartloop dark theme).
@@ -144,8 +145,8 @@ nsis:
   uninstallerSidebar: build/installerSidebar.bmp
   # Assisted installer: interactive users get the welcome/dir-picker/finish
   # wizard. Microsoft Store (cert 10.2.9.2) runs the same installer with /S,
-  # which NSIS honors as a silent no-UI install — installer.nsh has a
-  # ${Silent} branch so the SLP download works under /S. One build, both modes.
+  # which NSIS honors as a silent no-UI install. Nothing in customInstall needs
+  # a UI, so the same build serves both modes.
   oneClick: false
   perMachine: false
   allowElevation: false

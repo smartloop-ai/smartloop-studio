@@ -8,7 +8,9 @@
  *   - MAS builds run under the App Sandbox. They may NOT download and execute
  *     native code at runtime (App Review guideline 2.5.2), so the SLP framework
  *     must ship INSIDE the .app (Contents/Resources/slp) instead of being
- *     fetched from dl.smartloop.ai on first launch.
+ *     fetched from dl.smartloop.ai on first launch. Every other packaged build
+ *     now ships it the same way, and all of them run it in place from the
+ *     bundle rather than copying it out.
  *   - Sandboxed apps may only write inside their container, so SLP state
  *     (server.port, server.log, config, models, studio.db, assets) must live
  *     under app.getPath('userData'), not ~/.smartloop.
@@ -70,12 +72,13 @@ function hasBundledSlp() {
 }
 
 /**
- * True when SLP is shipped inside the app and should be copied to the install
- * dir instead of downloaded at runtime. On macOS the framework is bundled for
- * BOTH the direct-download (dmg) and MAS builds — the size is acceptable and it
- * removes the first-launch download — so this is true whenever a bundled SLP is
- * present. Windows/Linux keep the runtime download (no bundled SLP present).
- * A sandboxed build is always bundled. SMARTLOOP_BUNDLED_SLP=1 forces it.
+ * True when SLP ships inside the app and is therefore run IN PLACE from the
+ * bundle — never copied to the install dir, never downloaded at runtime. Every
+ * packaged platform bundles it (macOS dmg + MAS, Windows, Linux), so this is
+ * true whenever a bundled SLP is present; a sandboxed build always is. False
+ * only for a build with no bundled framework (a source checkout, or a package
+ * whose extraResources went missing), which falls back to the CDN download.
+ * SMARTLOOP_BUNDLED_SLP=1 forces it.
  */
 function useBundledSlp() {
   if (process.env.SMARTLOOP_BUNDLED_SLP === '1') return true;

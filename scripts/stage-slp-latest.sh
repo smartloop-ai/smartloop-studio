@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Stage the LATEST SLP framework into build/slp/ for a bundled (MAS/mac) build,
-# gated on the CDN archive's hash so we only re-download when it actually changed.
+# Stage the LATEST SLP framework into build/slp/ for a bundled build (the mac
+# dmg/MAS .pkg, or the Linux .deb the snap wraps), gated on the CDN archive's
+# hash so we only re-download when it actually changed.
 #
 # Unlike `make stage-slp` (which APFS-clones whatever is installed under
 # ~/.smartloop and can be stale), this fetches the published darwin-arm64
@@ -34,6 +35,8 @@
 # Env:
 #   SLP_BASE_URL   CDN base (default https://dl.smartloop.ai; Makefile passes it through)
 #   SLP_VERSION    framework version segment in the URL (required; Makefile passes it)
+#   SLP_PLATFORM   darwin | linux (default: this host's platform)
+#   SLP_ARCH       arm64 | amd64  (default: this host's architecture)
 #   FORCE=1        re-download even if the ETag matches
 #
 # Mirrors the URL/extraction logic in electron/slp-setup.js.
@@ -43,12 +46,30 @@ BASE_URL="${SLP_BASE_URL:-https://dl.smartloop.ai}"
 BASE_URL="${BASE_URL%/}"
 VERSION="${SLP_VERSION:?Set SLP_VERSION (e.g. SLP_VERSION=1.1.0)}"
 
-# MAS ships Apple Silicon only, so we always stage darwin-arm64 here.
-ARCHIVE_URL="${BASE_URL}/slp/${VERSION}/darwin-arm64-slp.tar.gz"
+# Which framework to stage. Defaults to this host's own platform/arch, so a mac
+# build stages darwin-arm64 and a Linux build stages linux-amd64. The MAS targets
+# rely on that default and only ever run on Apple Silicon, so they are unchanged.
+# Override with SLP_PLATFORM/SLP_ARCH to stage for a different platform.
+# The naming mirrors detectPlatform() in electron/slp-setup.js.
+case "${SLP_PLATFORM:-$(uname -s)}" in
+  Darwin|darwin) PLATFORM=darwin ;;
+  Linux|linux)   PLATFORM=linux ;;
+  *) echo "❌ Unsupported SLP_PLATFORM '${SLP_PLATFORM:-$(uname -s)}'." >&2
+     echo "   This script only stages the tar.gz platforms (darwin, linux); the" >&2
+     echo "   Windows framework ships as a .zip and CI stages it its own way." >&2
+     exit 1 ;;
+esac
+case "${SLP_ARCH:-$(uname -m)}" in
+  arm64|aarch64) ARCH=arm64 ;;
+  x86_64|amd64)  ARCH=amd64 ;;
+  *) echo "❌ Unsupported SLP_ARCH '${SLP_ARCH:-$(uname -m)}' (expected arm64 or amd64)." >&2; exit 1 ;;
+esac
+
+ARCHIVE_URL="${BASE_URL}/slp/${VERSION}/${PLATFORM}-${ARCH}-slp.tar.gz"
 DEST="build/slp"
 ETAG_FILE="${DEST}/.archive-etag"
 
-echo "🔎 Checking latest SLP framework: ${ARCHIVE_URL}"
+echo "🔎 Checking latest SLP framework (${PLATFORM}-${ARCH}): ${ARCHIVE_URL}"
 
 # Decode base64 (as x-goog-hash carries it) to lowercase hex, so digests can be
 # compared in the same form `openssl dgst -md5` prints. od avoids depending on
