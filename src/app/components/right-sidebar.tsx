@@ -7,12 +7,14 @@ import CircleIcon from '@mui/icons-material/Circle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
+import NotesIcon from '@mui/icons-material/Notes';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 import PixelRailIcon from './pixel-rail-icons';
 import McpServerItem from './mcp-server-item';
+import ProjectInstructionsDialog from './project-instructions-dialog';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
@@ -33,6 +35,7 @@ interface RightSidebarProps {
   onFolderPathChange?: (path: string) => void;
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
+  onInstructionsChange?: (instructions: string) => Promise<void> | void;
   user: any;
   model?: string;
   activeTab: string;
@@ -114,6 +117,7 @@ export default function RightSidebar({
   onDeleteDocument,
   onColorChange,
   onRenameProject,
+  onInstructionsChange,
   model,
   activeTab,
   onTabChange,
@@ -195,6 +199,10 @@ export default function RightSidebar({
   const skillAutoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  const [showInstructionsDialog, setShowInstructionsDialog] = useState(false);
+  // Instructions are local-only project metadata (SQLite), so they arrive on the
+  // enriched project rather than the API's project payload.
+  const projectInstructions: string = selectedProject?.instructions || '';
 
   // Skills loaded from the API
   const [localSkills, setLocalSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
@@ -1162,7 +1170,7 @@ export default function RightSidebar({
           {/* Section Title */}
           <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
             <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
-              {activeSection === 'models' ? 'Auxiliary Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'models' ? 'Available Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
 
@@ -1743,6 +1751,47 @@ export default function RightSidebar({
                 </Box>
               </div>
 
+              {/* Project Instructions — free-form text sent with every message */}
+              <div>
+                <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Instructions</div>
+                <Box
+                  onClick={() => setShowInstructionsDialog(true)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--sl-bg-surface-1)',
+                    border: '1px solid var(--sl-border-default)',
+                    cursor: 'pointer',
+                    '&:hover': { borderColor: 'var(--sl-brand-alpha-30)' },
+                  }}
+                >
+                  <NotesIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)', flexShrink: 0, mt: '1px' }} />
+                  {projectInstructions ? (
+                    <span className="text-xs text-[var(--sl-text-primary)] line-clamp-3 whitespace-pre-wrap break-words">
+                      {projectInstructions}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-[var(--sl-text-muted)]">Add instructions</span>
+                  )}
+                </Box>
+                <div className="flex items-center justify-between gap-2 mt-1 px-1">
+                  <p className="text-sl-text-disabled text-[10px] leading-relaxed">
+                    Saved in this project's memory.
+                  </p>
+                  {projectInstructions && (
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase flex-shrink-0"
+                      style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
+                    >
+                      Active
+                    </span>
+                  )}
+                </div>
+              </div>
+
               {/* Download Project — not available for the general/system project */}
               <div>
                 <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Download</div>
@@ -1951,6 +2000,16 @@ export default function RightSidebar({
         </Tooltip>
 
       </Box>
+
+      {/* Rendered at the root, not inside the settings panel, so switching rail
+          sections (hotkeys included) can't unmount it mid-edit. */}
+      <ProjectInstructionsDialog
+        open={showInstructionsDialog}
+        projectName={selectedProject?.name}
+        instructions={projectInstructions}
+        onClose={() => setShowInstructionsDialog(false)}
+        onSave={async (text) => { await onInstructionsChange?.(text); }}
+      />
 
     </Box>
   );

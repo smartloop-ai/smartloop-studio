@@ -6,7 +6,8 @@ const { setupTitlebarAndAttachToWindow } = require('custom-electron-titlebar/mai
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execFile, execFileSync } = require('child_process');
+const { execFile } = require('child_process');
+const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
@@ -34,6 +35,10 @@ const isDev = process.env.NODE_ENV === 'development';
 const port = process.env.PORT || 5000;
 const APP_URL = process.env.VITE_APP_URL || 'https://app.smartloop.ai';
 const BASE_URL = process.env.VITE_BASE_URL || 'https://api.smartloop.ai';
+// Marketing-site intake the in-app contact form posts to. The request runs here
+// in the main process, not the renderer: the endpoint sends no
+// Access-Control-Allow-Origin, so a renderer fetch is blocked by Chromium.
+const CONTACT_API_URL = process.env.VITE_CONTACT_API_URL || 'https://smartloop.ai/api/early-access';
 
 // Machine ID IPC handler
 ipcMain.handle('get-machine-id', async () => {
@@ -53,6 +58,42 @@ ipcMain.handle('open-external', async (event, url) => {
     return true;
   }
   return false;
+});
+
+// Submit the in-app contact form. Keeping this in main means the app never
+// links out to a web form (which App Store review treats poorly) and sidesteps
+// the endpoint's missing CORS headers. Returns { success } or { success: false, error }.
+ipcMain.handle('contact-submit', async (event, payload) => {
+  const name = String(payload?.name || '').trim();
+  const email = String(payload?.email || '').trim();
+  const notes = String(payload?.notes || '').trim();
+
+  if (!name || !email || !notes) {
+    return { success: false, error: 'Name, email and message are all required.' };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { success: false, error: 'That email address doesn\'t look right.' };
+  }
+
+  try {
+    const res = await fetch(CONTACT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, notes }),
+    });
+
+    if (res.ok) return { success: true };
+
+    // Surface the server's own message when it sends one; a bare status is
+    // useless to the person staring at the form.
+    const detail = await res.json().catch(() => null);
+    const message = detail?.error || detail?.message || detail?.detail;
+    console.warn('[Contact] Submit failed:', res.status, message || '(no message)');
+    return { success: false, error: message || `Couldn't send your message (${res.status}). Please try again.` };
+  } catch (err) {
+    console.error('[Contact] Error submitting form:', err.message);
+    return { success: false, error: 'Could not reach Smartloop. Check your connection and try again.' };
+  }
 });
 
 // Open a folder in the system file manager (Finder on macOS)
@@ -166,12 +207,14 @@ ipcMain.handle('download-document', async (event, filePath) => {
 // Initialize electron-store
 const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync() });
 
-// SLP data directory. In the Developer-ID build (dmg) this stays ~/.smartloop/
-// (the default inside slp-setup), keeping the binary, config, and data in a
-// consistent, well-known location — even though the binary is now bundled and
-// copied there instead of downloaded. In the sandboxed Mac App Store build the
-// app may only write inside its container, so relocate all SLP state under
-// userData (~/Library/Containers/ai.smartloop.studio/Data/…).
+// SLP data directory — SLP's home (SLP_HOME), not where the framework lives:
+// the framework runs in place from inside the app on every platform, so this
+// holds only the state SLP itself manages (server.port, server.log, config,
+// models, workspaces, studio.db). In the Developer-ID build (dmg), Windows and
+// Linux it stays ~/.smartloop/ (the default inside slp-setup), a consistent,
+// well-known location. In the sandboxed Mac App Store build the app may only
+// write inside its container, so relocate all SLP state under userData
+// (~/Library/Containers/ai.smartloop.studio/Data/…).
 if (isSandboxed()) {
   const slpDataDir = path.join(app.getPath('userData'), 'slp');
   setInstallDir(slpDataDir);
@@ -413,6 +456,53 @@ ipcMain.handle('list-directory', async (event, dirPath) => {
 });
 
 // IPC: extract conversations from a zip file (reads workspace.json or falls back to conversations/*.jsonl)
+// ── Zip handling ─────────────────────────────────────────────────────────
+// In-process, via adm-zip. These used to shell out — `tar` on Windows, `unzip`
+// / `zip` everywhere else — which failed two ways:
+//   - Linux ships GNU tar, which cannot read a zip at all ("This does not look
+//     like a tar archive") and, worse, ignores `-a` on write and emits a TAR
+//     named .zip. `unzip`/`zip` are not installed by default on many distros
+//     either, so creating a project died on `spawnSync unzip ENOENT`.
+//   - The sandboxed MAS build cannot exec system binaries.
+// Nothing here spawns a process, so every platform behaves the same.
+
+// Read one member's text, matching either an exact name or any depth-1 wrapper
+// (`*/name`) — exported archives sometimes carry a single top-level directory.
+function readZipEntryText(zipFilePath, entryName) {
+  const zip = new AdmZip(zipFilePath);
+  const entry = zip.getEntry(entryName)
+    || zip.getEntries().find((e) => !e.isDirectory && e.entryName.endsWith(`/${entryName}`));
+  return entry ? zip.readAsText(entry) : null;
+}
+
+// Every file member's path within the archive.
+function listZipEntries(zipFilePath) {
+  return new AdmZip(zipFilePath).getEntries()
+    .filter((e) => !e.isDirectory)
+    .map((e) => e.entryName);
+}
+
+// Extract the whole archive into targetDir, overwriting what is there.
+function extractZip(zipFilePath, targetDir) {
+  new AdmZip(zipFilePath).extractAllTo(targetDir, true);
+}
+
+// Zip a directory's contents, with entries at the archive root (no "./" prefix
+// and no wrapper dir — the SLP import API expects files at the top level).
+// Finder droppings are skipped at every depth, not just the top.
+const ZIP_JUNK = /(^|[/\\])(\.DS_Store|__MACOSX)([/\\]|$)/;
+function zipDirectory(sourceDir, zipFilePath) {
+  const zip = new AdmZip();
+  const keep = (entryPath) => !ZIP_JUNK.test(entryPath);
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    if (!keep(entry.name)) continue;
+    const full = path.join(sourceDir, entry.name);
+    if (entry.isDirectory()) zip.addLocalFolder(full, entry.name, keep);
+    else zip.addLocalFile(full);
+  }
+  zip.writeZip(zipFilePath);
+}
+
 ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
   try {
     const resolved = zipPath.startsWith('~')
@@ -420,17 +510,11 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
       : zipPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
 
-    const { execFileSync } = require('child_process');
-    const isWin = process.platform === 'win32';
-
     // Try reading workspace.json (v3+), project.json (v2), or manifest.json (SLP template) from the zip
-    // Use wildcard to handle zips with a top-level directory wrapper
     for (const manifestName of ['workspace.json', 'project.json', 'manifest.json']) {
       try {
-        const content = isWin
-          ? execFileSync('tar', ['-xOf', resolved, '--wildcards', `*/${manifestName}`, manifestName], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString()
-          : execFileSync('unzip', ['-p', resolved, manifestName, `*/${manifestName}`], { timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).toString();
-        if (content.trim()) {
+        const content = readZipEntryText(resolved, manifestName);
+        if (content && content.trim()) {
           const manifest = JSON.parse(content);
           if (manifest.conversations && manifest.conversations.length > 0) {
             const conversations = manifest.conversations.map((conv, i) => {
@@ -449,26 +533,13 @@ ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
     }
 
     // Legacy fallback: read conversations/*.jsonl entries
-    const listOutput = isWin
-      ? execFileSync('tar', ['-tf', resolved], { timeout: 10000 }).toString()
-      : execFileSync('unzip', ['-l', resolved], { timeout: 10000 }).toString();
-    const conversationFiles = listOutput
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => /conversations\/[^/]+\.jsonl$/.test(line))
-      .map(line => {
-        if (isWin) return line || null;
-        const match = line.match(/(conversations\/[^\s]+\.jsonl)$/);
-        return match ? match[1] : null;
-      })
-      .filter(Boolean);
+    const conversationFiles = listZipEntries(resolved)
+      .filter(name => /conversations\/[^/]+\.jsonl$/.test(name));
 
     const conversations = [];
     for (const filePath of conversationFiles) {
       try {
-        const content = isWin
-          ? execFileSync('tar', ['-xOf', resolved, filePath], { timeout: 10000 }).toString()
-          : execFileSync('unzip', ['-p', resolved, filePath], { timeout: 10000 }).toString();
+        const content = readZipEntryText(resolved, filePath) || '';
         const lines = content.split('\n').filter(l => l.trim());
         const messages = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
         const convId = path.basename(filePath, '.jsonl');
@@ -504,23 +575,67 @@ function copyDirRecursive(src, dest, skipDirs = []) {
   }
 }
 
-// Helper: read the SLP config.json and find the workspace project directory for a given project ID
-function getSlpProjectDir(projectId) {
-  const configPath = path.join(slpService.getSlpDir(), 'config.json');
-  if (!fs.existsSync(configPath)) return null;
+// Helper: the SLP config.json (SLP_HOME/config.json), or null if unreadable.
+function readSlpConfig() {
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const projects = config?.workspace?.projects || [];
-    const match = projects.find(p => p.id === projectId);
-    if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
-    // Fallback: try the conventional path
-    const conventionalDir = path.join(slpService.getSlpDir(), workspaceId, projectId);
-    return fs.existsSync(conventionalDir) ? conventionalDir : null;
+    const configPath = path.join(slpService.getSlpDir(), 'config.json');
+    if (!fs.existsSync(configPath)) return null;
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   } catch {
     return null;
   }
+}
+
+// Helper: the active workspace directory (SLP_HOME/<workspaceId>), which is
+// where SLP keeps per-project dirs, the models dir, and workspace.db. Prefer
+// the explicit workspace_dir config.json records; fall back to the conventional
+// SLP_HOME/<workspaceId>. Null when there is no workspace yet.
+function getWorkspaceDir() {
+  const config = readSlpConfig();
+  const recorded = config?.workspace?.workspace_dir;
+  if (recorded) return resolveHomePath(recorded);
+  const workspaceId = config?.workspace?.id;
+  return workspaceId ? path.join(slpService.getSlpDir(), workspaceId) : null;
+}
+
+// Helper: read the SLP config.json and find the workspace project directory for
+// a given project ID. Returns null unless the directory is actually on disk —
+// callers that need the intended path for a project SLP hasn't materialized yet
+// want resolveProjectDir() instead.
+function getSlpProjectDir(projectId) {
+  const config = readSlpConfig();
+  if (!config) return null;
+  const match = (config?.workspace?.projects || []).find(p => p.id === projectId);
+  if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const conventionalDir = path.join(workspaceDir, projectId);
+  return fs.existsSync(conventionalDir) ? conventionalDir : null;
+}
+
+/**
+ * Where a project's files live: <SLP_HOME>/<workspaceId>/<projectId>.
+ *
+ * NOT health.cwd + projectId. health.cwd is SLP_HOME (~/.smartloop) — the
+ * workspace id sits between it and the project dir, so joining the two gave a
+ * path one level too high. Nothing was there, and because the folder button
+ * opens with createIfMissing the click silently created an empty directory
+ * beside SLP's own state and opened that instead of the project. The same value
+ * is sent as `cwd` on every chat turn, so file/shell skills were pointed at the
+ * empty directory too.
+ *
+ * SLP creates a project's directory lazily (first document or file written), so
+ * fall back to the conventional path when it isn't on disk yet rather than
+ * giving up — that is the path SLP will use, and the one to create on click.
+ * apiCwd (the API's own `cwd` field) is the last resort; it is usually "".
+ */
+function resolveProjectDir(projectId, apiCwd) {
+  if (!projectId) return apiCwd || null;
+  const onDisk = getSlpProjectDir(projectId);
+  if (onDisk) return onDisk;
+  const workspaceDir = getWorkspaceDir();
+  if (workspaceDir) return path.join(workspaceDir, projectId);
+  return apiCwd || null;
 }
 
 // IPC: export a project via SLP API + SQLite state
@@ -546,11 +661,7 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const slpZipPath = path.join(tmpDir, `slp-export-${projectId}.zip`);
     const arrayBuf = await exportRes.arrayBuffer();
     fs.writeFileSync(slpZipPath, Buffer.from(arrayBuf));
-    if (process.platform === 'win32') {
-      execFileSync('tar', ['-xf', slpZipPath, '-C', exportDir], { timeout: 120000 });
-    } else {
-      execFileSync('unzip', ['-o', slpZipPath, '-d', exportDir], { timeout: 120000 });
-    }
+    extractZip(slpZipPath, exportDir);
     fs.unlinkSync(slpZipPath);
 
     // Augment with SQLite state (conversations, messages, MCP servers, folders, tabs)
@@ -605,14 +716,7 @@ ipcMain.handle('export-project', async (event, projectId) => {
     const zipPath = path.join(tmpDir, zipFileName);
 
     if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-    if (process.platform === 'win32') {
-      // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
-      // Pass entry names explicitly so paths aren't prefixed with "./"
-      const entries = fs.readdirSync(exportDir);
-      execFileSync('tar', ['-a', '-cf', zipPath, '-C', exportDir, ...entries], { timeout: 120000 });
-    } else {
-      execFileSync('zip', ['-r', zipPath, '.'], { cwd: exportDir, timeout: 120000 });
-    }
+    zipDirectory(exportDir, zipPath);
     fs.rmSync(exportDir, { recursive: true, force: true });
 
     const downloadsDir = require('electron').app.getPath('downloads');
@@ -646,11 +750,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const tmpDir = path.join(os.tmpdir(), `smartloop-import-${Date.now()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
-    if (process.platform === 'win32') {
-      execFileSync('tar', ['-xf', resolved, '-C', tmpDir], { timeout: 120000 });
-    } else {
-      execFileSync('unzip', ['-o', resolved, '-d', tmpDir], { timeout: 120000 });
-    }
+    extractZip(resolved, tmpDir);
 
     // If the zip contains a single top-level directory, unwrap it
     let contentDir = tmpDir;
@@ -686,14 +786,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
     let importZipPath = resolved;
     if (contentDir !== tmpDir) {
       importZipPath = path.join(tmpDir, 'repacked-import.zip');
-      if (process.platform === 'win32') {
-        // No zip CLI on Windows — bsdtar creates zip archives (-a infers format from extension).
-        // Pass entry names explicitly so paths aren't prefixed with "./"
-        const entries = fs.readdirSync(contentDir);
-        execFileSync('tar', ['-a', '-cf', importZipPath, '-C', contentDir, ...entries], { timeout: 120000 });
-      } else {
-        execFileSync('zip', ['-r', importZipPath, '.'], { cwd: contentDir, timeout: 120000 });
-      }
+      zipDirectory(contentDir, importZipPath);
     }
 
     const fileBuffer = fs.readFileSync(importZipPath);
@@ -716,8 +809,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const createdProject = await importRes.json();
     const newProjectId = createdProject.id;
-    const healthCwd = slpService.getCwd();
-    const resolvedFolderPath = (healthCwd ? path.join(healthCwd, newProjectId) : null) || createdProject.cwd || overrides?.cwd;
+    const resolvedFolderPath = resolveProjectDir(newProjectId, createdProject.cwd) || overrides?.cwd;
 
     // Save UI metadata (display name, color) to SQLite
     database.upsertProject({
@@ -916,12 +1008,11 @@ function broadcastProjectsChanged() {
 function enrichProjects(apiProjects) {
   const localMeta = database.getAllProjects();
   const metaMap = new Map(localMeta.map((m) => [m.id, m]));
-  const healthCwd = slpService.getCwd();
 
   const enriched = apiProjects.map((p) => {
     const meta = metaMap.get(p.id);
-    // Prefer health.cwd + project_id → API cwd → local DB folder_path
-    const folderPath = (healthCwd ? path.join(healthCwd, p.id) : null) || p.cwd || meta?.folder_path || null;
+    // Workspace project dir → API cwd → local DB folder_path
+    const folderPath = resolveProjectDir(p.id, p.cwd) || meta?.folder_path || null;
 
     // Ensure every project has a local metadata row so UI-only fields (color,
     // folder_path) can be persisted. The system "general_chat" project is created
@@ -929,12 +1020,16 @@ function enrichProjects(apiProjects) {
     // would silently no-op (UPDATE ... WHERE id matches nothing).
     if (!meta) {
       database.upsertProject({ id: p.id, name: p.name, color: null, system: p.system, folder_path: folderPath });
-    } else if (folderPath && !meta.folder_path) {
-      // Backfill folder_path from the API response when SQLite lacks it.
+    } else if (folderPath && meta.folder_path !== folderPath) {
+      // Keep SQLite in step with the resolved path — it backfills a missing one
+      // and repairs a stale one (rows written before project dirs were resolved
+      // through the workspace point at a path that never existed).
       database.updateProject(p.id, { folder_path: folderPath });
     }
 
-    return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath };
+    // `instructions` is a local-only field (the SLP API has no concept of it) —
+    // the renderer sends it as a system message on every chat turn.
+    return { ...p, name: meta?.name || p.name, color: meta?.color || null, folder_path: folderPath, instructions: meta?.instructions || '' };
   });
 
   return enriched;
@@ -1001,8 +1096,7 @@ ipcMain.handle('projects-create', async (event, params) => {
 
     if (res.status === 200 || res.status === 201) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const folderPath = (healthCwd ? path.join(healthCwd, project.id) : null) || project.cwd || params.folder_path;
+      const folderPath = resolveProjectDir(project.id, project.cwd) || params.folder_path;
 
       database.upsertProject({ id: project.id, name: trimmedName, color, system, folder_path: folderPath });
       database.addMcpServer({
@@ -1039,6 +1133,8 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
     const trimmedName = isSystemProject ? undefined : updates?.name?.trim();
     const apiUpdates = { ...updates };
     if (isSystemProject) delete apiUpdates.name;
+    // Instructions live only in SQLite; the API would drop the field anyway.
+    delete apiUpdates.instructions;
     if (trimmedName) apiUpdates.name = trimmedName.toLowerCase().replace(/\s+/g, '_');
 
     const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, {
@@ -1049,12 +1145,12 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
 
     if (res.status === 200) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const resolvedCwd = (healthCwd ? path.join(healthCwd, projectId) : null) || project.cwd;
+      const resolvedCwd = resolveProjectDir(projectId, project.cwd);
 
       const metaUpdates = {};
       if (trimmedName) metaUpdates.name = trimmedName;
       if (updates.color !== undefined) metaUpdates.color = updates.color;
+      if (updates.instructions !== undefined) metaUpdates.instructions = updates.instructions;
       if (resolvedCwd) metaUpdates.folder_path = resolvedCwd;
       if (Object.keys(metaUpdates).length > 0) {
         database.updateProject(projectId, metaUpdates);
@@ -1465,18 +1561,13 @@ function dirSize(target) {
   return total;
 }
 
-// The workspace models directory (~/.smartloop/<workspaceId>/models), read from
-// config.json. Returns null if the workspace/models dir can't be resolved.
+// The workspace models directory (~/.smartloop/<workspaceId>/models).
+// Returns null if the workspace/models dir can't be resolved.
 function getModelsDir() {
-  try {
-    const configPath = path.join(slpService.getSlpDir(), 'config.json');
-    if (!fs.existsSync(configPath)) return null;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const modelsDir = path.join(slpService.getSlpDir(), workspaceId, 'models');
-    return fs.existsSync(modelsDir) ? modelsDir : null;
-  } catch { return null; }
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const modelsDir = path.join(workspaceDir, 'models');
+  return fs.existsSync(modelsDir) ? modelsDir : null;
 }
 
 // Removable model vendor dirs (everything except the kept vendors).
@@ -1674,21 +1765,30 @@ const { bootstrapProgress } = require('./bootstrap-progress.js');
  * Determine whether the SLP service needs bootstrapping — i.e. it has no
  * projects yet or no model loaded. Returns true on any error (assume needed).
  */
+/** GET a JSON body from the local service, or null on any failure. */
+function getServiceJson(urlStr) {
+  return new Promise((resolve) => {
+    const http = require('http');
+    const u = new URL(urlStr);
+    http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    }).on('error', () => resolve(null));
+  });
+}
+
+/** Projects the service reports, or null when the call fails. */
+async function getProjects(baseUrl) {
+  const data = await getServiceJson(`${baseUrl}/v1/projects`);
+  if (!data) return null;
+  return Array.isArray(data) ? data : (data.projects || []);
+}
+
 async function checkNeedsBootstrap(baseUrl) {
   try {
-    const http = require('http');
-    const getJson = (urlStr) => new Promise((resolve) => {
-      const u = new URL(urlStr);
-      http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
-        let body = '';
-        res.on('data', (c) => { body += c; });
-        res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-      }).on('error', () => resolve(null));
-    });
-
-    const projectsData = await getJson(`${baseUrl}/v1/projects`);
-    const projects = Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []);
-    const health = (await getJson(`${baseUrl}/health`)) || {};
+    const projects = (await getProjects(baseUrl)) || [];
+    const health = (await getServiceJson(`${baseUrl}/health`)) || {};
 
     const hasProjects = projects.length > 0;
     const hasModel = health.status === 'healthy';
@@ -1702,7 +1802,7 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
-async function bootstrapSlpService(baseUrl) {
+async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
     const http = require('http');
@@ -1739,6 +1839,9 @@ async function bootstrapSlpService(baseUrl) {
                 console.log('[SLP] Bootstrap:', progress.status);
               }
 
+              // Let the caller know the stream is alive (stall watchdog).
+              if (onProgress) onProgress(progress);
+
               // Send to splash screen only when main window isn't visible yet
               if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
                 updateSplashProgress(data);
@@ -1759,7 +1862,12 @@ async function bootstrapSlpService(baseUrl) {
         console.log('[SLP] Bootstrap completed');
 
         // Send a final completed event so the renderer clears the progress UI
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        // and reloads the project list (bootstrap creates the default project).
+        // Not gated on window visibility: on a first run the window is still
+        // hidden behind the splash here, but its renderer is loaded and
+        // listening — and it is the run that most needs the reload, since the
+        // project list it fetched on mount was empty.
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
           mainWindow.webContents.send('bootstrap-progress', {
             percent: 100, status: 'Ready', model: '', downloading: false
           });
@@ -1881,6 +1989,123 @@ function verifyRequirementsOnSplash() {
   detectSystemCapability()
     .then((cap) => console.log('[SLP] System capability:', cap.label))
     .catch(() => { });
+}
+
+/**
+ * Close the splash and bring up the main window, starting the pollers that
+ * need a live renderer. Every startup path ends here, so the ordering (splash
+ * down, window up, service-ready sent, pollers started) lives in one place.
+ */
+function revealMainWindow(baseUrl) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  setAppReady(true);
+  mainWindow.show();
+  mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
+  healthMonitor.start(() => mainWindow);
+  releaseChecker.start(() => mainWindow, () => refreshTray());
+  fetchModels();
+}
+
+// A bootstrap that stops emitting SSE progress must not trap the user behind a
+// frozen splash forever — if nothing arrives for this long, give up on the
+// splash and open the main window (bootstrap keeps running server-side).
+const BOOTSTRAP_STALL_MS = 10 * 60 * 1000;
+
+/** Wait for the service to stop answering /health. False if it never does. */
+async function waitForServiceDown(timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await slpService.checkHealth())) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * Run bootstrap to completion, guarded by a stall watchdog. Never rejects: a
+ * failed or stalled bootstrap hands control back so the caller can carry on and
+ * open the main window.
+ */
+async function runBootstrap(baseUrl) {
+  await new Promise((resolve) => {
+    let stallTimer = null;
+    const done = () => { clearTimeout(stallTimer); resolve(); };
+    const bumpStall = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        console.warn('[SLP] Bootstrap stalled — giving up on the splash while it continues');
+        resolve();
+      }, BOOTSTRAP_STALL_MS);
+    };
+
+    bumpStall();
+    bootstrapSlpService(baseUrl, bumpStall)
+      .then(() => { refreshTray(); })
+      .catch((error) => { console.error('[SLP] Bootstrap failed:', error.message); })
+      .finally(done);
+  });
+}
+
+/**
+ * First run: SLP is installed and answering, but has no model and no project
+ * yet, so there is nothing usable behind the main window. Keep the splash up
+ * and let bootstrap (which downloads the default model, ~770 MB) stream its
+ * progress into it — bootstrapSlpService routes SSE progress to the splash for
+ * as long as the main window stays hidden — and only return once it finishes.
+ *
+ * This applies to every platform. All three now bundle the SLP framework, so
+ * needsInstall() is false on a fresh machine and the install splash is skipped
+ * entirely; bootstrap is the only first-launch work left. Without this gate the
+ * splash closed the moment the service answered and the user landed in an empty
+ * chat — no model, no project — while the model downloaded invisibly.
+ *
+ * Returns the base URL to use from here on: the repair path below restarts the
+ * service, which can hand back a different port.
+ */
+async function bootstrapOnSplash(baseUrl) {
+  if (!splashWindow || splashWindow.isDestroyed()) createStartingSplash();
+  updateSplashProgress({ status: 'preparing', message: 'Setting up your workspace...' });
+
+  await runBootstrap(baseUrl);
+
+  // Bootstrap can report "completed" and still leave the workspace empty: a
+  // service that kept running after its data dir was wiped (the agent outlives
+  // the app) answers /health with the old model still loaded, so bootstrap
+  // skips the work and returns a project it no longer has. The app then opened
+  // on an empty workspace — no projects, nothing to chat with. Restart the
+  // service so it re-reads what is actually on disk, then bootstrap for real.
+  //
+  // Only an empty list counts as evidence — a failed call tells us nothing.
+  const projects = await getProjects(baseUrl);
+  if (projects === null || projects.length > 0) return baseUrl;
+
+  console.warn('[SLP] Bootstrap reported success but the workspace has no projects — restarting the service and retrying');
+  updateSplashProgress({ status: 'preparing', message: 'Repairing workspace...' });
+
+  try {
+    await slpService.stopService();
+    if (!(await waitForServiceDown())) {
+      // Another process owns this port (an agent from a different install), so
+      // restarting ours changes nothing — leave it and open the window.
+      console.warn('[SLP] A service we cannot stop is holding the port — skipping the retry');
+      return baseUrl;
+    }
+    if (!(await slpService.startService())) {
+      console.error('[SLP] Service failed to restart during workspace repair');
+      return baseUrl;
+    }
+    const repairedUrl = slpService.getLocalBaseUrl() || baseUrl;
+    await runBootstrap(repairedUrl);
+    return repairedUrl;
+  } catch (error) {
+    console.error('[SLP] Workspace repair failed:', error.message);
+    return baseUrl;
+  }
 }
 
 // IPC: load model (called from renderer)
@@ -2848,41 +3073,22 @@ if (!gotTheLock) {
         }
       }
 
-      const baseUrl = slpService.getLocalBaseUrl();
+      let baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
       const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        setAppReady(true);
-        mainWindow.show();
-        mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-        healthMonitor.start(() => mainWindow);
-        releaseChecker.start(() => mainWindow, () => refreshTray());
-      }
-
       // Download blank project template in the background
       downloadBlankTemplate().catch(err => console.warn('[Template] Background download failed:', err.message));
 
+      // A healthy service with no model/project is still a first run: show the
+      // setup progress on the splash instead of an empty chat window.
       if (needsBootstrap) {
-        console.log('[SLP] Bootstrapping in background');
-        (async () => {
-          try {
-            await bootstrapSlpService(baseUrl);
-            refreshTray();
-          } catch (error) {
-            console.error('[SLP] Bootstrap failed:', error.message);
-          } finally {
-            if (splashWindow && !splashWindow.isDestroyed()) {
-              splashWindow.close();
-              splashWindow = null;
-            }
-          }
-        })();
-      } else if (splashWindow && !splashWindow.isDestroyed()) {
-        splashWindow.close();
-        splashWindow = null;
+        console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+        baseUrl = await bootstrapOnSplash(baseUrl);
       }
+
+      revealMainWindow(baseUrl);
     } else {
       // Either nothing is running, or something is running that we refused to
       // adopt above. Stop the orphan first — it holds the port this process is
@@ -2968,7 +3174,7 @@ if (!gotTheLock) {
             return;
           }
 
-          const baseUrl = slpService.getLocalBaseUrl();
+          let baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
@@ -2976,32 +3182,15 @@ if (!gotTheLock) {
           // Download blank project template while splash is still visible
           await downloadBlankTemplate().catch(err => console.warn('[Template] Download failed:', err.message));
 
-          // Show main window immediately once the service is ready; bootstrap
-          // continues in the background so startup feels faster.
-          if (splashWindow && !splashWindow.isDestroyed()) {
-            splashWindow.close();
-            splashWindow = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            setAppReady(true);
-            mainWindow.show();
-            mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
-            healthMonitor.start(() => mainWindow);
-            releaseChecker.start(() => mainWindow, () => refreshTray());
-            fetchModels();
+          // First run (no model, no project): hold the splash through bootstrap
+          // so the model download is visible, then open the main window. When
+          // there is nothing to bootstrap, open it right away.
+          if (needsBootstrap) {
+            console.log('[SLP] Bootstrap needed — holding the splash until it completes');
+            baseUrl = await bootstrapOnSplash(baseUrl);
           }
 
-          if (needsBootstrap) {
-            console.log('[SLP] Bootstrap needed — running in background');
-            (async () => {
-              try {
-                await bootstrapSlpService(baseUrl);
-                refreshTray();
-              } catch (error) {
-                console.error('[SLP] Bootstrap failed:', error.message);
-              }
-            })();
-          }
+          revealMainWindow(baseUrl);
         } catch (error) {
           console.error('[SLP] Service start failed:', error.message);
           updateSplashProgress({ status: 'error', message: 'Setup failed. Please restart the app.' });

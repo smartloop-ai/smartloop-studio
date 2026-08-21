@@ -1,14 +1,8 @@
-import { Box, Tooltip } from '@mui/material';
+import { Box } from '@mui/material';
 import CircleIcon from '@mui/icons-material/Circle';
-import FormatBoldIcon from '@mui/icons-material/FormatBold';
-import FormatItalicIcon from '@mui/icons-material/FormatItalic';
-import TitleIcon from '@mui/icons-material/Title';
-import CodeIcon from '@mui/icons-material/Code';
-import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
-import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
-import LinkIcon from '@mui/icons-material/Link';
 import { useState, useEffect, useRef } from 'react';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
+import MarkdownToolbar from './markdown-toolbar';
 
 interface Skill {
   name: string;
@@ -279,57 +273,6 @@ export default function SkillEditor({
     setHasUnsavedChanges(true);
   };
 
-  // Apply the new value + restore a selection/caret, keeping focus on the input.
-  const applyEdit = (value: string, selStart: number, selEnd: number) => {
-    handleChange(value);
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(selStart, selEnd);
-    });
-  };
-
-  // Wrap the current selection with `marker` on both sides (bold, italic, code).
-  const wrapSelection = (marker: string) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = content.slice(start, end) || 'text';
-    const next = content.slice(0, start) + marker + selected + marker + content.slice(end);
-    applyEdit(next, start + marker.length, start + marker.length + selected.length);
-  };
-
-  // Prefix each selected line with `prefix` (headings, lists, quotes).
-  const prefixLines = (prefix: string) => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const lineStart = content.lastIndexOf('\n', start - 1) + 1;
-    const block = content.slice(lineStart, end);
-    const replaced = block
-      .split('\n')
-      .map((l) => (l.startsWith(prefix) ? l : prefix + l))
-      .join('\n');
-    const next = content.slice(0, lineStart) + replaced + content.slice(end);
-    applyEdit(next, lineStart, lineStart + replaced.length);
-  };
-
-  const insertLink = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const label = content.slice(start, end) || 'text';
-    const snippet = `[${label}](url)`;
-    const next = content.slice(0, start) + snippet + content.slice(end);
-    // Select the "url" placeholder for quick replacement.
-    const urlStart = start + label.length + 3;
-    applyEdit(next, urlStart, urlStart + 3);
-  };
-
   const displayName = getDisplayName(content);
 
   return (
@@ -366,33 +309,7 @@ export default function SkillEditor({
       </Box>
 
       {/* Formatting toolbar */}
-      <Box
-        className="flex items-center gap-0.5 flex-none px-4 py-1"
-        sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}
-      >
-        {[
-          { key: 'bold', title: 'Bold', icon: <FormatBoldIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('**') },
-          { key: 'italic', title: 'Italic', icon: <FormatItalicIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('*') },
-          { key: 'heading', title: 'Heading', icon: <TitleIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('# ') },
-          { key: 'code', title: 'Code', icon: <CodeIcon sx={{ fontSize: 16 }} />, run: () => wrapSelection('`') },
-          { key: 'ul', title: 'Bulleted list', icon: <FormatListBulletedIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('- ') },
-          { key: 'quote', title: 'Quote', icon: <FormatQuoteIcon sx={{ fontSize: 16 }} />, run: () => prefixLines('> ') },
-          { key: 'link', title: 'Link', icon: <LinkIcon sx={{ fontSize: 16 }} />, run: () => insertLink() },
-        ].map((btn) => (
-          <Tooltip key={btn.key} title={btn.title} placement="bottom" arrow>
-            <button
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); btn.run(); }}
-              className="flex items-center justify-center rounded transition-colors"
-              style={{ width: 28, height: 28, color: 'var(--sl-text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sl-brand-primary)'; e.currentTarget.style.backgroundColor = 'var(--sl-white-alpha-7)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sl-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
-            >
-              {btn.icon}
-            </button>
-          </Tooltip>
-        ))}
-      </Box>
+      <MarkdownToolbar textareaRef={textareaRef} value={content} onChange={handleChange} />
 
       {/* Editor — a colorized, full-height Markdown surface that fills the panel.
           A highlight backdrop shows the (frontmatter-colored) text; the textarea

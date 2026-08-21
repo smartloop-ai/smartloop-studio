@@ -9,13 +9,35 @@ let createWindowFn = null;
 let appReady = false;
 
 /**
+ * The menu bar / tray image.
+ *
+ * macOS gets a TEMPLATE image: the system tints the alpha silhouette itself, so
+ * the glyph is dark on a light menu bar, light on a dark one, and inverts while
+ * the menu is open. Without it the source art — which is pure white — rendered
+ * as-is and all but vanished on the default light menu bar. Electron infers
+ * "template" from the `Template` filename suffix and picks up the `@2x` file
+ * beside it, which is what keeps the icon crisp on Retina; resizing the 128px
+ * source in memory could only ever produce a 1x bitmap for the system to
+ * upscale.
+ *
+ * Windows and Linux keep the white glyph — their panels are dark by default —
+ * and are not template-aware, so they take the plain image resized to 18px.
+ */
+function trayIcon() {
+  if (process.platform === 'darwin') {
+    return nativeImage.createFromPath(path.join(__dirname, '../public/img/trayTemplate.png'));
+  }
+  return nativeImage
+    .createFromPath(path.join(__dirname, '../public/img/tray.png'))
+    .resize({ width: 18, height: 18 });
+}
+
+/**
  * Create the system tray.
  * Call once from app.whenReady().
  */
 function createTray() {
-  const iconPath = path.join(__dirname, '../public/img/tray.png');
-  const icon = nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 });
-  tray = new Tray(icon);
+  tray = new Tray(trayIcon());
   tray.setToolTip('Smartloop Studio');
 
   // Left-click on the tray icon shows the window (Windows/Linux; on macOS a
