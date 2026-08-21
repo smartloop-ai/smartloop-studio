@@ -546,23 +546,67 @@ function copyDirRecursive(src, dest, skipDirs = []) {
   }
 }
 
-// Helper: read the SLP config.json and find the workspace project directory for a given project ID
-function getSlpProjectDir(projectId) {
-  const configPath = path.join(slpService.getSlpDir(), 'config.json');
-  if (!fs.existsSync(configPath)) return null;
+// Helper: the SLP config.json (SLP_HOME/config.json), or null if unreadable.
+function readSlpConfig() {
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const projects = config?.workspace?.projects || [];
-    const match = projects.find(p => p.id === projectId);
-    if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
-    // Fallback: try the conventional path
-    const conventionalDir = path.join(slpService.getSlpDir(), workspaceId, projectId);
-    return fs.existsSync(conventionalDir) ? conventionalDir : null;
+    const configPath = path.join(slpService.getSlpDir(), 'config.json');
+    if (!fs.existsSync(configPath)) return null;
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
   } catch {
     return null;
   }
+}
+
+// Helper: the active workspace directory (SLP_HOME/<workspaceId>), which is
+// where SLP keeps per-project dirs, the models dir, and workspace.db. Prefer
+// the explicit workspace_dir config.json records; fall back to the conventional
+// SLP_HOME/<workspaceId>. Null when there is no workspace yet.
+function getWorkspaceDir() {
+  const config = readSlpConfig();
+  const recorded = config?.workspace?.workspace_dir;
+  if (recorded) return resolveHomePath(recorded);
+  const workspaceId = config?.workspace?.id;
+  return workspaceId ? path.join(slpService.getSlpDir(), workspaceId) : null;
+}
+
+// Helper: read the SLP config.json and find the workspace project directory for
+// a given project ID. Returns null unless the directory is actually on disk —
+// callers that need the intended path for a project SLP hasn't materialized yet
+// want resolveProjectDir() instead.
+function getSlpProjectDir(projectId) {
+  const config = readSlpConfig();
+  if (!config) return null;
+  const match = (config?.workspace?.projects || []).find(p => p.id === projectId);
+  if (match?.project_dir && fs.existsSync(match.project_dir)) return match.project_dir;
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const conventionalDir = path.join(workspaceDir, projectId);
+  return fs.existsSync(conventionalDir) ? conventionalDir : null;
+}
+
+/**
+ * Where a project's files live: <SLP_HOME>/<workspaceId>/<projectId>.
+ *
+ * NOT health.cwd + projectId. health.cwd is SLP_HOME (~/.smartloop) — the
+ * workspace id sits between it and the project dir, so joining the two gave a
+ * path one level too high. Nothing was there, and because the folder button
+ * opens with createIfMissing the click silently created an empty directory
+ * beside SLP's own state and opened that instead of the project. The same value
+ * is sent as `cwd` on every chat turn, so file/shell skills were pointed at the
+ * empty directory too.
+ *
+ * SLP creates a project's directory lazily (first document or file written), so
+ * fall back to the conventional path when it isn't on disk yet rather than
+ * giving up — that is the path SLP will use, and the one to create on click.
+ * apiCwd (the API's own `cwd` field) is the last resort; it is usually "".
+ */
+function resolveProjectDir(projectId, apiCwd) {
+  if (!projectId) return apiCwd || null;
+  const onDisk = getSlpProjectDir(projectId);
+  if (onDisk) return onDisk;
+  const workspaceDir = getWorkspaceDir();
+  if (workspaceDir) return path.join(workspaceDir, projectId);
+  return apiCwd || null;
 }
 
 // IPC: export a project via SLP API + SQLite state
@@ -758,8 +802,7 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     const createdProject = await importRes.json();
     const newProjectId = createdProject.id;
-    const healthCwd = slpService.getCwd();
-    const resolvedFolderPath = (healthCwd ? path.join(healthCwd, newProjectId) : null) || createdProject.cwd || overrides?.cwd;
+    const resolvedFolderPath = resolveProjectDir(newProjectId, createdProject.cwd) || overrides?.cwd;
 
     // Save UI metadata (display name, color) to SQLite
     database.upsertProject({
@@ -958,12 +1001,11 @@ function broadcastProjectsChanged() {
 function enrichProjects(apiProjects) {
   const localMeta = database.getAllProjects();
   const metaMap = new Map(localMeta.map((m) => [m.id, m]));
-  const healthCwd = slpService.getCwd();
 
   const enriched = apiProjects.map((p) => {
     const meta = metaMap.get(p.id);
-    // Prefer health.cwd + project_id → API cwd → local DB folder_path
-    const folderPath = (healthCwd ? path.join(healthCwd, p.id) : null) || p.cwd || meta?.folder_path || null;
+    // Workspace project dir → API cwd → local DB folder_path
+    const folderPath = resolveProjectDir(p.id, p.cwd) || meta?.folder_path || null;
 
     // Ensure every project has a local metadata row so UI-only fields (color,
     // folder_path) can be persisted. The system "general_chat" project is created
@@ -971,8 +1013,10 @@ function enrichProjects(apiProjects) {
     // would silently no-op (UPDATE ... WHERE id matches nothing).
     if (!meta) {
       database.upsertProject({ id: p.id, name: p.name, color: null, system: p.system, folder_path: folderPath });
-    } else if (folderPath && !meta.folder_path) {
-      // Backfill folder_path from the API response when SQLite lacks it.
+    } else if (folderPath && meta.folder_path !== folderPath) {
+      // Keep SQLite in step with the resolved path — it backfills a missing one
+      // and repairs a stale one (rows written before project dirs were resolved
+      // through the workspace point at a path that never existed).
       database.updateProject(p.id, { folder_path: folderPath });
     }
 
@@ -1045,8 +1089,7 @@ ipcMain.handle('projects-create', async (event, params) => {
 
     if (res.status === 200 || res.status === 201) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const folderPath = (healthCwd ? path.join(healthCwd, project.id) : null) || project.cwd || params.folder_path;
+      const folderPath = resolveProjectDir(project.id, project.cwd) || params.folder_path;
 
       database.upsertProject({ id: project.id, name: trimmedName, color, system, folder_path: folderPath });
       database.addMcpServer({
@@ -1095,8 +1138,7 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
 
     if (res.status === 200) {
       const project = await res.json();
-      const healthCwd = slpService.getCwd();
-      const resolvedCwd = (healthCwd ? path.join(healthCwd, projectId) : null) || project.cwd;
+      const resolvedCwd = resolveProjectDir(projectId, project.cwd);
 
       const metaUpdates = {};
       if (trimmedName) metaUpdates.name = trimmedName;
@@ -1512,18 +1554,13 @@ function dirSize(target) {
   return total;
 }
 
-// The workspace models directory (~/.smartloop/<workspaceId>/models), read from
-// config.json. Returns null if the workspace/models dir can't be resolved.
+// The workspace models directory (~/.smartloop/<workspaceId>/models).
+// Returns null if the workspace/models dir can't be resolved.
 function getModelsDir() {
-  try {
-    const configPath = path.join(slpService.getSlpDir(), 'config.json');
-    if (!fs.existsSync(configPath)) return null;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const workspaceId = config?.workspace?.id;
-    if (!workspaceId) return null;
-    const modelsDir = path.join(slpService.getSlpDir(), workspaceId, 'models');
-    return fs.existsSync(modelsDir) ? modelsDir : null;
-  } catch { return null; }
+  const workspaceDir = getWorkspaceDir();
+  if (!workspaceDir) return null;
+  const modelsDir = path.join(workspaceDir, 'models');
+  return fs.existsSync(modelsDir) ? modelsDir : null;
 }
 
 // Removable model vendor dirs (everything except the kept vendors).
