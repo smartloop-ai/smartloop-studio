@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useThemeContext } from '@/app/contexts/ThemeContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -63,6 +64,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     deleteProject: deleteProjectCtx,
     refresh: refreshProjects,
   } = useProjectContext();
+  // Light themes need a gentler dim than dark ones — see the new-project button.
+  const { theme } = useThemeContext();
+  const isLight = theme.mode === 'light';
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   // True while a model is (down)loading for the first time. Settings is blocked
   // during this window so the model can't be changed mid-load.
@@ -905,7 +909,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   cursor: disabled ? 'not-allowed' : 'pointer',
                   bgcolor: 'transparent',
                   color: 'var(--sl-text-muted)',
-                  opacity: disabled ? 0.5 : 1,
+                  // An opacity wash multiplies against the theme's text ramp. Light
+                  // themes start from an already-light muted tone, where 0.5 lands
+                  // near 1.7:1 and the label all but vanishes — so dim gently there.
+                  opacity: disabled ? (isLight ? 0.85 : 0.5) : 1,
                   fontWeight: 500,
                   fontSize: '13.5px',
                   transition: 'all 0.12s ease',
@@ -1004,7 +1011,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
                   <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Box>
-              <span className="text-xs ml-6 truncate" style={{ color: 'var(--sl-text-faint)' }}>
+              {/* Last message, or the project name as a fallback. Uses muted rather
+                  than faint: faint sits at ~2:1 on light themes, which is unreadable. */}
+              <span className="text-xs ml-6 truncate" style={{ color: 'var(--sl-text-muted)' }}>
                 {chat.lastMessage
                   ? (chat.lastMessage.length > 50
                     ? chat.lastMessage.substring(0, 50) + '...'
@@ -1014,7 +1023,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             </Box>
           ))
         ) : (
-          <Box className="text-xs text-sl-text-faint px-2">
+          <Box className="text-xs text-sl-text-muted px-2">
             No conversations yet
           </Box>
         )}

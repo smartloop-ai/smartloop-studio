@@ -9,6 +9,7 @@ import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import TagRoundedIcon from '@mui/icons-material/TagRounded';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
+import { useThemeContext } from '../contexts/ThemeContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
 import ContactDialog from './contact-dialog';
 import '../styles/aux-models.css';
@@ -205,6 +206,12 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
 
     // Admins (superusers) can download any model, including plan-gated pro/premium ones.
     const [user] = useAuthContext();
+    // Opacity washes multiply against the theme's text ramp. Dark themes start
+    // from near-white text so a heavy wash still reads; light themes start from
+    // an already-light muted ramp, where the same wash puts text at ~1.5:1 and
+    // makes it disappear. So every dim below is gentler in light mode.
+    const { theme } = useThemeContext();
+    const isLight = theme.mode === 'light';
     // Contact is an in-app form, not a link out to the website — see contact-dialog.tsx.
     const [contactOpen, setContactOpen] = useState(false);
     const isAdmin = !!user?.admin;
@@ -282,17 +289,6 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                 </Tooltip>
             );
         }
-        // Free model, but the user isn't signed in yet — show a (disabled) download
-        // affordance rather than a plan-gate lock.
-        if (s.needsLogin) {
-            return (
-                <Tooltip title="Sign in to download this model" arrow placement="top">
-                    <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)' }}>
-                        <FileDownloadOutlinedIcon sx={{ fontSize: 15, color: 'var(--sl-text-faint)' }} />
-                    </span>
-                </Tooltip>
-            );
-        }
         if (s.isDownloading) {
             const c = 2 * Math.PI * 10;
             return (
@@ -318,13 +314,18 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
             );
         }
         if (!s.downloaded) {
-            // Not downloaded yet — the bulb shows disabled; the download action
-            // lives in the footer.
-            return (
-                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)', opacity: 0.5 }}>
+            // Not downloaded yet — the bulb shows disabled and the download action
+            // lives in the footer alone. Signed-out users land here too (a login
+            // gate implies not-downloaded): the reason rides on the tooltip rather
+            // than on a second download glyph duplicating the footer's.
+            const bulb = (
+                <span style={{ ...ring, border: '1.5px solid var(--sl-border-default)', opacity: isLight ? 0.75 : 0.5 }}>
                     <LightbulbOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-faint)' }} />
                 </span>
             );
+            return s.needsLogin ? (
+                <Tooltip title="Sign in to download this model" arrow placement="top">{bulb}</Tooltip>
+            ) : bulb;
         }
         if (s.enabled) {
             // Lit bulb = model enabled / active.
@@ -418,7 +419,10 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     boxShadow: isActive
                         ? '0 0 0 1px var(--sl-brand-primary)'
                         : enabled ? 'inset 0 0 0 1px var(--sl-brand-alpha-30)' : 'none',
-                    opacity: locked ? 0.6 : 1,
+                    // Locked cards recede, but at 0.6 in light mode the title falls to
+                    // ~2:1 and the description to ~1.5:1 — unreadable. Light themes get
+                    // a light touch and lean on the lock glyph + tier tag to say "locked".
+                    opacity: locked ? (isLight ? 0.9 : 0.6) : 1,
                     cursor: locked ? 'default' : 'pointer',
                     transition: 'background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
                 }}
@@ -570,11 +574,27 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
     return (
         <div className="aux-panel">
             <p className="m-0 mb-3 px-2 text-[11px] leading-relaxed text-sl-text-muted">
-                Enable models that work together to enrich your request and produce the best results.
+                Select models capable of what you need &mdash; vision, document processing, skills &mdash; from the ones available to you.{' '}
+                {model ? (
+                    <>
+                        {/* The orchestrator itself, named so it's clear who does the
+                            picking. Dimmed and monospaced: it's a model id, and it is
+                            context rather than an action. */}
+                        <span
+                            className="px-1 py-0.5 rounded text-[10px] font-mono"
+                            style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)' }}
+                        >
+                            {model}
+                        </span>{' '}
+                        then picks the best model to fulfill your request.
+                    </>
+                ) : (
+                    <>The orchestrator then picks the best model to fulfill your request.</>
+                )}
             </p>
 
             {orderedModels.length === 0 ? (
-                <p className="m-0 py-2 px-2 text-xs text-sl-text-faint">No auxiliary models available</p>
+                <p className="m-0 py-2 px-2 text-xs text-sl-text-faint">No models available</p>
             ) : (
                 <div className="flex flex-col gap-2.5">
                     {orderedModels.map((m: any) => renderCard(m))}
