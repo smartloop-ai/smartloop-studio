@@ -50,6 +50,11 @@ export default function ContactDialog({ open, onClose, user }: ContactDialogProp
     setError('');
     setSent(false);
     setSending(false);
+    // Land the caret in the message box: name and email are either prefilled or
+    // quick to fill, and the message is what the person came to write. Delayed
+    // past the dialog's mount transition, which would otherwise steal focus.
+    const t = setTimeout(() => notesRef.current?.focus(), 120);
+    return () => clearTimeout(t);
   }, [open, prefillName, prefillEmail]);
 
   const canSend = name.trim() && email.trim() && notes.trim() && !sending;
