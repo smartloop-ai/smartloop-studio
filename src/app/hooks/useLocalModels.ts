@@ -10,8 +10,8 @@ export function useLocalModels() {
     const {
         localModels,
         localModelsLoading,
-        toggling,
-        downloadProgress,
+        downloads,
+        isDownloading,
         enabledModels,
         isEnabled,
         fetchLocalModels,
@@ -22,8 +22,8 @@ export function useLocalModels() {
     return {
         localModels,
         localModelsLoading,
-        toggling,
-        downloadProgress,
+        downloads,
+        isDownloading,
         enabledModels,
         isEnabled,
         fetchLocalModels,

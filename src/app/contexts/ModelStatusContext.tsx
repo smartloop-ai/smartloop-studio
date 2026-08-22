@@ -31,11 +31,14 @@ export interface ModelStatusValue {
   enabledCapabilities: Set<string>;
   fetchLocalModels: () => Promise<void>;
 
-  // --- Auxiliary download in flight (at most one) ---
-  toggling: string | null;
-  downloadProgress: { percent: number; status: string } | null;
+  // --- Auxiliary downloads in flight, keyed by model name ---
+  // Weights are workspace-wide, so these are NOT project-scoped: a download
+  // started from one project is shown as downloading in all of them. Mirrors
+  // main's `activeModelDownloads` map, which can hold more than one.
+  downloads: Map<string, { percent: number; status: string }>;
+  isDownloading: (name: string) => boolean;
   handleToggleModel: (name: string, workspaceName: string, enabled: boolean) => Promise<void>;
-  handleCancelDownload: () => Promise<void>;
+  handleCancelDownload: (modelName: string) => Promise<void>;
 
   // --- Primary orchestrator model load ---
   primaryProgress: ModelDownloadProgress | null;
@@ -62,10 +65,11 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   const [localModels, setLocalModels] = useState<any[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
-  const [toggling, setToggling] = useState<string | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<{ percent: number; status: string } | null>(null);
+  const [downloads, setDownloads] = useState<Map<string, { percent: number; status: string }>>(new Map());
   const [primaryProgress, setPrimaryProgress] = useState<ModelDownloadProgress | null>(null);
-  const togglingRef = useRef<string | null>(null);
+  // Mirror of `downloads` for event handlers, which must not close over state.
+  const downloadsRef = useRef(downloads);
+  downloadsRef.current = downloads;
 
   const enabledModels = useMemo(() => new Set(localModels.filter((m: any) => {
     const name = m.name || m.id || m.model;
@@ -107,12 +111,16 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
 
+  const setDownload = useCallback((name: string, progress: { percent: number; status: string }) => {
+    setDownloads(prev => new Map(prev).set(name, progress));
+  }, []);
+
   const clearAuxDownload = useCallback((name: string) => {
-    togglingRef.current = null;
-    setToggling(null);
-    setDownloadProgress(null);
+    setDownloads(prev => { const next = new Map(prev); next.delete(name); return next; });
     setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
   }, []);
+
+  const isDownloading = useCallback((name: string) => downloads.has(name), [downloads]);
 
   // --- Primary model load coordination ---
   const primaryInFlightRef = useRef(false);
@@ -191,21 +199,20 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Auxiliary download. Only the one this view adopted is ours to report.
-      const active = togglingRef.current;
-      if (!active || data.model !== active) return;
+      // Auxiliary download. Tracked for every model regardless of which project
+      // started it — the weights are workspace-wide.
       if (done) {
-        // Terminal event finalizes the toggle. The original handleToggleModel
-        // await cannot be relied on — it may belong to a render that is gone.
-        clearAuxDownload(active);
+        // Terminal event finalizes it. The original handleToggleModel await
+        // cannot be relied on — it may belong to a render that is gone.
+        clearAuxDownload(data.model);
         fetchRef.current();
       } else {
-        setDownloadProgress({ percent: data.percent, status: data.status });
+        setDownload(data.model, { percent: data.percent, status: data.status });
       }
     });
 
     return unsubscribe;
-  }, [clearAuxDownload, handlePrimaryProgress]);
+  }, [clearAuxDownload, handlePrimaryProgress, setDownload]);
 
   // First-launch bootstrap downloads the default model on its own channel. It is
   // a primary model load, so it drives the same state — without this, chat's
@@ -216,9 +223,9 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     return api.onBootstrapProgress(handlePrimaryProgress);
   }, [handlePrimaryProgress]);
 
-  // Adopt whatever main already has in flight: on mount, and again on project
-  // change (enablement is per-project, so an aux download started elsewhere must
-  // not drive this view's toggle).
+  // Resync with whatever main has in flight: on mount, and again on project
+  // change. Main is authoritative, so re-reading the snapshot on a switch is
+  // self-healing rather than project-scoping — downloads apply to every project.
   useEffect(() => {
     const api = window.electronAPI;
     if (!api?.slpGetDownloadState) return;
@@ -234,25 +241,19 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
         setPrimaryProgress(primary);
       }
 
-      const aux = all.find(s => s.kind !== 'primary' && (s.projectId ?? null) === projectId);
-      if (aux) {
-        togglingRef.current = aux.model;
-        setToggling(aux.model);
-        setDownloadProgress({ percent: aux.percent, status: aux.status });
-        setEnabledOverrides(prev => new Map(prev).set(aux.model, true));
-      } else {
-        // Nothing in flight for this project — drop a download adopted for the
-        // project we just switched away from so its spinner doesn't linger.
-        const stale = togglingRef.current;
-        if (stale) clearAuxDownload(stale);
-      }
+      // Adopt every in-flight download. No project filter: a download has no
+      // owning project, so whichever project is open shows all of them. The
+      // enabled flag is NOT inferred here — main PATCHes it when the user asks,
+      // so it arrives with the per-project model list instead.
+      setDownloads(new Map(all
+        .filter(s => s.kind !== 'primary')
+        .map(s => [s.model, { percent: s.percent, status: s.status }])));
     })();
     return () => { cancelled = true; };
-  }, [projectId, clearAuxDownload]);
+  }, [projectId]);
 
-  const handleCancelDownload = useCallback(async () => {
+  const handleCancelDownload = useCallback(async (modelName: string) => {
     const api = window.electronAPI;
-    const modelName = togglingRef.current;
     if (!modelName || !api?.slpCancelModelDownload) return;
     await api.slpCancelModelDownload(modelName, projectId);
     clearAuxDownload(modelName);
@@ -261,20 +262,17 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
 
   const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
     const api = window.electronAPI;
-    if (!api?.slpSetModelEnabled || togglingRef.current) return;
+    // Guard is per-model: another model downloading must not block this one.
+    if (!api?.slpSetModelEnabled || downloadsRef.current.has(name)) return;
 
-    togglingRef.current = name;
-    setToggling(name);
-    setDownloadProgress(null);
     // The override is the optimistic state; `enabledCapabilities` derives from it,
     // so dependent UI (documents/skills gating, vision attachments) updates now
     // rather than waiting for the backend to confirm and re-emit the list.
     setEnabledOverrides(prev => new Map(prev).set(name, enabled));
 
-    // Main answers a model it is already downloading with `downloading: true`
-    // instead of starting a second stream. In that case keep the optimistic
-    // state and let the terminal progress event finalize it; otherwise this
-    // resolves only after the download (if any) has completed.
+    // Main reports `downloading: true` when the enable landed but weights are
+    // still arriving (its own download, or one another project started). Keep
+    // showing progress in that case and let the terminal event finalize it.
     let stillDownloading = false;
     try {
       const res = await api.slpSetModelEnabled(workspaceName, enabled, projectId);
@@ -313,8 +311,8 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     isEnabled,
     enabledCapabilities,
     fetchLocalModels,
-    toggling,
-    downloadProgress,
+    downloads,
+    isDownloading,
     handleToggleModel,
     handleCancelDownload,
     primaryProgress,
@@ -322,7 +320,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     waitForPrimaryModel,
   }), [
     localModels, localModelsLoading, enabledModels, isEnabled, enabledCapabilities,
-    fetchLocalModels, toggling, downloadProgress, handleToggleModel, handleCancelDownload,
+    fetchLocalModels, downloads, isDownloading, handleToggleModel, handleCancelDownload,
     primaryProgress, loadPrimaryModel, waitForPrimaryModel,
   ]);
 

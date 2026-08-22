@@ -2163,7 +2163,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
-              emitModelDownloadProgress(modelName, progress, { projectId, kind: 'primary' });
+              emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
             } catch {
               // ignore unparseable SSE data
             }
@@ -2181,7 +2181,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
           });
         } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
 
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { projectId, kind: 'primary' });
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
         clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
@@ -2192,7 +2192,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
       });
     });
 
-    beginModelDownload(modelName, req, { projectId, kind: 'primary', status: 'Initializing model…' });
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
 
     req.on('error', (err) => {
       clearActiveDownload(modelName);
@@ -2218,32 +2218,29 @@ const modelDownloadState = new Map();
 // auxiliary model download ('aux'). Both share this map, so consumers must
 // discriminate: the sidebar's aux cards would otherwise render a primary load as
 // a toggling aux model.
-function emitModelDownloadProgress(modelName, progress, { projectId = null, kind = 'aux' } = {}) {
+function emitModelDownloadProgress(modelName, progress, { kind = 'aux' } = {}) {
   const percent = progress.percent ?? 0;
   const stillDownloading = progress.downloading === true
     || (progress.downloading === undefined && percent < 100);
   if (stillDownloading) {
-    // projectId is the project the download was started for (null = the
-    // workspace/app-default path). Recorded so a renderer rehydrating on mount
-    // only adopts a download belonging to the project it is currently showing —
-    // model *enablement* is per-project, so adopting another project's download
-    // would flip the wrong view's toggle.
+    // Deliberately not tagged with a project: weights are workspace-wide, so a
+    // download in flight serves every project and any of them may show it.
     modelDownloadState.set(modelName, {
       model: modelName,
       percent,
       status: progress.status,
       stage: progress.stage,
       downloading: true,
-      projectId,
       kind,
     });
   } else {
+    // Terminal. The downloaded flag just changed workspace-wide, so drop every
+    // project's cached list, not just the one that started the download.
     modelDownloadState.delete(modelName);
+    invalidateModelsCache();
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
-    // Live listeners get kind/projectId too, so they can filter without also
-    // having to fetch the snapshot.
-    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName, projectId, kind });
+    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName, kind });
   }
 }
 
@@ -2252,9 +2249,9 @@ function emitModelDownloadProgress(modelName, progress, { projectId = null, kind
 // waiting for the first SSE event is what makes get-download-state truthful for
 // a download that has started but not yet reported progress — a renderer
 // mounting in that window would otherwise see nothing in flight.
-function beginModelDownload(name, req, { projectId = null, kind = 'aux', status = 'Starting…' } = {}) {
+function beginModelDownload(name, req, { kind = 'aux', status = 'Starting…' } = {}) {
   activeModelDownloads.set(name, req);
-  modelDownloadState.set(name, { model: name, percent: 0, status, downloading: true, projectId, kind });
+  modelDownloadState.set(name, { model: name, percent: 0, status, downloading: true, kind });
 }
 
 // Terminal cleanup for a download's request handle + tracked progress.
@@ -2333,7 +2330,7 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
           const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
           try {
             const progress = bootstrapProgress(JSON.parse(payload));
-            emitModelDownloadProgress(modelName, progress, { projectId, kind: 'primary' });
+            emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
           } catch {
             console.log('[Models] Model load:', trimmed);
           }
@@ -2341,7 +2338,7 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
       });
 
       res.on('end', () => {
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { projectId, kind: 'primary' });
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
         clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
@@ -2352,7 +2349,7 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
       });
     });
 
-    beginModelDownload(modelName, req, { projectId, kind: 'primary', status: 'Initializing model…' });
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
 
     req.on('error', (err) => {
       clearActiveDownload(modelName);
@@ -2385,12 +2382,14 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
-  // Already downloading — don't start a second request. A renderer that
-  // remounted mid-download (and lost its in-flight state) can land here on a
-  // re-click; rehydrating from get-download-state is the intended path instead.
-  if (activeModelDownloads.has(modelName)) {
-    console.log(`[Models] ${modelName} already downloading; ignoring duplicate request`);
-    return { success: false, error: 'already-downloading', downloading: true };
+  // Weights are workspace-wide, so a download already in flight serves every
+  // project. Skip starting a second one, but still fall through to the PATCH —
+  // the caller's project asked to enable the model and that intent must land.
+  // The flag is settable before the weights arrive: the workspace registry holds
+  // entries with downloaded=false, so the backend resolves the model and flips it.
+  const alreadyDownloading = activeModelDownloads.has(modelName);
+  if (alreadyDownloading) {
+    console.log(`[Models] ${modelName} already downloading; enabling for this project without a second download`);
   }
 
   // Check the model's per-project (or workspace) downloaded state
@@ -2414,7 +2413,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     console.log(`[Models] set-model-enabled: state fetch error: ${err.message}`);
   }
 
-  if (!existsInWorkspace && enabled) {
+  if (!existsInWorkspace && enabled && !alreadyDownloading) {
     console.log(`[Models] ${modelName} not downloaded, initializing via /v1/init...`);
     try {
       const http = require('http');
@@ -2445,13 +2444,13 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
                 try {
                   const data = JSON.parse(line.slice(6));
                   const progress = bootstrapProgress(data);
-                  emitModelDownloadProgress(modelName, progress, { projectId });
+                  emitModelDownloadProgress(modelName, progress);
                 } catch {}
               }
             }
           });
           res.on('end', () => {
-            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false }, { projectId });
+            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false });
             clearActiveDownload(modelName);
             resolve(true);
           });
@@ -2460,7 +2459,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
             reject(err);
           });
         });
-        beginModelDownload(modelName, req, { projectId, status: 'Starting download…' });
+        beginModelDownload(modelName, req, { status: 'Starting download…' });
         req.on('error', (err) => {
           clearActiveDownload(modelName);
           reject(err);
@@ -2506,9 +2505,9 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     if (res.ok) {
       invalidateModelsCache(projectId);
       try {
-        return { success: true, ...JSON.parse(text) };
+        return { success: true, ...JSON.parse(text), downloading: alreadyDownloading };
       } catch {
-        return { success: true };
+        return { success: true, downloading: alreadyDownloading };
       }
     }
     return { success: false, error: `HTTP ${res.status}: ${text}` };
