@@ -70,6 +70,10 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   // Mirror of `downloads` for event handlers, which must not close over state.
   const downloadsRef = useRef(downloads);
   downloadsRef.current = downloads;
+  // Models whose transition a live handleToggleModel owns. The terminal progress
+  // event fires when the bytes land, before the enable PATCH, so it must not
+  // tear down their UI — that is what flashes the Download button back.
+  const pendingTogglesRef = useRef<Set<string>>(new Set());
 
   const enabledModels = useMemo(() => new Set(localModels.filter((m: any) => {
     const name = m.name || m.id || m.model;
@@ -202,10 +206,17 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       // Auxiliary download. Tracked for every model regardless of which project
       // started it — the weights are workspace-wide.
       if (done) {
-        // Terminal event finalizes it. The original handleToggleModel await
-        // cannot be relied on — it may belong to a render that is gone.
-        clearAuxDownload(data.model);
-        fetchRef.current();
+        // A live handleToggleModel owns the rest of this transition: it
+        // refetches and only then clears, so the card flips once. Clearing here
+        // would drop the ring before the enable PATCH has even been sent.
+        if (pendingTogglesRef.current.has(data.model)) return;
+        // No local owner — a remount mid-download, or a download another view
+        // started. Fetch truth first, then clear, so the card never renders a
+        // stale not-downloaded state with the ring already gone.
+        void (async () => {
+          await fetchRef.current();
+          clearAuxDownload(data.model);
+        })();
       } else {
         setDownload(data.model, { percent: data.percent, status: data.status });
       }
@@ -265,6 +276,8 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     // Guard is per-model: another model downloading must not block this one.
     if (!api?.slpSetModelEnabled || downloadsRef.current.has(name)) return;
 
+    // Claim the transition so the terminal progress event leaves it alone.
+    pendingTogglesRef.current.add(name);
     // The override is the optimistic state; `enabledCapabilities` derives from it,
     // so dependent UI (documents/skills gating, vision attachments) updates now
     // rather than waiting for the backend to confirm and re-emit the list.
@@ -279,6 +292,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       stillDownloading = !!(res as { downloading?: boolean })?.downloading;
       if (!stillDownloading) await fetchLocalModels();
     } finally {
+      pendingTogglesRef.current.delete(name);
       if (!stillDownloading) clearAuxDownload(name);
     }
   }, [fetchLocalModels, projectId, clearAuxDownload]);

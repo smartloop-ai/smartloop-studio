@@ -2473,21 +2473,9 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
       return { success: false, error: err.message };
     }
 
-    // Re-check model state for the new name
-    try {
-      const stateUrl = projectId
-        ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
-        : `${baseUrl}/v1/models/workspace`;
-      const wsRes2 = await fetch(stateUrl);
-      if (wsRes2.ok) {
-        const wsData2 = await wsRes2.json();
-        const wsList2 = Array.isArray(wsData2) ? wsData2 : (wsData2.data || wsData2.models || []);
-        const wsModel = wsList2.find(wm => (wm.name || wm.model_name || wm.model) === modelName);
-        if (wsModel) {
-          modelName = wsModel.name || wsModel.model_name || modelName;
-        }
-      }
-    } catch {}
+    // No name re-resolution round trip here: both PATCH routes canonicalize the
+    // model name themselves, and this fetch sat inside the window between the
+    // download finishing and the model going enabled — visible as a stalled card.
   }
 
   try {
@@ -2504,6 +2492,10 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
       invalidateModelsCache(projectId);
+      // Repopulate before returning so the renderer's follow-up list read is a
+      // fresh-cache hit rather than a cold round trip. This also pushes
+      // `models-updated`, which the renderer already subscribes to.
+      await refreshModelsCache(projectId);
       try {
         return { success: true, ...JSON.parse(text), downloading: alreadyDownloading };
       } catch {
