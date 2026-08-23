@@ -2326,10 +2326,16 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
-          // The endpoint emits both `data: `-prefixed SSE and bare JSON lines.
-          const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
+          // Only `data: ` lines are progress. /v1/models/load answers with a
+          // plain JSON body, not SSE, so parsing bare lines turned that body
+          // into a bogus `status: "ok"` event at 0% — a progress bar for a
+          // model that was already resident.
+          if (!trimmed.startsWith('data: ')) {
+            console.log('[Models] Model load:', trimmed);
+            continue;
+          }
           try {
-            const progress = bootstrapProgress(JSON.parse(payload));
+            const progress = bootstrapProgress(JSON.parse(trimmed.slice(6)));
             emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
           } catch {
             console.log('[Models] Model load:', trimmed);

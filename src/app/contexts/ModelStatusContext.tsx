@@ -50,6 +50,11 @@ export interface ModelStatusValue {
 // Cap on how long a send will wait for an in-flight primary load.
 const PRIMARY_WAIT_TIMEOUT_MS = 60_000;
 
+// How long a primary load must run before its progress surfaces. Below this the
+// load is imperceptible — an already-resident model answers in ~50ms — so
+// showing a panel for it only flashes on the way to the empty state.
+const PRIMARY_REVEAL_DELAY_MS = 600;
+
 const ModelStatusContext = createContext<ModelStatusValue | null>(null);
 
 export function useModelStatus(): ModelStatusValue {
@@ -129,14 +134,23 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   // --- Primary model load coordination ---
   const primaryInFlightRef = useRef(false);
   const primaryWaitersRef = useRef<Array<() => void>>([]);
+  const primaryRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPrimaryReveal = useCallback(() => {
+    if (primaryRevealTimerRef.current === null) return;
+    clearTimeout(primaryRevealTimerRef.current);
+    primaryRevealTimerRef.current = null;
+  }, []);
 
   const settlePrimary = useCallback(() => {
     primaryInFlightRef.current = false;
+    // A load that finished inside the reveal window never shows anything.
+    cancelPrimaryReveal();
     setPrimaryProgress(null);
     const waiters = primaryWaitersRef.current;
     primaryWaitersRef.current = [];
     waiters.forEach(resolve => resolve());
-  }, []);
+  }, [cancelPrimaryReveal]);
 
   const waitForPrimaryModel = useCallback(() => {
     if (!primaryInFlightRef.current) return Promise.resolve();
@@ -152,10 +166,17 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     const api = window.electronAPI;
     if (!api?.slpLoadModel || !modelName) return;
 
+    // Set synchronously: waitForPrimaryModel gates sends off this ref, so it must
+    // be true even while nothing is on screen yet.
     primaryInFlightRef.current = true;
-    // Show something immediately — the first SSE event can take a while, and main
-    // may still be retrying a cold service.
-    setPrimaryProgress({ model: modelName, percent: 0, status: 'Initializing model...', downloading: true });
+    // Reveal a placeholder only if the load outlasts the threshold. `prev ??`
+    // keeps a real SSE event that already landed from being clobbered by it.
+    cancelPrimaryReveal();
+    primaryRevealTimerRef.current = setTimeout(() => {
+      primaryRevealTimerRef.current = null;
+      if (!primaryInFlightRef.current) return;
+      setPrimaryProgress(prev => prev ?? { model: modelName, percent: 0, status: 'Initializing model...', downloading: true });
+    }, PRIMARY_REVEAL_DELAY_MS);
     // Main rejects a load it is already streaming. That existing stream still
     // owns the progress, so don't settle on its behalf — only the load that
     // actually ran here settles when its request returns.
@@ -170,7 +191,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       // stream that dies without one can never leave a send waiting forever.
       if (!adoptedByExisting) settlePrimary();
     }
-  }, [projectId, settlePrimary]);
+  }, [projectId, settlePrimary, cancelPrimaryReveal]);
 
   const isTerminal = (data: ModelDownloadProgress) =>
     data.downloading === false || (data.percent ?? 0) >= 100;
