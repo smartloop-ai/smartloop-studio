@@ -1,6 +1,7 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import LinkIcon from '@mui/icons-material/Link';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useState } from 'react';
 import { McpCatalogEntry, McpServer, getMcpServerTools, TagColor } from '@/app/services/mcp-server.service';
@@ -131,7 +132,7 @@ export default function McpCatalogItem({
                   '&:hover': { color: 'var(--sl-status-error)' },
                 }}
               >
-                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                <LinkOffIcon sx={{ fontSize: 14 }} />
               </IconButton>
             )}
           </Box>
@@ -162,9 +163,10 @@ export default function McpCatalogItem({
               </span>
             ) : (
               <span
-                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                 style={{ border: '1px solid var(--sl-white-alpha-15)', color: 'var(--sl-text-primary)' }}
               >
+                <LinkIcon sx={{ fontSize: 11 }} />
                 Connect
               </span>
             )}

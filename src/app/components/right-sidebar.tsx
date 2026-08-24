@@ -105,6 +105,15 @@ const SECTION_HOTKEYS: Record<string, RailSection> = {
 };
 
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+
+/**
+ * Cheap identity check for a revalidated MCP server list. A refetch that changed
+ * nothing keeps the previous array reference, so the derived memos below don't
+ * recompute and the list doesn't repaint on every project switch.
+ */
+const sameMcpServers = (a: McpServer[], b: McpServer[]) =>
+  a.length === b.length &&
+  a.every((s, i) => s.id === b[i].id && getMcpServerTools(s).length === getMcpServerTools(b[i]).length);
 const hotkeyLabel = (letter: string) => (IS_MAC ? `\u2318\u21e7${letter}` : `Ctrl+Shift+${letter}`);
 
 /** Tooltip content for a rail button: label plus its keyboard shortcut. */
@@ -324,7 +333,10 @@ export default function RightSidebar({
   const isResizing = useRef(false);
 
   // MCP Servers state
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  // Non-system servers, owned by GET /v1/projects/{id}/mcp. System servers get
+  // their own slice below: that endpoint filters them out by design, so the two
+  // sources have disjoint ownership and must never overwrite each other.
+  const [apiMcpServers, setApiMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
@@ -567,14 +579,49 @@ export default function RightSidebar({
     return [...merged, ...unmatched, ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
-  // Load MCP servers from project data
+  // Last API-backed list per project. Switching back repaints from this in the
+  // same tick, so the connected badges, disconnect button and tool counts are
+  // there on the first frame instead of appearing a fetch later.
+  const mcpServersByProjectRef = useRef<Map<string, McpServer[]>>(new Map());
+  // Project id the current apiMcpServers came from, when API-backed.
+  const mcpLoadedProjectRef = useRef<string | null>(null);
+  // Read after awaits so a response for a project already switched away from is
+  // discarded — rapid switching overlaps loads.
+  const mcpProjectIdRef = useRef<string | undefined>(selectedProject?.id);
+  mcpProjectIdRef.current = selectedProject?.id;
+
+  // Snapshot the rendered list once it is API-backed. Declared before the switch
+  // effect so on a switch it sees the *old* loaded-project id and bails, rather
+  // than writing the outgoing project's servers under the incoming project's key.
   useEffect(() => {
-    if (Array.isArray(currentProjectData?.mcp)) {
-      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__'));
-    } else {
-      setMcpServers([]);
-    }
+    const pid = selectedProject?.id;
+    if (!pid || mcpLoadedProjectRef.current !== pid) return;
+    mcpServersByProjectRef.current.set(pid, apiMcpServers);
+  }, [apiMcpServers, selectedProject?.id]);
+
+  // Repaint on project switch straight from the snapshot. Deliberately does not
+  // read currentProjectData: this runs before the parent's effect has swapped it,
+  // so it would still hold the previous project's payload.
+  useEffect(() => {
+    const pid = selectedProject?.id;
+    const cached = pid ? mcpServersByProjectRef.current.get(pid) : undefined;
+    mcpLoadedProjectRef.current = cached ? (pid ?? null) : null;
+    setApiMcpServers(cached ?? []);
+  }, [selectedProject?.id]);
+
+  // System servers appear only in the projects-list payload, never from the /mcp
+  // endpoint, so they are merged in at read time instead of into the state above.
+  const systemMcpServers = useMemo<McpServer[]>(() => {
+    if (!Array.isArray(currentProjectData?.mcp)) return [];
+    return (currentProjectData.mcp as McpServer[]).filter(
+      (s) => !!(s as any).system && !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__',
+    );
   }, [currentProjectData?.mcp]);
+
+  const mcpServers = useMemo<McpServer[]>(() => {
+    const ids = new Set(apiMcpServers.map((s) => s.id));
+    return [...apiMcpServers, ...systemMcpServers.filter((s) => !ids.has(s.id))];
+  }, [apiMcpServers, systemMcpServers]);
 
   // Listen for MCP authorization callback from Electron
   useEffect(() => {
@@ -599,22 +646,19 @@ export default function RightSidebar({
 
   const loadMcpServers = useCallback(async () => {
     if (!selectedProject?.id) return;
+    const projectId = selectedProject.id;
 
     try {
-      const result = await mcpServerService.getMcpServers(selectedProject.id);
+      const result = await mcpServerService.getMcpServers(projectId);
+      if (mcpProjectIdRef.current !== projectId) return;
       if (result.success && result.data) {
         const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
-        setMcpServers(prev => {
-          const systemServers = prev.filter(s => !!(s as any).system);
-          const apiIds = new Set(apiServers.map(s => s.id));
-          const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
-          const servers = [...apiServers, ...missingSystem];
-          if (mcpPolling && servers.length > mcpServerCountRef.current) {
-            setMcpPolling(false);
-            setMcpError('');
-          }
-          return servers;
-        });
+        mcpLoadedProjectRef.current = projectId;
+        setApiMcpServers(prev => (sameMcpServers(prev, apiServers) ? prev : apiServers));
+        if (mcpPolling && apiServers.length > mcpServerCountRef.current) {
+          setMcpPolling(false);
+          setMcpError('');
+        }
       }
     } catch (error: any) {
       // silent during polling
@@ -623,6 +667,19 @@ export default function RightSidebar({
       }
     }
   }, [selectedProject?.id, mcpPolling]);
+
+  // Keep the callback in a ref so the project-switch effect below doesn't also
+  // re-run whenever mcpPolling flips (loadMcpServers closes over it).
+  const loadMcpServersRef = useRef(loadMcpServers);
+  loadMcpServersRef.current = loadMcpServers;
+
+  // Nothing else refetches on project switch — toggleSection only fires when
+  // the panel is opened, so switching with Connections already open would leave
+  // the stale project payload as the last word.
+  useEffect(() => {
+    if (!selectedProject?.id) return;
+    loadMcpServersRef.current();
+  }, [selectedProject?.id]);
 
   const loadMcpCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -716,12 +773,7 @@ export default function RightSidebar({
         const result = await mcpServerService.getMcpServers(selectedProject.id);
         if (result.success && result.data) {
           const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
-          setMcpServers(prev => {
-            const systemServers = prev.filter(s => !!(s as any).system);
-            const apiIds = new Set(apiServers.map(s => s.id));
-            const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
-            return [...apiServers, ...missingSystem];
-          });
+          setApiMcpServers(prev => (sameMcpServers(prev, apiServers) ? prev : apiServers));
           const target = apiServers.find(s => s.id === discoveringServerId);
           const tools = target?.tools ?? target?.metadata?.tools ?? [];
           if (tools.length > 0 || attempts >= maxAttempts) {
@@ -889,7 +941,7 @@ export default function RightSidebar({
 
         if (data.auth_type === 'oauth' && data.auth_url) {
           setNewMcpInput('');
-          mcpServerCountRef.current = mcpServers.length;
+          mcpServerCountRef.current = apiMcpServers.length;
           setMcpPolling(true);
 
           // If the typed URL is actually one of our curated connections, light up
@@ -1009,7 +1061,7 @@ export default function RightSidebar({
       const data = result.data as Record<string, any>;
 
       if (data.auth_type === 'oauth' && data.auth_url) {
-        mcpServerCountRef.current = mcpServers.length;
+        mcpServerCountRef.current = apiMcpServers.length;
         setMcpPolling(true);
         setAwaitingAuthSlug(entry.slug);
 
@@ -1048,7 +1100,7 @@ export default function RightSidebar({
     try {
       const result = await mcpServerService.deleteMcpServer(selectedProject.id, server.id);
       if (result.success) {
-        setMcpServers(prev => prev.filter(s => s.id !== server.id));
+        setApiMcpServers(prev => prev.filter(s => s.id !== server.id));
         setMcpToDelete(null);
         // Remove from local storage + SQLite
         await mcpServerService.removeMcpServerFromStorage(selectedProject.id, server.id);
@@ -1642,7 +1694,7 @@ export default function RightSidebar({
                         tagColors={customTagColorMap}
                         deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
-                          setMcpServers(prev => {
+                          setApiMcpServers(prev => {
                             const newServers = prev.map(s =>
                               s.id === updatedServer.id ? updatedServer : s
                             );

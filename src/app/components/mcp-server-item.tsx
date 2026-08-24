@@ -1,5 +1,5 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -112,7 +112,7 @@ export default function McpServerItem({
                 <InfoOutlinedIcon sx={{ fontSize: 12 }} />
               </IconButton>
 
-              {/* Delete Icon */}
+              {/* Disconnect — removes the server from this project */}
               <IconButton
                 size="small"
                 disabled={isSystem}
@@ -120,6 +120,7 @@ export default function McpServerItem({
                   e.stopPropagation();
                   onDelete(server);
                 }}
+                title={isSystem ? '' : 'Disconnect'}
                 sx={{
                   color: 'var(--sl-text-faint)',
                   padding: '2px',
@@ -127,7 +128,7 @@ export default function McpServerItem({
                   '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
                 }}
               >
-                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                <LinkOffIcon sx={{ fontSize: 14 }} />
               </IconButton>
             </Box>
           </Box>
