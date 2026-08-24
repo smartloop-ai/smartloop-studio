@@ -1,9 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
-import { useThemeContext } from '@/app/contexts/ThemeContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -64,9 +63,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     deleteProject: deleteProjectCtx,
     refresh: refreshProjects,
   } = useProjectContext();
-  // Light themes need a gentler dim than dark ones — see the new-project button.
-  const { theme } = useThemeContext();
-  const isLight = theme.mode === 'light';
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   // True while a model is (down)loading for the first time. Settings is blocked
   // during this window so the model can't be changed mid-load.
@@ -616,8 +612,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
     sidebarDragCounter.current = 0;
     setIsSidebarDragOver(false);
 
-    if (!user?.email) return;
-
     const file = e.dataTransfer.files?.[0];
     if (!file || !file.name.endsWith('.zip')) return;
 
@@ -891,47 +885,31 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         })()}
 
         {/* New Project button */}
-        {(() => {
-          const disabled = !user?.email;
-          const tooltip = !user?.email
-            ? 'Login to create a new project'
-            : '';
-          return (
-            <Tooltip title={tooltip} placement="right">
-              <Box
-                onClick={disabled ? undefined : handleOpenCreateProjectDialog}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  padding: '9px 11px',
-                  borderRadius: '7px',
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  bgcolor: 'transparent',
-                  color: 'var(--sl-text-muted)',
-                  // An opacity wash multiplies against the theme's text ramp. Light
-                  // themes start from an already-light muted tone, where 0.5 lands
-                  // near 1.7:1 and the label all but vanishes — so dim gently there.
-                  opacity: disabled ? (isLight ? 0.85 : 0.5) : 1,
-                  fontWeight: 500,
-                  fontSize: '13.5px',
-                  transition: 'all 0.12s ease',
-                  border: '1px solid transparent',
-                  ...(!disabled && {
-                    '&:hover': {
-                      bgcolor: 'var(--sl-white-alpha-5)',
-                      color: 'var(--sl-text-primary)',
-                    },
-                  }),
-                  mb: 0.5,
-                }}
-              >
-                <AddIcon sx={{ fontSize: 18 }} />
-                <span style={{ flex: 1 }}>new project</span>
-              </Box>
-            </Tooltip>
-          );
-        })()}
+        <Box
+          onClick={handleOpenCreateProjectDialog}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            padding: '9px 11px',
+            borderRadius: '7px',
+            cursor: 'pointer',
+            bgcolor: 'transparent',
+            color: 'var(--sl-text-muted)',
+            fontWeight: 500,
+            fontSize: '13.5px',
+            transition: 'all 0.12s ease',
+            border: '1px solid transparent',
+            '&:hover': {
+              bgcolor: 'var(--sl-white-alpha-5)',
+              color: 'var(--sl-text-primary)',
+            },
+            mb: 0.5,
+          }}
+        >
+          <AddIcon sx={{ fontSize: 18 }} />
+          <span style={{ flex: 1 }}>new project</span>
+        </Box>
       </Box>
 
       {/* Recent Conversations Section */}
