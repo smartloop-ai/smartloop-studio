@@ -1,6 +1,6 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
-import LinkIcon from '@mui/icons-material/Link';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
@@ -153,10 +153,11 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* Connected only: an intact link, and the way to break it. An
+            {/* Connected only, and the glyph is the action rather than the
+                state: a button showing an intact link invites you to read it
+                as "connected" and then wonder what clicking does. An
                 unconnected card says "Click to connect" on the pill below, so
-                a corner icon there would be a second control for the one
-                action. */}
+                a corner icon there would be a second control for one action. */}
             {isConnected && !busy && (
               <IconButton
                 size="small"
@@ -164,14 +165,14 @@ export default function McpCatalogItem({
                   e.stopPropagation();
                   onDisconnect(connected!);
                 }}
-                title="Connected — click to disconnect"
+                title="Disconnect"
                 sx={{
-                  color: 'rgb(52,211,153)',
+                  color: 'var(--sl-text-faint)',
                   padding: '2px',
                   '&:hover': { color: 'var(--sl-status-error)' },
                 }}
               >
-                <LinkIcon sx={{ fontSize: 14 }} />
+                <LinkOffIcon sx={{ fontSize: 14 }} />
               </IconButton>
             )}
           </Box>
@@ -215,10 +216,9 @@ export default function McpCatalogItem({
               </span>
             ) : (
               <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                 style={{ border: '1px solid var(--sl-white-alpha-15)', color: 'var(--sl-text-primary)' }}
               >
-                <LinkIcon sx={{ fontSize: 11 }} />
                 Click to connect
               </span>
             )}
