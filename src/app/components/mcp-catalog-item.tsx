@@ -1,5 +1,6 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
+import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
@@ -153,11 +154,10 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* The corner is present on every card, so the row of actions
-                doesn't jump around as connections come and go. The glyph is
-                the broken link either way — on a connected card it is the
-                action, on an unconnected one it is the state — and the tooltip
-                says which. */}
+            {/* Present on every card, so the action row doesn't jump around as
+                connections come and go, and the glyph reads as the link state:
+                intact and green once connected, broken and faint before.
+                Clicking toggles it either way. */}
             {!busy && (
               <IconButton
                 size="small"
@@ -166,14 +166,16 @@ export default function McpCatalogItem({
                   if (isConnected) return onDisconnect(connected!);
                   onConnect(entry);
                 }}
-                title={isConnected ? 'Disconnect' : 'Not connected — click to connect'}
+                title={isConnected ? 'Connected — click to disconnect' : 'Not connected — click to connect'}
                 sx={{
-                  color: 'var(--sl-text-faint)',
+                  color: isConnected ? 'rgb(52,211,153)' : 'var(--sl-text-faint)',
                   padding: '2px',
                   '&:hover': { color: isConnected ? 'var(--sl-status-error)' : 'var(--sl-brand-primary)' },
                 }}
               >
-                <LinkOffIcon sx={{ fontSize: 14 }} />
+                {isConnected
+                  ? <LinkIcon sx={{ fontSize: 14 }} />
+                  : <LinkOffIcon sx={{ fontSize: 14 }} />}
               </IconButton>
             )}
           </Box>
