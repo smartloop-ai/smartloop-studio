@@ -229,7 +229,6 @@ export default function Chat(props: {
   // status bar can flip it without opening the rail. Undefined reads as ON, the
   // same default the backend applies to projects predating the flag.
   webSearchEnabled?: boolean,
-  searchConfigured?: boolean,
   onWebSearchChange?: (enabled: boolean) => void
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
@@ -1914,16 +1913,13 @@ export default function Chat(props: {
                 )}
                 {props.onWebSearchChange && (
                   <Tooltip
-                    title={props.searchConfigured === false
-                      ? 'Add a Brave Search API key in Settings to enable web search'
-                      : `${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
+                    title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
                     placement="top"
                     arrow
                   >
                     <button
                       type="button"
                       aria-pressed={webSearchOn}
-                      disabled={props.searchConfigured === false}
                       onClick={() => props.onWebSearchChange?.(!webSearchOn)}
                       className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
                       style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
