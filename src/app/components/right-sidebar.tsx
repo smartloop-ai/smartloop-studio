@@ -1740,7 +1740,7 @@ export default function RightSidebar({
                 >
                   <UploadFileIcon sx={{ fontSize: 13, color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
                   <span className="text-[10px]" style={{ color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)' }}>
-                    {mcpDropActive ? 'Drop to add this connection' : 'Drop a .toml connection file, or click to browse'}
+                    {mcpDropActive ? 'Drop to add this connection' : 'Drop a .toml file or click to browse'}
                   </span>
                 </div>
 
