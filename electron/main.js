@@ -2497,7 +2497,10 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     const text = await res.text();
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
-      invalidateModelsCache(projectId);
+      // Enabling also promotes the model to a workspace app-default, so the
+      // workspace-scoped entry Settings reads goes stale alongside this
+      // project's — clear the whole map for that case.
+      invalidateModelsCache(enabled ? undefined : projectId);
       // Repopulate before returning so the renderer's follow-up list read is a
       // fresh-cache hit rather than a cold round trip. This also pushes
       // `models-updated`, which the renderer already subscribes to.
