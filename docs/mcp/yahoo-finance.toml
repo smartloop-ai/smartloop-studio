@@ -1,0 +1,51 @@
+# Yahoo Finance — market data for a watchlist.
+#
+# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to both
+# install the connection and tell the crawler what to keep indexed.
+#
+# Verified against the published package: the server reports get_current_stock_price,
+# get_news, get_recommendations and get_dividends, each taking a `symbol`.
+#
+# The package's own dependency on the MCP SDK is unbounded and resolves to 2.x,
+# which it doesn't support — so a bare `uvx mcp-yahoo-finance` dies on import.
+# Nothing to do about it here: discovery notices that failure and retries with
+# `--with mcp<2` automatically.
+
+[alias]
+# One list, reused by every step below. Add symbols here rather than to each
+# step, so a watchlist change is one edit.
+watchlist = ["AAPL"]
+
+[[mcp]]
+name = "yahoo-finance"
+package = "mcp-yahoo-finance"
+match = ["yahoo", "yfinance"]
+
+# A quote from this morning is not an answer to "how is AAPL doing". The
+# app-wide default — every 10 minutes while idle, hourly regardless — is close
+# enough for prices; tighten it if you ask often.
+index_every = "15m"
+
+# This is the shape of server that has nothing to enumerate: no `list_*` tool
+# to walk, because it only answers questions you already know to ask. So the
+# subjects come from this file — `for_each` runs each step once per symbol.
+[[mcp.index]]
+label = "price"
+tools = ["get_current_stock_price"]
+for_each = { symbol = ["@watchlist"] }
+max_records = 10
+max_parents = 25
+
+[[mcp.index]]
+label = "news"
+tools = ["get_news"]
+for_each = { symbol = ["@watchlist"] }
+max_records = 60
+max_parents = 25
+
+[[mcp.index]]
+label = "recommendations"
+tools = ["get_recommendations"]
+for_each = { symbol = ["@watchlist"] }
+max_records = 20
+max_parents = 25
