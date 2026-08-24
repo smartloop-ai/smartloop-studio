@@ -1,0 +1,35 @@
+# Air quality for San Francisco.
+#
+# Drop this into ~/.smartloop/mcp.d/ (or onto the "Add your own" card) to both
+# install the connection and tell the crawler how to keep it indexed.
+#
+# This is the shape of server that has nothing to enumerate: there is no
+# `list_*` tool to walk, because a weather or air-quality server only answers
+# questions you already know to ask. So the subjects come from this file —
+# `for_each` runs each step once per location named below.
+#
+# Check the tool names against whatever server you install: `tools` is a list of
+# candidates matched loosely, first match wins, and a step whose tool the server
+# doesn't have is skipped rather than failing the crawl. So listing several
+# spellings costs nothing and covers more packagings.
+
+[[mcp]]
+name = "air-quality"
+package = "mcp-open-meteo"
+match = ["open-meteo", "air-quality", "airquality"]
+
+# A reading from this morning is not an answer to "how is the air right now".
+# Without this the connection would follow the app-wide schedule (every 10
+# minutes while idle, hourly regardless), which is far slower than the source
+# changes.
+index_every = "30m"
+
+# San Francisco, as the coordinates these APIs actually take. Add more lines to
+# index more places; the label is what shows up as the document's source.
+[[mcp.index]]
+label = "air-quality-sf"
+tools = ["get_air_quality", "air_quality", "get_air_quality_current"]
+for_each = { latitude = [37.7749] }
+arguments = { longitude = -122.4194, timezone = "America/Los_Angeles" }
+max_records = 10
+max_parents = 5

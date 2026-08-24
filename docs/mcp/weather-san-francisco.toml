@@ -1,0 +1,35 @@
+# Weather for San Francisco.
+#
+# Companion to air-quality-san-francisco.toml, and the same shape: a server with
+# no listing tool, so the locations are named here rather than discovered.
+#
+# Two steps because they age differently in principle but share one cadence
+# here; split `index_every` per connection if you want the forecast on a slower
+# clock than the current conditions.
+
+[[mcp]]
+name = "weather-san-francisco"
+package = "mcp-weather"
+match = ["weather"]
+
+# Current conditions go stale fast; a forecast does not. An hour is the
+# compromise — drop it to "15m" if you ask about weather often.
+index_every = "1h"
+
+[[mcp.index]]
+label = "current-sf"
+tools = ["get_current_weather", "get_weather", "current_weather", "get_forecast"]
+for_each = { latitude = [37.7749] }
+arguments = { longitude = -122.4194, units = "imperial" }
+max_records = 10
+max_parents = 5
+
+# The National Weather Service packaging takes a place name or a state code
+# instead of coordinates, so this step covers that spelling. Whichever of the
+# two matches the installed server runs; the other is skipped.
+[[mcp.index]]
+label = "forecast-sf"
+tools = ["get_forecast_by_city", "get_city_forecast", "forecast"]
+for_each = { city = ["San Francisco, CA"] }
+max_records = 10
+max_parents = 5
