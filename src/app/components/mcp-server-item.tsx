@@ -84,9 +84,9 @@ export default function McpServerItem({
             being indented under the icon. */}
         <div className="flex items-center gap-2.5">
           {isLocal ? (
-            <TerminalIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
+            <TerminalIcon sx={{ fontSize: 16, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
           ) : (
-            <PowerOutlinedIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
+            <PowerOutlinedIcon sx={{ fontSize: 16, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
           )}
 
           <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1 min-w-0">

@@ -80,8 +80,12 @@ export default function McpCatalogItem({
         {/* Provider icon in a tinted chip, falling back to the generic glyph */}
         <Box
           sx={{
-            width: 28,
-            height: 28,
+            // Sized to the one line of text beside it. The models list pairs a
+            // 30px icon with a stacked title and subtitle — roughly 26px of
+            // text — so it balances; here there is a single 13px name, and a
+            // 28px chip next to it read as the loudest thing on the card.
+            width: 22,
+            height: 22,
             flexShrink: 0,
             borderRadius: '6px',
             display: 'flex',
@@ -100,11 +104,11 @@ export default function McpCatalogItem({
             <img
               src={entry.icon_url}
               alt={entry.display_name}
-              className="w-[18px] h-[18px] object-contain rounded"
+              className="w-[14px] h-[14px] object-contain rounded"
               onError={() => setIconFailed(true)}
             />
           ) : (
-            <PowerOutlinedIcon sx={{ fontSize: 18 }} />
+            <PowerOutlinedIcon sx={{ fontSize: 14 }} />
           )}
         </Box>
 
