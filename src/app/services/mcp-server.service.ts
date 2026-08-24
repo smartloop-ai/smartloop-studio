@@ -77,6 +77,36 @@ export interface McpServerRegistrationResponse {
   message?: string;
 }
 
+/**
+ * Indexing state from `GET /v1/projects/{id}/mcp` and `/v1/projects/{id}/mcp/{serverId}`.
+ *
+ * A connection is not usable the moment it is registered: the backend
+ * discovers and vectorizes its tools, then crawls its content, both off the
+ * request path.  `in_progress` is the single flag to drive a spinner off —
+ * while it is true the counts here are not final.
+ */
+export interface McpIndexingState {
+  /**
+   * provisioning — discovering/indexing the server's tools
+   * queued       — provisioned, waiting for the content crawl
+   * indexing     — the content crawl is walking the server right now
+   * indexed      — content is in the index; `documents` is meaningful
+   * disabled     — this connection has no content to crawl (a shell or
+   *                weather server), or was opted out
+   * failed       — provisioning failed; see `error`
+   */
+  state: 'provisioning' | 'queued' | 'indexing' | 'indexed' | 'disabled' | 'failed';
+  in_progress: boolean;
+  crawl_enabled: boolean;
+  /** Which crawl plan matched — `notion`, `linear`, `trello`, `generic:<name>`. */
+  plan?: string;
+  documents?: number;
+  records?: number;
+  /** Epoch seconds of the last completed crawl. */
+  crawled_at?: number | null;
+  error?: string | null;
+}
+
 export interface McpServer {
   id: string;
   name: string;
@@ -97,6 +127,14 @@ export interface McpServer {
   metadata?: McpServerMetadata;
   server_info?: McpServerInfo;
   tools?: McpTool[];
+  /** Provisioning + content-crawl progress; see {@link McpIndexingState}. */
+  indexing?: McpIndexingState;
+  /**
+   * Which account this connection is authenticated as — an email, or a
+   * workspace name where the provider authenticates as an integration rather
+   * than a person. Absent for servers that ship no identity tool.
+   */
+  account?: string | null;
   lastConnected?: string;
   error?: string;
 }
@@ -477,6 +515,51 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
 };
 
 /**
+ * Re-run indexing for one connection: re-discover its tools, re-embed the tool
+ * vectors, and force a content crawl. Returns as soon as the work is queued —
+ * the server comes back with `status: "pending"`, and the `indexing` block on
+ * subsequent polls is where the outcome shows up.
+ *
+ * The crawl it triggers is *forced*, which also clears any step the last crawl
+ * gave up on — so this is the escape hatch when a connection's permissions or
+ * plan changed and content that used to be unreachable now isn't.
+ *
+ * @param projectId - ID of the project
+ * @param serverId - ID of the MCP server to re-index
+ */
+const refreshMcpServer = async (projectId: string, serverId: string): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId || !serverId) {
+      return { success: false, error: 'Project ID and server ID are required' };
+    }
+
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects/${projectId}/mcp/${serverId}/refresh`;
+    const response = await fetch(url, { method: 'POST' });
+
+    if (!response) {
+      return { success: false, error: 'No response from server' };
+    }
+
+    if (response.status === 200) {
+      return { success: true, data: await response.json() };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Failed to re-index connection'),
+    };
+  } catch (error: any) {
+    console.error('Error refreshing MCP server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while re-indexing the connection',
+    };
+  }
+};
+
+/**
  * Delete an MCP server
  * @param projectId - ID of the project
  * @param serverId - ID of the MCP server to delete
@@ -651,6 +734,7 @@ export const mcpServerService = {
   getMcpCatalog,
   getMcpServers,
   getMcpServer,
+  refreshMcpServer,
   deleteMcpServer,
   registerMcpServer,
   completeOAuth,

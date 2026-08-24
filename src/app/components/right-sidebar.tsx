@@ -26,7 +26,7 @@ import '../styles/markdown-editor.css';
 import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools, buildTagColorMap, tagColorFrom } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools, buildTagColorMap } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
@@ -793,6 +793,31 @@ export default function RightSidebar({
     return () => clearInterval(interval);
   }, [discoveringServerId, selectedProject?.id]);
 
+  // Keep the indexing pills live. Provisioning and the content crawl run in the
+  // backend's own time, so the state only moves if we ask again — but only
+  // while the connections panel is open, since nothing off-screen is worth a
+  // request every few seconds. Capped so a connection that stays queued (its
+  // crawl deferred while the model is busy) can't poll for the whole session.
+  const mcpIndexingInProgress = useMemo(
+    () => mcpServers.some((s) => s.indexing?.in_progress),
+    [mcpServers],
+  );
+
+  useEffect(() => {
+    if (activeSection !== 'mcp' || !mcpIndexingInProgress || !selectedProject?.id) return;
+
+    let attempts = 0;
+    const maxAttempts = 75; // ~5 min at 4s
+
+    const interval = setInterval(() => {
+      attempts++;
+      loadMcpServers();
+      if (attempts >= maxAttempts) clearInterval(interval);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [activeSection, mcpIndexingInProgress, selectedProject?.id, loadMcpServers]);
+
   // Installed servers keyed by normalized remote URL — how a catalog entry knows
   // whether it's already connected.
   const connectedByUrl = useMemo(() => {
@@ -804,12 +829,6 @@ export default function RightSidebar({
     return map;
   }, [mcpServers]);
 
-  // One distinct color per catalog category, assigned across the whole list so
-  // no two categories share a color.
-  const categoryColorMap = useMemo(
-    () => buildTagColorMap(mcpCatalog.map((e) => e.category)),
-    [mcpCatalog],
-  );
 
   // One distinct color per LLM-generated custom-server tag, assigned across the
   // whole custom list so no two tags share a color.
@@ -1038,6 +1057,7 @@ export default function RightSidebar({
     const serverUrl = entry.remote_config?.server_url;
     if (!selectedProject?.id || !serverUrl) return;
 
+    cancelledAuthRef.current.delete(entry.slug);
     setCatalogItemError(null);
     setConnectingSlug(entry.slug);
 
@@ -1061,6 +1081,11 @@ export default function RightSidebar({
       const data = result.data as Record<string, any>;
 
       if (data.auth_type === 'oauth' && data.auth_url) {
+        // Cancelled while the registration request was still in flight: don't
+        // re-arm the wait, and above all don't open a browser the user has
+        // just said they don't want.
+        if (cancelledAuthRef.current.has(entry.slug)) return;
+
         mcpServerCountRef.current = apiMcpServers.length;
         setMcpPolling(true);
         setAwaitingAuthSlug(entry.slug);
@@ -1115,6 +1140,48 @@ export default function RightSidebar({
     } catch (error: any) {
       setMcpDeleteError({ id: server.id, message: error.message || 'An error occurred' });
     }
+  };
+
+
+  // Slugs whose authorization the user backed out of. A ref, not state: the
+  // in-flight connect closure has to read the current value, not the one it
+  // captured before the request went out.
+  const cancelledAuthRef = useRef<Set<string>>(new Set());
+
+  const handleCancelCatalogAuth = (entry: McpCatalogEntry) => {
+    cancelledAuthRef.current.add(entry.slug);
+    // Client-side only, and deliberately so: the backend writes no server
+    // record until the OAuth callback comes back, so there is nothing to undo.
+    // If the user does finish in the browser afterwards, the callback listener
+    // still picks the connection up — this cancels the waiting, not the grant.
+    if (awaitingAuthSlug === entry.slug) setAwaitingAuthSlug(null);
+    if (connectingSlug === entry.slug) setConnectingSlug(null);
+    setMcpPolling(false);
+    setCatalogItemError(null);
+  };
+
+  const handleRefreshMcpServer = async (server: McpServer) => {
+    if (!selectedProject?.id || !server.id) return;
+
+    setMcpDeleteError(null);
+    // Show the pass as running straight away: the request only queues the work,
+    // and without this the card looks inert until the next poll lands.
+    setApiMcpServers(prev => prev.map(s => (
+      s.id === server.id
+        ? { ...s, indexing: { ...(s.indexing ?? { crawl_enabled: true }), state: 'provisioning', in_progress: true } as McpServer['indexing'] }
+        : s
+    )));
+
+    const result = await mcpServerService.refreshMcpServer(selectedProject.id, server.id);
+    if (!result.success) {
+      setMcpDeleteError({ id: server.id, message: result.error || 'Failed to re-index connection' });
+      // Put the card back the way it was — the pass never started.
+      loadMcpServers();
+      return;
+    }
+    // The in-progress state drives the poll effect, which carries the card the
+    // rest of the way to "Indexed".
+    loadMcpServers();
   };
 
 
@@ -1668,7 +1735,8 @@ export default function RightSidebar({
                         }
                         onConnect={handleConnectCatalogEntry}
                         onDisconnect={handleDeleteMcpServer}
-                        categoryColor={tagColorFrom(categoryColorMap, entry.category)}
+                        onCancelAuth={handleCancelCatalogAuth}
+                        onRefresh={handleRefreshMcpServer}
                       />
                     );
                   })}
@@ -1688,6 +1756,7 @@ export default function RightSidebar({
                         server={server}
                         projectId={selectedProject?.id || ''}
                         onDelete={handleDeleteMcpServer}
+                        onRefresh={handleRefreshMcpServer}
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
                         isCustom={!isSystem}
