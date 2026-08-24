@@ -109,9 +109,26 @@ const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
  * nothing keeps the previous array reference, so the derived memos below don't
  * recompute and the list doesn't repaint on every project switch.
  */
+/**
+ * Everything a connection card renders, as one string. The list refresh keeps
+ * the previous array when this is unchanged, so a field left out here is a
+ * field whose updates never reach the screen — which is what froze the
+ * indexing pill on "Queued" while the backend had long since said "indexed".
+ */
+const mcpServerSignature = (s: McpServer) => [
+  s.id,
+  getMcpServerTools(s).length,
+  s.status ?? '',
+  s.account ?? '',
+  s.indexing?.state ?? '',
+  // So the "2m ago" stamp moves when a re-crawl lands, not just when the
+  // state changes.
+  s.indexing?.crawled_at ?? '',
+].join('|');
+
 const sameMcpServers = (a: McpServer[], b: McpServer[]) =>
   a.length === b.length &&
-  a.every((s, i) => s.id === b[i].id && getMcpServerTools(s).length === getMcpServerTools(b[i]).length);
+  a.every((s, i) => mcpServerSignature(s) === mcpServerSignature(b[i]));
 const hotkeyLabel = (letter: string) => (IS_MAC ? `\u2318\u21e7${letter}` : `Ctrl+Shift+${letter}`);
 
 /** Tooltip content for a rail button: label plus its keyboard shortcut. */
