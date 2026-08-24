@@ -1,6 +1,5 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
-import LinkIcon from '@mui/icons-material/Link';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -59,9 +58,6 @@ export default function McpServerItem({
   const displayName = serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(displayUrl) || 'MCP Server';
 
   const allTools = getMcpServerTools(server);
-  // Provisioning recorded a failure — a package that doesn't exist, a handshake
-  // that didn't complete. The card should not look connected.
-  const failed = server.indexing?.state === 'failed' || !!server.error;
 
   return (
     <>
@@ -125,11 +121,9 @@ export default function McpServerItem({
                 <RefreshIcon sx={{ fontSize: 13 }} />
               </IconButton>
 
-              {/* Removes the connection — a hand-added server is deleted, not
-                  merely unlinked, so the tooltip says so rather than borrowing
-                  the catalog card's "disconnect". Green only when the server
-                  actually works: a failed one showing a healthy link is how a
-                  broken connection looks fine at a glance. */}
+              {/* A trash icon, not a link one: a hand-added server is deleted
+                  outright — it and its connection file are gone, and nothing
+                  reconnects it. Unlink would promise it could come back. */}
               <IconButton
                 size="small"
                 disabled={isSystem}
@@ -137,19 +131,15 @@ export default function McpServerItem({
                   e.stopPropagation();
                   onDelete(server);
                 }}
-                title={isSystem ? 'Built-in connection' : 'Remove this connection'}
+                title={isSystem ? 'Built-in connection' : 'Delete this connection'}
                 sx={{
-                  color: isSystem || server.status === 'error' || failed
-                    ? 'var(--sl-text-faint)'
-                    : 'rgb(52,211,153)',
+                  color: 'var(--sl-text-faint)',
                   padding: '2px',
                   '&:hover': { color: isSystem ? 'var(--sl-text-faint)' : 'var(--sl-status-error)' },
                   '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
                 }}
               >
-                {failed
-                  ? <LinkOffIcon sx={{ fontSize: 14 }} />
-                  : <LinkIcon sx={{ fontSize: 14 }} />}
+                <DeleteOutlineIcon sx={{ fontSize: 14 }} />
               </IconButton>
             </Box>
           </Box>
