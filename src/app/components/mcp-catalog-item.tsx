@@ -1,10 +1,11 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import LinkIcon from '@mui/icons-material/Link';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
-import { McpCatalogEntry, McpServer, getMcpServerTools } from '@/app/services/mcp-server.service';
+import { McpCatalogEntry, McpServer, getMcpServerTools, TagColor, tagColorFrom } from '@/app/services/mcp-server.service';
 import McpToolsDialog from './mcp-tools-dialog';
 import McpIndexingPill from './mcp-indexing-pill';
 
@@ -22,6 +23,8 @@ interface McpCatalogItemProps {
   onCancelAuth: (entry: McpCatalogEntry) => void;
   /** Re-run discovery, tool indexing and the content crawl for this server. */
   onRefresh: (server: McpServer) => void;
+  /** Distinct colors for this entry's tags, assigned across the whole list. */
+  tagColors?: Map<string, TagColor>;
 }
 
 export default function McpCatalogItem({
@@ -34,6 +37,7 @@ export default function McpCatalogItem({
   onDisconnect,
   onCancelAuth,
   onRefresh,
+  tagColors,
 }: McpCatalogItemProps) {
   const [iconFailed, setIconFailed] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -59,8 +63,6 @@ export default function McpCatalogItem({
         className="rounded-xl"
         sx={{
           padding: '12px 14px',
-          display: 'flex',
-          gap: 1.25,
           cursor: busy ? 'default' : 'pointer',
           border: error ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
           bgcolor: error ? 'rgba(248,113,113,0.08)' : 'transparent',
@@ -70,12 +72,20 @@ export default function McpCatalogItem({
           },
         }}
       >
+        {/* Header — icon, name and actions on one line. The description and
+            pills below run the full width of the card instead of being
+            indented under the icon, which is the models list's layout and
+            reclaims ~38px on every row of a narrow sidebar. */}
+        <div className="flex items-center gap-2.5">
         {/* Provider icon in a tinted chip, falling back to the generic glyph */}
         <Box
           sx={{
-            width: 28,
-            height: 28,
-            mt: '1px',
+            // Sized to the one line of text beside it. The models list pairs a
+            // 30px icon with a stacked title and subtitle — roughly 26px of
+            // text — so it balances; here there is a single 13px name, and a
+            // 28px chip next to it read as the loudest thing on the card.
+            width: 22,
+            height: 22,
             flexShrink: 0,
             borderRadius: '6px',
             display: 'flex',
@@ -94,19 +104,19 @@ export default function McpCatalogItem({
             <img
               src={entry.icon_url}
               alt={entry.display_name}
-              className="w-[18px] h-[18px] object-contain rounded"
+              className="w-[14px] h-[14px] object-contain rounded"
               onError={() => setIconFailed(true)}
             />
           ) : (
-            <PowerOutlinedIcon sx={{ fontSize: 18 }} />
+            <PowerOutlinedIcon sx={{ fontSize: 14 }} />
           )}
         </Box>
 
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
-              {entry.display_name}
-            </span>
+          <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1 min-w-0">
+            {entry.display_name}
+          </span>
+
+          <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
 
             {busy && <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />}
 
@@ -153,39 +163,43 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* Only once connected: an intact link, and the way to break it.
-                An unconnected card needs no icon here — the Connect pill below
-                is the affordance, and a second control saying the same thing
-                just competes with it. */}
-            {isConnected && !busy && (
+            {/* Present on every card, so the action row doesn't jump around as
+                connections come and go, and the glyph reads as the link state:
+                intact and green once connected, broken and faint before.
+                Clicking toggles it either way. */}
+            {!busy && (
               <IconButton
                 size="small"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDisconnect(connected!);
+                  if (isConnected) return onDisconnect(connected!);
+                  onConnect(entry);
                 }}
-                title="Connected — click to disconnect"
+                title={isConnected ? 'Connected — click to disconnect' : 'Not connected — click to connect'}
                 sx={{
-                  color: 'rgb(52,211,153)',
+                  color: isConnected ? 'rgb(52,211,153)' : 'var(--sl-text-faint)',
                   padding: '2px',
-                  '&:hover': { color: 'var(--sl-status-error)' },
+                  '&:hover': { color: isConnected ? 'var(--sl-status-error)' : 'var(--sl-brand-primary)' },
                 }}
               >
-                <LinkIcon sx={{ fontSize: 14 }} />
+                {isConnected
+                  ? <LinkIcon sx={{ fontSize: 14 }} />
+                  : <LinkOffIcon sx={{ fontSize: 14 }} />}
               </IconButton>
             )}
-          </Box>
+          </div>
+        </div>
 
-          {entry.description && (
-            <span
-              className="text-[12px] text-sl-text-muted leading-relaxed"
-              style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
-            >
-              {entry.description}
-            </span>
-          )}
+        {entry.description && (
+          <p
+            className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0"
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
+          >
+            {entry.description}
+          </p>
+        )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '2px' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
             {/* Which account this is linked as — the one thing about a
                 connected card that isn't already obvious from the rest of it,
                 and what tells two connections to the same product apart. */}
@@ -215,13 +229,30 @@ export default function McpCatalogItem({
               </span>
             ) : (
               <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                 style={{ border: '1px solid var(--sl-white-alpha-15)', color: 'var(--sl-text-primary)' }}
               >
-                <LinkIcon sx={{ fontSize: 11 }} />
-                Connect
+                Click to connect
               </span>
             )}
+
+            {/* What the connection is for. The custom cards have carried these
+                since they were added; a curated entry has better ones and was
+                showing none, so the two kinds of card described themselves
+                differently for no reason. Capped — Notion ships four, which
+                wraps the row in a narrow sidebar. */}
+            {(entry.tags || []).slice(0, 3).map((tag) => {
+              const c = tagColorFrom(tagColors ?? new Map(), tag);
+              return (
+                <span
+                  key={tag}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                  style={{ border: `1px solid ${c.border}`, color: c.color }}
+                >
+                  {tag}
+                </span>
+              );
+            })}
 
             {isConnected && toolCount > 0 && (
               <span
@@ -241,7 +272,6 @@ export default function McpCatalogItem({
             )}
 
             {isConnected && <McpIndexingPill indexing={connected?.indexing} />}
-          </Box>
         </Box>
       </Box>
     </Tooltip>
