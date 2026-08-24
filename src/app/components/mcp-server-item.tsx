@@ -64,15 +64,13 @@ export default function McpServerItem({
       <Tooltip title={deleteError || ''} arrow placement="top">
       <Box
         onClick={() => setModalOpen(true)}
-        className="rounded-xl group"
+        className="rounded-xl"
         sx={{
           padding: '12px 14px',
           border: deleteError ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
           // Custom cards get a subtle inset fill so they read as nested against
           // the panel, distinct from the transparent curated catalog cards.
           bgcolor: deleteError ? 'rgba(248,113,113,0.08)' : 'var(--sl-white-alpha-5)',
-          display: 'flex',
-          gap: 1.25,
           transition: 'box-shadow 0.15s ease, background 0.15s ease',
           cursor: 'pointer',
           '&:hover': {
@@ -81,26 +79,26 @@ export default function McpServerItem({
           },
         }}
       >
-        {/* Leading icon */}
-        {isLocal ? (
-          <TerminalIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '1px' }} />
-        ) : (
-          <PowerOutlinedIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0, mt: '1px' }} />
-        )}
+        {/* Header — icon, name and actions on one line, matching the models
+            list. What follows runs the full width of the card rather than
+            being indented under the icon. */}
+        <div className="flex items-center gap-2.5">
+          {isLocal ? (
+            <TerminalIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
+          ) : (
+            <PowerOutlinedIcon sx={{ fontSize: 18, color: 'var(--sl-text-faint)', flexShrink: 0 }} />
+          )}
 
-        {/* Server Info */}
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
-              {displayName}
-            </span>
+          <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1 min-w-0">
+            {displayName}
+          </span>
 
             {/* Row actions, always visible. They used to fade in on hover,
                 which reads as "this card has no actions" until you happen to
                 mouse over it — and the catalog cards next to it show theirs
                 unconditionally, so hiding these made the two kinds of card
                 look like they could do different things. */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
               {/* Re-index — the tool count pill opens the tool list, so this
                   slot carries the one action the card can't otherwise offer. */}
               <IconButton
@@ -141,18 +139,18 @@ export default function McpServerItem({
               >
                 <DeleteOutlineIcon sx={{ fontSize: 14 }} />
               </IconButton>
-            </Box>
-          </Box>
+          </div>
+        </div>
 
-          {/* Description */}
-          {server.description && (
-            <span className="text-[12px] text-sl-text-muted leading-relaxed" title={server.description}>
-              {server.description}
-            </span>
-          )}
+        {/* Description */}
+        {server.description && (
+          <p className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0" title={server.description}>
+            {server.description}
+          </p>
+        )}
 
-          {/* Metadata row: Custom + Local/URL + tool count */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+        {/* Metadata row: Custom + Local/URL + tool count */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap', mt: '8px' }}>
             {isCustom && (
               <span
                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
@@ -228,7 +226,6 @@ export default function McpServerItem({
               </span>
             ) : null}
             {!discovering && <McpIndexingPill indexing={server.indexing} />}
-          </Box>
         </Box>
       </Box>
       </Tooltip>

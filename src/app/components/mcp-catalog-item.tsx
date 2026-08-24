@@ -63,8 +63,6 @@ export default function McpCatalogItem({
         className="rounded-xl"
         sx={{
           padding: '12px 14px',
-          display: 'flex',
-          gap: 1.25,
           cursor: busy ? 'default' : 'pointer',
           border: error ? '1px solid var(--sl-status-error)' : '1px solid var(--sl-border-subtle)',
           bgcolor: error ? 'rgba(248,113,113,0.08)' : 'transparent',
@@ -74,12 +72,16 @@ export default function McpCatalogItem({
           },
         }}
       >
+        {/* Header — icon, name and actions on one line. The description and
+            pills below run the full width of the card instead of being
+            indented under the icon, which is the models list's layout and
+            reclaims ~38px on every row of a narrow sidebar. */}
+        <div className="flex items-center gap-2.5">
         {/* Provider icon in a tinted chip, falling back to the generic glyph */}
         <Box
           sx={{
             width: 28,
             height: 28,
-            mt: '1px',
             flexShrink: 0,
             borderRadius: '6px',
             display: 'flex',
@@ -106,11 +108,11 @@ export default function McpCatalogItem({
           )}
         </Box>
 
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1">
-              {entry.display_name}
-            </span>
+          <span className="text-[13px] font-bold text-sl-text-primary truncate flex-1 min-w-0">
+            {entry.display_name}
+          </span>
+
+          <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
 
             {busy && <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />}
 
@@ -181,18 +183,19 @@ export default function McpCatalogItem({
                   : <LinkOffIcon sx={{ fontSize: 14 }} />}
               </IconButton>
             )}
-          </Box>
+          </div>
+        </div>
 
-          {entry.description && (
-            <span
-              className="text-[12px] text-sl-text-muted leading-relaxed"
-              style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
-            >
-              {entry.description}
-            </span>
-          )}
+        {entry.description && (
+          <p
+            className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0"
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
+          >
+            {entry.description}
+          </p>
+        )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '2px' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
             {/* Which account this is linked as — the one thing about a
                 connected card that isn't already obvious from the rest of it,
                 and what tells two connections to the same product apart. */}
@@ -265,7 +268,6 @@ export default function McpCatalogItem({
             )}
 
             {isConnected && <McpIndexingPill indexing={connected?.indexing} />}
-          </Box>
         </Box>
       </Box>
     </Tooltip>
