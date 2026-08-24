@@ -1,7 +1,6 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import LinkIcon from '@mui/icons-material/Link';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
@@ -154,30 +153,26 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* Link state, and the toggle for it. A broken link means this
-                entry isn't connected yet; an intact one means it is, and
-                clicking it breaks the link. Present in both states so the
-                corner always answers "is this linked?" without reading the
-                pills below. */}
-            {!busy && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isConnected) return onDisconnect(connected!);
-                onConnect(entry);
-              }}
-              title={isConnected ? 'Connected — click to disconnect' : 'Not connected — click to connect'}
-              sx={{
-                color: isConnected ? 'rgb(52,211,153)' : 'var(--sl-text-faint)',
-                padding: '2px',
-                '&:hover': { color: isConnected ? 'var(--sl-status-error)' : 'var(--sl-brand-primary)' },
-              }}
-            >
-              {isConnected
-                ? <LinkIcon sx={{ fontSize: 14 }} />
-                : <LinkOffIcon sx={{ fontSize: 14 }} />}
-            </IconButton>
+            {/* Only once connected: an intact link, and the way to break it.
+                An unconnected card needs no icon here — the Connect pill below
+                is the affordance, and a second control saying the same thing
+                just competes with it. */}
+            {isConnected && !busy && (
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDisconnect(connected!);
+                }}
+                title="Connected — click to disconnect"
+                sx={{
+                  color: 'rgb(52,211,153)',
+                  padding: '2px',
+                  '&:hover': { color: 'var(--sl-status-error)' },
+                }}
+              >
+                <LinkIcon sx={{ fontSize: 14 }} />
+              </IconButton>
             )}
           </Box>
 
