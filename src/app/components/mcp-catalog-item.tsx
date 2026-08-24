@@ -5,7 +5,7 @@ import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
-import { McpCatalogEntry, McpServer, getMcpServerTools } from '@/app/services/mcp-server.service';
+import { McpCatalogEntry, McpServer, getMcpServerTools, TagColor, tagColorFrom } from '@/app/services/mcp-server.service';
 import McpToolsDialog from './mcp-tools-dialog';
 import McpIndexingPill from './mcp-indexing-pill';
 
@@ -23,6 +23,8 @@ interface McpCatalogItemProps {
   onCancelAuth: (entry: McpCatalogEntry) => void;
   /** Re-run discovery, tool indexing and the content crawl for this server. */
   onRefresh: (server: McpServer) => void;
+  /** Distinct colors for this entry's tags, assigned across the whole list. */
+  tagColors?: Map<string, TagColor>;
 }
 
 export default function McpCatalogItem({
@@ -35,6 +37,7 @@ export default function McpCatalogItem({
   onDisconnect,
   onCancelAuth,
   onRefresh,
+  tagColors,
 }: McpCatalogItemProps) {
   const [iconFailed, setIconFailed] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -225,6 +228,24 @@ export default function McpCatalogItem({
                 Click to connect
               </span>
             )}
+
+            {/* What the connection is for. The custom cards have carried these
+                since they were added; a curated entry has better ones and was
+                showing none, so the two kinds of card described themselves
+                differently for no reason. Capped — Notion ships four, which
+                wraps the row in a narrow sidebar. */}
+            {(entry.tags || []).slice(0, 3).map((tag) => {
+              const c = tagColorFrom(tagColors ?? new Map(), tag);
+              return (
+                <span
+                  key={tag}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+                  style={{ border: `1px solid ${c.border}`, color: c.color }}
+                >
+                  {tag}
+                </span>
+              );
+            })}
 
             {isConnected && toolCount > 0 && (
               <span

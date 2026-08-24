@@ -841,12 +841,16 @@ export default function RightSidebar({
   }, [mcpServers]);
 
 
-  // One distinct color per LLM-generated custom-server tag, assigned across the
-  // whole custom list so no two tags share a color.
-  const customTagColorMap = useMemo(
-    () => buildTagColorMap(mcpServers.flatMap((s) => s.tags || [])),
-    [mcpServers],
+  // One color per tag across *both* lists, so a tag shared by a curated entry
+  // and a hand-added server looks the same on each.
+  const mcpTagColorMap = useMemo(
+    () => buildTagColorMap([
+      ...mcpCatalog.flatMap((e) => e.tags || []),
+      ...mcpServers.flatMap((s) => s.tags || []),
+    ]),
+    [mcpCatalog, mcpServers],
   );
+
 
   // Servers added by hand (not in the catalog) keep the original list rendering.
   const customMcpServers = useMemo(() => {
@@ -1644,6 +1648,7 @@ export default function RightSidebar({
                         onDisconnect={handleDeleteMcpServer}
                         onCancelAuth={handleCancelCatalogAuth}
                         onRefresh={handleRefreshMcpServer}
+                        tagColors={mcpTagColorMap}
                       />
                     );
                   })}
@@ -1667,7 +1672,7 @@ export default function RightSidebar({
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
                         isCustom={!isSystem}
-                        tagColors={customTagColorMap}
+                        tagColors={mcpTagColorMap}
                         deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
                           setApiMcpServers(prev => {
