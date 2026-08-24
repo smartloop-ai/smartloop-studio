@@ -515,6 +515,55 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
 };
 
 /**
+ * Install a connection from a dropped-in TOML file.
+ *
+ * The file is the whole definition — name, local command or remote url, and
+ * optionally how to index its content. The backend saves it under
+ * `~/.smartloop/mcp.d/` so the crawl plan survives, then registers the server
+ * through the ordinary path, so a remote server needing OAuth comes back with
+ * an `auth_url` exactly as a typed-in URL would.
+ *
+ * @param projectId - ID of the project
+ * @param toml - the file's text
+ * @param filename - the dropped file's name, for error messages
+ */
+const registerMcpFromDefinition = async (
+  projectId: string,
+  toml: string,
+  filename?: string,
+): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId) return { success: false, error: 'Project ID is required' };
+    if (!toml.trim()) return { success: false, error: 'That file is empty' };
+
+    const localBase = await getLocalApiEndpoint();
+    const response = await fetch(`${localBase}/v1/projects/${projectId}/mcp/definition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toml, filename }),
+    });
+
+    if (!response) return { success: false, error: 'No response from server' };
+
+    if (response.status === 200) {
+      return { success: true, data: await response.json() };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Could not read this connection file'),
+    };
+  } catch (error: any) {
+    console.error('Error registering MCP from definition:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while reading the connection file',
+    };
+  }
+};
+
+/**
  * Re-run indexing for one connection: re-discover its tools, re-embed the tool
  * vectors, and force a content crawl. Returns as soon as the work is queued —
  * the server comes back with `status: "pending"`, and the `indexing` block on
@@ -735,6 +784,7 @@ export const mcpServerService = {
   getMcpServers,
   getMcpServer,
   refreshMcpServer,
+  registerMcpFromDefinition,
   deleteMcpServer,
   registerMcpServer,
   completeOAuth,

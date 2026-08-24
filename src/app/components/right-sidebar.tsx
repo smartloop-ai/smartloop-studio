@@ -10,6 +10,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import CloudIcon from '@mui/icons-material/Cloud';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
@@ -918,6 +919,57 @@ export default function RightSidebar({
     }
   };
 
+  // Dropping a .toml onto the Add-your-own card. The file describes the whole
+  // connection — name, local command or remote url, and optionally how to index
+  // it — so this is the same install as typing a URL, just with the crawl plan
+  // arriving alongside instead of being derived.
+  const [mcpDropActive, setMcpDropActive] = useState(false);
+  const mcpTomlInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMcpFileDrop = async (file: File) => {
+    if (!selectedProject?.id) return;
+    if (!/\.toml$/i.test(file.name)) {
+      setMcpError('Drop a .toml connection file.');
+      return;
+    }
+
+    setIsAddingMcp(true);
+    setMcpError('');
+    try {
+      const text = await file.text();
+      const result = await mcpServerService.registerMcpFromDefinition(
+        selectedProject.id, text, file.name,
+      );
+      if (!result.success || !result.data) {
+        setMcpError(result.error || 'Could not read this connection file');
+        return;
+      }
+
+      const data = result.data as Record<string, any>;
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        // A remote server in the file may still need authorizing, exactly as a
+        // typed-in URL would.
+        mcpServerCountRef.current = apiMcpServers.length;
+        setMcpPolling(true);
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
+        return;
+      }
+
+      await loadMcpServers();
+      const serverId = data.id || data.server_id;
+      if (serverId) setDiscoveringServerId(serverId);
+    } catch (error: any) {
+      setMcpError(error?.message || 'Could not read this connection file');
+    } finally {
+      setIsAddingMcp(false);
+    }
+  };
+
   const handleAddMcpServer = async () => {
     const input = newMcpInput.trim();
     if (!selectedProject?.id || !input) return;
@@ -1797,7 +1849,25 @@ export default function RightSidebar({
                   Models panel's "Need more power?" card to set it apart. */}
               <div
                 className="rounded-xl"
-                style={{ marginTop: '16px', padding: '16px', backgroundColor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-subtle)' }}
+                onDragOver={(e) => { e.preventDefault(); if (!mcpDropActive) setMcpDropActive(true); }}
+                onDragLeave={(e) => {
+                  // Only when the pointer actually leaves the card — dragging over
+                  // a child fires dragleave for the parent too.
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setMcpDropActive(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setMcpDropActive(false);
+                  const file = e.dataTransfer?.files?.[0];
+                  if (file) handleMcpFileDrop(file);
+                }}
+                style={{
+                  marginTop: '16px',
+                  padding: '16px',
+                  backgroundColor: mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
+                  border: mcpDropActive ? '1px dashed var(--sl-brand-primary)' : '1px solid var(--sl-border-subtle)',
+                  transition: 'background 0.15s ease, border-color 0.15s ease',
+                }}
               >
                 <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
                 <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
@@ -1860,6 +1930,38 @@ export default function RightSidebar({
                   }}
                 />
                 </div>
+                {/* Drop zone. Visible at rest, not only mid-drag: a target that
+                    appears once you are already dragging is only findable by
+                    someone who guessed it was there. Clicking opens the file
+                    picker, so it works without a drag at all. */}
+                <input
+                  ref={mcpTomlInputRef}
+                  type="file"
+                  accept=".toml"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleMcpFileDrop(file);
+                    e.target.value = '';
+                  }}
+                />
+                <div
+                  role="button"
+                  onClick={() => !isAddingMcp && mcpTomlInputRef.current?.click()}
+                  className="rounded-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                  style={{
+                    padding: '10px',
+                    border: `1px dashed ${mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)'}`,
+                    backgroundColor: mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
+                  }}
+                >
+                  <UploadFileIcon sx={{ fontSize: 13, color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
+                  <span className="text-[10px]" style={{ color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)' }}>
+                    {mcpDropActive ? 'Drop to add this connection' : 'Drop a .toml connection file, or click to browse'}
+                  </span>
+                </div>
+
                 {/* Hint and error share one grid cell, so the slot is always as tall
                     as the taller of the two and swapping them never shifts the UI. */}
                 <Box className="grid text-[10px] mt-2.5 px-1">

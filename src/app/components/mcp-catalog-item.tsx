@@ -153,10 +153,10 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* Only once connected: an intact link, and the way to break it.
-                An unconnected card needs no icon here — the Connect pill below
-                is the affordance, and a second control saying the same thing
-                just competes with it. */}
+            {/* Connected only: an intact link, and the way to break it. An
+                unconnected card says "Click to connect" on the pill below, so
+                a corner icon there would be a second control for the one
+                action. */}
             {isConnected && !busy && (
               <IconButton
                 size="small"
@@ -219,7 +219,7 @@ export default function McpCatalogItem({
                 style={{ border: '1px solid var(--sl-white-alpha-15)', color: 'var(--sl-text-primary)' }}
               >
                 <LinkIcon sx={{ fontSize: 11 }} />
-                Connect
+                Click to connect
               </span>
             )}
 
