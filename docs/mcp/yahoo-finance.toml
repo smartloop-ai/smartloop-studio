@@ -14,16 +14,27 @@
 [alias]
 # One list, reused by every step. Add tickers here rather than to each step, so
 # a watchlist change is a single edit.
-watchlist = ["AAPL"]
+#
+# Each ticker costs one call per step per crawl — seven tickers over the five
+# steps below is 35 calls every 15 minutes. Well inside the 400-call budget a
+# crawl gets, but worth knowing before the list grows: the cost is the product
+# of these two lists, not the sum.
+watchlist = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
 
 [[mcp]]
 name = "yahoo-finance"
 package = "yahoo-finance-mcp"
 match = ["yahoo", "yfinance"]
 
-# Quotes move all day; the profile and financials underneath them do not. This
-# is the cadence the quote needs — the slower fields simply get re-fetched
-# along with it, which costs one call each.
+# Quotes move all day; the profile and financials underneath them do not. The
+# cadence is per connection rather than per step, so this is the quote's needs
+# applied to everything — the financials get re-fetched every 15 minutes to
+# return the same numbers they returned last quarter.
+#
+# That is a call, not an embedding: unchanged records are recognised by content
+# hash and not re-indexed. Still, if the watchlist grows well past this, either
+# raise this to "1h" or drop the `financials` and `actions` steps and let a
+# live tool call answer the rare question about them.
 index_every = "15m"
 
 # This is the shape of server that has nothing to enumerate: no `list_*` tool to
