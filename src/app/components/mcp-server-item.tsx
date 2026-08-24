@@ -1,5 +1,6 @@
 import { Box, IconButton, CircularProgress, Tooltip } from '@mui/material';
 import LinkIcon from '@mui/icons-material/Link';
+import LinkOffIcon from '@mui/icons-material/LinkOff';
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -58,6 +59,9 @@ export default function McpServerItem({
   const displayName = serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(displayUrl) || 'MCP Server';
 
   const allTools = getMcpServerTools(server);
+  // Provisioning recorded a failure — a package that doesn't exist, a handshake
+  // that didn't complete. The card should not look connected.
+  const failed = server.indexing?.state === 'failed' || !!server.error;
 
   return (
     <>
@@ -95,11 +99,12 @@ export default function McpServerItem({
               {displayName}
             </span>
 
-            {/* Row actions — fade in on card hover to keep the card clean */}
-            <Box
-              className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
-              sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
-            >
+            {/* Row actions, always visible. They used to fade in on hover,
+                which reads as "this card has no actions" until you happen to
+                mouse over it — and the catalog cards next to it show theirs
+                unconditionally, so hiding these made the two kinds of card
+                look like they could do different things. */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               {/* Re-index — the tool count pill opens the tool list, so this
                   slot carries the one action the card can't otherwise offer. */}
               <IconButton
@@ -120,9 +125,11 @@ export default function McpServerItem({
                 <RefreshIcon sx={{ fontSize: 13 }} />
               </IconButton>
 
-              {/* Link state / disconnect. A hand-added server has no
-                  unconnected state — it exists because someone added it — so
-                  the link is always intact here. */}
+              {/* Removes the connection — a hand-added server is deleted, not
+                  merely unlinked, so the tooltip says so rather than borrowing
+                  the catalog card's "disconnect". Green only when the server
+                  actually works: a failed one showing a healthy link is how a
+                  broken connection looks fine at a glance. */}
               <IconButton
                 size="small"
                 disabled={isSystem}
@@ -130,15 +137,19 @@ export default function McpServerItem({
                   e.stopPropagation();
                   onDelete(server);
                 }}
-                title={isSystem ? 'Built-in connection' : 'Connected — click to disconnect'}
+                title={isSystem ? 'Built-in connection' : 'Remove this connection'}
                 sx={{
-                  color: isSystem ? 'var(--sl-text-faint)' : 'rgb(52,211,153)',
+                  color: isSystem || server.status === 'error' || failed
+                    ? 'var(--sl-text-faint)'
+                    : 'rgb(52,211,153)',
                   padding: '2px',
                   '&:hover': { color: isSystem ? 'var(--sl-text-faint)' : 'var(--sl-status-error)' },
                   '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.3 },
                 }}
               >
-                <LinkIcon sx={{ fontSize: 14 }} />
+                {failed
+                  ? <LinkOffIcon sx={{ fontSize: 14 }} />
+                  : <LinkIcon sx={{ fontSize: 14 }} />}
               </IconButton>
             </Box>
           </Box>
