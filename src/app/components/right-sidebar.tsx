@@ -8,10 +8,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import CloudIcon from '@mui/icons-material/Cloud';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import TerminalIcon from '@mui/icons-material/Terminal';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -341,14 +338,12 @@ export default function RightSidebar({
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
-  const [newMcpInput, setNewMcpInput] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
   const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
   // Delete errors are scoped to the server row that failed (not the add form)
   const [mcpDeleteError, setMcpDeleteError] = useState<{ id: string; message: string } | null>(null);
-  const [newMcpEnv, setNewMcpEnv] = useState('');
 
   // Curated connection catalog (remote + OAuth only)
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
@@ -406,8 +401,6 @@ export default function RightSidebar({
     setEditingSkillIsNew(false);
     setSkillContent('');
     setSkillHasUnsavedChanges(false);
-    setNewMcpInput('');
-    setNewMcpEnv('');
     setIsAddingMcp(false);
     setMcpError('');
     setUploadError('');
@@ -875,33 +868,10 @@ export default function RightSidebar({
     }
   }, [awaitingAuthSlug, mcpCatalog, connectedByUrl, mcpPolling]);
 
-  const isRemoteMcpInput = (input: string): boolean => {
-    const trimmed = input.trim();
-    return trimmed.startsWith('http://') || trimmed.startsWith('https://');
-  };
 
   // Fast client-side dedupe so re-adding the same server shows an inline notice
   // instead of silently creating a second entry. The backend is authoritative
   // (it 409s on a real conflict); this just spares an obvious round trip. Remote
-  // servers match on normalized URL; local ones on the typed package/command,
-  // checked against name + persisted command/args.
-  const findDuplicateMcp = (input: string): McpServer | undefined => {
-    const trimmed = input.trim();
-    if (isRemoteMcpInput(trimmed)) {
-      const target = normalizeMcpUrl(trimmed);
-      if (!target) return undefined;
-      return mcpServers.find((s) => normalizeMcpUrl(getMcpServerUrl(s)) === target);
-    }
-    const key = trimmed.toLowerCase();
-    return mcpServers.find((s) => {
-      if (s.server_type && s.server_type !== 'local') return false;
-      const cfg: any = s.config || {};
-      const args: string[] = Array.isArray(cfg.args) ? cfg.args : [];
-      return [s.name, cfg.command, ...args]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase() === key);
-    });
-  };
 
   // Persist a registered MCP server to SQLite (best-effort — registration with
   // the service is the source of truth, this keeps a local record).
@@ -970,138 +940,6 @@ export default function RightSidebar({
     }
   };
 
-  const handleAddMcpServer = async () => {
-    const input = newMcpInput.trim();
-    if (!selectedProject?.id || !input) return;
-
-    const duplicate = findDuplicateMcp(input);
-    if (duplicate) {
-      setMcpError(`"${duplicate.name || input}" is already added to this project.`);
-      return;
-    }
-
-    setIsAddingMcp(true);
-    setMcpError('');
-
-    try {
-      if (isRemoteMcpInput(input)) {
-        console.log('[MCP] Registering remote server:', input);
-
-        // Typing a curated server's URL by hand should still install it as
-        // curated — the tile-matching below already normalizes for exactly this.
-        const typedEntry = mcpCatalog.find(
-          (e) => normalizeMcpUrl(e.remote_config?.server_url) === normalizeMcpUrl(input),
-        );
-
-        const result = await mcpServerService.registerMcpServer(
-          selectedProject.id,
-          {
-            server_type: 'remote',
-            server_url: input,
-            ...(typedEntry ? { catalog_slug: typedEntry.slug } : {}),
-            return_url: 'smartloop://mcp-authorization',
-          }
-        );
-
-        if (!result.success || !result.data) {
-          setMcpError(result.error || 'Failed to register MCP server');
-          return;
-        }
-
-        const data = result.data as Record<string, any>;
-
-        if (data.auth_type === 'oauth' && data.auth_url) {
-          setNewMcpInput('');
-          mcpServerCountRef.current = apiMcpServers.length;
-          setMcpPolling(true);
-
-          // If the typed URL is actually one of our curated connections, light up
-          // that tile as "Authorizing" during the flow instead of leaving it on
-          // "Connect". The awaiting-auth effect clears it once the server lands.
-          const target = normalizeMcpUrl(input);
-          const matchedEntry = mcpCatalog.find((e) => normalizeMcpUrl(e.remote_config?.server_url) === target);
-          if (matchedEntry) setAwaitingAuthSlug(matchedEntry.slug);
-
-          console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
-          const electronWindow = window as any;
-          if (electronWindow.electronAPI?.openExternal) {
-            electronWindow.electronAPI.openExternal(data.auth_url);
-          } else {
-            window.open(data.auth_url, '_blank');
-          }
-        } else {
-          console.log('[MCP] Server registered successfully');
-          const serverId = data.id || data.server_id;
-          if (serverId) {
-            await persistMcpServerToDb({
-              id: serverId,
-              project_id: selectedProject.id,
-              name: data.name || input,
-              server_type: 'remote',
-              config: { server_url: input },
-            });
-          }
-          setNewMcpInput('');
-          await loadMcpServers();
-          if (serverId) {
-            setDiscoveringServerId(serverId);
-          }
-        }
-      } else {
-        console.log('[MCP] Registering local server:', input);
-
-        const env: Record<string, string> = {};
-        if (newMcpEnv.trim()) {
-          for (const line of newMcpEnv.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const eqIndex = trimmed.indexOf('=');
-            if (eqIndex > 0) {
-              env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
-            }
-          }
-        }
-
-        const result = await mcpServerService.registerMcpServer(
-          selectedProject.id,
-          {
-            server_type: 'local',
-            command: 'uvx',
-            args: [input],
-            name: input,
-            env,
-          }
-        );
-
-        if (result.success) {
-          const resData = result.data as Record<string, any>;
-          const serverId = resData?.id || resData?.server_id;
-          if (serverId) {
-            await persistMcpServerToDb({
-              id: serverId,
-              project_id: selectedProject.id,
-              name: input,
-              server_type: 'local',
-              config: { command: 'uvx', args: [input], env },
-            });
-          }
-          setNewMcpInput('');
-          setNewMcpEnv('');
-          await loadMcpServers();
-          if (serverId) {
-            setDiscoveringServerId(serverId);
-          }
-        } else {
-          setMcpError(result.error || 'Failed to add local MCP server');
-        }
-      }
-    } catch (error: any) {
-      console.error('[MCP] Error adding server:', error);
-      setMcpError(error.message || 'An error occurred');
-    } finally {
-      setIsAddingMcp(false);
-    }
-  };
 
   // Connect a curated catalog entry — same remote registration path as the URL
   // box, using the entry's own server_url.
@@ -1871,65 +1709,9 @@ export default function RightSidebar({
               >
                 <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
                 <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
-                  Connect any MCP server by URL, or a package name to run one locally.
+                  Drop a connection file to add any MCP server. It describes the
+                  server and, optionally, how to index its content.
                 </p>
-                {/* Inset container — nests the input so it reads as embedded */}
-                <div className="rounded-lg" style={{ backgroundColor: 'var(--sl-black-alpha-20)', padding: '8px' }}>
-                <TextField
-                  size="small"
-                  placeholder="URL or package name"
-                  value={newMcpInput}
-                  onChange={(e) => {
-                    setNewMcpInput(e.target.value);
-                    if (mcpError) setMcpError('');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isAddingMcp && newMcpInput.trim()) {
-                      handleAddMcpServer();
-                    }
-                  }}
-                  disabled={isAddingMcp}
-                  fullWidth
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        {isAddingMcp ? (
-                          <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                        ) : (
-                          <IconButton
-                            size="small"
-                            edge="end"
-                            aria-label="Add connection"
-                            disabled={!newMcpInput.trim()}
-                            onClick={handleAddMcpServer}
-                            sx={{
-                              padding: '2px',
-                              color: newMcpInput.trim() ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                              '&.Mui-disabled': { color: 'var(--sl-text-faint)', opacity: 0.4 },
-                            }}
-                          >
-                            <ArrowForwardIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        )}
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-5)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-border-subtle)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                />
-                </div>
                 {/* Drop zone. Visible at rest, not only mid-drag: a target that
                     appears once you are already dragging is only findable by
                     someone who guessed it was there. Clicking opens the file
@@ -1966,18 +1748,11 @@ export default function RightSidebar({
                     as the taller of the two and swapping them never shifts the UI. */}
                 <Box className="grid text-[10px] mt-2.5 px-1">
                   <div className={`col-start-1 row-start-1 text-sl-text-disabled leading-snug ${mcpError ? 'invisible' : ''}`}>
-                    <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center">
-                      <span className="flex items-center gap-1 font-semibold text-sl-text-muted">
-                        <CloudIcon sx={{ fontSize: 12, color: 'var(--sl-text-faint)' }} />
-                        Remote
-                      </span>
-                      <span><code className="font-mono text-sl-text-muted">https://mcp.linear.app/mcp</code></span>
-                      <span className="flex items-center gap-1 font-semibold text-sl-text-muted">
-                        <TerminalIcon sx={{ fontSize: 12, color: 'var(--sl-text-faint)' }} />
-                        Local
-                      </span>
-                      <span><code className="font-mono text-sl-text-muted">yahoo-finance-mcp</code></span>
-                    </div>
+                    A connection file names the server and how to reach it — a
+                    <code className="font-mono text-sl-text-muted"> url </code>
+                    for a remote one, or a
+                    <code className="font-mono text-sl-text-muted"> package </code>
+                    to run locally.
                     <div className="mt-2.5 italic">Local servers require <code className="font-mono not-italic font-bold text-sl-text-muted">uv</code> to be installed on your machine.</div>
                   </div>
                   {mcpError && (

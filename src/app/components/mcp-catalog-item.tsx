@@ -153,23 +153,24 @@ export default function McpCatalogItem({
               </IconButton>
             )}
 
-            {/* Connected only, and the glyph is the action rather than the
-                state: a button showing an intact link invites you to read it
-                as "connected" and then wonder what clicking does. An
-                unconnected card says "Click to connect" on the pill below, so
-                a corner icon there would be a second control for one action. */}
-            {isConnected && !busy && (
+            {/* The corner is present on every card, so the row of actions
+                doesn't jump around as connections come and go. The glyph is
+                the broken link either way — on a connected card it is the
+                action, on an unconnected one it is the state — and the tooltip
+                says which. */}
+            {!busy && (
               <IconButton
                 size="small"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDisconnect(connected!);
+                  if (isConnected) return onDisconnect(connected!);
+                  onConnect(entry);
                 }}
-                title="Disconnect"
+                title={isConnected ? 'Disconnect' : 'Not connected — click to connect'}
                 sx={{
                   color: 'var(--sl-text-faint)',
                   padding: '2px',
-                  '&:hover': { color: 'var(--sl-status-error)' },
+                  '&:hover': { color: isConnected ? 'var(--sl-status-error)' : 'var(--sl-brand-primary)' },
                 }}
               >
                 <LinkOffIcon sx={{ fontSize: 14 }} />
