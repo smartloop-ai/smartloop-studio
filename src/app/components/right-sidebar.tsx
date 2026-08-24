@@ -14,6 +14,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
+import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 import PixelRailIcon from './pixel-rail-icons';
 import McpServerItem from './mcp-server-item';
@@ -130,6 +131,7 @@ export default function RightSidebar({
   onRefreshSkills,
 }: RightSidebarProps) {
   const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
+  const { enabledCapabilities } = useModelStatus();
   const { themeId, theme } = useThemeContext();
   const isMc = themeId === 'minecraft';
   // Themed rail icon for the active theme: the theme's own embedded SVG (from
@@ -173,12 +175,12 @@ export default function RightSidebar({
   }, [activeSection]);
   // Combined capabilities of the currently ENABLED models. Documents need "dp"
   // (document processing) and Skills need "skills"; the matching rail section is
-  // disabled when no enabled model provides it. Null = not loaded yet (don't gate
-  // so nothing flickers on startup). An empty set means no model is enabled — the
-  // app falls back to the default model, so don't gate that case either; only
-  // disable when models ARE enabled but none provide the capability.
-  const [modelCaps, setModelCaps] = useState<Set<string> | null>(null);
-  const docSupported = modelCaps === null || modelCaps.size === 0 || modelCaps.has('dp');
+  // disabled when no enabled model provides it. The set is empty before the model
+  // list loads and when no model is enabled (the app falls back to the default
+  // model) — don't gate either case; only disable when models ARE enabled but
+  // none provide the capability. ModelStatusContext derives this from the
+  // optimistic enabled set, so a toggle takes effect before the backend confirms.
+  const docSupported = enabledCapabilities.size === 0 || enabledCapabilities.has('dp');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [, setIsUploading] = useState(false);
@@ -379,36 +381,6 @@ export default function RightSidebar({
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
-
-  // Recompute the enabled-model capability set. Only ENABLED models contribute —
-  // an installed-but-off model doesn't make the capability available (mirrors how
-  // vision support is detected).
-  const refreshModelCaps = useCallback(async () => {
-    try {
-      const res = await window.electronAPI?.slpListModels(selectedProject?.id ?? null);
-      if (!res?.success || !Array.isArray(res.models)) return;
-      const caps = new Set<string>();
-      res.models.forEach((m: any) => {
-        if (m?.enabled) (m.capabilities || []).forEach((c: string) => caps.add(c));
-      });
-      setModelCaps(caps);
-    } catch { /* leave caps as-is */ }
-  }, [selectedProject?.id]);
-
-  // Baseline capability read on mount / model change / section open. We rely on the
-  // toggle event (below) for live updates rather than the raw "models-updated" feed,
-  // which reports a still-enabling model as off and would clobber the optimistic value.
-  useEffect(() => { refreshModelCaps(); }, [model, activeSection, refreshModelCaps]);
-  // Optimistic update: reflect a model toggle immediately (before the backend
-  // confirms), so the Documents/Skills sections light up the instant it's enabled.
-  useEffect(() => {
-    const onCaps = (e: Event) => {
-      const caps = (e as CustomEvent).detail?.caps;
-      if (Array.isArray(caps)) setModelCaps(new Set<string>(caps));
-    };
-    window.addEventListener('localModelCapsChanged', onCaps);
-    return () => window.removeEventListener('localModelCapsChanged', onCaps);
-  }, []);
 
   // If the open section is no longer supported by the model, close it.
   useEffect(() => {

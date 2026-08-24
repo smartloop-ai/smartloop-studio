@@ -28,6 +28,7 @@ import MessageInput from './message-input';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
+import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
@@ -293,17 +294,22 @@ export default function Chat(props: {
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
   const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
-  const modelLoadingRef = useRef<boolean>(false);  // Track if a model is being initialized
   const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
   const [lastRunTps, setLastRunTps] = useState<number | null>(null);  // Last known tok/s shown in the idle status slot; seeded from storage, null until first-ever response
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
-  const [visionEnabled, setVisionEnabled] = useState(false);  // True when a vision-capable model is enabled (backend can OCR image attachments)
-  const [modelDownloadProgress, setModelDownloadProgress] = useState<{ downloading: boolean; model: string; percent: number; status: string; stage?: string } | null>(null);
   const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({});  // asset_id -> data URL for image attachments in the transcript
   const requestedPreviewsRef = useRef<Set<string>>(new Set());  // asset_ids already requested, to avoid duplicate reads
   const { indexingProgress } = useAppStatus();
+  // Model status is owned by the main process and mirrored by ModelStatusContext;
+  // this component only reads it. `enabledCapabilities` already accounts for a
+  // pending toggle, so vision unlocks the instant the user enables the model.
+  const { primaryProgress, enabledCapabilities, waitForPrimaryModel, loadPrimaryModel } = useModelStatus();
+  const modelDownloadProgress = primaryProgress;
+  // Image attachments require a vision-capable model — the SLP backend
+  // OCRs/describes images through it at attachment-upload time.
+  const visionEnabled = enabledCapabilities.has('vision');
 
   // Whether an attachment name looks like an image (gates asset preview loading)
   const isImageName = (name?: string): boolean => {
@@ -330,11 +336,7 @@ export default function Chat(props: {
       if (!cancelled && url) setIsServiceReady(true);
     })();
     const handler = () => {
-      if (!cancelled) {
-        setIsServiceReady(true);
-        setModelDownloadProgress(null);
-        modelLoadingRef.current = false;
-      }
+      if (!cancelled) setIsServiceReady(true);
     };
     window.addEventListener('slpServiceReady', handler);
     return () => { cancelled = true; window.removeEventListener('slpServiceReady', handler); };
@@ -352,63 +354,6 @@ export default function Chat(props: {
     })();
     return () => { cancelled = true; };
   }, [props.project]);
-
-  // Track model init status from Settings and sync status bar
-  useEffect(() => {
-    const handler = async (e: any) => {
-      const loading = e.detail?.loading ?? false;
-      modelLoadingRef.current = loading;
-      if (loading) {
-        // Model is starting to load — show initial progress
-        setModelDownloadProgress({ downloading: true, model: e.detail?.model || '', percent: 0, status: 'Initializing model...' });
-      } else {
-        // Model finished loading — clear progress
-        setModelDownloadProgress(null);
-        const next = e.detail?.model || props.project?.model_name || await storageService.getItem('selected_model') || 'gemma3-1b';
-        setModel(next);
-      }
-    };
-    const progressHandler = (e: any) => {
-      if (e.detail) {
-        setModelDownloadProgress(e.detail);
-      }
-    };
-    window.addEventListener('modelInitStatus', handler);
-    window.addEventListener('modelDownloadProgress', progressHandler);
-    return () => {
-      window.removeEventListener('modelInitStatus', handler);
-      window.removeEventListener('modelDownloadProgress', progressHandler);
-    };
-  }, []);
-
-  // Enable image attachments only when a vision-capable model is enabled — the
-  // SLP backend OCRs/describes images via that model at attachment-upload time.
-  useEffect(() => {
-    const applyModels = (models?: any[]) => {
-      const enabled = Array.isArray(models) ? models.filter((m: any) => m?.enabled) : [];
-      const has = (cap: string) => enabled.some((m: any) => (m?.capabilities || []).includes(cap));
-      setVisionEnabled(has('vision'));
-    };
-    (async () => {
-      try {
-        const res = await window.electronAPI?.slpListModels(props.project?.id ?? null);
-        if (res?.success) applyModels(res.models);
-      } catch (e) {
-        console.warn('[Chat] Failed to list models for capability detection:', e);
-      }
-    })();
-    // Capability updates come from the models panel's toggle event, which carries
-    // the *optimistic* enabled-capability set (pending override applied). We do NOT
-    // recompute from the raw "models-updated" backend list here — while a model is
-    // still enabling/downloading it reports enabled=false and would clobber the
-    // optimistic value back off.
-    const onCaps = (e: Event) => {
-      const caps: string[] = (e as CustomEvent).detail?.caps || [];
-      setVisionEnabled(caps.includes('vision'));
-    };
-    window.addEventListener('localModelCapsChanged', onCaps);
-    return () => window.removeEventListener('localModelCapsChanged', onCaps);
-  }, []);
 
   // Log project prop for debugging
   useEffect(() => {
@@ -770,31 +715,15 @@ export default function Chat(props: {
 
       console.log('[Chat sendMessage] Final message object:', messageObject);
 
-      // Wait for model init to finish if one is in progress
-      if (modelLoadingRef.current) {
+      // Wait out an in-flight primary model load before sending.
+      if (modelDownloadProgress?.downloading) {
         console.log('[Chat] Waiting for model init to complete...');
         setMessages((prev: any) =>
           prev.map((msg: any) =>
             msg.id === responseId ? { ...msg, content: 'Waiting for model to load...' } : msg
           )
         );
-        await new Promise<void>((resolve) => {
-          const check = (e: any) => {
-            if (!e.detail?.loading) {
-              window.removeEventListener('modelInitStatus', check);
-              resolve();
-            }
-          };
-          window.addEventListener('modelInitStatus', check);
-          // Also poll in case the event was already fired
-          const interval = setInterval(() => {
-            if (!modelLoadingRef.current) {
-              clearInterval(interval);
-              window.removeEventListener('modelInitStatus', check);
-              resolve();
-            }
-          }, 500);
-        });
+        await waitForPrimaryModel();
         console.log('[Chat] Model init complete, proceeding with message');
       }
 
@@ -866,29 +795,16 @@ export default function Chat(props: {
       } catch (err: any) {
         // If 503 "No model loaded", load the model and retry once
         if (err?.status === 503 || err?.message?.includes('503')) {
-          console.log('[Chat] 503 no model loaded, calling /v1/models/load and retrying...');
+          console.log('[Chat] 503 no model loaded, requesting a model load and retrying...');
           setMessages((prev: any) =>
             prev.map((msg: any) =>
               msg.id === responseId ? { ...msg, content: 'Loading model...' } : msg
             )
           );
-          try {
-            const loadRes = await fetch(`${localBaseUrl}/v1/models/load`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ model_name: selectedModel, project_id: projectId }),
-            });
-            if (loadRes.ok && loadRes.body) {
-              const reader = loadRes.body.getReader();
-              while (true) {
-                const { done } = await reader.read();
-                if (done) break;
-              }
-            }
-          } catch (loadErr) {
-            console.error('[Chat] Model load failed:', loadErr);
-            throw err; // re-throw original error
-          }
+          // Route the load through main: it dedupes against a load already in
+          // flight and its progress reaches the UI. A failure here surfaces as the
+          // retried stream's own error.
+          await loadPrimaryModel(selectedModel);
           stream = await createStream();
         } else {
           throw err;

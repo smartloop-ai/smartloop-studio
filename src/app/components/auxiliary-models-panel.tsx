@@ -161,8 +161,8 @@ const TIER_INFO: Record<string, string> = {
 export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProps) {
     const {
         localModels,
-        toggling,
-        downloadProgress,
+        downloads,
+        isDownloading: isModelDownloading,
         isEnabled,
         handleToggleModel,
         handleCancelDownload,
@@ -266,7 +266,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
     })();
 
     // Leading circular state indicator.
-    const renderIndicator = (s: { enabled: boolean; needsUnlock: boolean; needsLogin: boolean; downloaded: boolean; isDownloading: boolean; percent: number; isActive: boolean }) => {
+    const renderIndicator = (s: { name: string; enabled: boolean; needsUnlock: boolean; needsLogin: boolean; downloaded: boolean; isDownloading: boolean; percent: number; isActive: boolean }) => {
         const ring: React.CSSProperties = {
             width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -300,7 +300,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                     role="button"
                     aria-label="Cancel download"
                     title="Cancel download"
-                    onClick={(e) => { e.stopPropagation(); handleCancelDownload(); }}
+                    onClick={(e) => { e.stopPropagation(); handleCancelDownload(s.name); }}
                     style={{ ...ring, cursor: 'pointer' }}
                 >
                     <svg width="30" height="30" viewBox="0 0 24 24">
@@ -382,8 +382,10 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         // surfaced as a disabled Download + tooltip, not an Unlock.
         const needsUnlock = locked && isGated;
         const needsLogin = locked && !needsUnlock;
-        const isDownloading = toggling === name && !downloaded;
-        const percent = downloadProgress?.percent ?? 0;
+        // Downloads are workspace-wide, so this is true in every project while the
+        // weights arrive — not only in the one that started it.
+        const isDownloading = isModelDownloading(name);
+        const percent = downloads.get(name)?.percent ?? 0;
         // Tier tag shown on gated models: pro uses the brand color, internal
         // collapses into a gold "Premium". Border is ~30% of the text color.
         const tier = m.access_level === 'pro'
@@ -400,7 +402,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
         const isActive = activeModels.has(name);
 
         const onClick = () => {
-            if (locked || isDownloading || toggling) return;
+            if (locked || isDownloading) return;
             handleToggleModel(name, workspaceName, downloaded ? !enabled : true);
         };
 
@@ -446,7 +448,7 @@ export default function AuxiliaryModelsPanel({ model }: AuxiliaryModelsPanelProp
                         )}
                     </div>
                     <div className="ml-auto flex items-center gap-2 flex-shrink-0">
-                        {renderIndicator({ enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent, isActive })}
+                        {renderIndicator({ name, enabled, needsUnlock, needsLogin, downloaded, isDownloading, percent, isActive })}
                     </div>
                 </div>
 

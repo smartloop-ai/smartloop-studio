@@ -2121,6 +2121,12 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
+  // Already in flight — don't stack a second request for the same model.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already initializing; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
+
   return new Promise((resolve) => {
     const http = require('http');
     const url = new URL(`${baseUrl}/v1/init`);
@@ -2140,6 +2146,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
+        clearActiveDownload(modelName);
         resolve({ success: false, error: `HTTP ${res.statusCode}` });
         return;
       }
@@ -2156,13 +2163,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
-
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('model-init-progress', {
-                  ...progress,
-                  model: modelName,
-                });
-              }
+              emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
             } catch {
               // ignore unparseable SSE data
             }
@@ -2180,23 +2181,21 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
           });
         } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
 
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('model-init-progress', {
-            model: modelName,
-            percent: 100,
-            status: 'Ready',
-            downloading: false,
-          });
-        }
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
+        clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
 
       res.on('error', (err) => {
+        clearActiveDownload(modelName);
         resolve({ success: false, error: err.message });
       });
     });
 
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
+
     req.on('error', (err) => {
+      clearActiveDownload(modelName);
       resolve({ success: false, error: err.message });
     });
 
@@ -2206,6 +2205,167 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
 });
 
 const activeModelDownloads = new Map();
+// Latest progress per in-flight download, keyed by model name. Main process is
+// the source of truth so a renderer that mounts mid-download (e.g. after tab
+// navigation unmounts/remounts the panel) can rehydrate instead of resetting to
+// "not downloaded" and kicking off a duplicate download from 0%.
+const modelDownloadState = new Map();
+
+// Record the latest progress and broadcast it. Clears the tracked state once the
+// download reaches a terminal (non-downloading) point so get-download-state stops
+// reporting it as active.
+// `kind` separates the project's primary orchestrator load ('primary') from an
+// auxiliary model download ('aux'). Both share this map, so consumers must
+// discriminate: the sidebar's aux cards would otherwise render a primary load as
+// a toggling aux model.
+function emitModelDownloadProgress(modelName, progress, { kind = 'aux' } = {}) {
+  const percent = progress.percent ?? 0;
+  const stillDownloading = progress.downloading === true
+    || (progress.downloading === undefined && percent < 100);
+  if (stillDownloading) {
+    // Deliberately not tagged with a project: weights are workspace-wide, so a
+    // download in flight serves every project and any of them may show it.
+    modelDownloadState.set(modelName, {
+      model: modelName,
+      percent,
+      status: progress.status,
+      stage: progress.stage,
+      downloading: true,
+      kind,
+    });
+  } else {
+    // Terminal. The downloaded flag just changed workspace-wide, so drop every
+    // project's cached list, not just the one that started the download.
+    modelDownloadState.delete(modelName);
+    invalidateModelsCache();
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName, kind });
+  }
+}
+
+// Register a starting download: the request handle (for cancel/dedup) and a 0%
+// tracked entry, paired so they can't drift. Seeding the entry here rather than
+// waiting for the first SSE event is what makes get-download-state truthful for
+// a download that has started but not yet reported progress — a renderer
+// mounting in that window would otherwise see nothing in flight.
+function beginModelDownload(name, req, { kind = 'aux', status = 'Starting…' } = {}) {
+  activeModelDownloads.set(name, req);
+  modelDownloadState.set(name, { model: name, percent: 0, status, downloading: true, kind });
+}
+
+// Terminal cleanup for a download's request handle + tracked progress.
+function clearActiveDownload(name) {
+  activeModelDownloads.delete(name);
+  modelDownloadState.delete(name);
+}
+
+// IPC: snapshot of in-flight downloads so a freshly mounted renderer can rehydrate.
+ipcMain.handle('slp-get-download-state', async () => {
+  const downloads = {};
+  for (const [name, state] of modelDownloadState.entries()) downloads[name] = state;
+  return { success: true, downloads };
+});
+
+// IPC: load a project's primary orchestrator model (SSE streaming progress).
+// Previously the renderer streamed /v1/models/load itself and re-published it as
+// window CustomEvents, so the stream died on navigation and restarted on every
+// project change. Owning it here means progress survives both.
+ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
+  if (!modelName) return { success: false, error: 'No model name' };
+
+  // A load can be requested before SLP finishes coming up (e.g. first paint after
+  // launch), so retry around a cold service instead of dropping the request.
+  let baseUrl = slpService.getLocalBaseUrl();
+  for (let attempt = 0; !baseUrl && attempt < 3; attempt++) {
+    if (await slpService.checkHealth()) {
+      baseUrl = slpService.getLocalBaseUrl();
+      break;
+    }
+    console.log(`[Models] SLP not ready, retrying load of ${modelName} (${attempt + 1}/3)...`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Already loading — a project re-select must not stack a second stream.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already loading; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
+
+  return new Promise((resolve) => {
+    const http = require('http');
+    const url = new URL(`${baseUrl}/v1/models/load`);
+    const postData = JSON.stringify(projectId
+      ? { model_name: modelName, project_id: projectId }
+      : { model_name: modelName });
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        clearActiveDownload(modelName);
+        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        return;
+      }
+
+      let buffer = '';
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          // Only `data: ` lines are progress. /v1/models/load answers with a
+          // plain JSON body, not SSE, so parsing bare lines turned that body
+          // into a bogus `status: "ok"` event at 0% — a progress bar for a
+          // model that was already resident.
+          if (!trimmed.startsWith('data: ')) {
+            console.log('[Models] Model load:', trimmed);
+            continue;
+          }
+          try {
+            const progress = bootstrapProgress(JSON.parse(trimmed.slice(6)));
+            emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
+          } catch {
+            console.log('[Models] Model load:', trimmed);
+          }
+        }
+      });
+
+      res.on('end', () => {
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
+        clearActiveDownload(modelName);
+        resolve({ success: true, model: modelName });
+      });
+
+      res.on('error', (err) => {
+        clearActiveDownload(modelName);
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
+
+    req.on('error', (err) => {
+      clearActiveDownload(modelName);
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+});
 
 // IPC: cancel an in-progress model download
 ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) => {
@@ -2213,7 +2373,7 @@ ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) 
   if (req) {
     console.log(`[Models] Cancelling download for ${modelName}`);
     req.destroy();
-    activeModelDownloads.delete(modelName);
+    clearActiveDownload(modelName);
     invalidateModelsCache(projectId);
     return { success: true };
   }
@@ -2227,6 +2387,16 @@ ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) 
 ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Weights are workspace-wide, so a download already in flight serves every
+  // project. Skip starting a second one, but still fall through to the PATCH —
+  // the caller's project asked to enable the model and that intent must land.
+  // The flag is settable before the weights arrive: the workspace registry holds
+  // entries with downloaded=false, so the backend resolves the model and flips it.
+  const alreadyDownloading = activeModelDownloads.has(modelName);
+  if (alreadyDownloading) {
+    console.log(`[Models] ${modelName} already downloading; enabling for this project without a second download`);
+  }
 
   // Check the model's per-project (or workspace) downloaded state
   let existsInWorkspace = false;
@@ -2249,7 +2419,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     console.log(`[Models] set-model-enabled: state fetch error: ${err.message}`);
   }
 
-  if (!existsInWorkspace && enabled) {
+  if (!existsInWorkspace && enabled && !alreadyDownloading) {
     console.log(`[Models] ${modelName} not downloaded, initializing via /v1/init...`);
     try {
       const http = require('http');
@@ -2266,7 +2436,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
         }, (res) => {
           if (res.statusCode !== 200) {
-            activeModelDownloads.delete(modelName);
+            clearActiveDownload(modelName);
             reject(new Error(`HTTP ${res.statusCode}`));
             return;
           }
@@ -2280,28 +2450,24 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
                 try {
                   const data = JSON.parse(line.slice(6));
                   const progress = bootstrapProgress(data);
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName });
-                  }
+                  emitModelDownloadProgress(modelName, progress);
                 } catch {}
               }
             }
           });
           res.on('end', () => {
-            activeModelDownloads.delete(modelName);
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('model-download-progress', { model: modelName, percent: 100, status: 'Complete' });
-            }
+            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false });
+            clearActiveDownload(modelName);
             resolve(true);
           });
           res.on('error', (err) => {
-            activeModelDownloads.delete(modelName);
+            clearActiveDownload(modelName);
             reject(err);
           });
         });
-        activeModelDownloads.set(modelName, req);
+        beginModelDownload(modelName, req, { status: 'Starting download…' });
         req.on('error', (err) => {
-          activeModelDownloads.delete(modelName);
+          clearActiveDownload(modelName);
           reject(err);
         });
         req.write(postData);
@@ -2313,21 +2479,9 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
       return { success: false, error: err.message };
     }
 
-    // Re-check model state for the new name
-    try {
-      const stateUrl = projectId
-        ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
-        : `${baseUrl}/v1/models/workspace`;
-      const wsRes2 = await fetch(stateUrl);
-      if (wsRes2.ok) {
-        const wsData2 = await wsRes2.json();
-        const wsList2 = Array.isArray(wsData2) ? wsData2 : (wsData2.data || wsData2.models || []);
-        const wsModel = wsList2.find(wm => (wm.name || wm.model_name || wm.model) === modelName);
-        if (wsModel) {
-          modelName = wsModel.name || wsModel.model_name || modelName;
-        }
-      }
-    } catch {}
+    // No name re-resolution round trip here: both PATCH routes canonicalize the
+    // model name themselves, and this fetch sat inside the window between the
+    // download finishing and the model going enabled — visible as a stalled card.
   }
 
   try {
@@ -2343,11 +2497,18 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     const text = await res.text();
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
-      invalidateModelsCache(projectId);
+      // Enabling also promotes the model to a workspace app-default, so the
+      // workspace-scoped entry Settings reads goes stale alongside this
+      // project's — clear the whole map for that case.
+      invalidateModelsCache(enabled ? undefined : projectId);
+      // Repopulate before returning so the renderer's follow-up list read is a
+      // fresh-cache hit rather than a cold round trip. This also pushes
+      // `models-updated`, which the renderer already subscribes to.
+      await refreshModelsCache(projectId);
       try {
-        return { success: true, ...JSON.parse(text) };
+        return { success: true, ...JSON.parse(text), downloading: alreadyDownloading };
       } catch {
-        return { success: true };
+        return { success: true, downloading: alreadyDownloading };
       }
     }
     return { success: false, error: `HTTP ${res.status}: ${text}` };
@@ -2626,6 +2787,12 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
+  // Already downloading — don't start a duplicate request.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already downloading; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
+
   return new Promise((resolve) => {
     const http = require('http');
     const url = new URL(`${baseUrl}/v1/models/download`);
@@ -2643,7 +2810,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        activeModelDownloads.delete(modelName);
+        clearActiveDownload(modelName);
         resolve({ success: false, error: `HTTP ${res.statusCode}` });
         return;
       }
@@ -2660,13 +2827,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
-
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('model-download-progress', {
-                  model: modelName,
-                  ...progress,
-                });
-              }
+              emitModelDownloadProgress(modelName, progress);
             } catch {
               // ignore unparseable SSE data
             }
@@ -2675,28 +2836,21 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       });
 
       res.on('end', () => {
-        activeModelDownloads.delete(modelName);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('model-download-progress', {
-            model: modelName,
-            percent: 100,
-            status: 'Ready',
-            downloading: false,
-          });
-        }
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false });
+        clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
 
       res.on('error', (err) => {
-        activeModelDownloads.delete(modelName);
+        clearActiveDownload(modelName);
         resolve({ success: false, error: err.message });
       });
     });
 
-    activeModelDownloads.set(modelName, req);
+    beginModelDownload(modelName, req, { status: 'Starting download…' });
 
     req.on('error', (err) => {
-      activeModelDownloads.delete(modelName);
+      clearActiveDownload(modelName);
       resolve({ success: false, error: err.message });
     });
 
