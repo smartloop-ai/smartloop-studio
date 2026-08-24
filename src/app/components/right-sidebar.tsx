@@ -644,12 +644,9 @@ export default function RightSidebar({
     const next = activeSection === section ? null : section;
     setActiveSection(next);
     if (next === 'documents') refreshDocuments();
-    if (next === 'mcp') {
-      loadMcpServers();
-      if (mcpCatalog.length === 0) loadMcpCatalog();
-    }
+    if (next === 'mcp') loadMcpServers();
     if (next === 'skills') onRefreshSkills?.();
-  }, [activeSection, docSupported, refreshDocuments, loadMcpServers, mcpCatalog.length, loadMcpCatalog, onRefreshSkills]);
+  }, [activeSection, docSupported, refreshDocuments, loadMcpServers, onRefreshSkills]);
 
   // Cmd/Ctrl+B toggles the whole panel, matching the sidebar-toggle convention
   // users bring from VS Code. Reopening restores whichever section was showing
@@ -778,13 +775,19 @@ export default function RightSidebar({
     });
   }, [mcpServers, mcpCatalog]);
 
-  // Fetch the catalog the first time the Connections section is opened.
-  const catalogRequestedRef = useRef(false);
+  // Main primes the catalog at startup, so loading on mount is a cache hit and
+  // the Connections list is already populated when the section first opens.
+  // Background refreshes (TTL expiry, login, logout) arrive on the push channel.
   useEffect(() => {
-    if (activeSection !== 'mcp' || catalogRequestedRef.current) return;
-    catalogRequestedRef.current = true;
     loadMcpCatalog();
-  }, [activeSection, loadMcpCatalog]);
+    const electronWindow = window as any;
+    const unsubscribe = electronWindow.electronAPI?.onMcpCatalogUpdated?.(
+      ({ entries }: { entries: McpCatalogEntry[] }) => {
+        if (Array.isArray(entries)) setMcpCatalog(entries);
+      },
+    );
+    return () => unsubscribe?.();
+  }, [loadMcpCatalog]);
 
   // Drop the "authorizing" state once the server lands, or when polling gives up.
   // A server that arrives without tools yet gets picked up by discovery polling.

@@ -2009,6 +2009,7 @@ function revealMainWindow(baseUrl) {
   healthMonitor.start(() => mainWindow);
   releaseChecker.start(() => mainWindow, () => refreshTray());
   fetchModels();
+  refreshMcpCatalogCache();
 }
 
 // A bootstrap that stops emitting SSE progress must not trap the user behind a
@@ -2562,6 +2563,8 @@ ipcMain.handle('slp-auth-logout', async () => {
       lastUserProfileEmail = null;
       invalidateModelsCache();
       refreshModelsCache();
+      invalidateMcpCatalogCache();
+      refreshMcpCatalogCache();
       return { success: true };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
@@ -2611,6 +2614,10 @@ async function fetchUserProfile() {
         lastUserProfileEmail = profile.email;
         invalidateModelsCache();
         refreshModelsCache();
+        // The catalog is user-scoped through the cloud, and this is the only
+        // login hook — there is no dedicated login IPC.
+        invalidateMcpCatalogCache();
+        refreshMcpCatalogCache();
       }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('user-profile-updated', profile);
@@ -2651,24 +2658,85 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
-// IPC: Curated MCP connection catalog. SLP owns the caching (workspace.db), so
-// this is a straight proxy — active entries only, in display order.
-ipcMain.handle('slp-mcp-catalog', async () => {
+// Fetch the curated MCP connection catalog from SLP — active remote entries
+// only, in display order. Returns null when unavailable (no service, bad
+// status, network error) so a failure is never cached as an empty list.
+async function fetchMcpCatalogEntries() {
   const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
+  if (!baseUrl) return null;
   try {
     const res = await fetch(`${baseUrl}/v1/mcp-catalog`);
-    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    if (!res.ok) {
+      // 401 here just means not signed in yet — the catalog comes from the
+      // cloud. The login path re-primes, so this is expected on first launch.
+      console.warn(`[MCP Catalog] HTTP ${res.status} fetching catalog`);
+      return null;
+    }
     const data = await res.json();
     const list = Array.isArray(data) ? data : (data.entries || data.data || []);
-    const entries = list
+    return list
       .filter((e) => e && e.is_active !== false && e.remote_config?.server_url)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.display_name || '').localeCompare(String(b.display_name || '')));
-    return { success: true, entries };
   } catch (err) {
     console.error('[MCP Catalog] Error fetching catalog:', err.message);
-    return { success: false, error: err.message };
+    return null;
   }
+}
+
+// Stale-while-revalidate cache for the catalog. One slot, not a Map like
+// modelsCache: the catalog is identical for every project — per-project
+// "connected" state is joined in the renderer against the project-scoped
+// mcp-servers list, so the payload cached here carries no project scope. If
+// that merge ever moves into main, this has to become project-keyed too.
+let mcpCatalogCache = null; // { data, timestamp }
+let mcpCatalogRefreshPromise = null; // in-flight refresh
+const MCP_CATALOG_FRESH_TTL_MS = 10 * 60 * 1000;
+
+function refreshMcpCatalogCache() {
+  if (mcpCatalogRefreshPromise) return mcpCatalogRefreshPromise;
+  const promise = (async () => {
+    try {
+      const entries = await fetchMcpCatalogEntries();
+      if (entries) {
+        mcpCatalogCache = { data: entries, timestamp: Date.now() };
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mcp-catalog-updated', { entries });
+        }
+      }
+      return entries;
+    } finally {
+      mcpCatalogRefreshPromise = null;
+    }
+  })();
+  mcpCatalogRefreshPromise = promise;
+  return promise;
+}
+
+function invalidateMcpCatalogCache() {
+  mcpCatalogCache = null;
+}
+
+// IPC: Curated MCP connection catalog — fresh cache returns instantly, stale
+// cache returns immediately while a background refresh emits
+// `mcp-catalog-updated`. Primed at startup from revealMainWindow(), so the
+// Connections panel normally opens straight onto a cache hit.
+ipcMain.handle('slp-mcp-catalog', async () => {
+  const now = Date.now();
+  if (mcpCatalogCache && now - mcpCatalogCache.timestamp < MCP_CATALOG_FRESH_TTL_MS) {
+    return { success: true, entries: mcpCatalogCache.data };
+  }
+  if (mcpCatalogCache) {
+    refreshMcpCatalogCache();
+    return { success: true, entries: mcpCatalogCache.data };
+  }
+  const entries = await refreshMcpCatalogCache();
+  if (!entries) {
+    return {
+      success: false,
+      error: slpService.getLocalBaseUrl() ? 'Failed to fetch connection catalog' : 'No local service',
+    };
+  }
+  return { success: true, entries };
 });
 
 // Fetch catalog + per-project model state in parallel and merge into a single

@@ -119,6 +119,7 @@ export interface ElectronAPI {
   // channel-wide removeAllListeners, which would drop other subscribers too.
   onModelDownloadProgress: (callback: (data: ModelDownloadProgress) => void) => () => void;
   onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => () => void;
+  onMcpCatalogUpdated: (callback: (data: { entries: any[] }) => void) => () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // Transient agent-restarting signal (e.g. during a Clean)

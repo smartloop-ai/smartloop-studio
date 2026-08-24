@@ -122,6 +122,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('models-updated', handler);
     return () => ipcRenderer.off('models-updated', handler);
   },
+  onMcpCatalogUpdated: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('mcp-catalog-updated', handler);
+    return () => ipcRenderer.off('mcp-catalog-updated', handler);
+  },
   // SLP version management
   slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
   slpSwitchVersion: (version) => ipcRenderer.invoke('slp-switch-version', version),
