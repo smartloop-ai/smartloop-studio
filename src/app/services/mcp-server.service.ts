@@ -77,10 +77,42 @@ export interface McpServerRegistrationResponse {
   message?: string;
 }
 
+/**
+ * Indexing state from `GET /v1/projects/{id}/mcp` and `/v1/projects/{id}/mcp/{serverId}`.
+ *
+ * A connection is not usable the moment it is registered: the backend
+ * discovers and vectorizes its tools, then crawls its content, both off the
+ * request path.  `in_progress` is the single flag to drive a spinner off —
+ * while it is true the counts here are not final.
+ */
+export interface McpIndexingState {
+  /**
+   * provisioning — discovering/indexing the server's tools
+   * queued       — provisioned, waiting for the content crawl
+   * indexing     — the content crawl is walking the server right now
+   * indexed      — content is in the index; `documents` is meaningful
+   * disabled     — this connection has no content to crawl (a shell or
+   *                weather server), or was opted out
+   * failed       — provisioning failed; see `error`
+   */
+  state: 'provisioning' | 'queued' | 'indexing' | 'indexed' | 'disabled' | 'failed';
+  in_progress: boolean;
+  crawl_enabled: boolean;
+  /** Which crawl plan matched — `notion`, `linear`, `trello`, `generic:<name>`. */
+  plan?: string;
+  documents?: number;
+  records?: number;
+  /** Epoch seconds of the last completed crawl. */
+  crawled_at?: number | null;
+  error?: string | null;
+}
+
 export interface McpServer {
   id: string;
   name: string;
   description?: string;
+  /** LLM-generated topical tags for hand-added servers (1–3). */
+  tags?: string[];
   server_type?: 'local' | 'remote';
   env?: Record<string, string>;
   config?: {
@@ -88,11 +120,21 @@ export interface McpServer {
     [key: string]: any;
   };
   remote_config?: McpRemoteConfig;
+  /** Flattened remote URL as returned by GET /v1/projects/{id}/mcp */
+  server_url?: string;
   status?: 'connected' | 'disconnected' | 'connecting' | 'error';
   auth_url?: string;
   metadata?: McpServerMetadata;
   server_info?: McpServerInfo;
   tools?: McpTool[];
+  /** Provisioning + content-crawl progress; see {@link McpIndexingState}. */
+  indexing?: McpIndexingState;
+  /**
+   * Which account this connection is authenticated as — an email, or a
+   * workspace name where the provider authenticates as an integration rather
+   * than a person. Absent for servers that ship no identity tool.
+   */
+  account?: string | null;
   lastConnected?: string;
   error?: string;
 }
@@ -102,6 +144,101 @@ interface McpServerServiceResponse {
   data?: McpServer | McpServer[];
   error?: string;
 }
+
+/** A curated connection from GET /v1/mcp-catalog — always remote + OAuth. */
+export interface McpCatalogEntry {
+  slug: string;
+  display_name: string;
+  description?: string;
+  hosted_by?: 'external' | 'internal';
+  remote_config: { server_url: string; auth_type?: string };
+  icon_url?: string;
+  category?: string;
+  tags?: string[];
+}
+
+/**
+ * Fetch the curated MCP connection catalog (proxied through main so the
+ * renderer never talks to SLP directly).
+ */
+const getMcpCatalog = async (): Promise<{ success: boolean; entries: McpCatalogEntry[]; error?: string }> => {
+  try {
+    const result = await window.electronAPI?.slpMcpCatalog?.();
+    if (!result?.success) {
+      return { success: false, entries: [], error: result?.error || 'Failed to fetch connection catalog' };
+    }
+    return { success: true, entries: (result.entries || []) as McpCatalogEntry[] };
+  } catch (error: any) {
+    console.error('Error fetching MCP catalog:', error);
+    return { success: false, entries: [], error: error.message || 'An error occurred while fetching the catalog' };
+  }
+};
+
+/**
+ * Normalize a server URL so catalog entries can be matched to installed servers.
+ * Drops the scheme, a `www.` prefix and the transport suffix (`/mcp`, `/sse`),
+ * which providers vary between the advertised and the registered URL.
+ */
+export const normalizeMcpUrl = (url?: string): string =>
+  (url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+    .replace(/\/(mcp|sse)$/, '');
+
+/**
+ * The remote URL an installed server was registered with, if any. The list
+ * endpoint flattens it to a top-level `server_url`; other shapes nest it.
+ */
+/** Tools reported for an installed server, across the shapes the API returns. */
+export const getMcpServerTools = (server?: McpServer): McpTool[] =>
+  server?.tools ?? server?.metadata?.tools ?? [];
+
+export const getMcpServerUrl = (server: McpServer): string =>
+  server.server_url || server.remote_config?.server_url || server.config?.url || (server.config as any)?.server_url || '';
+
+export type TagColor = { color: string; border: string };
+
+// Palette for free-form tag labels (e.g. catalog categories). Text color + a
+// border at ~35% of it, matching the Models panel's capability pills.
+const TAG_PALETTE: TagColor[] = [
+  { color: '#93c5fd', border: 'rgba(147,197,253,0.35)' }, // blue
+  { color: '#86efac', border: 'rgba(134,239,172,0.35)' }, // green
+  { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' }, // purple
+  { color: '#fdba74', border: 'rgba(253,186,116,0.35)' }, // amber
+  { color: '#f9a8d4', border: 'rgba(249,168,212,0.35)' }, // pink
+  { color: '#67e8f9', border: 'rgba(103,232,249,0.35)' }, // cyan
+  { color: '#fca5a5', border: 'rgba(252,165,165,0.35)' }, // red
+  { color: '#bef264', border: 'rgba(190,242,100,0.35)' }, // lime
+  { color: '#5eead4', border: 'rgba(94,234,212,0.35)' },  // teal
+  { color: '#fcd34d', border: 'rgba(252,211,77,0.35)' },  // gold
+  { color: '#a5b4fc', border: 'rgba(165,180,252,0.35)' }, // indigo
+  { color: '#fb923c', border: 'rgba(251,146,60,0.35)' },  // orange
+  { color: '#d8b4fe', border: 'rgba(216,180,254,0.35)' }, // violet
+  { color: '#7dd3fc', border: 'rgba(125,211,252,0.35)' }, // sky
+];
+
+const TAG_FALLBACK: TagColor = { color: 'var(--sl-text-faint)', border: 'var(--sl-border-default)' };
+
+/**
+ * Assign a distinct palette color to each unique tag name in `names`, so no two
+ * labels in the same list share a color (until the palette is exhausted). Names
+ * are normalized + sorted first, keeping the mapping stable across renders.
+ */
+export const buildTagColorMap = (names: (string | undefined)[]): Map<string, TagColor> => {
+  const unique = Array.from(
+    new Set(names.map((n) => (n || '').trim().toLowerCase()).filter(Boolean)),
+  ).sort();
+  const map = new Map<string, TagColor>();
+  unique.forEach((name, i) => map.set(name, TAG_PALETTE[i % TAG_PALETTE.length]));
+  return map;
+};
+
+/** Look up a name's assigned color, falling back to a neutral pill. */
+export const tagColorFrom = (map: Map<string, TagColor>, name?: string): TagColor =>
+  map.get((name || '').trim().toLowerCase()) || TAG_FALLBACK;
 
 /**
  * Extract error message from API response
@@ -204,6 +341,10 @@ const registerMcpServer = async (projectId: string, options: {
   token?: string;
   env?: Record<string, string>;
   return_url?: string;
+  /** Install a curated catalog entry. The backend resolves the slug and takes
+   *  the server URL, description and tags from the catalog, so curated copy
+   *  can't drift; server_url is still sent as the fallback. */
+  catalog_slug?: string;
 }): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
@@ -231,6 +372,7 @@ const registerMcpServer = async (projectId: string, options: {
     }
     if (options.token) body.token = options.token.trim();
     if (options.return_url) body.return_url = options.return_url;
+    if (options.catalog_slug) body.catalog_slug = options.catalog_slug;
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -368,6 +510,100 @@ const getMcpServer = async (projectId: string, serverId: string): Promise<McpSer
     return {
       success: false,
       error: error.message || 'An error occurred while fetching the MCP server'
+    };
+  }
+};
+
+/**
+ * Install a connection from a dropped-in TOML file.
+ *
+ * The file is the whole definition — name, local command or remote url, and
+ * optionally how to index its content. The backend saves it under
+ * `~/.smartloop/mcp.d/` so the crawl plan survives, then registers the server
+ * through the ordinary path, so a remote server needing OAuth comes back with
+ * an `auth_url` exactly as a typed-in URL would.
+ *
+ * @param projectId - ID of the project
+ * @param toml - the file's text
+ * @param filename - the dropped file's name, for error messages
+ */
+const registerMcpFromDefinition = async (
+  projectId: string,
+  toml: string,
+  filename?: string,
+): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId) return { success: false, error: 'Project ID is required' };
+    if (!toml.trim()) return { success: false, error: 'That file is empty' };
+
+    const localBase = await getLocalApiEndpoint();
+    const response = await fetch(`${localBase}/v1/projects/${projectId}/mcp/definition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toml, filename }),
+    });
+
+    if (!response) return { success: false, error: 'No response from server' };
+
+    if (response.status === 200) {
+      return { success: true, data: await response.json() };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Could not read this connection file'),
+    };
+  } catch (error: any) {
+    console.error('Error registering MCP from definition:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while reading the connection file',
+    };
+  }
+};
+
+/**
+ * Re-run indexing for one connection: re-discover its tools, re-embed the tool
+ * vectors, and force a content crawl. Returns as soon as the work is queued —
+ * the server comes back with `status: "pending"`, and the `indexing` block on
+ * subsequent polls is where the outcome shows up.
+ *
+ * The crawl it triggers is *forced*, which also clears any step the last crawl
+ * gave up on — so this is the escape hatch when a connection's permissions or
+ * plan changed and content that used to be unreachable now isn't.
+ *
+ * @param projectId - ID of the project
+ * @param serverId - ID of the MCP server to re-index
+ */
+const refreshMcpServer = async (projectId: string, serverId: string): Promise<McpServerServiceResponse> => {
+  try {
+    if (!projectId || !serverId) {
+      return { success: false, error: 'Project ID and server ID are required' };
+    }
+
+    const localBase = await getLocalApiEndpoint();
+    const url = `${localBase}/v1/projects/${projectId}/mcp/${serverId}/refresh`;
+    const response = await fetch(url, { method: 'POST' });
+
+    if (!response) {
+      return { success: false, error: 'No response from server' };
+    }
+
+    if (response.status === 200) {
+      return { success: true, data: await response.json() };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return {
+      success: false,
+      error: extractErrorMessage(errorData, 'Failed to re-index connection'),
+    };
+  } catch (error: any) {
+    console.error('Error refreshing MCP server:', error);
+    return {
+      success: false,
+      error: error.message || 'An error occurred while re-indexing the connection',
     };
   }
 };
@@ -544,8 +780,11 @@ const removeMcpServerFromStorage = async (projectId: string, serverId: string): 
  */
 
 export const mcpServerService = {
+  getMcpCatalog,
   getMcpServers,
   getMcpServer,
+  refreshMcpServer,
+  registerMcpFromDefinition,
   deleteMcpServer,
   registerMcpServer,
   completeOAuth,

@@ -44,6 +44,13 @@ window.addEventListener('unhandledrejection', (event) => {
   }
 });
 
+// A file dropped anywhere Electron doesn't explicitly handle makes the window
+// navigate to it, which blanks the app with no way back but a restart. Elements
+// with their own drop handlers still run first and preventDefault themselves;
+// this only catches the misses.
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => event.preventDefault());
+
 // Initialize app - load token from persistent storage if in Electron
 async function initializeApp() {
   // If running in Electron, load token and user data from electron-store to persistent storage

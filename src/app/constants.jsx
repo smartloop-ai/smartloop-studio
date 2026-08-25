@@ -28,28 +28,6 @@ if (typeof window !== 'undefined' && window.electronAPI?.onSlpServiceReady) {
   });
 }
 
-// Listen for bootstrap progress events from main process and re-dispatch as DOM events
-// Data is already normalised by the shared BootstrapProgress module in the main process.
-if (typeof window !== 'undefined' && window.electronAPI?.onBootstrapProgress) {
-  window.electronAPI.onBootstrapProgress((progress) => {
-    console.log(`[Constants] Bootstrap progress: ${progress.percent}% — ${progress.status}`);
-
-    // Dispatch modelInitStatus so chat knows a model is loading
-    window.dispatchEvent(new CustomEvent('modelInitStatus', {
-      detail: { loading: progress.downloading, model: progress.model }
-    }));
-
-    // Only dispatch download progress while still in progress.
-    // When complete (downloading: false), modelInitStatus above already clears the UI —
-    // dispatching here too would overwrite the null in the same React batch and keep the panel visible.
-    if (progress.downloading) {
-      window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-        detail: { downloading: progress.downloading, model: progress.model, percent: progress.percent, status: progress.status, stage: progress.stage }
-      }));
-    }
-  });
-}
-
 /**
  * Get the local SLP API base URL (e.g. http://localhost:38383)
  * Fetches from Electron main process; updates when service comes online.
