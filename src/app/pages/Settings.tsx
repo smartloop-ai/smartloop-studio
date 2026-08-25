@@ -5,7 +5,6 @@ import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
-import { useProjectContext } from '@/app/contexts/ProjectContext';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
@@ -21,14 +20,10 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
-import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 
 
 
 const TPS_DAYS = 365;
-
-// Same binding the chat status bar advertises (chat.tsx); handler is in Home.tsx.
-const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
 
 function TpsHeatmapGraph({ history }: { history: { tokens_per_second: number; created_at: string }[] }) {
     const dailyMap = new Map<string, number[]>();
@@ -288,44 +283,6 @@ export default function SettingsPage() {
             if (res?.success) await loadStorage();
         } finally {
             setIsCleaning(false);
-        }
-    };
-
-    // Web Search — a per-project on/off switch, nothing more. Which provider
-    // actually runs the search (and any API key it needs) is registered on the
-    // account from the web app and resolved server-side, so this app never
-    // sees a provider name or a key. When search is unavailable for the
-    // account the hosted endpoint answers 403 and the agent silently skips it.
-    //
-    // Bound to the *current* project rather than `selectedProject`: this page
-    // has no `?project=` in its URL, and the agent reads the same current
-    // project when deciding whether to search.
-    const { projects, updateProject, refresh: refreshProjects } = useProjectContext();
-    const currentProject = projects.find((p: any) => p.current) ?? null;
-    // Undefined reads as ON — the same default the backend applies to projects
-    // created before the flag existed.
-    const webSearchOn = currentProject ? currentProject.web_search_enabled !== false : false;
-    const [searchSaving, setSearchSaving] = useState(false);
-    const [searchError, setSearchError] = useState('');
-
-    const handleWebSearchToggle = async (enabled: boolean) => {
-        if (!currentProject?.id) return;
-        setSearchSaving(true);
-        setSearchError('');
-        try {
-            // Field name must match the API schema (`web_search_enabled`) —
-            // anything else is dropped by the PATCH and the toggle silently
-            // does nothing.
-            const result = await updateProject(currentProject.id, { web_search_enabled: enabled });
-            if (result?.success) {
-                await refreshProjects();
-            } else {
-                setSearchError(result?.error || 'Could not update web search.');
-            }
-        } catch {
-            setSearchError('Could not reach the local service.');
-        } finally {
-            setSearchSaving(false);
         }
     };
 
@@ -1007,52 +964,6 @@ export default function SettingsPage() {
                                 </Box>
                             )}
                         </Box>
-
-                    {/* 3. Web Search */}
-                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
-                        <Box className="flex items-center gap-2 mb-1">
-                            <TravelExploreIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
-                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Web Search</h2>
-                        </Box>
-                        <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                            Let the assistant look up the latest information on the web while answering.
-                        </p>
-
-                        <Box className="flex items-center justify-between gap-3 p-3 rounded-lg" sx={{ bgcolor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)' }}>
-                            <Box className="min-w-0">
-                                <div className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
-                                    {currentProject ? `Web search for “${currentProject.name}”` : 'Web search'}
-                                </div>
-                                <div className="text-[11px] mt-0.5" style={{ color: 'var(--sl-text-faint)' }}>
-                                    Applies to the current project. Toggle it anytime with {IS_MAC ? '⌘⌥S' : 'Ctrl+Alt+S'}.
-                                </div>
-                            </Box>
-                            {searchSaving
-                                ? <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)', mr: 1 }} />
-                                : (
-                                    <Switch
-                                        checked={webSearchOn}
-                                        disabled={!currentProject}
-                                        onChange={(e) => handleWebSearchToggle(e.target.checked)}
-                                        size="small"
-                                    />
-                                )}
-                        </Box>
-
-                        {!currentProject && (
-                            <p className="text-[11px] mt-2 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
-                                Open a project to turn web search on or off.
-                            </p>
-                        )}
-                        {searchError && (
-                            <p className="text-[11px] mt-2 leading-relaxed" style={{ color: 'var(--sl-status-error)' }}>{searchError}</p>
-                        )}
-                        <p className="text-xs mt-3 px-0.5 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
-                            Search runs through your Smartloop account. If no search provider is connected there, the
-                            assistant quietly answers from what it already knows — connect one in your account settings
-                            on the web.
-                        </p>
-                    </Box>
 
                     {/* 4. Active Model Card — specs + performance graph */}
                     {slpConfig && (() => {
