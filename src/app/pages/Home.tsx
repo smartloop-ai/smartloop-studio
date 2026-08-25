@@ -14,11 +14,11 @@ import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, LEGACY_PINK, getLocalApiEndpoint } from '@/app/constants';
-import { bootstrapProgress } from '@/app/shared/BootstrapProgress';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
@@ -47,6 +47,7 @@ export default function Home() {
     refresh: refreshProjects,
     ready: projectsReady,
   } = useProjectContext();
+  const { loadPrimaryModel } = useModelStatus();
   const [isLoading, setIsLoading] = useState(true);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
@@ -68,7 +69,6 @@ export default function Home() {
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  const [searchConfigured, setSearchConfigured] = useState<boolean>(false);
   // Primary orchestrator model for the active project — passed to the sidebar's
   // Models panel so it can filter itself out of the auxiliary list.
   const [currentModel, setCurrentModel] = useState<string>('');
@@ -79,7 +79,10 @@ export default function Home() {
   const [deleteDocError, setDeleteDocError] = useState('');
   const [isDeletingDoc, setIsDeletingDoc] = useState(false);
 
-  // Load active model name and load model when project changes
+  // Resolve the active model name, then ask main to load it for this project.
+  // The load itself — SSE progress, cold-service retries, and rejecting a
+  // duplicate request — lives in the main process (`slp-load-model`), so it
+  // survives navigation instead of dying with this component.
   useEffect(() => {
     const loadModel = async () => {
       // Determine model name: project-specific or global default
@@ -92,97 +95,14 @@ export default function Home() {
       }
       setCurrentModel(modelName);
 
-      // Call /v1/models/load to ensure the model is loaded for this project
-      if (modelName && selectedProject?.id) {
-        const api = (window as any).electronAPI;
-        const baseUrl = api?.getLocalApiUrl ? await api.getLocalApiUrl() : null;
-        if (!baseUrl) return;
-
-        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: true, model: modelName } }));
-
-        const attemptLoad = async (retries = 3): Promise<boolean> => {
-          for (let i = 0; i < retries; i++) {
-            try {
-              // Check health first
-              const health = await fetch(`${baseUrl}/health`).catch(() => null);
-              if (!health?.ok) {
-                console.log(`[Home] SLP not ready, retrying (${i + 1}/${retries})...`);
-                await new Promise(r => setTimeout(r, 2000));
-                continue;
-              }
-
-              const res = await fetch(`${baseUrl}/v1/models/load`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model_name: modelName }),
-              });
-
-              if (res.ok && res.body) {
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  const text = decoder.decode(value, { stream: true });
-                  const lines = text.split('\n');
-                  for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-                    const payload = trimmed.startsWith('data: ') ? trimmed.slice(6) : trimmed;
-                    try {
-                      const event = JSON.parse(payload);
-                      const progress = bootstrapProgress(event);
-
-                      console.log(`[Home] Model download progress: ${progress.percent}% — ${progress.status}`);
-                      window.dispatchEvent(new CustomEvent('modelDownloadProgress', {
-                        detail: { downloading: progress.downloading, model: modelName, percent: progress.percent, status: progress.status, stage: progress.stage }
-                      }));
-                    } catch {
-                      // Non-JSON line, log raw
-                      console.log('[Home] Model load:', trimmed);
-                    }
-                  }
-                }
-              }
-              return true;
-            } catch (err) {
-              console.warn(`[Home] Load model attempt ${i + 1} failed:`, err);
-              if (i < retries - 1) await new Promise(r => setTimeout(r, 2000));
-            }
-          }
-          return false;
-        };
-
-        await attemptLoad();
-        window.dispatchEvent(new CustomEvent('modelInitStatus', { detail: { loading: false, model: modelName } }));
-      }
+      if (modelName && selectedProject?.id) await loadPrimaryModel(modelName);
     };
     loadModel();
     // Keyed on the fields this effect actually reads, not the object: any
     // project refetch (e.g. after saving a setting) hands back a new object
-    // reference, which would otherwise re-run the health + /models/load round
+    // reference, which would otherwise re-run the /models/load round
     // trip for a project that never changed.
-  }, [selectedProject?.id, selectedProject?.model_name]);
-
-  // Check whether the web search provider (Brave) is configured so the chat
-  // toggle can be disabled when no API key is registered.
-  useEffect(() => {
-    const checkSearchProvider = async () => {
-      try {
-        const api = (window as any).electronAPI;
-        const baseUrl = api?.getLocalApiUrl ? await api.getLocalApiUrl() : null;
-        if (!baseUrl) return;
-        const res = await fetch(`${baseUrl}/v1/search/provider`);
-        if (res.ok) {
-          const data = await res.json();
-          setSearchConfigured(!!data.configured);
-        }
-      } catch {
-        setSearchConfigured(false);
-      }
-    };
-    checkSearchProvider();
-  }, []);
+  }, [selectedProject?.id, selectedProject?.model_name, loadPrimaryModel]);
 
   // Project list + selection + bootstrap (auto-create/auto-select) are owned by
   // ProjectContext. Here we only dismiss the loader once the context has
@@ -860,7 +780,7 @@ export default function Home() {
   };
 
   const handleWebSearchChange = async (enabled: boolean) => {
-    if (!selectedProject?.id || !searchConfigured) return;
+    if (!selectedProject?.id) return;
     // Web search is a project-level flag owned by the SLP backend; patch it
     // through the API so the agent honors it on the next chat turn.
     // Field name must match the API schema (`web_search_enabled`) — anything
@@ -875,7 +795,7 @@ export default function Home() {
   // shortcut and the status bar toggle in chat.tsx; undefined counts as ON, so
   // the first press on a pre-flag project turns it off rather than re-enabling.
   const toggleWebSearch = () => {
-    if (!selectedProject?.id || !searchConfigured) return;
+    if (!selectedProject?.id) return;
     handleWebSearchChange(currentProjectData?.web_search_enabled === false);
   };
 
@@ -2016,7 +1936,6 @@ description: A clear description of what this skill does and when to use it
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
                           webSearchEnabled={currentProjectData?.web_search_enabled}
-                          searchConfigured={searchConfigured}
                           onWebSearchChange={handleWebSearchChange}
                         />
                       );

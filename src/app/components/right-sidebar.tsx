@@ -8,20 +8,23 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
+import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 import PixelRailIcon from './pixel-rail-icons';
 import McpServerItem from './mcp-server-item';
 import ProjectInstructionsDialog from './project-instructions-dialog';
+import McpCatalogItem from './mcp-catalog-item';
 import SimpleMDE from 'react-simplemde-editor';
 import 'easymde/dist/easymde.min.css';
 import '../styles/markdown-editor.css';
 import '../styles/home.css';
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { documentService } from '@/app/services/document.service';
-import { mcpServerService, McpServer } from '@/app/services/mcp-server.service';
+import { mcpServerService, McpServer, McpCatalogEntry, normalizeMcpUrl, getMcpServerUrl, getMcpServerTools, buildTagColorMap } from '@/app/services/mcp-server.service';
 import { PROJECT_COLORS, getLocalApiEndpoint } from '@/app/constants';
 
 
@@ -100,6 +103,32 @@ const SECTION_HOTKEYS: Record<string, RailSection> = {
 };
 
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+
+/**
+ * Cheap identity check for a revalidated MCP server list. A refetch that changed
+ * nothing keeps the previous array reference, so the derived memos below don't
+ * recompute and the list doesn't repaint on every project switch.
+ */
+/**
+ * Everything a connection card renders, as one string. The list refresh keeps
+ * the previous array when this is unchanged, so a field left out here is a
+ * field whose updates never reach the screen — which is what froze the
+ * indexing pill on "Queued" while the backend had long since said "indexed".
+ */
+const mcpServerSignature = (s: McpServer) => [
+  s.id,
+  getMcpServerTools(s).length,
+  s.status ?? '',
+  s.account ?? '',
+  s.indexing?.state ?? '',
+  // So the "2m ago" stamp moves when a re-crawl lands, not just when the
+  // state changes.
+  s.indexing?.crawled_at ?? '',
+].join('|');
+
+const sameMcpServers = (a: McpServer[], b: McpServer[]) =>
+  a.length === b.length &&
+  a.every((s, i) => mcpServerSignature(s) === mcpServerSignature(b[i]));
 const hotkeyLabel = (letter: string) => (IS_MAC ? `\u2318\u21e7${letter}` : `Ctrl+Shift+${letter}`);
 
 /** Tooltip content for a rail button: label plus its keyboard shortcut. */
@@ -126,6 +155,7 @@ export default function RightSidebar({
   onRefreshSkills,
 }: RightSidebarProps) {
   const { indexingStatus, processedDates, setDocumentStatus, removeProcessed } = useAppStatus();
+  const { enabledCapabilities } = useModelStatus();
   const { themeId, theme } = useThemeContext();
   const isMc = themeId === 'minecraft';
   // Themed rail icon for the active theme: the theme's own embedded SVG (from
@@ -169,12 +199,12 @@ export default function RightSidebar({
   }, [activeSection]);
   // Combined capabilities of the currently ENABLED models. Documents need "dp"
   // (document processing) and Skills need "skills"; the matching rail section is
-  // disabled when no enabled model provides it. Null = not loaded yet (don't gate
-  // so nothing flickers on startup). An empty set means no model is enabled — the
-  // app falls back to the default model, so don't gate that case either; only
-  // disable when models ARE enabled but none provide the capability.
-  const [modelCaps, setModelCaps] = useState<Set<string> | null>(null);
-  const docSupported = modelCaps === null || modelCaps.size === 0 || modelCaps.has('dp');
+  // disabled when no enabled model provides it. The set is empty before the model
+  // list loads and when no model is enabled (the app falls back to the default
+  // model) — don't gate either case; only disable when models ARE enabled but
+  // none provide the capability. ModelStatusContext derives this from the
+  // optimistic enabled set, so a toggle takes effect before the backend confirms.
+  const docSupported = enabledCapabilities.size === 0 || enabledCapabilities.has('dp');
   const [_hoveredDocId, setHoveredDocId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [, setIsUploading] = useState(false);
@@ -318,18 +348,29 @@ export default function RightSidebar({
   const isResizing = useRef(false);
 
   // MCP Servers state
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  // Non-system servers, owned by GET /v1/projects/{id}/mcp. System servers get
+  // their own slice below: that endpoint filters them out by design, so the two
+  // sources have disjoint ownership and must never overwrite each other.
+  const [apiMcpServers, setApiMcpServers] = useState<McpServer[]>([]);
   const [mcpError, setMcpError] = useState('');
   const [mcpPolling, setMcpPolling] = useState(false);
   const mcpServerCountRef = useRef(0);
-  const [newMcpInput, setNewMcpInput] = useState('');
   const [isAddingMcp, setIsAddingMcp] = useState(false);
   const [discoveringServerId, setDiscoveringServerId] = useState<string | null>(null);
   // mcpToDelete can be used for deletion confirmation dialog if needed
   const [, setMcpToDelete] = useState<McpServer | null>(null);
   // Delete errors are scoped to the server row that failed (not the add form)
   const [mcpDeleteError, setMcpDeleteError] = useState<{ id: string; message: string } | null>(null);
-  const [newMcpEnv, setNewMcpEnv] = useState('');
+
+  // Curated connection catalog (remote + OAuth only)
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  // Registration request in flight for this catalog slug
+  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
+  // OAuth window opened for this slug — waiting on the callback
+  const [awaitingAuthSlug, setAwaitingAuthSlug] = useState<string | null>(null);
+  const [catalogItemError, setCatalogItemError] = useState<{ slug: string; message: string } | null>(null);
 
 
   // Sync local folder path and project name when project changes
@@ -366,36 +407,6 @@ export default function RightSidebar({
     document.addEventListener('mouseup', onMouseUp);
   }, [sidebarWidth]);
 
-  // Recompute the enabled-model capability set. Only ENABLED models contribute —
-  // an installed-but-off model doesn't make the capability available (mirrors how
-  // vision support is detected).
-  const refreshModelCaps = useCallback(async () => {
-    try {
-      const res = await window.electronAPI?.slpListModels();
-      if (!res?.success || !Array.isArray(res.models)) return;
-      const caps = new Set<string>();
-      res.models.forEach((m: any) => {
-        if (m?.enabled) (m.capabilities || []).forEach((c: string) => caps.add(c));
-      });
-      setModelCaps(caps);
-    } catch { /* leave caps as-is */ }
-  }, []);
-
-  // Baseline capability read on mount / model change / section open. We rely on the
-  // toggle event (below) for live updates rather than the raw "models-updated" feed,
-  // which reports a still-enabling model as off and would clobber the optimistic value.
-  useEffect(() => { refreshModelCaps(); }, [model, activeSection, refreshModelCaps]);
-  // Optimistic update: reflect a model toggle immediately (before the backend
-  // confirms), so the Documents/Skills sections light up the instant it's enabled.
-  useEffect(() => {
-    const onCaps = (e: Event) => {
-      const caps = (e as CustomEvent).detail?.caps;
-      if (Array.isArray(caps)) setModelCaps(new Set<string>(caps));
-    };
-    window.addEventListener('localModelCapsChanged', onCaps);
-    return () => window.removeEventListener('localModelCapsChanged', onCaps);
-  }, []);
-
   // If the open section is no longer supported by the model, close it.
   useEffect(() => {
     if (activeSection === 'documents' && !docSupported) setActiveSection(null);
@@ -407,8 +418,6 @@ export default function RightSidebar({
     setEditingSkillIsNew(false);
     setSkillContent('');
     setSkillHasUnsavedChanges(false);
-    setNewMcpInput('');
-    setNewMcpEnv('');
     setIsAddingMcp(false);
     setMcpError('');
     setUploadError('');
@@ -581,14 +590,49 @@ export default function RightSidebar({
     return [...merged, ...unmatched, ...pending];
   }, [apiDocuments, uploadingDocs, directoryFiles, fsToApiMap]);
 
-  // Load MCP servers from project data
+  // Last API-backed list per project. Switching back repaints from this in the
+  // same tick, so the connected badges, disconnect button and tool counts are
+  // there on the first frame instead of appearing a fetch later.
+  const mcpServersByProjectRef = useRef<Map<string, McpServer[]>>(new Map());
+  // Project id the current apiMcpServers came from, when API-backed.
+  const mcpLoadedProjectRef = useRef<string | null>(null);
+  // Read after awaits so a response for a project already switched away from is
+  // discarded — rapid switching overlaps loads.
+  const mcpProjectIdRef = useRef<string | undefined>(selectedProject?.id);
+  mcpProjectIdRef.current = selectedProject?.id;
+
+  // Snapshot the rendered list once it is API-backed. Declared before the switch
+  // effect so on a switch it sees the *old* loaded-project id and bails, rather
+  // than writing the outgoing project's servers under the incoming project's key.
   useEffect(() => {
-    if (Array.isArray(currentProjectData?.mcp)) {
-      setMcpServers((currentProjectData.mcp as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__'));
-    } else {
-      setMcpServers([]);
-    }
+    const pid = selectedProject?.id;
+    if (!pid || mcpLoadedProjectRef.current !== pid) return;
+    mcpServersByProjectRef.current.set(pid, apiMcpServers);
+  }, [apiMcpServers, selectedProject?.id]);
+
+  // Repaint on project switch straight from the snapshot. Deliberately does not
+  // read currentProjectData: this runs before the parent's effect has swapped it,
+  // so it would still hold the previous project's payload.
+  useEffect(() => {
+    const pid = selectedProject?.id;
+    const cached = pid ? mcpServersByProjectRef.current.get(pid) : undefined;
+    mcpLoadedProjectRef.current = cached ? (pid ?? null) : null;
+    setApiMcpServers(cached ?? []);
+  }, [selectedProject?.id]);
+
+  // System servers appear only in the projects-list payload, never from the /mcp
+  // endpoint, so they are merged in at read time instead of into the state above.
+  const systemMcpServers = useMemo<McpServer[]>(() => {
+    if (!Array.isArray(currentProjectData?.mcp)) return [];
+    return (currentProjectData.mcp as McpServer[]).filter(
+      (s) => !!(s as any).system && !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__',
+    );
   }, [currentProjectData?.mcp]);
+
+  const mcpServers = useMemo<McpServer[]>(() => {
+    const ids = new Set(apiMcpServers.map((s) => s.id));
+    return [...apiMcpServers, ...systemMcpServers.filter((s) => !ids.has(s.id))];
+  }, [apiMcpServers, systemMcpServers]);
 
   // Listen for MCP authorization callback from Electron
   useEffect(() => {
@@ -598,6 +642,7 @@ export default function RightSidebar({
         console.log('[MCP Auth] Callback received:', data);
         if (data.error) {
           setMcpError(data.error);
+          setAwaitingAuthSlug(null);
         } else if (data.serverId && selectedProject?.id) {
           console.log('[MCP Auth] Server authorized, refreshing list...');
           loadMcpServers();
@@ -612,22 +657,19 @@ export default function RightSidebar({
 
   const loadMcpServers = useCallback(async () => {
     if (!selectedProject?.id) return;
+    const projectId = selectedProject.id;
 
     try {
-      const result = await mcpServerService.getMcpServers(selectedProject.id);
+      const result = await mcpServerService.getMcpServers(projectId);
+      if (mcpProjectIdRef.current !== projectId) return;
       if (result.success && result.data) {
         const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
-        setMcpServers(prev => {
-          const systemServers = prev.filter(s => !!(s as any).system);
-          const apiIds = new Set(apiServers.map(s => s.id));
-          const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
-          const servers = [...apiServers, ...missingSystem];
-          if (mcpPolling && servers.length > mcpServerCountRef.current) {
-            setMcpPolling(false);
-            setMcpError('');
-          }
-          return servers;
-        });
+        mcpLoadedProjectRef.current = projectId;
+        setApiMcpServers(prev => (sameMcpServers(prev, apiServers) ? prev : apiServers));
+        if (mcpPolling && apiServers.length > mcpServerCountRef.current) {
+          setMcpPolling(false);
+          setMcpError('');
+        }
       }
     } catch (error: any) {
       // silent during polling
@@ -636,6 +678,31 @@ export default function RightSidebar({
       }
     }
   }, [selectedProject?.id, mcpPolling]);
+
+  // Keep the callback in a ref so the project-switch effect below doesn't also
+  // re-run whenever mcpPolling flips (loadMcpServers closes over it).
+  const loadMcpServersRef = useRef(loadMcpServers);
+  loadMcpServersRef.current = loadMcpServers;
+
+  // Nothing else refetches on project switch — toggleSection only fires when
+  // the panel is opened, so switching with Connections already open would leave
+  // the stale project payload as the last word.
+  useEffect(() => {
+    if (!selectedProject?.id) return;
+    loadMcpServersRef.current();
+  }, [selectedProject?.id]);
+
+  const loadMcpCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError('');
+    const result = await mcpServerService.getMcpCatalog();
+    if (result.success) {
+      setMcpCatalog(result.entries);
+    } else {
+      setCatalogError(result.error || 'Failed to load connections');
+    }
+    setCatalogLoading(false);
+  }, []);
 
   // Single entry point for opening/closing a rail section, shared by the rail
   // buttons and the keyboard shortcuts so both paths run the same side effects.
@@ -717,12 +784,7 @@ export default function RightSidebar({
         const result = await mcpServerService.getMcpServers(selectedProject.id);
         if (result.success && result.data) {
           const apiServers = (result.data as McpServer[]).filter(s => !s.id?.includes('__system_tools__') && s.name !== '__system_mcp__');
-          setMcpServers(prev => {
-            const systemServers = prev.filter(s => !!(s as any).system);
-            const apiIds = new Set(apiServers.map(s => s.id));
-            const missingSystem = systemServers.filter(s => !apiIds.has(s.id));
-            return [...apiServers, ...missingSystem];
-          });
+          setApiMcpServers(prev => (sameMcpServers(prev, apiServers) ? prev : apiServers));
           const target = apiServers.find(s => s.id === discoveringServerId);
           const tools = target?.tools ?? target?.metadata?.tools ?? [];
           if (tools.length > 0 || attempts >= maxAttempts) {
@@ -742,10 +804,95 @@ export default function RightSidebar({
     return () => clearInterval(interval);
   }, [discoveringServerId, selectedProject?.id]);
 
-  const isRemoteMcpInput = (input: string): boolean => {
-    const trimmed = input.trim();
-    return trimmed.startsWith('http://') || trimmed.startsWith('https://');
-  };
+  // Keep the indexing pills live. Provisioning and the content crawl run in the
+  // backend's own time, so the state only moves if we ask again — but only
+  // while the connections panel is open, since nothing off-screen is worth a
+  // request every few seconds. Capped so a connection that stays queued (its
+  // crawl deferred while the model is busy) can't poll for the whole session.
+  const mcpIndexingInProgress = useMemo(
+    () => mcpServers.some((s) => s.indexing?.in_progress),
+    [mcpServers],
+  );
+
+  useEffect(() => {
+    if (activeSection !== 'mcp' || !mcpIndexingInProgress || !selectedProject?.id) return;
+
+    let attempts = 0;
+    const maxAttempts = 75; // ~5 min at 4s
+
+    const interval = setInterval(() => {
+      attempts++;
+      loadMcpServers();
+      if (attempts >= maxAttempts) clearInterval(interval);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [activeSection, mcpIndexingInProgress, selectedProject?.id, loadMcpServers]);
+
+  // Installed servers keyed by normalized remote URL — how a catalog entry knows
+  // whether it's already connected.
+  const connectedByUrl = useMemo(() => {
+    const map = new Map<string, McpServer>();
+    mcpServers.forEach((s) => {
+      const url = normalizeMcpUrl(getMcpServerUrl(s));
+      if (url) map.set(url, s);
+    });
+    return map;
+  }, [mcpServers]);
+
+
+  // One color per tag across *both* lists, so a tag shared by a curated entry
+  // and a hand-added server looks the same on each.
+  const mcpTagColorMap = useMemo(
+    () => buildTagColorMap([
+      ...mcpCatalog.flatMap((e) => e.tags || []),
+      ...mcpServers.flatMap((s) => s.tags || []),
+    ]),
+    [mcpCatalog, mcpServers],
+  );
+
+
+  // Servers added by hand (not in the catalog) keep the original list rendering.
+  const customMcpServers = useMemo(() => {
+    const catalogUrls = new Set(mcpCatalog.map((e) => normalizeMcpUrl(e.remote_config?.server_url)));
+    return mcpServers.filter((s) => {
+      const url = normalizeMcpUrl(getMcpServerUrl(s));
+      return !url || !catalogUrls.has(url);
+    });
+  }, [mcpServers, mcpCatalog]);
+
+  // Main primes the catalog at startup, so loading on mount is a cache hit and
+  // the Connections list is already populated when the section first opens.
+  // Background refreshes (TTL expiry, login, logout) arrive on the push channel.
+  useEffect(() => {
+    loadMcpCatalog();
+    const electronWindow = window as any;
+    const unsubscribe = electronWindow.electronAPI?.onMcpCatalogUpdated?.(
+      ({ entries }: { entries: McpCatalogEntry[] }) => {
+        if (Array.isArray(entries)) setMcpCatalog(entries);
+      },
+    );
+    return () => unsubscribe?.();
+  }, [loadMcpCatalog]);
+
+  // Drop the "authorizing" state once the server lands, or when polling gives up.
+  // A server that arrives without tools yet gets picked up by discovery polling.
+  useEffect(() => {
+    if (!awaitingAuthSlug) return;
+    const entry = mcpCatalog.find((e) => e.slug === awaitingAuthSlug);
+    const server = connectedByUrl.get(normalizeMcpUrl(entry?.remote_config?.server_url));
+    if (server) {
+      setAwaitingAuthSlug(null);
+      if (getMcpServerTools(server).length === 0) setDiscoveringServerId(server.id);
+    } else if (!mcpPolling) {
+      setAwaitingAuthSlug(null);
+    }
+  }, [awaitingAuthSlug, mcpCatalog, connectedByUrl, mcpPolling]);
+
+
+  // Fast client-side dedupe so re-adding the same server shows an inline notice
+  // instead of silently creating a second entry. The backend is authoritative
+  // (it 409s on a real conflict); this just spares an obvious round trip. Remote
 
   // Persist a registered MCP server to SQLite (best-effort — registration with
   // the service is the source of truth, this keeps a local record).
@@ -763,116 +910,122 @@ export default function RightSidebar({
     }
   };
 
-  const handleAddMcpServer = async () => {
-    const input = newMcpInput.trim();
-    if (!selectedProject?.id || !input) return;
+  // Dropping a .toml onto the Add-your-own card. The file describes the whole
+  // connection — name, local command or remote url, and optionally how to index
+  // it — so this is the same install as typing a URL, just with the crawl plan
+  // arriving alongside instead of being derived.
+  const [mcpDropActive, setMcpDropActive] = useState(false);
+  const mcpTomlInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMcpFileDrop = async (file: File) => {
+    if (!selectedProject?.id) return;
+    if (!/\.toml$/i.test(file.name)) {
+      setMcpError('Drop a .toml connection file.');
+      return;
+    }
 
     setIsAddingMcp(true);
     setMcpError('');
-
     try {
-      if (isRemoteMcpInput(input)) {
-        console.log('[MCP] Registering remote server:', input);
-
-        const result = await mcpServerService.registerMcpServer(
-          selectedProject.id,
-          {
-            server_type: 'remote',
-            server_url: input,
-            return_url: 'smartloop://mcp-authorization',
-          }
-        );
-
-        if (!result.success || !result.data) {
-          setMcpError(result.error || 'Failed to register MCP server');
-          return;
-        }
-
-        const data = result.data as Record<string, any>;
-
-        if (data.auth_type === 'oauth' && data.auth_url) {
-          setNewMcpInput('');
-          mcpServerCountRef.current = mcpServers.length;
-          setMcpPolling(true);
-
-          console.log('[MCP] OAuth flow - opening auth URL:', data.auth_url);
-          const electronWindow = window as any;
-          if (electronWindow.electronAPI?.openExternal) {
-            electronWindow.electronAPI.openExternal(data.auth_url);
-          } else {
-            window.open(data.auth_url, '_blank');
-          }
-        } else {
-          console.log('[MCP] Server registered successfully');
-          const serverId = data.id || data.server_id;
-          if (serverId) {
-            await persistMcpServerToDb({
-              id: serverId,
-              project_id: selectedProject.id,
-              name: data.name || input,
-              server_type: 'remote',
-              config: { server_url: input },
-            });
-          }
-          setNewMcpInput('');
-          await loadMcpServers();
-          if (serverId) {
-            setDiscoveringServerId(serverId);
-          }
-        }
-      } else {
-        console.log('[MCP] Registering local server:', input);
-
-        const env: Record<string, string> = {};
-        if (newMcpEnv.trim()) {
-          for (const line of newMcpEnv.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const eqIndex = trimmed.indexOf('=');
-            if (eqIndex > 0) {
-              env[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
-            }
-          }
-        }
-
-        const result = await mcpServerService.registerMcpServer(
-          selectedProject.id,
-          {
-            server_type: 'local',
-            command: 'uvx',
-            args: [input],
-            name: input,
-            env,
-          }
-        );
-
-        if (result.success) {
-          const resData = result.data as Record<string, any>;
-          const serverId = resData?.id || resData?.server_id;
-          if (serverId) {
-            await persistMcpServerToDb({
-              id: serverId,
-              project_id: selectedProject.id,
-              name: input,
-              server_type: 'local',
-              config: { command: 'uvx', args: [input], env },
-            });
-          }
-          setNewMcpInput('');
-          setNewMcpEnv('');
-          await loadMcpServers();
-          if (serverId) {
-            setDiscoveringServerId(serverId);
-          }
-        } else {
-          setMcpError(result.error || 'Failed to add local MCP server');
-        }
+      const text = await file.text();
+      const result = await mcpServerService.registerMcpFromDefinition(
+        selectedProject.id, text, file.name,
+      );
+      if (!result.success || !result.data) {
+        setMcpError(result.error || 'Could not read this connection file');
+        return;
       }
+
+      const data = result.data as Record<string, any>;
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        // A remote server in the file may still need authorizing, exactly as a
+        // typed-in URL would.
+        mcpServerCountRef.current = apiMcpServers.length;
+        setMcpPolling(true);
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
+        return;
+      }
+
+      await loadMcpServers();
+      const serverId = data.id || data.server_id;
+      if (serverId) setDiscoveringServerId(serverId);
     } catch (error: any) {
-      console.error('[MCP] Error adding server:', error);
-      setMcpError(error.message || 'An error occurred');
+      setMcpError(error?.message || 'Could not read this connection file');
     } finally {
       setIsAddingMcp(false);
+    }
+  };
+
+
+  // Connect a curated catalog entry — same remote registration path as the URL
+  // box, using the entry's own server_url.
+  const handleConnectCatalogEntry = async (entry: McpCatalogEntry) => {
+    const serverUrl = entry.remote_config?.server_url;
+    if (!selectedProject?.id || !serverUrl) return;
+
+    cancelledAuthRef.current.delete(entry.slug);
+    setCatalogItemError(null);
+    setConnectingSlug(entry.slug);
+
+    try {
+      const result = await mcpServerService.registerMcpServer(selectedProject.id, {
+        server_type: 'remote',
+        // The slug is what makes this a curated install: the backend resolves
+        // the catalog entry and stores its description and tags, so the record
+        // keeps our copy instead of the vendor's and skips LLM enrichment.
+        catalog_slug: entry.slug,
+        server_url: serverUrl,
+        name: entry.display_name,
+        return_url: 'smartloop://mcp-authorization',
+      });
+
+      if (!result.success || !result.data) {
+        setCatalogItemError({ slug: entry.slug, message: result.error || 'Failed to connect' });
+        return;
+      }
+
+      const data = result.data as Record<string, any>;
+
+      if (data.auth_type === 'oauth' && data.auth_url) {
+        // Cancelled while the registration request was still in flight: don't
+        // re-arm the wait, and above all don't open a browser the user has
+        // just said they don't want.
+        if (cancelledAuthRef.current.has(entry.slug)) return;
+
+        mcpServerCountRef.current = apiMcpServers.length;
+        setMcpPolling(true);
+        setAwaitingAuthSlug(entry.slug);
+
+        const electronWindow = window as any;
+        if (electronWindow.electronAPI?.openExternal) {
+          electronWindow.electronAPI.openExternal(data.auth_url);
+        } else {
+          window.open(data.auth_url, '_blank');
+        }
+      } else {
+        const serverId = data.id || data.server_id;
+        if (serverId) {
+          await persistMcpServerToDb({
+            id: serverId,
+            project_id: selectedProject.id,
+            name: data.name || entry.display_name,
+            server_type: 'remote',
+            config: { server_url: serverUrl },
+          });
+        }
+        await loadMcpServers();
+        if (serverId) setDiscoveringServerId(serverId);
+      }
+    } catch (error: any) {
+      console.error('[MCP] Error connecting catalog entry:', error);
+      setCatalogItemError({ slug: entry.slug, message: error.message || 'An error occurred' });
+    } finally {
+      setConnectingSlug(null);
     }
   };
 
@@ -883,7 +1036,7 @@ export default function RightSidebar({
     try {
       const result = await mcpServerService.deleteMcpServer(selectedProject.id, server.id);
       if (result.success) {
-        setMcpServers(prev => prev.filter(s => s.id !== server.id));
+        setApiMcpServers(prev => prev.filter(s => s.id !== server.id));
         setMcpToDelete(null);
         // Remove from local storage + SQLite
         await mcpServerService.removeMcpServerFromStorage(selectedProject.id, server.id);
@@ -898,6 +1051,48 @@ export default function RightSidebar({
     } catch (error: any) {
       setMcpDeleteError({ id: server.id, message: error.message || 'An error occurred' });
     }
+  };
+
+
+  // Slugs whose authorization the user backed out of. A ref, not state: the
+  // in-flight connect closure has to read the current value, not the one it
+  // captured before the request went out.
+  const cancelledAuthRef = useRef<Set<string>>(new Set());
+
+  const handleCancelCatalogAuth = (entry: McpCatalogEntry) => {
+    cancelledAuthRef.current.add(entry.slug);
+    // Client-side only, and deliberately so: the backend writes no server
+    // record until the OAuth callback comes back, so there is nothing to undo.
+    // If the user does finish in the browser afterwards, the callback listener
+    // still picks the connection up — this cancels the waiting, not the grant.
+    if (awaitingAuthSlug === entry.slug) setAwaitingAuthSlug(null);
+    if (connectingSlug === entry.slug) setConnectingSlug(null);
+    setMcpPolling(false);
+    setCatalogItemError(null);
+  };
+
+  const handleRefreshMcpServer = async (server: McpServer) => {
+    if (!selectedProject?.id || !server.id) return;
+
+    setMcpDeleteError(null);
+    // Show the pass as running straight away: the request only queues the work,
+    // and without this the card looks inert until the next poll lands.
+    setApiMcpServers(prev => prev.map(s => (
+      s.id === server.id
+        ? { ...s, indexing: { ...(s.indexing ?? { crawl_enabled: true }), state: 'provisioning', in_progress: true } as McpServer['indexing'] }
+        : s
+    )));
+
+    const result = await mcpServerService.refreshMcpServer(selectedProject.id, server.id);
+    if (!result.success) {
+      setMcpDeleteError({ id: server.id, message: result.error || 'Failed to re-index connection' });
+      // Put the card back the way it was — the pass never started.
+      loadMcpServers();
+      return;
+    }
+    // The in-progress state drives the poll effect, which carries the card the
+    // rest of the way to "Indexed".
+    loadMcpServers();
   };
 
 
@@ -1419,67 +1614,53 @@ export default function RightSidebar({
           {/* MCP Servers Section */}
           {activeSection === 'mcp' && (
             <div className="space-y-3">
-              {/* Add MCP Server Form - Always Visible */}
-              <Box
-                sx={{
-                  padding: '10px',
-                  borderRadius: '6px',
-                  bgcolor: 'var(--sl-white-alpha-5)',
-                  border: '1px solid var(--sl-border-subtle)',
-                }}
-              >
-                <TextField
-                  size="small"
-                  placeholder="URL or package name"
-                  value={newMcpInput}
-                  onChange={(e) => {
-                    setNewMcpInput(e.target.value);
-                    if (mcpError) setMcpError('');
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !isAddingMcp && newMcpInput.trim()) {
-                      handleAddMcpServer();
-                    }
-                  }}
-                  disabled={isAddingMcp}
-                  fullWidth
-                  InputProps={{
-                    endAdornment: isAddingMcp ? (
-                      <InputAdornment position="end">
-                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'var(--sl-white-alpha-5)',
-                      fontSize: '0.75rem',
-                      '& fieldset': { borderColor: 'var(--sl-border-subtle)' },
-                      '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
-                      '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
-                    },
-                    '& .MuiInputBase-input': {
-                      color: 'var(--sl-text-primary)',
-                      padding: '8px 12px',
-                      '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
-                    },
-                  }}
-                />
-                {/* Fixed-height slot so swapping hint ↔ error never shifts the UI */}
-                <Box className="text-[10px] mt-1 px-1" sx={{ minHeight: '58px' }}>
-                  {mcpError ? (
-                    <span className="text-red-400 whitespace-pre-line break-words">{mcpError}</span>
-                  ) : (
-                    <span className="text-sl-text-disabled">
-                      Enter the url of the MCP server <br />(e.g., https://mcp.example.com) <br />or package name (e.g., yahoo-finance-mcp) <br />— Press Enter to add
-                    </span>
-                  )}
-                </Box>
-              </Box>
+              {/* Intro — what connections are, in the spirit of Claude Desktop */}
+              <p className="m-0 px-1 text-[11px] leading-relaxed text-sl-text-muted">
+                Connections let your assistant work with tools and data beyond this app. Connect one below to give it new capabilities through an MCP (Model Context Protocol) server.
+              </p>
 
-              {mcpServers.length > 0 && (
-                <Box sx={{ mt: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {mcpServers.map((server, index) => {
+              {catalogLoading && mcpCatalog.length === 0 && (
+                <Box className="flex items-center gap-2 py-3">
+                  <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
+                  <span className="text-[11px] text-sl-text-disabled">Loading connections…</span>
+                </Box>
+              )}
+
+              {/* Main list — curated connections first, then custom (hand-added)
+                  servers tagged "Custom" so they read differently from ours. */}
+              {(mcpCatalog.length > 0 || customMcpServers.length > 0) && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {mcpCatalog.map((entry) => {
+                    const connected = connectedByUrl.get(normalizeMcpUrl(entry.remote_config?.server_url));
+                    return (
+                      <McpCatalogItem
+                        key={entry.slug}
+                        entry={entry}
+                        connected={connected}
+                        connecting={connectingSlug === entry.slug}
+                        awaitingAuth={awaitingAuthSlug === entry.slug}
+                        error={
+                          catalogItemError?.slug === entry.slug
+                            ? catalogItemError.message
+                            : (connected && mcpDeleteError?.id === connected.id ? mcpDeleteError.message : '')
+                        }
+                        onConnect={handleConnectCatalogEntry}
+                        onDisconnect={handleDeleteMcpServer}
+                        onCancelAuth={handleCancelCatalogAuth}
+                        onRefresh={handleRefreshMcpServer}
+                        tagColors={mcpTagColorMap}
+                      />
+                    );
+                  })}
+
+                  {/* Section header separating curated from hand-added servers */}
+                  {mcpCatalog.length > 0 && customMcpServers.length > 0 && (
+                    <h4 className="text-[11px] font-bold text-sl-text-muted uppercase tracking-widest m-0 mt-3 mb-1 px-1">
+                      Added by you
+                    </h4>
+                  )}
+
+                  {customMcpServers.map((server, index) => {
                     const isSystem = !!(server as any).system;
                     return (
                       <McpServerItem
@@ -1487,11 +1668,14 @@ export default function RightSidebar({
                         server={server}
                         projectId={selectedProject?.id || ''}
                         onDelete={handleDeleteMcpServer}
+                        onRefresh={handleRefreshMcpServer}
                         discovering={discoveringServerId === server.id}
                         isSystem={isSystem}
+                        isCustom={!isSystem}
+                        tagColors={mcpTagColorMap}
                         deleteError={mcpDeleteError?.id === server.id ? mcpDeleteError.message : ''}
                         onServerUpdate={(updatedServer) => {
-                          setMcpServers(prev => {
+                          setApiMcpServers(prev => {
                             const newServers = prev.map(s =>
                               s.id === updatedServer.id ? updatedServer : s
                             );
@@ -1507,10 +1691,97 @@ export default function RightSidebar({
                 </Box>
               )}
 
-              {/* Help Text */}
-              <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-4">
-                MCP (Model Context Protocol) servers extend the capabilities of your assistant by providing additional tools and resources.
-              </p>
+              {catalogError && !catalogLoading && (
+                <Box className="flex items-center gap-2 px-1">
+                  <span className="text-[10px] text-sl-text-disabled">Couldn’t load connections.</span>
+                  <span
+                    role="button"
+                    onClick={loadMcpCatalog}
+                    className="text-[10px] cursor-pointer"
+                    style={{ color: 'var(--sl-brand-primary)' }}
+                  >
+                    Retry
+                  </span>
+                </Box>
+              )}
+
+              {/* Add-your-own — always pinned to the bottom, styled like the
+                  Models panel's "Need more power?" card to set it apart. */}
+              <div
+                className="rounded-xl"
+                onDragOver={(e) => { e.preventDefault(); if (!mcpDropActive) setMcpDropActive(true); }}
+                onDragLeave={(e) => {
+                  // Only when the pointer actually leaves the card — dragging over
+                  // a child fires dragleave for the parent too.
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setMcpDropActive(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setMcpDropActive(false);
+                  const file = e.dataTransfer?.files?.[0];
+                  if (file) handleMcpFileDrop(file);
+                }}
+                style={{
+                  marginTop: '16px',
+                  padding: '16px',
+                  backgroundColor: mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
+                  border: mcpDropActive ? '1px dashed var(--sl-brand-primary)' : '1px solid var(--sl-border-subtle)',
+                  transition: 'background 0.15s ease, border-color 0.15s ease',
+                }}
+              >
+                <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
+                <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
+                  Drop a connection file to add any MCP server. It describes the
+                  server and, optionally, how to index its content.
+                </p>
+                {/* Drop zone. Visible at rest, not only mid-drag: a target that
+                    appears once you are already dragging is only findable by
+                    someone who guessed it was there. Clicking opens the file
+                    picker, so it works without a drag at all. */}
+                <input
+                  ref={mcpTomlInputRef}
+                  type="file"
+                  accept=".toml"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleMcpFileDrop(file);
+                    e.target.value = '';
+                  }}
+                />
+                <div
+                  role="button"
+                  onClick={() => !isAddingMcp && mcpTomlInputRef.current?.click()}
+                  className="rounded-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
+                  style={{
+                    padding: '10px',
+                    border: `1px dashed ${mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)'}`,
+                    backgroundColor: mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
+                  }}
+                >
+                  <UploadFileIcon sx={{ fontSize: 13, color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
+                  <span className="text-[10px]" style={{ color: mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)' }}>
+                    {mcpDropActive ? 'Drop to add this connection' : 'Drop a .toml file or click to browse'}
+                  </span>
+                </div>
+
+                {/* Hint and error share one grid cell, so the slot is always as tall
+                    as the taller of the two and swapping them never shifts the UI. */}
+                <Box className="grid text-[10px] mt-2.5 px-1">
+                  <div className={`col-start-1 row-start-1 text-sl-text-disabled leading-snug ${mcpError ? 'invisible' : ''}`}>
+                    A connection file names the server and how to reach it — a
+                    <code className="font-mono text-sl-text-muted"> url </code>
+                    for a remote one, or a
+                    <code className="font-mono text-sl-text-muted"> package </code>
+                    to run locally.
+                    <div className="mt-2.5 italic">Local servers require <code className="font-mono not-italic font-bold text-sl-text-muted">uv</code> to be installed on your machine.</div>
+                  </div>
+                  {mcpError && (
+                    <span className="col-start-1 row-start-1 text-red-400 whitespace-pre-line break-words">{mcpError}</span>
+                  )}
+                </Box>
+              </div>
             </div>
           )}
 
