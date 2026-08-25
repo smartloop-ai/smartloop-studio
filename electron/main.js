@@ -2009,6 +2009,7 @@ function revealMainWindow(baseUrl) {
   healthMonitor.start(() => mainWindow);
   releaseChecker.start(() => mainWindow, () => refreshTray());
   fetchModels();
+  refreshMcpCatalogCache();
 }
 
 // A bootstrap that stops emitting SSE progress must not trap the user behind a
@@ -2117,15 +2118,23 @@ ipcMain.handle('load-model', async () => {
 });
 
 // IPC: init/select a model — downloads + sets up if missing, streams SSE progress
-ipcMain.handle('slp-init-model', async (event, modelName) => {
+ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Already in flight — don't stack a second request for the same model.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already initializing; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
 
   return new Promise((resolve) => {
     const http = require('http');
     const url = new URL(`${baseUrl}/v1/init`);
 
-    const postData = JSON.stringify({ model_name: modelName });
+    const postData = JSON.stringify(projectId
+      ? { model_name: modelName, project_id: projectId }
+      : { model_name: modelName });
 
     const req = http.request({
       hostname: url.hostname,
@@ -2138,6 +2147,7 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
+        clearActiveDownload(modelName);
         resolve({ success: false, error: `HTTP ${res.statusCode}` });
         return;
       }
@@ -2154,13 +2164,7 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
-
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('model-init-progress', {
-                  ...progress,
-                  model: modelName,
-                });
-              }
+              emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
             } catch {
               // ignore unparseable SSE data
             }
@@ -2178,23 +2182,21 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
           });
         } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
 
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('model-init-progress', {
-            model: modelName,
-            percent: 100,
-            status: 'Ready',
-            downloading: false,
-          });
-        }
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
+        clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
 
       res.on('error', (err) => {
+        clearActiveDownload(modelName);
         resolve({ success: false, error: err.message });
       });
     });
 
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
+
     req.on('error', (err) => {
+      clearActiveDownload(modelName);
       resolve({ success: false, error: err.message });
     });
 
@@ -2204,50 +2206,228 @@ ipcMain.handle('slp-init-model', async (event, modelName) => {
 });
 
 const activeModelDownloads = new Map();
+// Latest progress per in-flight download, keyed by model name. Main process is
+// the source of truth so a renderer that mounts mid-download (e.g. after tab
+// navigation unmounts/remounts the panel) can rehydrate instead of resetting to
+// "not downloaded" and kicking off a duplicate download from 0%.
+const modelDownloadState = new Map();
+
+// Record the latest progress and broadcast it. Clears the tracked state once the
+// download reaches a terminal (non-downloading) point so get-download-state stops
+// reporting it as active.
+// `kind` separates the project's primary orchestrator load ('primary') from an
+// auxiliary model download ('aux'). Both share this map, so consumers must
+// discriminate: the sidebar's aux cards would otherwise render a primary load as
+// a toggling aux model.
+function emitModelDownloadProgress(modelName, progress, { kind = 'aux' } = {}) {
+  const percent = progress.percent ?? 0;
+  const stillDownloading = progress.downloading === true
+    || (progress.downloading === undefined && percent < 100);
+  if (stillDownloading) {
+    // Deliberately not tagged with a project: weights are workspace-wide, so a
+    // download in flight serves every project and any of them may show it.
+    modelDownloadState.set(modelName, {
+      model: modelName,
+      percent,
+      status: progress.status,
+      stage: progress.stage,
+      downloading: true,
+      kind,
+    });
+  } else {
+    // Terminal. The downloaded flag just changed workspace-wide, so drop every
+    // project's cached list, not just the one that started the download.
+    modelDownloadState.delete(modelName);
+    invalidateModelsCache();
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName, kind });
+  }
+}
+
+// Register a starting download: the request handle (for cancel/dedup) and a 0%
+// tracked entry, paired so they can't drift. Seeding the entry here rather than
+// waiting for the first SSE event is what makes get-download-state truthful for
+// a download that has started but not yet reported progress — a renderer
+// mounting in that window would otherwise see nothing in flight.
+function beginModelDownload(name, req, { kind = 'aux', status = 'Starting…' } = {}) {
+  activeModelDownloads.set(name, req);
+  modelDownloadState.set(name, { model: name, percent: 0, status, downloading: true, kind });
+}
+
+// Terminal cleanup for a download's request handle + tracked progress.
+function clearActiveDownload(name) {
+  activeModelDownloads.delete(name);
+  modelDownloadState.delete(name);
+}
+
+// IPC: snapshot of in-flight downloads so a freshly mounted renderer can rehydrate.
+ipcMain.handle('slp-get-download-state', async () => {
+  const downloads = {};
+  for (const [name, state] of modelDownloadState.entries()) downloads[name] = state;
+  return { success: true, downloads };
+});
+
+// IPC: load a project's primary orchestrator model (SSE streaming progress).
+// Previously the renderer streamed /v1/models/load itself and re-published it as
+// window CustomEvents, so the stream died on navigation and restarted on every
+// project change. Owning it here means progress survives both.
+ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
+  if (!modelName) return { success: false, error: 'No model name' };
+
+  // A load can be requested before SLP finishes coming up (e.g. first paint after
+  // launch), so retry around a cold service instead of dropping the request.
+  let baseUrl = slpService.getLocalBaseUrl();
+  for (let attempt = 0; !baseUrl && attempt < 3; attempt++) {
+    if (await slpService.checkHealth()) {
+      baseUrl = slpService.getLocalBaseUrl();
+      break;
+    }
+    console.log(`[Models] SLP not ready, retrying load of ${modelName} (${attempt + 1}/3)...`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Already loading — a project re-select must not stack a second stream.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already loading; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
+
+  return new Promise((resolve) => {
+    const http = require('http');
+    const url = new URL(`${baseUrl}/v1/models/load`);
+    const postData = JSON.stringify(projectId
+      ? { model_name: modelName, project_id: projectId }
+      : { model_name: modelName });
+
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        clearActiveDownload(modelName);
+        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        return;
+      }
+
+      let buffer = '';
+
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          // Only `data: ` lines are progress. /v1/models/load answers with a
+          // plain JSON body, not SSE, so parsing bare lines turned that body
+          // into a bogus `status: "ok"` event at 0% — a progress bar for a
+          // model that was already resident.
+          if (!trimmed.startsWith('data: ')) {
+            console.log('[Models] Model load:', trimmed);
+            continue;
+          }
+          try {
+            const progress = bootstrapProgress(JSON.parse(trimmed.slice(6)));
+            emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
+          } catch {
+            console.log('[Models] Model load:', trimmed);
+          }
+        }
+      });
+
+      res.on('end', () => {
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
+        clearActiveDownload(modelName);
+        resolve({ success: true, model: modelName });
+      });
+
+      res.on('error', (err) => {
+        clearActiveDownload(modelName);
+        resolve({ success: false, error: err.message });
+      });
+    });
+
+    beginModelDownload(modelName, req, { kind: 'primary', status: 'Initializing model…' });
+
+    req.on('error', (err) => {
+      clearActiveDownload(modelName);
+      resolve({ success: false, error: err.message });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+});
 
 // IPC: cancel an in-progress model download
-ipcMain.handle('slp-cancel-model-download', async (event, modelName) => {
+ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) => {
   const req = activeModelDownloads.get(modelName);
   if (req) {
     console.log(`[Models] Cancelling download for ${modelName}`);
     req.destroy();
-    activeModelDownloads.delete(modelName);
-    invalidateModelsCache();
+    clearActiveDownload(modelName);
+    invalidateModelsCache(projectId);
     return { success: true };
   }
   return { success: false, error: 'No active download' };
 });
 
 // IPC: enable/disable a model for orchestrator selection
-// If the model is not in workspace yet, downloads it first, then enables.
-ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
+// If the model is not downloaded yet, downloads it first (scoped to the project
+// when one is given), then enables it on that project. Falls back to the legacy
+// workspace (app-default) endpoints when no project is supplied.
+ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projectId) => {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
 
-  // Check if model exists in workspace
+  // Weights are workspace-wide, so a download already in flight serves every
+  // project. Skip starting a second one, but still fall through to the PATCH —
+  // the caller's project asked to enable the model and that intent must land.
+  // The flag is settable before the weights arrive: the workspace registry holds
+  // entries with downloaded=false, so the backend resolves the model and flips it.
+  const alreadyDownloading = activeModelDownloads.has(modelName);
+  if (alreadyDownloading) {
+    console.log(`[Models] ${modelName} already downloading; enabling for this project without a second download`);
+  }
+
+  // Check the model's per-project (or workspace) downloaded state
   let existsInWorkspace = false;
   try {
-    const wsRes = await fetch(`${baseUrl}/v1/models/workspace`);
+    const stateUrl = projectId
+      ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
+      : `${baseUrl}/v1/models/workspace`;
+    const wsRes = await fetch(stateUrl);
     if (wsRes.ok) {
       const wsData = await wsRes.json();
       const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
       const wsNames = wsList.map(wm => wm.model_name || wm.name);
       const wsMatch = wsList.find(wm => wm.model_name === modelName || wm.name === modelName);
       existsInWorkspace = wsMatch && wsMatch.downloaded;
-      console.log(`[Models] set-model-enabled: looking for "${modelName}" in workspace: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
+      console.log(`[Models] set-model-enabled: looking for "${modelName}" in state: [${wsNames.join(', ')}] → ${existsInWorkspace}`);
     } else {
-      console.log(`[Models] set-model-enabled: workspace fetch failed: HTTP ${wsRes.status}`);
+      console.log(`[Models] set-model-enabled: state fetch failed: HTTP ${wsRes.status}`);
     }
   } catch (err) {
-    console.log(`[Models] set-model-enabled: workspace fetch error: ${err.message}`);
+    console.log(`[Models] set-model-enabled: state fetch error: ${err.message}`);
   }
 
-  if (!existsInWorkspace && enabled) {
-    console.log(`[Models] ${modelName} not in workspace, initializing via /v1/init...`);
+  if (!existsInWorkspace && enabled && !alreadyDownloading) {
+    console.log(`[Models] ${modelName} not downloaded, initializing via /v1/init...`);
     try {
       const http = require('http');
       const dlUrl = new URL(`${baseUrl}/v1/init`);
-      const postData = JSON.stringify({ model_name: modelName });
+      const postData = JSON.stringify(projectId
+        ? { model_name: modelName, project_id: projectId }
+        : { model_name: modelName });
       await new Promise((resolve, reject) => {
         const req = http.request({
           hostname: dlUrl.hostname,
@@ -2257,7 +2437,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
         }, (res) => {
           if (res.statusCode !== 200) {
-            activeModelDownloads.delete(modelName);
+            clearActiveDownload(modelName);
             reject(new Error(`HTTP ${res.statusCode}`));
             return;
           }
@@ -2271,28 +2451,24 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
                 try {
                   const data = JSON.parse(line.slice(6));
                   const progress = bootstrapProgress(data);
-                  if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('model-download-progress', { ...progress, model: modelName });
-                  }
+                  emitModelDownloadProgress(modelName, progress);
                 } catch {}
               }
             }
           });
           res.on('end', () => {
-            activeModelDownloads.delete(modelName);
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('model-download-progress', { model: modelName, percent: 100, status: 'Complete' });
-            }
+            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false });
+            clearActiveDownload(modelName);
             resolve(true);
           });
           res.on('error', (err) => {
-            activeModelDownloads.delete(modelName);
+            clearActiveDownload(modelName);
             reject(err);
           });
         });
-        activeModelDownloads.set(modelName, req);
+        beginModelDownload(modelName, req, { status: 'Starting download…' });
         req.on('error', (err) => {
-          activeModelDownloads.delete(modelName);
+          clearActiveDownload(modelName);
           reject(err);
         });
         req.write(postData);
@@ -2304,22 +2480,15 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
       return { success: false, error: err.message };
     }
 
-    // Re-check workspace for the new name
-    try {
-      const wsRes2 = await fetch(`${baseUrl}/v1/models/workspace`);
-      if (wsRes2.ok) {
-        const wsData2 = await wsRes2.json();
-        const wsList2 = Array.isArray(wsData2) ? wsData2 : (wsData2.data || wsData2.models || []);
-        const wsModel = wsList2.find(wm => (wm.name || wm.model_name || wm.model) === modelName);
-        if (wsModel) {
-          modelName = wsModel.name || wsModel.model_name || modelName;
-        }
-      }
-    } catch {}
+    // No name re-resolution round trip here: both PATCH routes canonicalize the
+    // model name themselves, and this fetch sat inside the window between the
+    // download finishing and the model going enabled — visible as a stalled card.
   }
 
   try {
-    const url = `${baseUrl}/v1/models/workspace/${modelName}`;
+    const url = projectId
+      ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models/${encodeURIComponent(modelName)}`
+      : `${baseUrl}/v1/models/workspace/${encodeURIComponent(modelName)}`;
     console.log(`[Models] PATCH ${url} enabled=${enabled}`);
     const res = await fetch(url, {
       method: 'PATCH',
@@ -2329,11 +2498,18 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled) => {
     const text = await res.text();
     console.log(`[Models] PATCH response: ${res.status} ${text}`);
     if (res.ok) {
-      invalidateModelsCache();
+      // Enabling also promotes the model to a workspace app-default, so the
+      // workspace-scoped entry Settings reads goes stale alongside this
+      // project's — clear the whole map for that case.
+      invalidateModelsCache(enabled ? undefined : projectId);
+      // Repopulate before returning so the renderer's follow-up list read is a
+      // fresh-cache hit rather than a cold round trip. This also pushes
+      // `models-updated`, which the renderer already subscribes to.
+      await refreshModelsCache(projectId);
       try {
-        return { success: true, ...JSON.parse(text) };
+        return { success: true, ...JSON.parse(text), downloading: alreadyDownloading };
       } catch {
-        return { success: true };
+        return { success: true, downloading: alreadyDownloading };
       }
     }
     return { success: false, error: `HTTP ${res.status}: ${text}` };
@@ -2387,6 +2563,8 @@ ipcMain.handle('slp-auth-logout', async () => {
       lastUserProfileEmail = null;
       invalidateModelsCache();
       refreshModelsCache();
+      invalidateMcpCatalogCache();
+      refreshMcpCatalogCache();
       return { success: true };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
@@ -2436,6 +2614,10 @@ async function fetchUserProfile() {
         lastUserProfileEmail = profile.email;
         invalidateModelsCache();
         refreshModelsCache();
+        // The catalog is user-scoped through the cloud, and this is the only
+        // login hook — there is no dedicated login IPC.
+        invalidateMcpCatalogCache();
+        refreshMcpCatalogCache();
       }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('user-profile-updated', profile);
@@ -2476,18 +2658,105 @@ ipcMain.handle('slp-update-user-settings', async (event, settings) => {
   }
 });
 
-// Fetch catalog + workspace state in parallel and merge into a single model list.
-async function fetchModelsWithMerge() {
+// Fetch the curated MCP connection catalog from SLP — active remote entries
+// only, in display order. Returns null when unavailable (no service, bad
+// status, network error) so a failure is never cached as an empty list.
+async function fetchMcpCatalogEntries() {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return null;
+  try {
+    const res = await fetch(`${baseUrl}/v1/mcp-catalog`);
+    if (!res.ok) {
+      // 401 here just means not signed in yet — the catalog comes from the
+      // cloud. The login path re-primes, so this is expected on first launch.
+      console.warn(`[MCP Catalog] HTTP ${res.status} fetching catalog`);
+      return null;
+    }
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.entries || data.data || []);
+    return list
+      .filter((e) => e && e.is_active !== false && e.remote_config?.server_url)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.display_name || '').localeCompare(String(b.display_name || '')));
+  } catch (err) {
+    console.error('[MCP Catalog] Error fetching catalog:', err.message);
+    return null;
+  }
+}
+
+// Stale-while-revalidate cache for the catalog. One slot, not a Map like
+// modelsCache: the catalog is identical for every project — per-project
+// "connected" state is joined in the renderer against the project-scoped
+// mcp-servers list, so the payload cached here carries no project scope. If
+// that merge ever moves into main, this has to become project-keyed too.
+let mcpCatalogCache = null; // { data, timestamp }
+let mcpCatalogRefreshPromise = null; // in-flight refresh
+const MCP_CATALOG_FRESH_TTL_MS = 10 * 60 * 1000;
+
+function refreshMcpCatalogCache() {
+  if (mcpCatalogRefreshPromise) return mcpCatalogRefreshPromise;
+  const promise = (async () => {
+    try {
+      const entries = await fetchMcpCatalogEntries();
+      if (entries) {
+        mcpCatalogCache = { data: entries, timestamp: Date.now() };
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mcp-catalog-updated', { entries });
+        }
+      }
+      return entries;
+    } finally {
+      mcpCatalogRefreshPromise = null;
+    }
+  })();
+  mcpCatalogRefreshPromise = promise;
+  return promise;
+}
+
+function invalidateMcpCatalogCache() {
+  mcpCatalogCache = null;
+}
+
+// IPC: Curated MCP connection catalog — fresh cache returns instantly, stale
+// cache returns immediately while a background refresh emits
+// `mcp-catalog-updated`. Primed at startup from revealMainWindow(), so the
+// Connections panel normally opens straight onto a cache hit.
+ipcMain.handle('slp-mcp-catalog', async () => {
+  const now = Date.now();
+  if (mcpCatalogCache && now - mcpCatalogCache.timestamp < MCP_CATALOG_FRESH_TTL_MS) {
+    return { success: true, entries: mcpCatalogCache.data };
+  }
+  if (mcpCatalogCache) {
+    refreshMcpCatalogCache();
+    return { success: true, entries: mcpCatalogCache.data };
+  }
+  const entries = await refreshMcpCatalogCache();
+  if (!entries) {
+    return {
+      success: false,
+      error: slpService.getLocalBaseUrl() ? 'Failed to fetch connection catalog' : 'No local service',
+    };
+  }
+  return { success: true, entries };
+});
+
+// Fetch catalog + per-project model state in parallel and merge into a single
+// model list. Without a project (e.g. on Settings) it falls back to the legacy
+// workspace (app-default) endpoint.
+async function fetchModelsWithMerge(projectId) {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
 
-  const [modelsRes, wsRes] = await Promise.all([
+  const stateUrl = projectId
+    ? `${baseUrl}/v1/projects/${encodeURIComponent(projectId)}/models`
+    : `${baseUrl}/v1/models/workspace`;
+
+  const [modelsRes, stateRes] = await Promise.all([
     fetch(`${baseUrl}/v1/models`).catch((err) => {
       console.warn('[Models] Error fetching catalog:', err.message);
       return null;
     }),
-    fetch(`${baseUrl}/v1/models/workspace`).catch((err) => {
-      console.warn('[Models] Error fetching workspace:', err.message);
+    fetch(stateUrl).catch((err) => {
+      console.warn('[Models] Error fetching model state:', err.message);
       return null;
     }),
   ]);
@@ -2496,20 +2765,20 @@ async function fetchModelsWithMerge() {
   const catalog = await modelsRes.json();
   const models = Array.isArray(catalog) ? catalog : (catalog.data || catalog.models || []);
 
-  const wsMap = new Map();
-  if (wsRes && wsRes.ok) {
-    const wsData = await wsRes.json();
-    const wsList = Array.isArray(wsData) ? wsData : (wsData.data || wsData.models || []);
-    for (const wm of wsList) {
-      wsMap.set(wm.model_name, wm);
-      if (wm.name && wm.name !== wm.model_name) wsMap.set(wm.name, wm);
-      if (wm.model_id) wsMap.set(wm.model_id, wm);
+  const stateMap = new Map();
+  if (stateRes && stateRes.ok) {
+    const stateData = await stateRes.json();
+    const stateList = Array.isArray(stateData) ? stateData : (stateData.data || stateData.models || []);
+    for (const wm of stateList) {
+      stateMap.set(wm.model_name, wm);
+      if (wm.name && wm.name !== wm.model_name) stateMap.set(wm.name, wm);
+      if (wm.model_id) stateMap.set(wm.model_id, wm);
     }
   }
 
   for (const model of models) {
     const key = model.name || model.id || model.model;
-    const ws = wsMap.get(key) || wsMap.get(model.model_name) || wsMap.get(model.id);
+    const ws = stateMap.get(key) || stateMap.get(model.model_name) || stateMap.get(model.id);
     if (ws) {
       model.enabled = ws.enabled === true;
       model.downloaded = ws.downloaded === true;
@@ -2523,51 +2792,59 @@ async function fetchModelsWithMerge() {
   return models;
 }
 
-// Stale-while-revalidate cache for the merged model list.
-let modelsCache = null; // { data, timestamp }
-let modelsRefreshPromise = null;
+// Stale-while-revalidate cache for the merged model list, keyed by project id
+// (per-project model state must never bleed across projects). A null/undefined
+// key is the project-less (workspace app-default) list, e.g. on Settings.
+let modelsCache = new Map(); // projectId -> { data, timestamp }
+let modelsRefreshPromises = new Map(); // projectId -> in-flight refresh
 const MODELS_FRESH_TTL_MS = 30_000;
 
-function refreshModelsCache() {
-  if (modelsRefreshPromise) return modelsRefreshPromise;
-  modelsRefreshPromise = (async () => {
+function refreshModelsCache(projectId) {
+  if (modelsRefreshPromises.has(projectId)) return modelsRefreshPromises.get(projectId);
+  const promise = (async () => {
     try {
-      const models = await fetchModelsWithMerge();
+      const models = await fetchModelsWithMerge(projectId);
       if (models) {
-        modelsCache = { data: models, timestamp: Date.now() };
+        modelsCache.set(projectId, { data: models, timestamp: Date.now() });
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('models-updated', { models });
+          mainWindow.webContents.send('models-updated', { models, projectId });
         }
       }
       return models;
     } finally {
-      modelsRefreshPromise = null;
+      modelsRefreshPromises.delete(projectId);
     }
   })();
-  return modelsRefreshPromise;
+  modelsRefreshPromises.set(projectId, promise);
+  return promise;
 }
 
-function invalidateModelsCache() {
-  modelsCache = null;
+function invalidateModelsCache(projectId) {
+  if (projectId === undefined) {
+    modelsCache = new Map();
+  } else {
+    modelsCache.delete(projectId);
+  }
 }
 
 // Kept for backwards-compatible startup warmup.
 async function fetchModels() {
-  return refreshModelsCache();
+  return refreshModelsCache(undefined);
 }
 
 // IPC: Fetch available models — fresh cache returns instantly, stale cache
 // returns immediately while a background refresh emits `models-updated`.
-ipcMain.handle('slp-list-models', async () => {
+ipcMain.handle('slp-list-models', async (event, projectId) => {
   const now = Date.now();
-  if (modelsCache && now - modelsCache.timestamp < MODELS_FRESH_TTL_MS) {
-    return { success: true, models: modelsCache.data };
+  const cached = modelsCache.get(projectId);
+  if (cached && now - cached.timestamp < MODELS_FRESH_TTL_MS) {
+    return { success: true, models: cached.data };
   }
-  if (modelsCache) {
-    refreshModelsCache();
-    return { success: true, models: modelsCache.data };
+  if (cached) {
+    refreshModelsCache(projectId);
+    return { success: true, models: cached.data };
   }
-  const models = await refreshModelsCache();
+  const models = await refreshModelsCache(projectId);
   if (!models) return { success: false, error: 'No local service' };
   return { success: true, models };
 });
@@ -2577,6 +2854,12 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
   console.log(`[Models] Download requested: ${modelName}`);
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // Already downloading — don't start a duplicate request.
+  if (activeModelDownloads.has(modelName)) {
+    console.log(`[Models] ${modelName} already downloading; ignoring duplicate request`);
+    return { success: false, error: 'already-downloading', downloading: true };
+  }
 
   return new Promise((resolve) => {
     const http = require('http');
@@ -2595,7 +2878,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        activeModelDownloads.delete(modelName);
+        clearActiveDownload(modelName);
         resolve({ success: false, error: `HTTP ${res.statusCode}` });
         return;
       }
@@ -2612,13 +2895,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
-
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('model-download-progress', {
-                  model: modelName,
-                  ...progress,
-                });
-              }
+              emitModelDownloadProgress(modelName, progress);
             } catch {
               // ignore unparseable SSE data
             }
@@ -2627,28 +2904,21 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       });
 
       res.on('end', () => {
-        activeModelDownloads.delete(modelName);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('model-download-progress', {
-            model: modelName,
-            percent: 100,
-            status: 'Ready',
-            downloading: false,
-          });
-        }
+        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false });
+        clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
       });
 
       res.on('error', (err) => {
-        activeModelDownloads.delete(modelName);
+        clearActiveDownload(modelName);
         resolve({ success: false, error: err.message });
       });
     });
 
-    activeModelDownloads.set(modelName, req);
+    beginModelDownload(modelName, req, { status: 'Starting download…' });
 
     req.on('error', (err) => {
-      activeModelDownloads.delete(modelName);
+      clearActiveDownload(modelName);
       resolve({ success: false, error: err.message });
     });
 

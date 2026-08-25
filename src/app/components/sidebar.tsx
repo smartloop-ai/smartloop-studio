@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -66,7 +67,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   // True while a model is (down)loading for the first time. Settings is blocked
   // during this window so the model can't be changed mid-load.
-  const [modelLoading, setModelLoading] = useState(false);
+  // A primary model (down)load in flight — covers both a project model load and
+  // the first-launch bootstrap download. Settings is blocked while it runs.
+  const { primaryProgress } = useModelStatus();
+  const modelLoading = !!primaryProgress?.downloading;
   const menuOpen = Boolean(anchorEl);
   const [authUser, setAuthUser] = useState<any>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -222,13 +226,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
       window.removeEventListener('conversationDeleted', handleConversationChange);
       window.removeEventListener('conversationUpdated', handleConversationChange);
     };
-  }, []);
-
-  // Track model (down)load state so Settings can be disabled while it's loading.
-  useEffect(() => {
-    const handleModelInit = (e: any) => { setModelLoading(!!e.detail?.loading); };
-    window.addEventListener('modelInitStatus', handleModelInit);
-    return () => window.removeEventListener('modelInitStatus', handleModelInit);
   }, []);
 
   const handleSettings = () => {
