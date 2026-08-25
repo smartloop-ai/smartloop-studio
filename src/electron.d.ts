@@ -5,6 +5,25 @@ export interface UpdaterStatus {
   error?: string;
 }
 
+// A model download/load tracked by the main process. `kind` separates the
+// project's primary orchestrator load from an auxiliary model download; both
+// share one map, so consumers must filter on it.
+export interface ModelDownloadState {
+  model: string;
+  percent: number;
+  status: string;
+  stage?: string;
+  downloading: boolean;
+  projectId?: string | null;
+  kind: 'primary' | 'aux';
+}
+
+// Live progress event. Same shape as the tracked state, except terminal events
+// arrive with downloading: false and are not retained in the snapshot.
+export interface ModelDownloadProgress extends Omit<ModelDownloadState, 'kind'> {
+  kind?: 'primary' | 'aux';
+}
+
 export interface ElectronAPI {
   sendMessage: (channel: string, data: any) => void;
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
@@ -67,8 +86,7 @@ export interface ElectronAPI {
   onCloseTabShortcut: (callback: () => void) => void;
   removeCloseTabShortcutListener: () => void;
   // Bootstrap progress
-  onBootstrapProgress: (callback: (data: any) => void) => void;
-  removeBootstrapProgressListener: () => void;
+  onBootstrapProgress: (callback: (data: ModelDownloadProgress) => void) => () => void;
   onBootstrapComplete: (callback: () => void) => void;
   removeBootstrapCompleteListener: () => void;
   // Model management
@@ -89,17 +107,19 @@ export interface ElectronAPI {
   slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
   slpFetchUser: () => Promise<{ success: boolean; user?: any }>;
   slpUpdateUserSettings: (settings: Record<string, any>) => Promise<{ success: boolean; user?: any; error?: string }>;
-  slpListModels: () => Promise<{ success: boolean; models?: any[]; error?: string }>;
-  slpInitModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
-  slpSetModelEnabled: (modelName: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>;
-  onModelInitProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean; stage?: string }) => void) => void;
-  removeModelInitProgressListener: () => void;
+  slpListModels: (projectId?: string | null) => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpMcpCatalog: () => Promise<{ success: boolean; entries?: any[]; error?: string }>;
+  slpInitModel: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
+  slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
   slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
-  slpCancelModelDownload: (modelName: string) => Promise<{ success: boolean; error?: string }>;
-  onModelDownloadProgress: (callback: (data: { model: string; percent: number; status: string; downloading: boolean }) => void) => void;
-  removeModelDownloadProgressListener: () => void;
-  onModelsUpdated: (callback: (data: { models: any[] }) => void) => void;
-  removeModelsUpdatedListener: () => void;
+  slpLoadModel: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; model?: string; error?: string; downloading?: boolean }>;
+  slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
+  slpGetDownloadState: () => Promise<{ success: boolean; downloads: Record<string, ModelDownloadState> }>;
+  // Both return an unsubscribe closure — call that on teardown instead of a
+  // channel-wide removeAllListeners, which would drop other subscribers too.
+  onModelDownloadProgress: (callback: (data: ModelDownloadProgress) => void) => () => void;
+  onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => () => void;
+  onMcpCatalogUpdated: (callback: (data: { entries: any[] }) => void) => () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // Transient agent-restarting signal (e.g. during a Clean)

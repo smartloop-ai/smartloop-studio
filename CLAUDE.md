@@ -106,6 +106,28 @@ In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).
 -  Use consistent margin ,padding when possible, utilize flex at all times
 -  Use theme color, instead of random colors that does not go with overall look and feed
 
+## MCP connection files
+
+A connection is added by dropping a `.toml` onto the "Add your own" card. The
+file describes the server — `name`, plus `url` for a remote one or `package`
+for one run locally — and optionally how to index its content.
+
+**When writing one, start from `docs/mcp/`.** Those examples are the source of
+truth for the format; the field reference lives in the backend's
+`smartloop/mcp/mcp.toml` header.
+
+Two rules learned the hard way:
+
+- **Verify the package exists and the tool names are real** before writing the
+  file. A plausible-sounding package name fails at install with "Package not
+  found", and a wrong tool name is worse — the step is silently skipped, so the
+  connection looks healthy and indexes nothing. Run `uvx <package>` and read
+  back the tools it reports.
+- **Servers that can't be enumerated need `for_each`.** A market-data or
+  weather server has no `list_*` tool to walk — every call needs a symbol or a
+  city — so the subjects come from the file. Pair it with `index_every` when
+  the source changes faster than the app-wide schedule (10 min idle, hourly).
+
 ## Label / badge style guide
 
 All labels, badges, and tags across the app must use the same outlined style for consistency:
