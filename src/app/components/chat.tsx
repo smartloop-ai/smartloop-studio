@@ -31,7 +31,7 @@ import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
 import { runTrace } from '@/app/services/run-trace.service';
 
-import { getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint, BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { usePanels } from '@/app/contexts/PanelContext';
@@ -272,7 +272,7 @@ const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : 'Ctrl+Alt+S';
 // The status bar has room for two hints, so instead of listing bindings it
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
-const KEYBINDS_HOTKEY = '\u21e7?';
+const KEYBINDS_HOTKEY = '?';
 
 export default function Chat(props: {
   project?: any,
@@ -429,7 +429,7 @@ export default function Chat(props: {
     (async () => {
       const m = props.project?.model_name
         || await storageService.getItem('selected_model')
-        || 'gemma3-1b';
+        || BOOTSTRAP_MODEL;
       if (!cancelled) setModel(m);
     })();
     return () => { cancelled = true; };
