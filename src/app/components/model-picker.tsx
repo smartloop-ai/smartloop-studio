@@ -398,10 +398,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     non-technical user why they'd pick this one over its neighbour,
                     so it outranks every tag below it. */}
                 {description && (
-                    <p
-                        className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0"
-                        style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
-                    >
+                    <p className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0">
                         {description}
                     </p>
                 )}

@@ -190,11 +190,12 @@ export default function McpCatalogItem({
           </div>
         </div>
 
+        {/* Shown in full, not clamped. A connection's description is how you
+            decide whether you want it, and the two lines a clamp allowed cut
+            most of them off mid-sentence — the card sits in a scrolling list,
+            so it can afford the height. */}
         {entry.description && (
-          <p
-            className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0"
-            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}
-          >
+          <p className="text-[12px] text-sl-text-muted leading-relaxed mt-2 mb-0">
             {entry.description}
           </p>
         )}
