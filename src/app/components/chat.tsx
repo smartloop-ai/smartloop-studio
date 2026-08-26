@@ -25,6 +25,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
+import ModelPicker from './model-picker';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -726,7 +727,8 @@ export default function Chat(props: {
         console.log('[Chat] Model init complete, proceeding with message');
       }
 
-      // Get the selected model from storage (set in Settings), fallback to default
+      // Every turn goes to the orchestrator, which routes it to whichever of the
+      // models selected in the composer's picker suits the request.
       const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
 
       // Get temperature from SQLite settings, fallback to default
@@ -1874,6 +1876,12 @@ export default function Chat(props: {
             maxRows={4}
             skills={skillList}
             onCreateSkill={props.onCreateSkill}
+            rightSlot={
+              // Left enabled while a model loads: reaching for the switcher is
+              // exactly what you do when a load is dragging, so a slow warm
+              // shouldn't trap the choice the user is trying to get out of.
+              <ModelPicker model={model} disabled={!isServiceReady} />
+            }
           />
           <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
             {isServiceReady ? (
@@ -1896,20 +1904,6 @@ export default function Chat(props: {
                       ></span>
                     ))}
                   </span>
-                )}
-                {model && (
-                  <Tooltip title={model} placement="top" arrow>
-                    <span
-                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
-                      style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                        <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                        <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
-                        <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
-                      </svg>
-                    </span>
-                  </Tooltip>
                 )}
                 {props.onWebSearchChange && (
                   <Tooltip

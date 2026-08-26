@@ -69,10 +69,6 @@ export default function Home() {
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  // Primary orchestrator model for the active project — passed to the sidebar's
-  // Models panel so it can filter itself out of the auxiliary list.
-  const [currentModel, setCurrentModel] = useState<string>('');
-
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
@@ -93,8 +89,6 @@ export default function Home() {
       } else {
         modelName = await storageService.getItem('selected_model') || '';
       }
-      setCurrentModel(modelName);
-
       if (modelName && selectedProject?.id) await loadPrimaryModel(modelName);
     };
     loadModel();
@@ -1953,7 +1947,6 @@ description: A clear description of what this skill does and when to use it
                     onRenameProject={handleRenameProject}
                     onInstructionsChange={handleInstructionsChange}
                     user={user}
-                    model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}
                     onTabChange={handleOpenTab}
                     projectSkills={projectSkills}

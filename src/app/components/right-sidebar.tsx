@@ -9,7 +9,6 @@ import DownloadIcon from '@mui/icons-material/Download';
 import CheckIcon from '@mui/icons-material/Check';
 import NotesIcon from '@mui/icons-material/Notes';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import AuxiliaryModelsPanel from './auxiliary-models-panel';
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
@@ -40,7 +39,6 @@ interface RightSidebarProps {
   onRenameProject?: (name: string) => void;
   onInstructionsChange?: (instructions: string) => Promise<void> | void;
   user: any;
-  model?: string;
   activeTab: string;
   onTabChange?: (tab: OpenTab) => void;
   projectSkills?: Array<{ id?: string; name: string; content: string; description?: string }>;
@@ -86,7 +84,7 @@ const mapProjectSkills = (data: any) => {
     .filter((s: any) => s.name && !DEPRECATED_SKILL_NAMES.has(normSkillName(s.name)));
 };
 
-type RailSection = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+type RailSection = 'mcp' | 'documents' | 'skills' | 'settings';
 
 // Cmd/Ctrl+Shift+<first letter of the section's label> opens a rail section —
 // the VS Code convention, and unlike the digits these replaced, Shift+3/4 no
@@ -95,9 +93,8 @@ type RailSection = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
 // pairs with Cmd/Ctrl+, (app Settings page, sidebar.tsx) — Shift scopes it
 // down to the current project.
 const SECTION_HOTKEYS: Record<string, RailSection> = {
-  KeyM: 'models',
-  KeyD: 'documents',
   KeyC: 'mcp',
+  KeyD: 'documents',
   KeyS: 'skills',
   Comma: 'settings',
 };
@@ -147,7 +144,6 @@ export default function RightSidebar({
   onColorChange,
   onRenameProject,
   onInstructionsChange,
-  model,
   activeTab,
   onTabChange,
   projectSkills: _projectSkills = [],
@@ -160,7 +156,7 @@ export default function RightSidebar({
   const isMc = themeId === 'minecraft';
   // Themed rail icon for the active theme: the theme's own embedded SVG (from
   // its YAML `icons`) wins; Minecraft keeps its pixel icons; else the default.
-  const railIcon = (name: 'models' | 'documents' | 'mcp' | 'skills' | 'settings') => {
+  const railIcon = (name: RailSection) => {
     const svg = theme.icons?.[name];
     if (svg) return <ThemeRailIcon svg={svg} />;
     return isMc ? <PixelRailIcon name={name} /> : null;
@@ -191,9 +187,11 @@ export default function RightSidebar({
       </svg>
     );
   };
-  const [activeSection, setActiveSection] = useState<'models' | 'documents' | 'mcp' | 'skills' | 'settings' | null>('models');
+  // Connections opens by default: it's the section that decides what the agent
+  // can reach, so it's the first thing worth seeing in a project.
+  const [activeSection, setActiveSection] = useState<RailSection | null>('mcp');
   // Section to reopen with Cmd/Ctrl+B after the panel is closed.
-  const lastSectionRef = useRef<Exclude<typeof activeSection, null>>('models');
+  const lastSectionRef = useRef<RailSection>('mcp');
   useEffect(() => {
     if (activeSection) lastSectionRef.current = activeSection;
   }, [activeSection]);
@@ -718,8 +716,8 @@ export default function RightSidebar({
 
   // Cmd/Ctrl+B toggles the whole panel, matching the sidebar-toggle convention
   // users bring from VS Code. Reopening restores whichever section was showing
-  // last (see lastSectionRef) rather than snapping back to Models. Matched on
-  // e.code so a non-QWERTY layout still triggers on the B key.
+  // last (see lastSectionRef) rather than snapping back to Connections. Matched
+  // on e.code so a non-QWERTY layout still triggers on the B key.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
@@ -731,13 +729,13 @@ export default function RightSidebar({
       }
       const last = lastSectionRef.current;
       // Documents is unreachable when no enabled model can process them.
-      toggleSection(last === 'documents' && !docSupported ? 'models' : last);
+      toggleSection(last === 'documents' && !docSupported ? 'mcp' : last);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeSection, docSupported, toggleSection]);
 
-  // Cmd/Ctrl+Shift+M/D/C/S/, toggles the rail sections. Matched on e.code so a
+  // Cmd/Ctrl+Shift+C/D/S/, toggles the rail sections. Matched on e.code so a
   // non-QWERTY layout still triggers on the same physical keys, and gated on
   // altKey so Cmd/Ctrl+Alt+S (web search, Home.tsx) doesn't open Skills.
   useEffect(() => {
@@ -1365,15 +1363,10 @@ export default function RightSidebar({
           {/* Section Title */}
           <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
             <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
-              {activeSection === 'models' ? 'Available Models' : activeSection === 'documents' ? 'Documents' : activeSection === 'mcp' ? 'Connections' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {activeSection === 'mcp' ? 'Connections' : activeSection === 'documents' ? 'Documents' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
 
-
-          {/* Models Section */}
-          {activeSection === 'models' && (
-            <AuxiliaryModelsPanel model={model || ''} />
-          )}
 
           {/* Documents Section */}
           {activeSection === 'documents' && (
@@ -2133,32 +2126,32 @@ export default function RightSidebar({
           gap: 0.5,
         }}
       >
-        <Tooltip title={railTip('Models', 'M')} placement="left">
-          <span className={'cursor-default'}>
+        <Tooltip title={railTip('Connections', 'C')} placement="left">
+          <span>
             <IconButton
-              onClick={() => toggleSection('models')}
+              onClick={() => toggleSection('mcp')}
               sx={{
-                color: activeSection === 'models' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                 padding: '10px',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 '&:hover': {
                   color: 'var(--sl-brand-primary)',
                 },
+                '&.Mui-disabled': {
+                  color: 'var(--sl-text-disabled)',
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
               }}
               size="small"
             >
-              {railIcon('models') ?? (
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
-                <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
-              </svg>
-              )}
+              {railIcon('mcp') ?? <PowerOutlinedIcon fontSize="small" />}
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={docSupported ? railTip('Documents', 'D') : 'Enable a document-capable model to use documents'} placement="left">
+        <Tooltip title={docSupported ? railTip('Documents', 'D') : 'Switch to a document-capable model in the composer to use documents'} placement="left">
           <span className={'cursor-default'}>
             <IconButton
               disabled={!docSupported}
@@ -2187,31 +2180,6 @@ export default function RightSidebar({
                 <path d="M6 8h4.5M6 10.5h4.5M6 5.5h2" stroke="currentColor" strokeWidth="0.5" strokeLinecap="round" />
               </svg>
               )}
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={railTip('Connections', 'C')} placement="left">
-          <span>
-            <IconButton
-              onClick={() => toggleSection('mcp')}
-              sx={{
-                color: (activeSection === 'mcp' || activeTab === 'mcp') ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                padding: '10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                '&:hover': {
-                  color: 'var(--sl-brand-primary)',
-                },
-                '&.Mui-disabled': {
-                  color: 'var(--sl-text-disabled)',
-                  opacity: 0.5,
-                  cursor: 'not-allowed',
-                  pointerEvents: 'auto',
-                },
-              }}
-              size="small"
-            >
-              {railIcon('mcp') ?? <PowerOutlinedIcon fontSize="small" />}
             </IconButton>
           </span>
         </Tooltip>

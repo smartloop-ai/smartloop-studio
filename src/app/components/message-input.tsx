@@ -52,6 +52,11 @@ interface MessageInputProps {
   minRows?: number;
   maxRows?: number;
   leftSlot?: React.ReactNode;
+  // Rendered immediately before the send button. The model switcher lives here
+  // rather than on the left so attach keeps the leading position it has always
+  // had, and the two controls that decide *how the turn is answered* — which
+  // model, and send — sit together.
+  rightSlot?: React.ReactNode;
   skills?: SkillOption[];
   onCreateSkill?: (name: string) => void;
 }
@@ -76,6 +81,7 @@ export default function MessageInput({
   minRows = 1,
   maxRows = 4,
   leftSlot,
+  rightSlot,
   skills = [],
   onCreateSkill,
 }: MessageInputProps) {
@@ -394,9 +400,9 @@ export default function MessageInput({
         />
         </Box>
 
-        <Box className="flex items-center justify-between">
-          {/* Left side - Model selector, file attachment and selected quote */}
-          <Box className="flex items-center gap-2 flex-1 overflow-hidden">
+        <Box className="flex items-center justify-between gap-2">
+          {/* Left side - file attachment, voice, and selected quote */}
+          <Box className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
             {leftSlot}
             {allowAttachments && (
               <>
@@ -433,7 +439,9 @@ export default function MessageInput({
                       size="small"
                       sx={{
                         color: 'var(--sl-text-muted)',
-                        borderRadius: '8px',
+                        // 6px + 5px padding around an 18px glyph = the same 28px
+                        // rounded box as Attach, the model pill and Send.
+                        borderRadius: '6px',
                         padding: '5px',
                         '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
                         '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
@@ -447,13 +455,15 @@ export default function MessageInput({
             )}
           </Box>
 
-          {/* Right side - Send / Stop button */}
-          {isLoading ? (
+          {/* Right side - model switcher, then Send / Stop */}
+          <Box className="flex items-center gap-1.5 flex-shrink-0">
+            {rightSlot}
+            {isLoading ? (
             <button
-              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-md transition-colors"
               style={{
                 backgroundColor: 'var(--sl-brand-alpha-15)',
-                border: '1.5px solid var(--sl-brand-alpha-30)',
+                border: '1px solid var(--sl-brand-alpha-30)',
               }}
               onClick={onStop}
               title="Stop generating (Esc)"
@@ -461,9 +471,9 @@ export default function MessageInput({
               <Box
                 component="span"
                 sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '3px',
+                  width: 10,
+                  height: 10,
+                  borderRadius: '2px',
                   bgcolor: 'var(--sl-brand-primary)',
                   animation: 'pulseStop 1.5s ease-in-out infinite',
                   '@keyframes pulseStop': {
@@ -477,10 +487,10 @@ export default function MessageInput({
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all"
+              className="w-7 h-7 flex items-center justify-center rounded-md disabled:cursor-not-allowed transition-all"
               style={{
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
-                border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
+                border: `1px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
               }}
               onMouseEnter={(e) => {
                 if (!disabled && !isAttaching && message.trim()) {
@@ -496,9 +506,10 @@ export default function MessageInput({
               }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 18 }} />
+              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 16 }} />
             </button>
-          )}
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>
