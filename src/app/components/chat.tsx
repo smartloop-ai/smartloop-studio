@@ -1905,6 +1905,24 @@ export default function Chat(props: {
                     ))}
                   </span>
                 )}
+                {/* The orchestrator itself — the model that receives every
+                    request and routes it. The composer's pill can't stand in for
+                    this: it names Auto, or whichever auxiliary model is answering
+                    right now, and never the router behind them. */}
+                {model && (
+                  <Tooltip title={model} placement="top" arrow>
+                    <span
+                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
+                      style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                        <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
+                        <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                      </svg>
+                    </span>
+                  </Tooltip>
+                )}
                 {props.onWebSearchChange && (
                   <Tooltip
                     title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
