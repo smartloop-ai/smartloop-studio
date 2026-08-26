@@ -463,12 +463,14 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     disabled={disabled}
                     onClick={() => setOpen(true)}
                     // Deliberately the same pill as Attach (file-attacher.tsx):
-                    // same 28px box, border, radius and fill, so the composer's
-                    // two secondary controls read as one set. Send stays taller
-                    // on purpose — it's the primary action.
-                    className="flex items-center gap-1.5 flex-shrink-0 px-2 py-1 border rounded-md max-w-[190px] transition-all text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                    // the same 28px border-box, border, radius and fill, so the
+                    // composer's controls line up. The height is the box, not a
+                    // by-product of padding + line-height, because those two
+                    // drift apart the moment a glyph or font size changes.
+                    className="flex items-center gap-1.5 flex-shrink-0 px-2 border rounded-md max-w-[190px] transition-all text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-50"
                     style={{
                         height: '28px',
+                        boxSizing: 'border-box',
                         color: open ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
                         borderColor: open ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)',
                         backgroundColor: open ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-7)',
@@ -481,13 +483,13 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             ? <ModelBrandIcon name={triggerIconFor.name || triggerIconFor.id} size={14} />
                             : <AutoAwesomeOutlinedIcon sx={{ fontSize: 13 }} />}
                     </span>
-                    <span className="text-[12px] font-medium truncate">{triggerLabel}</span>
+                    <span className="font-medium truncate leading-4">{triggerLabel}</span>
                     {selected.length > 1 && (
                         <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'var(--sl-text-faint)' }}>
                             {selected.length}
                         </span>
                     )}
-                    <KeyboardArrowDownRoundedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
+                    <KeyboardArrowDownRoundedIcon sx={{ fontSize: 14, flexShrink: 0 }} />
                 </button>
             </Tooltip>
 

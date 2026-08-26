@@ -439,10 +439,12 @@ export default function MessageInput({
                       size="small"
                       sx={{
                         color: 'var(--sl-text-muted)',
-                        // 6px + 5px padding around an 18px glyph = the same 28px
-                        // rounded box as Attach, the model pill and Send.
+                        // The same 28px box as Attach, the model pill and Send —
+                        // stated outright rather than left to padding + glyph size.
                         borderRadius: '6px',
-                        padding: '5px',
+                        width: '28px',
+                        height: '28px',
+                        padding: 0,
                         '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
                         '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
                       }}
@@ -460,8 +462,11 @@ export default function MessageInput({
             {rightSlot}
             {isLoading ? (
             <button
-              className="w-7 h-7 flex items-center justify-center rounded-md transition-colors"
+              className="flex items-center justify-center rounded-md transition-colors flex-shrink-0"
               style={{
+                width: '28px',
+                height: '28px',
+                boxSizing: 'border-box',
                 backgroundColor: 'var(--sl-brand-alpha-15)',
                 border: '1px solid var(--sl-brand-alpha-30)',
               }}
@@ -487,8 +492,11 @@ export default function MessageInput({
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="w-7 h-7 flex items-center justify-center rounded-md disabled:cursor-not-allowed transition-all"
+              className="flex items-center justify-center rounded-md disabled:cursor-not-allowed transition-all flex-shrink-0"
               style={{
+                width: '28px',
+                height: '28px',
+                boxSizing: 'border-box',
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
                 border: `1px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
               }}
