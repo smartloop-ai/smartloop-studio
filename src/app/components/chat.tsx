@@ -30,7 +30,7 @@ import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
 import { runTrace } from '@/app/services/run-trace.service';
 
-import { getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint, BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { usePanels } from '@/app/contexts/PanelContext';
@@ -409,7 +409,7 @@ export default function Chat(props: {
     (async () => {
       const m = props.project?.model_name
         || await storageService.getItem('selected_model')
-        || 'gemma3-1b';
+        || BOOTSTRAP_MODEL;
       if (!cancelled) setModel(m);
     })();
     return () => { cancelled = true; };

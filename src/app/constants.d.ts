@@ -14,3 +14,6 @@ export const PRIVACY_URL: string;
 export const APP_DESCRIPTION: JSX.Element;
 export const getLocalApiEndpoint: () => Promise<string>;
 
+export const BOOTSTRAP_MODEL: string;
+export const BOOTSTRAP_MODEL_ALIASES: string[];
+export const isBootstrapModel: (name?: string | null) => boolean;
