@@ -4,6 +4,7 @@ import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
+import { BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -944,7 +945,7 @@ export default function SettingsPage() {
                         </Box>
                         <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
                             Reclaim disk space used by Smartloop. Models you have selected are kept, as are the
-                            default <span className="font-mono">slp-orchestra</span> and embedding models. The agent
+                            default <span className="font-mono">{BOOTSTRAP_MODEL}</span> and embedding models. The agent
                             keeps running while it cleans up.
                         </p>
 
