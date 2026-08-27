@@ -23,6 +23,9 @@ import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
 import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
@@ -31,6 +34,7 @@ import { runTrace } from '@/app/services/run-trace.service';
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
+import { usePanels } from '@/app/contexts/PanelContext';
 
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import LinkIcon from '@mui/icons-material/Link';
@@ -1403,6 +1407,21 @@ export default function Chat(props: {
   // on every open that reads as the app booting slowly. Loads render static.
   const animateLayout = animateLayoutRef.current;
 
+  // The centred empty layout — mark above the composer, composer floated into
+  // the upper half of a 760px column — assumes the window has room to spare.
+  // With a side panel open it doesn't: the conversation is already down to the
+  // strip between two rails, and a narrow column hovering inside it reads as a
+  // third gutter rather than a focal point. So an empty conversation next to an
+  // open panel lays out like a running one — full width, composer at the bottom
+  // — and keeps the openers, which are the part that's actually useful.
+  const { anyPanelOpen } = usePanels();
+  const centerEmptyState = isEmptyConversation && !anyPanelOpen;
+  // The non-centred empty view fills its body with the Tips card instead of the
+  // opener pills. The pills belong under a centred composer — strung along the
+  // bottom of a full-width column they read as a toolbar — and the body they'd
+  // otherwise leave blank is exactly the room the card wants.
+  const showTips = isEmptyConversation && anyPanelOpen && isServiceReady && !!props.project;
+
   // The composer, rendered either pinned to the bottom or centred in an empty
   // conversation. One definition, so the two placements cannot drift apart.
   // Openers for an empty conversation. Orientation first, then one that answers
@@ -1417,6 +1436,20 @@ export default function Chat(props: {
     'Create a step-by-step project plan',
   ];
   const examplePromptRows = Math.ceil(EXAMPLE_PROMPTS.length / 3);
+  // The openers collapse by max-height, which needs a real number — and how many
+  // rows they wrap into depends on how wide the window leaves them, so it can't
+  // be counted up front. Measured instead, and re-measured on resize.
+  const promptsRef = useRef<HTMLDivElement | null>(null);
+  const [promptsHeight, setPromptsHeight] = useState(examplePromptRows * 48 + 24);
+  useEffect(() => {
+    const el = promptsRef.current;
+    if (!el) return;
+    const measure = () => setPromptsHeight(el.scrollHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const applyExamplePrompt = (text: string) => {
     setFormData({ message: text });
@@ -1668,6 +1701,63 @@ export default function Chat(props: {
                       />
                     </Box>
                     <p className="text-xs text-sl-text-disabled">Please wait as we download and prepare the model...</p>
+                  </div>
+                </Box>
+                <div className="flex-1"></div>
+              </div>
+            }
+            {showTips &&
+              <div className="flex flex-col gap-2 h-full w-full justify-center items-center px-3 md:px-6">
+                <div className="flex-1"></div>
+                <Box
+                  sx={{
+                    bgcolor: 'transparent',
+                    border: '1px solid var(--sl-border-subtle)',
+                    borderRadius: '16px',
+                    padding: { xs: '20px', md: '32px' },
+                    maxWidth: '700px',
+                    width: '100%',
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        bgcolor: 'var(--sl-brand-alpha-10)',
+                        border: '1px solid var(--sl-brand-alpha-20)',
+                      }}
+                    >
+                      <LightbulbIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
+                    </Box>
+                    <h2 className="text-lg md:text-xl font-semibold text-sl-text-primary">Tips to Get Started</h2>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-sl-bg-surface-3 text-sl-text-primary rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
+                      </p>
+                    </div>
                   </div>
                 </Box>
                 <div className="flex-1"></div>
@@ -2058,8 +2148,8 @@ export default function Chat(props: {
         <div
           className="flex-none overflow-hidden"
           style={{
-            maxHeight: isEmptyConversation ? 100 : 0,
-            opacity: isEmptyConversation ? 1 : 0,
+            maxHeight: centerEmptyState ? 100 : 0,
+            opacity: centerEmptyState ? 1 : 0,
             transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
         >
@@ -2088,24 +2178,25 @@ export default function Chat(props: {
             instead would remount it mid-conversation — dropping focus, and any
             half-typed IME composition with it. */}
         <footer
-          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base ${animateLayout ? 'transition-[border-color] duration-150' : ''} ${isEmptyConversation ? '' : 'border-t border-sl-border-subtle'}`}
+          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base ${animateLayout ? 'transition-[border-color] duration-150' : ''} ${centerEmptyState ? '' : 'border-t border-sl-border-subtle'}`}
         >
-          <div className="w-full mx-auto" style={{ maxWidth: isEmptyConversation ? 760 : '100%', transition: animateLayout ? 'max-width 160ms ease-out' : 'none' }}>
+          <div className="w-full mx-auto" style={{ maxWidth: centerEmptyState ? 760 : '100%', transition: animateLayout ? 'max-width 160ms ease-out' : 'none' }}>
             {composerBlock}
           </div>
         </footer>
 
         {/* Openers, under the composer. Collapses on the same terms as the mark
-            above it, so the empty view enters and leaves as one piece. */}
+            above it, so the centred empty view enters and leaves as one piece.
+            With a panel open the Tips card in the body says this instead. */}
         <div
           className="flex-none overflow-hidden px-3 md:px-4"
           style={{
-            maxHeight: isEmptyConversation ? examplePromptRows * 48 + 24 : 0,
-            opacity: isEmptyConversation ? 1 : 0,
+            maxHeight: centerEmptyState ? promptsHeight : 0,
+            opacity: centerEmptyState ? 1 : 0,
             transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
         >
-          <div className="mx-auto flex flex-wrap justify-center gap-2 py-3" style={{ maxWidth: 760 }}>
+          <div ref={promptsRef} className="mx-auto flex flex-wrap justify-center gap-2 py-3" style={{ maxWidth: 760 }}>
             {EXAMPLE_PROMPTS.map((prompt) => (
               <button
                 key={prompt}
@@ -2142,7 +2233,7 @@ export default function Chat(props: {
             // upper half rather than at true centre — which reads as slightly
             // low in a tall window, and leaves the suggestions below it hanging
             // off the bottom edge.
-            flexGrow: isEmptyConversation ? 2.2 : 0,
+            flexGrow: centerEmptyState ? 2.2 : 0,
             flexShrink: 0,
             flexBasis: 0,
             transition: animateLayout ? 'flex-grow 160ms ease-out' : 'none',
