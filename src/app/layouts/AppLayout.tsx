@@ -19,18 +19,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Owned here rather than in the sidebar: the content margin has to move with
   // it, and this is the component that holds both.
   //
-  // Collapsed on a first launch, like the right panel — the app opens on the
-  // conversation, not on its own furniture. Both rails stay visible, so the way
-  // back is a click (or ⌘\) rather than something to discover.
-  const [collapsed, setCollapsed] = useState(true);
+  // Expanded on a first launch, unlike the right panel — the two rails do
+  // different jobs. This one is navigation: the projects, the conversation list,
+  // the way to a new chat. Collapsed, it leaves a rail holding nothing but its own
+  // expand button, so starting closed didn't save space so much as hide the way
+  // around. The right rail keeps its section icons when it collapses, which is why
+  // that one can default shut.
+  const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
     storageService.getItem(COLLAPSED_KEY).then((saved: any) => {
-      // Only an explicit `false` expands it: anything else — never set, or a
-      // stored `true` — leaves the first-launch default standing.
-      if (!cancelled && saved === false) setCollapsed(false);
+      // Only an explicit `true` collapses it: anything else — never set, or a
+      // stored `false` — leaves the first-launch default standing. Checked against
+      // `true` rather than for truthiness so that "collapsed on purpose" and "never
+      // touched" stay distinguishable, the same way the right sidebar stores its
+      // own closed state explicitly.
+      if (!cancelled && saved === true) setCollapsed(true);
     });
     return () => { cancelled = true; };
   }, []);
