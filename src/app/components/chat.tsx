@@ -1,7 +1,7 @@
 
 import { conversationService } from '@/app/services/conversation.service';
 import { storageService } from '@/app/services/storage.service';
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, CircularProgress, Tooltip } from "@mui/material";
 import OpenAI from 'openai';
 
@@ -86,6 +86,14 @@ function formatBytes(bytes: number): string {
   }
   return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
 }
+
+// How long the first message takes to rise into an emptied conversation. The
+// composer itself doesn't animate — it snaps from the centre to the bottom — so
+// this is the only motion in the empty→content change. Transform and opacity
+// only, so it runs on the compositor and holds its frame rate through the work a
+// send kicks off (mounting the transcript, opening the stream, writing to SQLite
+// over IPC).
+const TRANSCRIPT_FADE_MS = 140;
 
 // Turn bare URLs in plain user-message text into clickable, themed links.
 // Clicks are picked up by the document-level handler that opens web links externally.
@@ -351,8 +359,13 @@ export default function Chat(props: {
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
-  // Armed by a send, disarmed by a conversation load — see `animateLayout`.
+  // Armed by a send, disarmed by a conversation load: which of the two reasons the
+  // transcript just went from empty to full, and so whether the message rises into
+  // place or is simply already there.
   const animateLayoutRef = useRef(false);
+  // The transcript's scroll container — the one thing the empty→content change
+  // animates.
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
   // Bumped when an example prompt fills the composer, to pull focus there.
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0);
   const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({});  // asset_id -> data URL for image attachments in the transcript
@@ -637,6 +650,38 @@ export default function Chat(props: {
     }
     console.log('[Chat sendMessage] currentAttachments to send:', currentAttachments);
 
+    // Onto the screen before anything is awaited. The conversation row below is
+    // created over IPC, and hanging the user's own message on that round-trip meant
+    // the empty→content layout — and so the composer's glide off the centre — began
+    // whenever SQLite came back, which landed it next to the opening of the stream
+    // instead of next to the click that caused it. Persisting can be late; showing
+    // what the user just typed cannot. Rolled back below if the send can't start.
+    const userMsg = {
+      id: messageId,
+      role: 'user',
+      content: userMessage,
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined
+    };
+    console.log('[Chat sendMessage] Created userMsg:', userMsg);
+    console.log('[Chat sendMessage] userMsg.attachments:', userMsg.attachments);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
+    // Emptied in the same commit: text left sitting in a composer that has already
+    // started moving reads as a send that didn't take.
+    setFormData({ message: "" });
+    // Same reasoning as the message above — the streaming marker belongs to the
+    // click, not to the IPC. Set here, it lights up as the composer starts moving,
+    // which is what covers the gap until the first token actually arrives.
+    setIsLoading(true);
+
+    // Put the composer and the transcript back the way they were — the send never
+    // started, so the centred empty layout is still the truthful one.
+    const rollbackSend = () => {
+      setMessages(messages);
+      setFormData({ message: userMessage });
+      animateLayoutRef.current = false;
+    };
+
     if (!conversationId) {
       console.log('[Chat] No conversation exists, creating new one...');
       // Generate title from first 5 words of message
@@ -665,6 +710,7 @@ export default function Chat(props: {
         } else {
           console.error('[Chat] Failed to create conversation:', conversationResult.error);
           alert('Failed to create conversation. Please try again.');
+          rollbackSend();
           sendingMessageRef.current = false;
           setIsLoading(false);
           return;
@@ -672,6 +718,7 @@ export default function Chat(props: {
       } catch (error: any) {
         console.error('[Chat] Error creating conversation:', error);
         alert('Failed to create conversation. Please try again.');
+        rollbackSend();
         sendingMessageRef.current = false;
         setIsLoading(false);
         return;
@@ -680,23 +727,9 @@ export default function Chat(props: {
 
     console.log('Using conversation ID:', conversationId);
 
-    // Add user message to the chat (OpenAI format)
-    const userMsg = {
-      id: messageId,
-      role: 'user',
-      content: userMessage,
-      attachments: currentAttachments.length > 0 ? currentAttachments : undefined
-    };
-
-    console.log('[Chat sendMessage] Created userMsg:', userMsg);
-    console.log('[Chat sendMessage] userMsg.attachments:', userMsg.attachments);
-
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-
     // Messages are now managed via conversation state - synced via onConversationUpdate callback
+    // (the message itself, and the composer clear, happened before the await above)
 
-    setFormData({ message: "" });
     // Clear attachments AFTER they've been used in the message
     // Don't clear immediately - let them be used first
     setClearAttachmentTrigger(prev => prev + 1); // Trigger FileAttacher to clear
@@ -707,7 +740,6 @@ export default function Chat(props: {
     setTimeout(() => {
       messageAttachmentsRef.current = [];
     }, 100);
-    setIsLoading(true);
 
     // Create abort controller for this request
     abortControllerRef.current = new AbortController();
@@ -1398,15 +1430,6 @@ export default function Chat(props: {
     && !hydratingContent
     && searchQuery.trim() === ""
     && !modelDownloadProgress;
-  // Whether the empty→content layout change should animate. It should for a
-  // message you just sent: the greeting collapses and the composer glides from
-  // the centre to the bottom, which is the movement those transitions exist for.
-  // It should NOT on load. `messages` starts empty, so opening a conversation
-  // that already has content mounts in the centred empty layout and then plays
-  // the whole glide on the way to where it was always going to sit — a push-down
-  // on every open that reads as the app booting slowly. Loads render static.
-  const animateLayout = animateLayoutRef.current;
-
   // The centred empty layout — mark above the composer, composer floated into
   // the upper half of a 760px column — assumes the window has room to spare.
   // With a side panel open it doesn't: the conversation is already down to the
@@ -1422,6 +1445,30 @@ export default function Chat(props: {
   // otherwise leave blank is exactly the room the card wants.
   const showTips = isEmptyConversation && anyPanelOpen && isServiceReady && !!props.project;
 
+  // The first message rising into the emptied conversation. The composer is NOT
+  // animated with it: it snaps from the centre to the bottom, because a box gliding
+  // down while the message it just sent was already on screen read as the input
+  // lagging behind a conversation that had started without it.
+  //
+  // Gated on `animateLayoutRef` so only a send plays this. `messages` starts empty,
+  // so opening a conversation that already has content would otherwise fade the
+  // whole transcript in on every open, which reads as the app booting slowly.
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript || centerEmptyState || !animateLayoutRef.current) return;
+    // Clipped by the section's `contain: paint`, so the 6px of travel can't bleed
+    // over the composer. Only the scroll container is touched — animating the
+    // messages individually would mean a new animation per streamed chunk.
+    const anim = transcript.animate(
+      [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: TRANSCRIPT_FADE_MS, easing: 'cubic-bezier(0.2, 0, 0, 1)' }
+    );
+    transcript.style.willChange = 'transform, opacity';
+    // Dropped as soon as it lands — a standing `will-change` would keep the
+    // transcript on its own layer for the rest of the session.
+    anim.finished.then(() => { transcript.style.willChange = ''; }).catch(() => {});
+  }, [centerEmptyState]);
+
   // The composer, rendered either pinned to the bottom or centred in an empty
   // conversation. One definition, so the two placements cannot drift apart.
   // Openers for an empty conversation. Orientation first, then one that answers
@@ -1435,21 +1482,6 @@ export default function Chat(props: {
     'Explain the theory of relativity',
     'Create a step-by-step project plan',
   ];
-  const examplePromptRows = Math.ceil(EXAMPLE_PROMPTS.length / 3);
-  // The openers collapse by max-height, which needs a real number — and how many
-  // rows they wrap into depends on how wide the window leaves them, so it can't
-  // be counted up front. Measured instead, and re-measured on resize.
-  const promptsRef = useRef<HTMLDivElement | null>(null);
-  const [promptsHeight, setPromptsHeight] = useState(examplePromptRows * 48 + 24);
-  useEffect(() => {
-    const el = promptsRef.current;
-    if (!el) return;
-    const measure = () => setPromptsHeight(el.scrollHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   const applyExamplePrompt = (text: string) => {
     setFormData({ message: text });
@@ -1602,12 +1634,14 @@ export default function Chat(props: {
 
   return (
     <>
-      <Box className="chat__box flex flex-col h-full bg-sl-bg-base overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-border-subtle)' }}>
-        {/* Kept in the layout when empty rather than hidden: it renders nothing,
-            but its flex-1 is the weight above the composer that the spacer below
-            balances against. Take it out and the composer rides to the top. */}
-        <section className="chat__body flex-1 overflow-hidden">
-          <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 sidebar-scroll">
+      <Box className="chat__box relative flex flex-col h-full bg-sl-bg-base overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-border-subtle)' }}>
+        {/* Kept in the layout when empty rather than hidden: it renders nothing
+            then, but it's the flex-1 that fills the column and leaves the composer
+            docked at the bottom. `contain` scopes its reflows to itself, so the
+            composer changing height — a wrapped line, the empty→content swap —
+            can't invalidate the transcript's layout or repaint it. */}
+        <section className="chat__body flex-1 overflow-hidden" style={{ contain: 'layout paint' }}>
+          <div ref={transcriptRef} className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 sidebar-scroll">
             <div ref={messagesEndRef} />
 
             {(displayMessages || []).length === 0 && searchQuery.trim() === "" && modelDownloadProgress &&
@@ -2141,28 +2175,49 @@ export default function Chat(props: {
           </div>
         </section>
 
-        {/* One quiet line over an empty conversation. Small and muted on
-            purpose: the 26px headline that sat here first took a fifth of the
-            view to say something you read once. Collapses rather than
-            unmounting, so its exit is a transition. */}
+        {/* The composer, and the two things an empty conversation floats off it.
+            One stack, positioned two ways: absolutely anchored in the upper part
+            of the column while the conversation is empty, back in flow at the
+            bottom once it isn't. Anchored by its TOP — a growing composer used to
+            be centred by a flex-grow spacer, so every wrapped line re-solved the
+            1 : 2.2 split and moved the box's top edge up while its bottom edge
+            went down. The caret drifted as you typed into it. Pinning the top
+            means the box grows downward and only the openers below it move.
+
+            Always this same node, in both placements: rendering it twice would
+            remount it mid-conversation, dropping focus and any half-typed IME
+            composition with it. */}
         <div
-          className="flex-none overflow-hidden"
-          style={{
-            maxHeight: centerEmptyState ? 100 : 0,
-            opacity: centerEmptyState ? 1 : 0,
-            transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
-          }}
+          // 34%, not true centre: the composer rests in the upper part of the
+          // column so the openers hanging below it stay clear of the bottom edge,
+          // and so a tall window doesn't read as slightly low.
+          className={centerEmptyState ? 'absolute left-0 right-0 top-[34%]' : 'relative flex-none'}
         >
-          {/* The mark alone, no wordmark and no opening line. A sentence here
-              is read once and then only takes up room, and the app doesn't need
-              to spell its own name in its own window — the glyph is enough to
-              say whose this is. Fills from `--sl-brand-mark`, so it survives a
-              light theme (see logo.tsx). */}
-          <div className="flex justify-center pb-4">
+          {/* One quiet line over an empty conversation — the mark alone, no
+              wordmark and no opening line. A sentence here is read once and then
+              only takes up room, and the app doesn't need to spell its own name in
+              its own window. The 26px headline that sat here first took a fifth of
+              the view to say something you read once.
+
+              Parked above the stack rather than inside it: out of flow, it can't
+              be pushed around by the composer growing, and it fades in place on a
+              send instead of having to collapse. `bottom: 100%` pins it to the
+              stack's top edge — the edge that doesn't move. */}
+          {/* Gone the moment the composer is, with no fade of its own. It's parked
+              on the composer, so once that snaps to the bottom this is sitting just
+              above a docked input — fading out from there flashed the mark at the
+              foot of the window on its way out. `invisible`, not just transparent,
+              so a docked composer doesn't carry an invisible mark over the
+              transcript for find-in-page to land on. */}
+          <div
+            aria-hidden={!centerEmptyState}
+            className={`absolute left-0 right-0 bottom-full flex justify-center pb-4 pointer-events-none ${centerEmptyState ? 'visible' : 'invisible'}`}
+          >
             {/* Same surface as the composer below — its fill, its border, its
-                radius — so the mark reads as the top of one object that the
-                input box is the bottom of, rather than a badge floating over it.
-                A bare glyph here looked like something that failed to load. */}
+                radius — so the mark reads as the top of one object that the input
+                box is the bottom of, rather than a badge floating over it. A bare
+                glyph here looked like something that failed to load. Fills from
+                `--sl-brand-mark`, so it survives a light theme (see logo.tsx). */}
             <div
               className="inline-flex items-center justify-center rounded-lg p-2"
               style={{ backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)' }}
@@ -2170,75 +2225,54 @@ export default function Chat(props: {
               <LogoMark className="h-7 md:h-8 w-auto" />
             </div>
           </div>
-        </div>
 
-        {/* One composer, always this same node. An empty conversation centres it
-            by growing the spacer below; the first message shrinks that spacer to
-            nothing and the box glides to the bottom. Rendering it in two places
-            instead would remount it mid-conversation — dropping focus, and any
-            half-typed IME composition with it. */}
-        <footer
-          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base ${animateLayout ? 'transition-[border-color] duration-150' : ''} ${centerEmptyState ? '' : 'border-t border-sl-border-subtle'}`}
-        >
-          <div className="w-full mx-auto" style={{ maxWidth: centerEmptyState ? 760 : '100%', transition: animateLayout ? 'max-width 160ms ease-out' : 'none' }}>
-            {composerBlock}
-          </div>
-        </footer>
+          <footer
+            className={`relative flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base ${centerEmptyState ? '' : 'border-t border-sl-border-subtle'}`}
+          >
+            {/* Snapped, like the rest of the composer: a width easing out on its own
+                while the box it belongs to has already jumped is the same mismatch,
+                one axis over. */}
+            <div className="w-full mx-auto" style={{ maxWidth: centerEmptyState ? 760 : '100%' }}>
+              {composerBlock}
+            </div>
+          </footer>
 
-        {/* Openers, under the composer. Collapses on the same terms as the mark
-            above it, so the centred empty view enters and leaves as one piece.
-            With a panel open the Tips card in the body says this instead. */}
-        <div
-          className="flex-none overflow-hidden px-3 md:px-4"
-          style={{
-            maxHeight: centerEmptyState ? promptsHeight : 0,
-            opacity: centerEmptyState ? 1 : 0,
-            transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
-          }}
-        >
-          <div ref={promptsRef} className="mx-auto flex flex-wrap justify-center gap-2 py-3" style={{ maxWidth: 760 }}>
-            {EXAMPLE_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                type="button"
-                disabled={!isServiceReady}
-                onClick={() => applyExamplePrompt(prompt)}
-                className="px-3 py-1.5 rounded-lg text-[12px] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ border: '1px solid var(--sl-border-subtle)', color: 'var(--sl-text-muted)' }}
-                onMouseEnter={(e) => {
-                  if (!isServiceReady) return;
-                  e.currentTarget.style.borderColor = 'var(--sl-border-hover)';
-                  e.currentTarget.style.color = 'var(--sl-text-secondary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--sl-border-subtle)';
-                  e.currentTarget.style.color = 'var(--sl-text-muted)';
-                }}
-              >
-                {prompt}
-              </button>
-            ))}
+          {/* Openers, parked under the stack on the same terms as the mark above
+              it, so the centred empty view enters and leaves as one piece. Pinned
+              to the stack's bottom edge, which is the edge a growing composer
+              moves — so they slide down with it rather than being written over.
+              With a panel open the Tips card in the body says this instead. */}
+          <div
+            aria-hidden={!centerEmptyState}
+            className={`absolute left-0 right-0 top-full px-3 md:px-4 ${centerEmptyState ? 'visible' : 'invisible pointer-events-none'}`}
+          >
+            <div className="mx-auto flex flex-wrap justify-center gap-2 py-3" style={{ maxWidth: 760 }}>
+              {EXAMPLE_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  disabled={!isServiceReady || !centerEmptyState}
+                  tabIndex={centerEmptyState ? 0 : -1}
+                  onClick={() => applyExamplePrompt(prompt)}
+                  className="px-3 py-1.5 rounded-lg text-[12px] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ border: '1px solid var(--sl-border-subtle)', color: 'var(--sl-text-muted)' }}
+                  onMouseEnter={(e) => {
+                    if (!isServiceReady) return;
+                    e.currentTarget.style.borderColor = 'var(--sl-border-hover)';
+                    e.currentTarget.style.color = 'var(--sl-text-secondary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--sl-border-subtle)';
+                    e.currentTarget.style.color = 'var(--sl-text-muted)';
+                  }}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* The counterweight: equal to the message area's growth when empty, so
-            the composer lands mid-window; zero once a conversation exists. */}
-        <div
-          aria-hidden
-          style={{
-            // Declared longhand and transitioned inline: `flex-none` sets the
-            // `flex` shorthand, and a shorthand-set flex-grow is what browsers
-            // decline to interpolate — the collapse was landing in one frame.
-            // Well over the area above, so the composer rests clearly in the
-            // upper half rather than at true centre — which reads as slightly
-            // low in a tall window, and leaves the suggestions below it hanging
-            // off the bottom edge.
-            flexGrow: centerEmptyState ? 2.2 : 0,
-            flexShrink: 0,
-            flexBasis: 0,
-            transition: animateLayout ? 'flex-grow 160ms ease-out' : 'none',
-          }}
-        />
 
       </Box>
 
