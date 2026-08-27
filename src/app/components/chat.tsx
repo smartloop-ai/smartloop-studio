@@ -1405,16 +1405,16 @@ export default function Chat(props: {
 
   // The composer, rendered either pinned to the bottom or centred in an empty
   // conversation. One definition, so the two placements cannot drift apart.
-  // Openers for an empty conversation. Deliberately about this app's own
-  // capabilities — documents, connections, skills — rather than generic chat
-  // prompts: the blank page problem here isn't "what do I ask an LLM", it's
-  // "what is this thing for". Clicking one fills the composer rather than
-  // sending, so the user can shape it before committing.
+  // Openers for an empty conversation. Orientation first, then one that answers
+  // on the spot, one that produces something, and one that's deliberately
+  // unfinished — "the following content" is a lead-in the user completes by
+  // pasting. That last one is why clicking fills the composer instead of
+  // sending it.
   const EXAMPLE_PROMPTS = [
-    'Summarise the documents in this project',
     'What can you help me with?',
-    'Find something in my connections',
-    'Draft an email from my notes',
+    'What is the capital of France?',
+    'Draft an email for me',
+    'Help me proofread the following content',
   ];
 
   const applyExamplePrompt = (text: string) => {
