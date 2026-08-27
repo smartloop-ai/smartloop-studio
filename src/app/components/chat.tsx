@@ -1411,11 +1411,12 @@ export default function Chat(props: {
   // pasting. That last one is why clicking fills the composer instead of
   // sending it.
   const EXAMPLE_PROMPTS = [
-    'What can you help me with?',
-    'What is the capital of France?',
-    'Draft an email for me',
-    'Help me proofread the content',
+    'What can you do?',
+    'Rewrite this to sound more professional',
+    'Explain the theory of relativity',
+    'Create a step-by-step project plan',
   ];
+  const examplePromptRows = Math.ceil(EXAMPLE_PROMPTS.length / 3);
 
   const applyExamplePrompt = (text: string) => {
     setFormData({ message: text });
@@ -1424,144 +1425,144 @@ export default function Chat(props: {
 
   const composerBlock = (
     <>
-            <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
-              {/* One bracketed marker at the head of the line, in the same idiom
+      <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
+        {/* One bracketed marker at the head of the line, in the same idiom
                   as the [esc] / [?] hints on the right: a bar at rest, sweeping
                   through | / - \\ while a response streams. Both frames are
                   monospace at a fixed 6px, so the text beside them never shifts. */}
-              {isLoading ? (
-                <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
-                  <span className="flex items-center font-mono shrink-0">
-                    [<span className="mx-[3px]"><StreamingMarker /></span>]
-                  </span>
-                  <span className="truncate"><LiveStatusText /></span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
-                  <span className="flex items-center font-mono shrink-0">
-                    [<span className="inline-block text-center mx-[3px]" style={{ width: 6 }}>-</span>]
-                  </span>
-                  <span className="truncate">Token Performance</span>
-                  <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
-                </span>
-              )}
-            </div>
-            <MessageInput
-              message={formData.message}
-              onMessageChange={(value) => setFormData({ message: value })}
-              onSend={() => sendMessage(null)}
-              onStop={() => {
-                if (abortControllerRef.current) {
-                  abortControllerRef.current.abort();
-                }
-              }}
-              placeholder={modelDownloadProgress?.downloading
-                ? "Waiting for model to be ready..."
-                // Match the "/" picker's own availability: it opens when there are
-                // skills to run OR skills can be created (onCreateSkill is set).
-                : (skillList.length > 0 || !!props.onCreateSkill)
-                  ? "Enter your prompt, or type / to run or create skills"
-                  : "Enter your prompt..."}
-              disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
-              isLoading={isLoading}
-              allowAttachments={true}
-              allowImages={visionEnabled}
-              conversation={props.conversation}
-              onFileAttached={handleFileAttached}
-              onAttachmentClear={() => {
-                setTimeout(() => {
-                  messageAttachmentsRef.current = [];
-                  if (props.onAttachmentsClear) {
-                    props.onAttachmentsClear();
-                  }
-                }, 100);
-              }}
-              clearAttachmentTrigger={clearAttachmentTrigger}
-            focusTrigger={composerFocusTrigger}
-              showDragDrop={true}
-              minRows={1}
-              maxRows={4}
-              skills={skillList}
-              onCreateSkill={props.onCreateSkill}
-              rightSlot={
-                // Left enabled while a model loads: reaching for the switcher is
-                // exactly what you do when a load is dragging, so a slow warm
-                // shouldn't trap the choice the user is trying to get out of.
-                <ModelPicker model={model} disabled={!isServiceReady} />
-              }
-            />
-            <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
-              {isServiceReady ? (
-                <>
-                  {indexingProgress ? (
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
-                      <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
-                          style={{
-                            backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                            ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
-                          }}
-                        ></span>
-                      ))}
-                    </span>
-                  )}
-                  {/* The orchestrator itself — the model that receives every
+        {isLoading ? (
+          <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
+            <span className="flex items-center font-mono shrink-0">
+              [<span className="mx-[3px]"><StreamingMarker /></span>]
+            </span>
+            <span className="truncate"><LiveStatusText /></span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
+            <span className="flex items-center font-mono shrink-0">
+              [<span className="inline-block text-center mx-[3px]" style={{ width: 6 }}>-</span>]
+            </span>
+            <span className="truncate">Token Performance</span>
+            <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
+          </span>
+        )}
+      </div>
+      <MessageInput
+        message={formData.message}
+        onMessageChange={(value) => setFormData({ message: value })}
+        onSend={() => sendMessage(null)}
+        onStop={() => {
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+          }
+        }}
+        placeholder={modelDownloadProgress?.downloading
+          ? "Waiting for model to be ready..."
+          // Match the "/" picker's own availability: it opens when there are
+          // skills to run OR skills can be created (onCreateSkill is set).
+          : (skillList.length > 0 || !!props.onCreateSkill)
+            ? "Enter your prompt, or type / to run or create skills"
+            : "Enter your prompt..."}
+        disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
+        isLoading={isLoading}
+        allowAttachments={true}
+        allowImages={visionEnabled}
+        conversation={props.conversation}
+        onFileAttached={handleFileAttached}
+        onAttachmentClear={() => {
+          setTimeout(() => {
+            messageAttachmentsRef.current = [];
+            if (props.onAttachmentsClear) {
+              props.onAttachmentsClear();
+            }
+          }, 100);
+        }}
+        clearAttachmentTrigger={clearAttachmentTrigger}
+        focusTrigger={composerFocusTrigger}
+        showDragDrop={true}
+        minRows={1}
+        maxRows={4}
+        skills={skillList}
+        onCreateSkill={props.onCreateSkill}
+        rightSlot={
+          // Left enabled while a model loads: reaching for the switcher is
+          // exactly what you do when a load is dragging, so a slow warm
+          // shouldn't trap the choice the user is trying to get out of.
+          <ModelPicker model={model} disabled={!isServiceReady} />
+        }
+      />
+      <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
+        {isServiceReady ? (
+          <>
+            {indexingProgress ? (
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+                <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                    style={{
+                      backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                      ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
+                    }}
+                  ></span>
+                ))}
+              </span>
+            )}
+            {/* The orchestrator itself — the model that receives every
                       request and routes it. The composer's pill can't stand in for
                       this: it names Auto, or whichever auxiliary model is answering
                       right now, and never the router behind them. */}
-                  {model && (
-                    <Tooltip title={model} placement="top" arrow>
-                      <span
-                        className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
-                        style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                          <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                          <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
-                          <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
-                        </svg>
-                      </span>
-                    </Tooltip>
-                  )}
-                  {props.onWebSearchChange && (
-                    <Tooltip
-                      title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
-                      placement="top"
-                      arrow
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={webSearchOn}
-                        onClick={() => props.onWebSearchChange?.(!webSearchOn)}
-                        className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
-                        style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <circle cx="11" cy="11" r="8" />
-                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                        </svg>
-                      </button>
-                    </Tooltip>
-                  )}
-                  <span className="flex items-center gap-1.5 ml-auto">
-                    <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
-                    <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
-                  </span>
-                </>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
-                  <span>starting</span>
+            {model && (
+              <Tooltip title={model} placement="top" arrow>
+                <span
+                  className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
+                  style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                    <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
+                    <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                  </svg>
                 </span>
-              )}
-            </div>
+              </Tooltip>
+            )}
+            {props.onWebSearchChange && (
+              <Tooltip
+                title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
+                placement="top"
+                arrow
+              >
+                <button
+                  type="button"
+                  aria-pressed={webSearchOn}
+                  onClick={() => props.onWebSearchChange?.(!webSearchOn)}
+                  className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
+                  style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </button>
+              </Tooltip>
+            )}
+            <span className="flex items-center gap-1.5 ml-auto">
+              <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
+              <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
+            </span>
+          </>
+        ) : (
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+            <span>starting</span>
+          </span>
+        )}
+      </div>
     </>
   );
 
@@ -2099,12 +2100,12 @@ export default function Chat(props: {
         <div
           className="flex-none overflow-hidden px-3 md:px-4"
           style={{
-            maxHeight: isEmptyConversation ? 120 : 0,
+            maxHeight: isEmptyConversation ? examplePromptRows * 48 + 24 : 0,
             opacity: isEmptyConversation ? 1 : 0,
             transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
         >
-          <div className="w-full mx-auto flex flex-wrap justify-center gap-2 pt-3" style={{ maxWidth: 760 }}>
+          <div className="mx-auto flex flex-wrap justify-center gap-2 py-3" style={{ maxWidth: 760 }}>
             {EXAMPLE_PROMPTS.map((prompt) => (
               <button
                 key={prompt}

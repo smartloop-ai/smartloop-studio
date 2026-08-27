@@ -56,6 +56,19 @@ const relative = (ms: number, now: number): string => {
   return `${Math.round(hours / 24)}d ago`;
 };
 
+/**
+ * A card's label — "Current", "Previous". The same 10px uppercase the panel
+ * title uses, so the two cards read as the two halves of one list rather than
+ * as two unrelated widgets.
+ */
+function CardLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--sl-text-disabled)' }}>
+      {children}
+    </span>
+  );
+}
+
 /** A panel card: one bordered group, holding one thing. */
 function Card({ lead, action, children }: { lead?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -123,7 +136,7 @@ function History({ turns, now }: { turns: TraceTurn[]; now: number }) {
   if (turns.length === 0) return null;
 
   return (
-    <Card>
+    <Card lead={<CardLabel>Previous</CardLabel>}>
       <div className="flex flex-col">
         {turns.map((t, i) => {
           const open = openId === t.id;
@@ -155,17 +168,11 @@ function History({ turns, now }: { turns: TraceTurn[]; now: number }) {
                     <path d="M2.4 3.9L5 6.5l2.6-2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
-                {/* A clock stamp leads each line, the way a log does. "12m ago"
-                    sat here first and read oddly in a leading column: it's a
-                    different width on every row and quietly changes while you
-                    look at it. How long ago is on hover, where it belongs. */}
-                <span
-                  className="text-[10px] font-mono tabular-nums flex-shrink-0"
-                  style={{ color: 'var(--sl-text-disabled)' }}
-                  title={stampTitle(t.startedAt, now)}
-                >
-                  {stamp(t.startedAt)}
-                </span>
+                {/* The prompt leads the row. A monospace clock sat here first —
+                    the way a raw log stream stamps its lines — but this is a
+                    list of runs, not a tail: what identifies a row is what was
+                    asked, so it takes the leading column every other list in
+                    the app gives to a title, and the when trails it. */}
                 <span
                   className="text-[11px] truncate flex-1 min-w-0"
                   style={{ color: 'var(--sl-text-secondary)' }}
@@ -183,8 +190,17 @@ function History({ turns, now }: { turns: TraceTurn[]; now: number }) {
                     {t.outcome}
                   </span>
                 )}
+                {/* How long, then when — the trailing metadata pair, faint and
+                    tabular so the column stays a column down the list. */}
                 <span className="text-[10px] font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--sl-text-faint)' }}>
                   {fmtMs(turnDuration(t, now))}
+                </span>
+                <span
+                  className="text-[10px] font-mono tabular-nums flex-shrink-0"
+                  style={{ color: 'var(--sl-text-disabled)' }}
+                  title={stampTitle(t.startedAt, now)}
+                >
+                  {stamp(t.startedAt)}
                 </span>
               </button>
               {/* Kept out of the expanding button so clicking it can't also
@@ -239,32 +255,29 @@ export default function LogsPanel({ projectId }: { projectId?: string }) {
   return (
     <div className="flex flex-col gap-3">
       <Card
-        /* The prompt on the left, exactly as the history rows below read: the
-           question is what identifies a run. The model rides along in the hover
-           title, the same place the rows keep it, so the two cards say the same
-           things in the same order. */
+        /* The two cards are labelled by their place in time, not by their
+           content: this one is the run happening (or just happened), the one
+           below is what came before. The prompt doesn't belong in this header —
+           the log under it is already about that one run, so repeating the
+           question here says nothing the card doesn't. It stays the identity of
+           the history rows, where there are many runs to tell apart, and rides
+           along in the hover title here. */
         lead={(
-          <span className="flex items-baseline gap-2 min-w-0">
-            <span
-              className="text-[10px] font-mono tabular-nums flex-shrink-0"
-              style={{ color: 'var(--sl-text-disabled)' }}
-              title={live ? 'running now' : stampTitle(latest.startedAt, now)}
-            >
-              {stamp(latest.startedAt)}
-            </span>
-            <span
-              className="text-[11px] truncate"
-              style={{ color: 'var(--sl-text-secondary)' }}
-              title={[latest.prompt, latest.model].filter(Boolean).join('\n\n')}
-            >
-              {latest.prompt?.trim() || latest.model || 'Untitled run'}
-            </span>
+          <span title={[latest.prompt, latest.model].filter(Boolean).join('\n\n')}>
+            <CardLabel>Current</CardLabel>
           </span>
         )}
         action={
           <>
             <span className="text-[10px] font-mono tabular-nums" style={{ color: 'var(--sl-text-faint)' }}>
               {fmtMs(turnDuration(latest, now))}
+            </span>
+            <span
+              className="text-[10px] font-mono tabular-nums"
+              style={{ color: 'var(--sl-text-disabled)' }}
+              title={live ? 'running now' : stampTitle(latest.startedAt, now)}
+            >
+              {live ? 'now' : stamp(latest.startedAt)}
             </span>
             {/* Finished runs can be forgotten from here too, so every run is
                 cleared the same way — one at a time, where it sits. */}

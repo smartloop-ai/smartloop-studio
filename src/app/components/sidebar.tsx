@@ -18,6 +18,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
+import { SIDEBAR_ANIM_MS } from './sidebar-motion';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -1528,38 +1529,41 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
           sidebar leaves behind, so both edges of the window behave alike. Only
           the dock control survives — everything else in here needs width to be
           worth showing, and a row of cryptic glyphs is not a sidebar. */}
-      {collapsed && (
-        <Box
-          sx={{
-            width: '48px',
-            height: '100vh',
-            bgcolor: 'var(--sl-bg-base)',
-            borderRight: '1px solid var(--sl-border-subtle)',
-            display: { xs: 'none', md: 'flex' },
-            flexDirection: 'column',
-            alignItems: 'center',
-            pt: 4,
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            zIndex: 1000,
-          }}
-        >
-          <Tooltip title="Expand sidebar (⌘\\)" placement="right" arrow>
-            <IconButton
-              onClick={onToggleCollapse}
-              sx={{
-                color: 'var(--sl-text-disabled)',
-                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-1)' },
-                padding: '6px',
-                borderRadius: '6px',
-              }}
-            >
-              <DockIcon collapsed />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      )}
+      <Box
+        sx={{
+          width: '48px',
+          height: '100vh',
+          bgcolor: 'var(--sl-bg-base)',
+          borderRight: '1px solid var(--sl-border-subtle)',
+          display: { xs: 'none', md: 'flex' },
+          flexDirection: 'column',
+          alignItems: 'center',
+          pt: 4,
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          zIndex: 1001,
+          // Cross-faded with the expanded sidebar instead of swapped for it, so
+          // the panel slides between the two widths rather than snapping.
+          opacity: collapsed ? 1 : 0,
+          pointerEvents: collapsed ? 'auto' : 'none',
+          transition: `opacity ${SIDEBAR_ANIM_MS}ms ease`,
+        }}
+      >
+        <Tooltip title="Expand sidebar (⌘\\)" placement="right" arrow>
+          <IconButton
+            onClick={onToggleCollapse}
+            sx={{
+              color: 'var(--sl-text-disabled)',
+              '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-1)' },
+              padding: '6px',
+              borderRadius: '6px',
+            }}
+          >
+            <DockIcon collapsed />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {/* Desktop Sidebar */}
       <Box
@@ -1568,19 +1572,36 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
         onDragLeave={handleSidebarDragLeave}
         onDrop={handleSidebarDrop}
         sx={{
-          width: '280px',
+          width: collapsed ? '48px' : '280px',
           height: '100vh',
           bgcolor: 'var(--sl-bg-base)',
           borderRight: '1px solid var(--sl-border-subtle)',
-          display: { xs: 'none', md: collapsed ? 'none' : 'flex' },
+          display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           position: 'fixed',
           left: 0,
           top: 0,
           zIndex: 1000,
+          // Clipped, not squeezed: the body below keeps its full 280px so the
+          // rows slide out of view instead of reflowing on the way.
+          overflow: 'hidden',
+          transition: `width ${SIDEBAR_ANIM_MS}ms ease`,
         }}
       >
-        {sidebarContent}
+        <Box
+          sx={{
+            width: '280px',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            opacity: collapsed ? 0 : 1,
+            pointerEvents: collapsed ? 'none' : 'auto',
+            transition: `opacity ${SIDEBAR_ANIM_MS}ms ease`,
+          }}
+        >
+          {sidebarContent}
+        </Box>
         {isSidebarDragOver && (
           <Box
             sx={{
