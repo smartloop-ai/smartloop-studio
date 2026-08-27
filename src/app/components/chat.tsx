@@ -349,6 +349,8 @@ export default function Chat(props: {
   const [model, setModel] = useState<string>('');
   // Armed by a send, disarmed by a conversation load — see `animateLayout`.
   const animateLayoutRef = useRef(false);
+  // Bumped when an example prompt fills the composer, to pull focus there.
+  const [composerFocusTrigger, setComposerFocusTrigger] = useState(0);
   const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({});  // asset_id -> data URL for image attachments in the transcript
   const requestedPreviewsRef = useRef<Set<string>>(new Set());  // asset_ids already requested, to avoid duplicate reads
   const { indexingProgress } = useAppStatus();
@@ -1403,6 +1405,23 @@ export default function Chat(props: {
 
   // The composer, rendered either pinned to the bottom or centred in an empty
   // conversation. One definition, so the two placements cannot drift apart.
+  // Openers for an empty conversation. Deliberately about this app's own
+  // capabilities — documents, connections, skills — rather than generic chat
+  // prompts: the blank page problem here isn't "what do I ask an LLM", it's
+  // "what is this thing for". Clicking one fills the composer rather than
+  // sending, so the user can shape it before committing.
+  const EXAMPLE_PROMPTS = [
+    'Summarise the documents in this project',
+    'What can you help me with?',
+    'Find something in my connections',
+    'Draft an email from my notes',
+  ];
+
+  const applyExamplePrompt = (text: string) => {
+    setFormData({ message: text });
+    setComposerFocusTrigger((n) => n + 1);
+  };
+
   const composerBlock = (
     <>
             <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
@@ -1458,6 +1477,7 @@ export default function Chat(props: {
                 }, 100);
               }}
               clearAttachmentTrigger={clearAttachmentTrigger}
+            focusTrigger={composerFocusTrigger}
               showDragDrop={true}
               minRows={1}
               maxRows={4}
@@ -2037,7 +2057,7 @@ export default function Chat(props: {
         <div
           className="flex-none overflow-hidden"
           style={{
-            maxHeight: isEmptyConversation ? 90 : 0,
+            maxHeight: isEmptyConversation ? 100 : 0,
             opacity: isEmptyConversation ? 1 : 0,
             transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
@@ -2047,8 +2067,17 @@ export default function Chat(props: {
               to spell its own name in its own window — the glyph is enough to
               say whose this is. Fills from `--sl-brand-mark`, so it survives a
               light theme (see logo.tsx). */}
-          <div className="flex justify-center pb-6">
-            <LogoMark className="h-10 md:h-12 w-auto" />
+          <div className="flex justify-center pb-4">
+            {/* Same surface as the composer below — its fill, its border, its
+                radius — so the mark reads as the top of one object that the
+                input box is the bottom of, rather than a badge floating over it.
+                A bare glyph here looked like something that failed to load. */}
+            <div
+              className="inline-flex items-center justify-center rounded-lg p-2"
+              style={{ backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-subtle)' }}
+            >
+              <LogoMark className="h-7 md:h-8 w-auto" />
+            </div>
           </div>
         </div>
 
@@ -2065,6 +2094,41 @@ export default function Chat(props: {
           </div>
         </footer>
 
+        {/* Openers, under the composer. Collapses on the same terms as the mark
+            above it, so the empty view enters and leaves as one piece. */}
+        <div
+          className="flex-none overflow-hidden px-3 md:px-4"
+          style={{
+            maxHeight: isEmptyConversation ? 120 : 0,
+            opacity: isEmptyConversation ? 1 : 0,
+            transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
+          }}
+        >
+          <div className="w-full mx-auto flex flex-wrap justify-center gap-2 pt-3" style={{ maxWidth: 760 }}>
+            {EXAMPLE_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                disabled={!isServiceReady}
+                onClick={() => applyExamplePrompt(prompt)}
+                className="px-3 py-1.5 rounded-lg text-[12px] text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ border: '1px solid var(--sl-border-subtle)', color: 'var(--sl-text-muted)' }}
+                onMouseEnter={(e) => {
+                  if (!isServiceReady) return;
+                  e.currentTarget.style.borderColor = 'var(--sl-border-hover)';
+                  e.currentTarget.style.color = 'var(--sl-text-secondary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--sl-border-subtle)';
+                  e.currentTarget.style.color = 'var(--sl-text-muted)';
+                }}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* The counterweight: equal to the message area's growth when empty, so
             the composer lands mid-window; zero once a conversation exists. */}
         <div
@@ -2073,9 +2137,11 @@ export default function Chat(props: {
             // Declared longhand and transitioned inline: `flex-none` sets the
             // `flex` shorthand, and a shorthand-set flex-grow is what browsers
             // decline to interpolate — the collapse was landing in one frame.
-            // A shade more than the area above, so the composer rests just above
-            // true centre — dead centre reads as slightly low in a tall window.
-            flexGrow: isEmptyConversation ? 1.2 : 0,
+            // Well over the area above, so the composer rests clearly in the
+            // upper half rather than at true centre — which reads as slightly
+            // low in a tall window, and leaves the suggestions below it hanging
+            // off the bottom edge.
+            flexGrow: isEmptyConversation ? 2.2 : 0,
             flexShrink: 0,
             flexBasis: 0,
             transition: animateLayout ? 'flex-grow 160ms ease-out' : 'none',

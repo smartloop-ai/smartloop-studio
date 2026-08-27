@@ -48,6 +48,10 @@ interface MessageInputProps {
   onFileAttached?: (documentId: string, fileName: string) => void;
   onAttachmentClear?: () => void;
   clearAttachmentTrigger?: number;
+  // Bump to pull focus into the prompt. Used when something outside the
+  // composer fills it in — an example prompt — so the caret lands after the
+  // inserted text and Enter sends without a second click.
+  focusTrigger?: number;
   showDragDrop?: boolean;
   minRows?: number;
   maxRows?: number;
@@ -77,6 +81,7 @@ export default function MessageInput({
   onFileAttached,
   onAttachmentClear,
   clearAttachmentTrigger = 0,
+  focusTrigger = 0,
   showDragDrop = false,
   minRows = 1,
   maxRows = 4,
@@ -158,6 +163,17 @@ export default function MessageInput({
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(t);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!focusTrigger) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    // Caret to the end, not wherever it last sat: the text arrived from
+    // outside, and the user's next keystroke should continue it.
+    const end = el.value?.length ?? 0;
+    el.setSelectionRange?.(end, end);
+  }, [focusTrigger]);
 
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);
