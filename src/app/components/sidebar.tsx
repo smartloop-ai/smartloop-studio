@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography } from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
@@ -29,7 +29,24 @@ const getColorForProject = (project: any): string => {
   return DEFAULT_COLOR;
 };
 
-export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void }) {
+/** The dock glyph: a panel with its left column filled — the side this hides. */
+function DockIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+      <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.6" stroke="currentColor" strokeWidth="1.1" />
+      <rect
+        x={collapsed ? '1.8' : '1.8'}
+        y="2.8"
+        width="4.2"
+        height="10.4"
+        fill="currentColor"
+        opacity={collapsed ? 0.35 : 0.75}
+      />
+    </svg>
+  );
+}
+
+export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = false, onToggleCollapse }: { user?: any, mobileOpen?: boolean, onMobileClose?: () => void, collapsed?: boolean, onToggleCollapse?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -687,6 +704,22 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
             <span className="text-xl font-semibold tracking-tight" style={{ color: 'var(--sl-text-primary)' }}>smartloop</span>
             <span className="text-xl font-semibold" style={{ color: 'var(--sl-brand-primary)' }}>.</span>
           </Box>
+          {onToggleCollapse && (
+            <Tooltip title="Collapse sidebar (⌘\\)" placement="right" arrow>
+              <IconButton
+                onClick={onToggleCollapse}
+                sx={{
+                  display: { xs: 'none', md: 'flex' },
+                  color: 'var(--sl-text-disabled)',
+                  '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-1)' },
+                  padding: '6px',
+                  borderRadius: '6px',
+                }}
+              >
+                <DockIcon collapsed={false} />
+              </IconButton>
+            </Tooltip>
+          )}
           {mobileOpen && (
             <IconButton
               onClick={onMobileClose}
@@ -1491,6 +1524,43 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
         </Box>
       </Dialog>
 
+      {/* Desktop Sidebar, collapsed to a rail: the same 48px strip the right
+          sidebar leaves behind, so both edges of the window behave alike. Only
+          the dock control survives — everything else in here needs width to be
+          worth showing, and a row of cryptic glyphs is not a sidebar. */}
+      {collapsed && (
+        <Box
+          sx={{
+            width: '48px',
+            height: '100vh',
+            bgcolor: 'var(--sl-bg-base)',
+            borderRight: '1px solid var(--sl-border-subtle)',
+            display: { xs: 'none', md: 'flex' },
+            flexDirection: 'column',
+            alignItems: 'center',
+            pt: 4,
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            zIndex: 1000,
+          }}
+        >
+          <Tooltip title="Expand sidebar (⌘\\)" placement="right" arrow>
+            <IconButton
+              onClick={onToggleCollapse}
+              sx={{
+                color: 'var(--sl-text-disabled)',
+                '&:hover': { color: 'var(--sl-text-primary)', bgcolor: 'var(--sl-bg-surface-1)' },
+                padding: '6px',
+                borderRadius: '6px',
+              }}
+            >
+              <DockIcon collapsed />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )}
+
       {/* Desktop Sidebar */}
       <Box
         onDragEnter={handleSidebarDragEnter}
@@ -1502,7 +1572,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose }: { user?: an
           height: '100vh',
           bgcolor: 'var(--sl-bg-base)',
           borderRight: '1px solid var(--sl-border-subtle)',
-          display: { xs: 'none', md: 'flex' },
+          display: { xs: 'none', md: collapsed ? 'none' : 'flex' },
           flexDirection: 'column',
           position: 'fixed',
           left: 0,
