@@ -62,6 +62,8 @@ export interface StorageItem {
   version?: string;
   /** Logs only: 'truncate' for server.log, 'delete' for its backups. */
   action?: 'truncate' | 'delete';
+  /** Cache only: which regenerable directory the entry came from. */
+  cache?: 'cache' | 'templates';
   /** Orphan projects only. */
   project_id?: string;
   /** Conversations only (reported, never deleted). */
