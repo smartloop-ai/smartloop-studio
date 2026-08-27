@@ -18,7 +18,7 @@ import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR, LEGACY_PINK, getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
@@ -53,6 +53,11 @@ export default function Home() {
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [conversation, setConversation] = useState<any>(null);
+  // True from mount until restoreTabs has resolved the active tab's conversation.
+  // Navigating back from Settings remounts this page, so `conversation` is null
+  // for as long as the restore takes — and Chat would render its empty view in
+  // the meantime, then flick to the content of a tab that always had some.
+  const [conversationHydrating, setConversationHydrating] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -69,10 +74,6 @@ export default function Home() {
   const [_projectMemory, setProjectMemory] = useState(true);
   const [isSavingSkills, setIsSavingSkills] = useState(false);
   const [currentProjectData, setCurrentProjectData] = useState<any>(null);
-  // Primary orchestrator model for the active project — passed to the sidebar's
-  // Models panel so it can filter itself out of the auxiliary list.
-  const [currentModel, setCurrentModel] = useState<string>('');
-
   const [showDeleteDocDialog, setShowDeleteDocDialog] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<any>(null);
   const [deleteDocConfirm, setDeleteDocConfirm] = useState('');
@@ -93,8 +94,6 @@ export default function Home() {
       } else {
         modelName = await storageService.getItem('selected_model') || '';
       }
-      setCurrentModel(modelName);
-
       if (modelName && selectedProject?.id) await loadPrimaryModel(modelName);
     };
     loadModel();
@@ -424,6 +423,13 @@ export default function Home() {
     if (!projectId) {
       setOpenTabs([]);
       setActiveTabId(null);
+      // Only settle once the project list has actually resolved. Until then
+      // "no project" means "not known yet", not "none" — and clearing here let
+      // chat paint its empty view in the gap before the project arrived, which
+      // is the flash this flag exists to prevent. Gating on projectsReady still
+      // guarantees it clears, so a genuinely project-less window can't be held
+      // on a blank screen.
+      if (projectsReady) setConversationHydrating(false);
       return;
     }
     // Avoid reloading if already loaded for this project
@@ -494,8 +500,9 @@ export default function Home() {
         setConversation(null);
       }
     };
-    restoreTabs();
-  }, [selectedProject?.id]);
+    setConversationHydrating(true);
+    restoreTabs().finally(() => setConversationHydrating(false));
+  }, [selectedProject?.id, projectsReady]);
 
   // Persist open tabs to SQLite whenever they change
   const tabsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1429,11 +1436,6 @@ description: A clear description of what this skill does and when to use it
     }
   };
 
-  const getProjectColor = (project: any) => {
-    const color = project?.color;
-    if (!color || color === LEGACY_PINK) return DEFAULT_COLOR;
-    return color;
-  };
 
   const handleOpenDeleteDocDialog = (doc: any) => {
     setDocumentToDelete(doc);
@@ -1831,54 +1833,13 @@ description: A clear description of what this skill does and when to use it
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-sl-bg-base">
               <>
-                {/* Chat Header - matches project page style */}
-                <Box className="flex-none px-4 pb-4 pt-0">
-                  <Box className="flex items-center justify-between gap-4">
-                    <Box className="flex items-center gap-4 flex-1 min-w-0">
-                      <Box
-                        sx={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: '2px',
-                          bgcolor: getProjectColor(selectedProject),
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Box className="flex-1 min-w-0">
-                        {selectedProject && selectedProject.system !== true ? (
-                          <input
-                            key={`${selectedProject.id}-${selectedProject.name}`}
-                            defaultValue={selectedProject.name}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderBottomColor = 'transparent';
-                              const trimmed = e.target.value.trim();
-                              if (trimmed && trimmed !== selectedProject.name) {
-                                handleRenameProject(trimmed);
-                              } else {
-                                e.target.value = selectedProject.name;
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                              if (e.key === 'Escape') {
-                                (e.target as HTMLInputElement).value = selectedProject.name;
-                                (e.target as HTMLInputElement).blur();
-                              }
-                            }}
-                            className="text-xl md:text-2xl font-bold text-sl-text-primary bg-transparent border-none outline-none w-full truncate cursor-text hover:opacity-80 focus:opacity-100 focus:border-b"
-                            style={{ caretColor: 'var(--sl-brand-primary)', borderColor: 'transparent' }}
-                            onFocus={(e) => (e.currentTarget.style.borderBottomColor = 'var(--sl-brand-primary)')}
-                          />
-                        ) : (
-                          <div className="text-xl md:text-2xl font-bold text-sl-text-primary truncate">
-                            {selectedProject?.name || 'General'}
-                          </div>
-                        )}
-                      </Box>
-                    </Box>
-                    {/* App-update badge — top-right, opposite the project name */}
-                    <UpdatePill />
-                  </Box>
+                {/* The project name lived here; the left sidebar already names
+                    the project you are in, and the tabs below name the
+                    conversation, so the row was a third label for context you
+                    can already see. Renaming still lives in Project Settings.
+                    Only the update badge stays, since nothing else surfaces it. */}
+                <Box className="flex-none px-4 pb-2 pt-0 flex justify-end">
+                  <UpdatePill />
                 </Box>
 
                 {/* Content Tabs */}
@@ -1924,6 +1885,7 @@ description: A clear description of what this skill does and when to use it
                           initialMessage={chatMessage}
                           attachments={messageAttachments}
                           conversation={conversation}
+                          conversationHydrating={conversationHydrating}
                           onFileAttached={handleFileAttached}
                           onAttachmentsClear={() => {
                             setMessageAttachments([]);
@@ -1953,7 +1915,6 @@ description: A clear description of what this skill does and when to use it
                     onRenameProject={handleRenameProject}
                     onInstructionsChange={handleInstructionsChange}
                     user={user}
-                    model={currentModel}
                     activeTab={getActiveTab()?.type || 'conversation'}
                     onTabChange={handleOpenTab}
                     projectSkills={projectSkills}

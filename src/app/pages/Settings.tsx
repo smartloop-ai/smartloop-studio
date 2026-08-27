@@ -20,6 +20,7 @@ import PauseIcon from '@mui/icons-material/Pause';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import { LogoMark } from '@/app/components/logo';
 
 
 
@@ -417,11 +418,9 @@ export default function SettingsPage() {
                 </Box>
 
                 <Box className="max-w-4xl mx-auto mt-6 md:mt-8">
-                    {/* Header */}
-                    <Box className="mb-6 md:mb-8">
-                        <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--sl-text-primary)' }}>Settings</h1>
-                        <p className="text-sm md:text-base" style={{ color: 'var(--sl-text-muted)' }}>Model configuration and default settings</p>
-                    </Box>
+                    {/* No page title: a native settings window doesn't repeat its
+                        own name inside itself — you got here from the gear, and
+                        the section headings below say what everything is. */}
 
                     {/* 0. App version / updates */}
                     <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
@@ -440,20 +439,7 @@ export default function SettingsPage() {
                                                 className="flex items-center justify-center shrink-0 rounded-lg p-1"
                                                 style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
                                             >
-                                                <svg
-                                                    width={20}
-                                                    height={20}
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    aria-label="Smartloop"
-                                                >
-                                                    <path
-                                                        d="M10 5H11A6 6 0 0 1 17 11V18H10A6 6 0 0 1 4 12V11A6 6 0 0 1 10 5Z"
-                                                        fill="var(--sl-brand-mark)"
-                                                    />
-                                                    <circle cx="16.7" cy="8.4" r="3" fill="var(--sl-brand-primary)" />
-                                                </svg>
+                                                <LogoMark className="w-5 h-5" />
                                             </div>
                                             <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                                         </div>

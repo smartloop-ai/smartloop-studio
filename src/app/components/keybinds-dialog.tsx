@@ -7,10 +7,11 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl';
 const SHIFT = IS_MAC ? '⇧' : 'Shift';
 const ALT = IS_MAC ? '⌥' : 'Alt';
 
-// Every binding the app registers, grouped the way the UI is laid out. Handlers
-// live in Home.tsx (tabs, conversations, web search), sidebar.tsx (search,
-// settings) and right-sidebar.tsx (panel sections) — keep this list in step
-// with them.
+// Every binding the app registers, grouped the way the UI is laid out — by
+// where the control lives, so a binding is findable from what you can see on
+// screen. Handlers live in Home.tsx (tabs, conversations, web search),
+// sidebar.tsx (search, settings), right-sidebar.tsx (panel sections) and
+// model-picker.tsx (models) — keep this list in step with them.
 const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
   {
     title: 'Conversations',
@@ -25,14 +26,23 @@ const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
     ],
   },
   {
+    // Controls that live in the composer, not in a panel — the model dialog and
+    // the web-search toggle both open from the row under the prompt.
+    title: 'Composer',
+    items: [
+      { keys: `${MOD}+${SHIFT}+M`, label: 'Models' },
+      { keys: `${MOD}+${ALT}+S`, label: 'Toggle web search' },
+    ],
+  },
+  {
     title: 'Panels',
     items: [
       { keys: `${MOD}+K`, label: 'Search projects' },
       { keys: `${MOD}+B`, label: 'Toggle right panel' },
-      { keys: `${MOD}+${SHIFT}+M / D / C / S`, label: 'Models / Documents / Connections / Skills' },
+      { keys: `${MOD}+\\`, label: 'Collapse / expand the left sidebar' },
+      { keys: `${MOD}+${SHIFT}+D / S / C / L`, label: 'Documents / Skills / Connections / Logs' },
       { keys: `${MOD}+${SHIFT}+,`, label: 'Project settings' },
       { keys: `${MOD}+,`, label: 'Settings' },
-      { keys: `${MOD}+${ALT}+S`, label: 'Toggle web search' },
       { keys: `${MOD}+S`, label: 'Save skill (in editor)' },
     ],
   },
