@@ -25,7 +25,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // expand button, so starting closed didn't save space so much as hide the way
   // around. The right rail keeps its section icons when it collapses, which is why
   // that one can default shut.
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
