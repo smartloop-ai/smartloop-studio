@@ -1221,6 +1221,10 @@ ipcMain.handle('db-add-memory-usage', (event, memoryPercent) => database.addMemo
 ipcMain.handle('db-get-memory-usage', (event, limit) => database.getMemoryUsage(limit));
 ipcMain.handle('db-add-tps-entry', (event, tps) => database.addTpsEntry(tps));
 ipcMain.handle('db-get-tps-history', (event, limit) => database.getTpsHistory(limit));
+ipcMain.handle('db-add-run-trace', (event, trace) => database.addRunTrace(trace));
+ipcMain.handle('db-get-run-traces', (event, limit, projectId) => database.getRunTraces(limit, projectId));
+ipcMain.handle('db-clear-run-traces', (event, projectId, keepIds) => database.clearRunTraces(projectId, keepIds));
+ipcMain.handle('db-delete-run-trace', (event, messageId) => database.deleteRunTrace(messageId));
 
 // Settings
 ipcMain.handle('db-get-setting', (event, key) => database.getSetting(key));

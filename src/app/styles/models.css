@@ -1,0 +1,12 @@
+/* A model the orchestrator is actively using breathes a thin brand ring. It
+   pulses the ring's *color* in place (not its size) so it stays a crisp outline
+   that never bleeds outward into neighbouring rows, while still reading as a
+   live "working" heartbeat. */
+.model-row-active {
+    animation: modelActiveBreathe 2s ease-in-out infinite;
+}
+
+@keyframes modelActiveBreathe {
+    0%, 100% { box-shadow: 0 0 0 1px var(--sl-brand-alpha-40); }
+    50% { box-shadow: 0 0 0 1px var(--sl-brand-primary); }
+}

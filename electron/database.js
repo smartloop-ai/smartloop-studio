@@ -67,6 +67,26 @@ function openDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- What the orchestrator did on a turn: the SSE step log, the model it picked,
+    -- and the outcome. Keyed by the assistant message id so a run can be tied
+    -- back to the answer it produced. Steps are stored as JSON because they are
+    -- only ever read back as a whole list, never queried across.
+    CREATE TABLE IF NOT EXISTS run_traces (
+      message_id TEXT PRIMARY KEY,
+      conversation_id TEXT,
+      project_id TEXT,
+      model TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      duration_ms INTEGER,
+      citations INTEGER,
+      outcome TEXT,
+      prompt TEXT,
+      steps TEXT NOT NULL DEFAULT '[]'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_run_traces_started ON run_traces(started_at DESC);
+
     CREATE TABLE IF NOT EXISTS install_status (
       step INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
@@ -153,6 +173,13 @@ function openDatabase() {
   if (!cols.find(c => c.name === 'is_selected')) {
     db.exec("ALTER TABLE conversations ADD COLUMN is_selected INTEGER DEFAULT 0");
     console.log('[DB] Added is_selected column to conversations');
+  }
+
+  // Migration: add prompt column to run_traces
+  const traceCols = db.prepare("PRAGMA table_info(run_traces)").all();
+  if (traceCols.length && !traceCols.find(c => c.name === 'prompt')) {
+    db.exec("ALTER TABLE run_traces ADD COLUMN prompt TEXT");
+    console.log('[DB] Added prompt column to run_traces');
   }
 
   // Migration: add citations column to messages
@@ -505,6 +532,97 @@ function getTpsHistory(limit = 60) {
     .reverse();
 }
 
+// --- Run Traces (orchestration activity) ---
+
+/**
+ * Record a finished run. Upserts on message_id so a re-recorded turn (a retry
+ * writing under the same id) replaces rather than duplicates.
+ */
+function addRunTrace(trace) {
+  const d = openDatabase();
+  d.prepare(`
+    INSERT INTO run_traces (
+      message_id, conversation_id, project_id, model,
+      started_at, ended_at, duration_ms, citations, outcome, prompt, steps
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(message_id) DO UPDATE SET
+      conversation_id = excluded.conversation_id,
+      project_id = excluded.project_id,
+      model = excluded.model,
+      started_at = excluded.started_at,
+      ended_at = excluded.ended_at,
+      duration_ms = excluded.duration_ms,
+      citations = excluded.citations,
+      outcome = excluded.outcome,
+      prompt = excluded.prompt,
+      steps = excluded.steps
+  `).run(
+    trace.message_id,
+    trace.conversation_id ?? null,
+    trace.project_id ?? null,
+    trace.model ?? null,
+    trace.started_at,
+    trace.ended_at ?? null,
+    trace.duration_ms ?? null,
+    trace.citations ?? null,
+    trace.outcome ?? null,
+    trace.prompt ?? null,
+    JSON.stringify(trace.steps ?? []),
+  );
+
+  // Keep the log bounded — this is a rolling activity view, not an audit trail.
+  d.prepare(`
+    DELETE FROM run_traces WHERE message_id NOT IN (
+      SELECT message_id FROM run_traces ORDER BY started_at DESC LIMIT 200
+    )
+  `).run();
+}
+
+/** Most recent runs, newest first, with steps parsed back into arrays. */
+function getRunTraces(limit = 20, projectId = null) {
+  const d = openDatabase();
+  const rows = projectId
+    // `OR project_id IS NULL` mirrors the renderer's in-memory rule: a run
+    // recorded before the project was known still belongs on screen, and
+    // filtering it out here made it visible until the first project switch and
+    // then vanish for good.
+    ? d.prepare('SELECT * FROM run_traces WHERE project_id = ? OR project_id IS NULL ORDER BY started_at DESC LIMIT ?').all(projectId, limit)
+    : d.prepare('SELECT * FROM run_traces ORDER BY started_at DESC LIMIT ?').all(limit);
+  return rows.map((r) => {
+    let steps = [];
+    try {
+      steps = JSON.parse(r.steps || '[]');
+    } catch {
+      // A corrupt row shouldn't take the panel down with it.
+      steps = [];
+    }
+    return { ...r, steps };
+  });
+}
+
+/**
+ * Forget recorded runs. Scoped to a project when one is given, otherwise the
+ * whole log. `keepIds` spares specific runs — the panel's Clear sits under
+ * "Earlier runs" and so must leave the current one standing.
+ */
+function clearRunTraces(projectId = null, keepIds = []) {
+  const d = openDatabase();
+  const keep = Array.isArray(keepIds) ? keepIds.filter(Boolean) : [];
+  // Placeholders rather than interpolation — ids come from the renderer.
+  const keepClause = keep.length ? ` AND message_id NOT IN (${keep.map(() => '?').join(',')})` : '';
+  const res = projectId
+    ? d.prepare(`DELETE FROM run_traces WHERE project_id = ?${keepClause}`).run(projectId, ...keep)
+    : d.prepare(`DELETE FROM run_traces WHERE 1=1${keepClause}`).run(...keep);
+  return { deleted: res.changes };
+}
+
+/** Forget one recorded run. */
+function deleteRunTrace(messageId) {
+  const d = openDatabase();
+  const res = d.prepare('DELETE FROM run_traces WHERE message_id = ?').run(messageId);
+  return { deleted: res.changes };
+}
+
 // --- Install Status ---
 
 function setInstallStepComplete(step) {
@@ -816,6 +934,10 @@ module.exports = {
   // TPS history
   addTpsEntry,
   getTpsHistory,
+  addRunTrace,
+  getRunTraces,
+  clearRunTraces,
+  deleteRunTrace,
   // Install status
   setInstallStepComplete,
   getInstallStatus,

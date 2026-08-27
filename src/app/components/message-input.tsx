@@ -48,10 +48,19 @@ interface MessageInputProps {
   onFileAttached?: (documentId: string, fileName: string) => void;
   onAttachmentClear?: () => void;
   clearAttachmentTrigger?: number;
+  // Bump to pull focus into the prompt. Used when something outside the
+  // composer fills it in — an example prompt — so the caret lands after the
+  // inserted text and Enter sends without a second click.
+  focusTrigger?: number;
   showDragDrop?: boolean;
   minRows?: number;
   maxRows?: number;
   leftSlot?: React.ReactNode;
+  // Rendered immediately before the send button. The model switcher lives here
+  // rather than on the left so attach keeps the leading position it has always
+  // had, and the two controls that decide *how the turn is answered* — which
+  // model, and send — sit together.
+  rightSlot?: React.ReactNode;
   skills?: SkillOption[];
   onCreateSkill?: (name: string) => void;
 }
@@ -72,10 +81,12 @@ export default function MessageInput({
   onFileAttached,
   onAttachmentClear,
   clearAttachmentTrigger = 0,
+  focusTrigger = 0,
   showDragDrop = false,
   minRows = 1,
   maxRows = 4,
   leftSlot,
+  rightSlot,
   skills = [],
   onCreateSkill,
 }: MessageInputProps) {
@@ -152,6 +163,17 @@ export default function MessageInput({
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
     return () => clearInterval(t);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!focusTrigger) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    // Caret to the end, not wherever it last sat: the text arrived from
+    // outside, and the user's next keystroke should continue it.
+    const end = el.value?.length ?? 0;
+    el.setSelectionRange?.(end, end);
+  }, [focusTrigger]);
 
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);
@@ -394,66 +416,90 @@ export default function MessageInput({
         />
         </Box>
 
-        <Box className="flex items-center justify-between">
-          {/* Left side - Model selector, file attachment and selected quote */}
-          <Box className="flex items-center gap-2 flex-1 overflow-hidden">
+        <Box className="flex items-center justify-between gap-2">
+          {/* Left side - file attachment and selected quote */}
+          <Box className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
             {leftSlot}
             {allowAttachments && (
-              <>
-                {/* Single Attach action — documents plus images when a vision model is available */}
-                <FileAttacher
-                  conversation={conversation}
-                  onSuccess={(documentId, fileName) => {
-                    if (onFileAttached) {
-                      onFileAttached(documentId, fileName);
-                    }
-                  }}
-                  onClear={() => {
-                    if (onAttachmentClear) {
-                      onAttachmentClear();
-                    }
-                  }}
-                  onError={(error) => {
-                    console.error('File attach error:', error);
-                  }}
-                  onUploadingChange={setIsAttaching}
-                  disabled={disabled || isLoading}
-                  size="small"
-                  allowImages={allowImages}
-                  showDragDrop={showDragDrop}
-                  clearTrigger={clearAttachmentTrigger}
-                  externalDrop={droppedFile}
-                />
-
-                {/* Voice input — disabled until speech-to-text is available */}
-                <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
-                  <span>
-                    <IconButton
-                      disabled={!allowVoice || disabled || isLoading}
-                      size="small"
-                      sx={{
-                        color: 'var(--sl-text-muted)',
-                        borderRadius: '8px',
-                        padding: '5px',
-                        '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
-                        '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
-                      }}
-                    >
-                      <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </>
+              /* Single Attach action — documents plus images when a vision model is available */
+              <FileAttacher
+                conversation={conversation}
+                onSuccess={(documentId, fileName) => {
+                  if (onFileAttached) {
+                    onFileAttached(documentId, fileName);
+                  }
+                }}
+                onClear={() => {
+                  if (onAttachmentClear) {
+                    onAttachmentClear();
+                  }
+                }}
+                onError={(error) => {
+                  console.error('File attach error:', error);
+                }}
+                onUploadingChange={setIsAttaching}
+                disabled={disabled || isLoading}
+                size="small"
+                allowImages={allowImages}
+                showDragDrop={showDragDrop}
+                clearTrigger={clearAttachmentTrigger}
+                externalDrop={droppedFile}
+              />
             )}
           </Box>
 
-          {/* Right side - Send / Stop button */}
-          {isLoading ? (
+          {/* Right side - model switcher, dictation, then Send / Stop. Voice sits
+              immediately left of Send the way ChatGPT, Gemini and Copilot place
+              it: the two things you reach for to *submit* a turn stay together,
+              and the far left is left to Attach alone. */}
+          <Box className="flex items-center gap-2 flex-shrink-0">
+            {rightSlot}
+
+            {/* Voice input — disabled until speech-to-text is available */}
+            <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
+              <span className="flex items-center">
+                <IconButton
+                  disabled={!allowVoice || disabled || isLoading}
+                  size="small"
+                  sx={{
+                    color: 'var(--sl-text-muted)',
+                    // The same 28px outlined box as Attach, the model pill and
+                    // Send — stated outright rather than left to padding and
+                    // glyph size. Bare, it read as a gap between two bordered
+                    // controls rather than as a quieter one.
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    padding: 0,
+                    boxSizing: 'border-box',
+                    border: '1px solid var(--sl-border-default)',
+                    backgroundColor: 'var(--sl-white-alpha-7)',
+                    '&:hover': {
+                      color: 'var(--sl-brand-primary)',
+                      borderColor: 'var(--sl-border-hover)',
+                      backgroundColor: 'var(--sl-white-alpha-10)',
+                    },
+                    '&.Mui-disabled': {
+                      color: 'var(--sl-text-disabled)',
+                      border: '1px solid var(--sl-border-default)',
+                      opacity: 0.5,
+                    },
+                  }}
+                >
+                  <MicNoneOutlinedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            {isLoading ? (
             <button
-              className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors"
+              className="flex items-center justify-center rounded-md transition-colors flex-shrink-0"
               style={{
+                width: '28px',
+                height: '28px',
+                boxSizing: 'border-box',
                 backgroundColor: 'var(--sl-brand-alpha-15)',
-                border: '1.5px solid var(--sl-brand-alpha-30)',
+                border: '1px solid var(--sl-brand-alpha-30)',
               }}
               onClick={onStop}
               title="Stop generating (Esc)"
@@ -461,9 +507,9 @@ export default function MessageInput({
               <Box
                 component="span"
                 sx={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '3px',
+                  width: 10,
+                  height: 10,
+                  borderRadius: '2px',
                   bgcolor: 'var(--sl-brand-primary)',
                   animation: 'pulseStop 1.5s ease-in-out infinite',
                   '@keyframes pulseStop': {
@@ -477,10 +523,13 @@ export default function MessageInput({
           ) : (
             <button
               disabled={disabled || isAttaching || !message.trim()}
-              className="w-9 h-9 flex items-center justify-center rounded-lg disabled:cursor-not-allowed transition-all"
+              className="flex items-center justify-center rounded-md disabled:cursor-not-allowed transition-all flex-shrink-0"
               style={{
+                width: '28px',
+                height: '28px',
+                boxSizing: 'border-box',
                 backgroundColor: disabled || isAttaching || !message.trim() ? 'var(--sl-white-alpha-7)' : 'var(--sl-brand-alpha-10)',
-                border: `1.5px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
+                border: `1px solid ${disabled || isAttaching || !message.trim() ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-20)'}`,
               }}
               onMouseEnter={(e) => {
                 if (!disabled && !isAttaching && message.trim()) {
@@ -496,9 +545,10 @@ export default function MessageInput({
               }}
               onClick={onSend}
             >
-              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 18 }} />
+              <ArrowUpwardIcon sx={{ color: disabled || isAttaching || !message.trim() ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)', fontSize: 16 }} />
             </button>
-          )}
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>

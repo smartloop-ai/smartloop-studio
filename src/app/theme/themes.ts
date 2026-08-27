@@ -13,7 +13,7 @@ export interface ThemeColors {
 }
 
 // Rail icons a theme may override with its own artwork (right-sidebar rail).
-export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+export type RailIconName = 'logs' | 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
 
 // Optional per-theme typography. `family` is applied to body/UI text (and MUI),
 // `heading` (falling back to `family`) to h1–h6, and `url` is a stylesheet the
@@ -98,10 +98,14 @@ export function applyThemeCssVars(theme: ThemeDefinition) {
   s.setProperty('--sl-brand-active', c.brand.active);
   s.setProperty('--sl-brand-light', c.brand.light);
 
-  // Fill for the Smartloop logo mark: on dark themes it's the app-icon white
-  // (the theme's primary text), on light themes it's the brand primary so the
-  // mark stays visible on a light surface.
-  s.setProperty('--sl-brand-mark', theme.mode === 'light' ? c.brand.primary : c.text.primary);
+  // Body fill for the Smartloop logo mark — the theme's primary text in both
+  // modes, so the mark is the app-icon white on a dark surface and near-black on
+  // a light one. It used to take the brand primary on light themes, which was
+  // the same colour as the mark's dot: body and dot resolved identically and the
+  // glyph flattened into one solid brand-coloured shape on every light theme.
+  // Primary text is also the higher-contrast choice of the two (#1f2328 vs
+  // #ec4899 on white), so the mark reads better as well as reading correctly.
+  s.setProperty('--sl-brand-mark', c.text.primary);
 
   s.setProperty('--sl-text-primary', c.text.primary);
   s.setProperty('--sl-text-secondary', c.text.secondary);

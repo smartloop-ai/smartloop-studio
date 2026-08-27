@@ -1206,10 +1206,12 @@
 }
 
 .chat__box {
+  /* Sizing and scrolling are the component's now (`flex flex-col h-full`, with
+     the message area owning the scroll). The fixed `calc(100vh - 20rem)` this
+     had left the chat 320px shorter than the window — so an "centred" composer
+     sat centred in a box that ended well above the bottom of the screen. */
   display: flex;
   border: none;
-  overflow-y: auto;
-  height: calc(100vh - 20rem);
   width: 100%;
 }
 
@@ -1223,8 +1225,9 @@
 }
 
 .chat__box footer {
-  border-top: solid 1px #424242;
-  padding: 5px;
+  /* No border or padding here: the composer draws its own, and this selector
+     (0,1,1) outranks the utility classes (0,1,0), so the rule won every time —
+     which is why the divider stayed put while the composer was centred. */
 }
 
 .chat__box footer input {
