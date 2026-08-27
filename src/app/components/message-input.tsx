@@ -401,65 +401,80 @@ export default function MessageInput({
         </Box>
 
         <Box className="flex items-center justify-between gap-2">
-          {/* Left side - file attachment, voice, and selected quote */}
+          {/* Left side - file attachment and selected quote */}
           <Box className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
             {leftSlot}
             {allowAttachments && (
-              <>
-                {/* Single Attach action — documents plus images when a vision model is available */}
-                <FileAttacher
-                  conversation={conversation}
-                  onSuccess={(documentId, fileName) => {
-                    if (onFileAttached) {
-                      onFileAttached(documentId, fileName);
-                    }
-                  }}
-                  onClear={() => {
-                    if (onAttachmentClear) {
-                      onAttachmentClear();
-                    }
-                  }}
-                  onError={(error) => {
-                    console.error('File attach error:', error);
-                  }}
-                  onUploadingChange={setIsAttaching}
-                  disabled={disabled || isLoading}
-                  size="small"
-                  allowImages={allowImages}
-                  showDragDrop={showDragDrop}
-                  clearTrigger={clearAttachmentTrigger}
-                  externalDrop={droppedFile}
-                />
-
-                {/* Voice input — disabled until speech-to-text is available */}
-                <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
-                  <span>
-                    <IconButton
-                      disabled={!allowVoice || disabled || isLoading}
-                      size="small"
-                      sx={{
-                        color: 'var(--sl-text-muted)',
-                        // The same 28px box as Attach, the model pill and Send —
-                        // stated outright rather than left to padding + glyph size.
-                        borderRadius: '6px',
-                        width: '28px',
-                        height: '28px',
-                        padding: 0,
-                        '&:hover': { color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-7)' },
-                        '&.Mui-disabled': { color: 'var(--sl-text-disabled)', opacity: 0.5 },
-                      }}
-                    >
-                      <MicNoneOutlinedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </>
+              /* Single Attach action — documents plus images when a vision model is available */
+              <FileAttacher
+                conversation={conversation}
+                onSuccess={(documentId, fileName) => {
+                  if (onFileAttached) {
+                    onFileAttached(documentId, fileName);
+                  }
+                }}
+                onClear={() => {
+                  if (onAttachmentClear) {
+                    onAttachmentClear();
+                  }
+                }}
+                onError={(error) => {
+                  console.error('File attach error:', error);
+                }}
+                onUploadingChange={setIsAttaching}
+                disabled={disabled || isLoading}
+                size="small"
+                allowImages={allowImages}
+                showDragDrop={showDragDrop}
+                clearTrigger={clearAttachmentTrigger}
+                externalDrop={droppedFile}
+              />
             )}
           </Box>
 
-          {/* Right side - model switcher, then Send / Stop */}
-          <Box className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Right side - model switcher, dictation, then Send / Stop. Voice sits
+              immediately left of Send the way ChatGPT, Gemini and Copilot place
+              it: the two things you reach for to *submit* a turn stay together,
+              and the far left is left to Attach alone. */}
+          <Box className="flex items-center gap-2 flex-shrink-0">
             {rightSlot}
+
+            {/* Voice input — disabled until speech-to-text is available */}
+            <Tooltip title={allowVoice ? 'Voice input' : 'Voice input coming soon'} placement="top" arrow>
+              <span className="flex items-center">
+                <IconButton
+                  disabled={!allowVoice || disabled || isLoading}
+                  size="small"
+                  sx={{
+                    color: 'var(--sl-text-muted)',
+                    // The same 28px outlined box as Attach, the model pill and
+                    // Send — stated outright rather than left to padding and
+                    // glyph size. Bare, it read as a gap between two bordered
+                    // controls rather than as a quieter one.
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    padding: 0,
+                    boxSizing: 'border-box',
+                    border: '1px solid var(--sl-border-default)',
+                    backgroundColor: 'var(--sl-white-alpha-7)',
+                    '&:hover': {
+                      color: 'var(--sl-brand-primary)',
+                      borderColor: 'var(--sl-border-hover)',
+                      backgroundColor: 'var(--sl-white-alpha-10)',
+                    },
+                    '&.Mui-disabled': {
+                      color: 'var(--sl-text-disabled)',
+                      border: '1px solid var(--sl-border-default)',
+                      opacity: 0.5,
+                    },
+                  }}
+                >
+                  <MicNoneOutlinedIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+
             {isLoading ? (
             <button
               className="flex items-center justify-center rounded-md transition-colors flex-shrink-0"

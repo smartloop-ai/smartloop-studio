@@ -309,7 +309,7 @@ export default function FileAttacher({
         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--sl-white-alpha-7)'; }}
         disabled={disabled || isUploading}
       >
-        <AttachFileIcon sx={{ fontSize: isSmall ? 14 : 18 }} />
+        <AttachFileIcon sx={{ fontSize: isSmall ? 15 : 18 }} />
         <span>Attach</span>
       </button>
       <input

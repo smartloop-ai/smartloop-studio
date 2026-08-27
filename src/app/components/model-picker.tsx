@@ -480,13 +480,11 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             ? <ModelBrandIcon name={triggerIconFor.name || triggerIconFor.id} size={14} />
                             : <AutoAwesomeOutlinedIcon sx={{ fontSize: 13 }} />}
                     </span>
+                    {/* Multi-select is just "Auto" — the count told you how many
+                        models were eligible, which is not a thing you act on, and
+                        it read as a badge on a control that isn't a counter. */}
                     <span className="font-medium truncate leading-4">{triggerLabel}</span>
-                    {selected.length > 1 && (
-                        <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'var(--sl-text-faint)' }}>
-                            {selected.length}
-                        </span>
-                    )}
-                    <KeyboardArrowDownRoundedIcon sx={{ fontSize: 14, flexShrink: 0 }} />
+                    <KeyboardArrowDownRoundedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
                 </button>
             </Tooltip>
 

@@ -23,16 +23,14 @@ import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
 import ModelPicker from './model-picker';
+import { runTrace } from '@/app/services/run-trace.service';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 
-import LightbulbIcon from '@mui/icons-material/Lightbulb';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import FormatQuoteIcon from '@mui/icons-material/FormatQuote';
 import LinkIcon from '@mui/icons-material/Link';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -86,6 +84,55 @@ function formatBytes(bytes: number): string {
 
 // Turn bare URLs in plain user-message text into clickable, themed links.
 // Clicks are picked up by the document-level handler that opens web links externally.
+/**
+ * The footer's status marker while a response streams: the flat square gives way
+ * to a bar sweeping through | / - \, the terminal spinner the bracketed line
+ * already looks like. Monospace so the four frames occupy identical width and
+ * the text after it never shifts.
+ *
+ * Mounted only while loading, so there is no timer running on an idle app.
+ */
+const SPINNER_FRAMES = ['|', '/', '-', '\\'];
+
+function StreamingMarker() {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 120);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    /* Inherits the strip's color — the motion already says "running", and
+       recoloring it made the marker jump out of a line meant to sit quiet. */
+    <span className="inline-block text-center" style={{ width: 6 }}>
+      {SPINNER_FRAMES[frame]}
+    </span>
+  );
+}
+
+/**
+ * The footer's text while a response streams: whatever the backend last said it
+ * was doing ("Reading document: sp97.pdf"), falling back to a generic line
+ * before the first status arrives.
+ *
+ * Read straight off the trace store rather than kept as chat state. The version
+ * this replaces queued the events and paced them through a dwell timer, which
+ * was a second copy of the same data — and the reason a run's earlier steps used
+ * to vanish. Here the store is the one source and the strip just reads it.
+ */
+function LiveStatusText() {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    const read = () => {
+      const turn = runTrace.getTurns()[0];
+      const open = turn && !turn.endedAt;
+      setText(open ? (turn.steps[turn.steps.length - 1]?.message ?? null) : null);
+    };
+    read();
+    return runTrace.subscribe(read);
+  }, []);
+  return <>{text || 'Generating response…'}</>;
+}
+
 const USER_URL_REGEX = /(https?:\/\/[^\s<>()]+)/g;
 function renderUserMessageContent(text: string): React.ReactNode[] {
   return text.split(USER_URL_REGEX).map((part, i) =>
@@ -212,7 +259,7 @@ const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : 'Ctrl+Alt+S';
 // The status bar has room for two hints, so instead of listing bindings it
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
-const KEYBINDS_HOTKEY = '?';
+const KEYBINDS_HOTKEY = '\u21e7?';
 
 export default function Chat(props: {
   project?: any,
@@ -280,16 +327,12 @@ export default function Chat(props: {
   const [searchQuery] = useState("");
   const [filteredMessages, setFilteredMessages]: any = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [statusText, setStatusText] = useState<string | null>(null);  // Current SSE chat.status shown beside the input box
-  const [showTips, setShowTips] = useState<null | boolean>(null);
   const [copied, setCopied]: any = useState("");
   const [saved, setSaved]: any = useState("");
   const [saving, setSaving]: any = useState("");
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
-  const statusQueueRef = useRef<string[]>([]);       // Pending SSE status messages to display
-  const statusTimerRef = useRef<any>(null);          // Timer draining the status queue
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
@@ -661,20 +704,17 @@ export default function Chat(props: {
 
     setMessages((prevState: any) => [...prevState, responseMsg]);
 
-    // Show queued SSE status messages one at a time (min ~600ms each) so the
-    // user can actually read the progression instead of it snapping to the last.
-    const STATUS_DWELL_MS = 600;
-    const drainStatusQueue = () => {
-      const next = statusQueueRef.current.shift();
-      if (next === undefined) { statusTimerRef.current = null; return; }
-      setStatusText(next);
-      statusTimerRef.current = setTimeout(drainStatusQueue, STATUS_DWELL_MS);
-    };
-    const clearStatusQueue = () => {
-      statusQueueRef.current = [];
-      if (statusTimerRef.current) { clearTimeout(statusTimerRef.current); statusTimerRef.current = null; }
-      setStatusText(null);
-    };
+    // Open the trace turn here rather than once the stream is running: getting a
+    // stream can mean loading a model first (the 503 retry below), which is a
+    // long wait and exactly when someone hits Esc. Starting later meant a cancel
+    // during that wait produced no run at all, so Activity had nothing to show
+    // for a turn the user definitely made. The turn's duration therefore covers
+    // the wait too, which is the time actually spent.
+    runTrace.setContext({ conversationId: conversationId ?? undefined, projectId: props.project?.id });
+    runTrace.begin(responseId, userMessage);
+    // Name the model up front from what we asked for; the stream's own `model`
+    // field overrides it below if the backend served something else.
+    storageService.getItem('selected_model').then((m: any) => runTrace.model(m));
 
     let message_id: string | null = null;
     try {
@@ -828,6 +868,9 @@ export default function Chat(props: {
           chunkLogCount++;
         }
 
+        // The model that actually served this response, straight off the stream.
+        if (chunk.model) runTrace.model(chunk.model);
+
         // Capture the backend-assigned message ID from the first chunk
         const chunkMsgId = chunk.message_id || (chunk.id?.startsWith('msg-') ? chunk.id : null) || (chunk.choices?.[0]?.message_id) || null;
         if (!message_id && chunkMsgId) {
@@ -842,6 +885,7 @@ export default function Chat(props: {
 
         // Capture citations from SLP server
         if (chunk.object === 'chat.citations' && chunk.citations) {
+          runTrace.citations(Array.isArray(chunk.citations) ? chunk.citations.length : 0);
           setMessages((prevMessages: any) =>
             prevMessages.map((msg: any) =>
               msg.id === responseId ? { ...msg, citations: chunk.citations } : msg
@@ -859,30 +903,48 @@ export default function Chat(props: {
         if (chunk.object === 'chat.status') {
           // "model" steps name the aux model the orchestrator just picked (e.g.
           // "Selected Ministral 3 3B Instruct 2512 (3B) for …"). Broadcast the raw
-          // message so the auxiliary-models panel can light up the matching card in
-          // sync with this status line.
+          // message so the model picker can light up the matching row.
           if (chunk.step === 'model' && chunk.message) {
             window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { message: chunk.message } }));
           }
-          // Normalize to a single trailing ellipsis (e.g. "Searching documents" →
-          // "Searching documents...", "Processing..." stays as-is)
-          const statusText = (chunk.message || 'Working').replace(/[.…\s]+$/, '') + '...';
-          statusQueueRef.current.push(statusText);
-          if (!statusTimerRef.current) drainStatusQueue();
+          // The routing block above the message renders these — in order, with
+          // stamps, and still there after the turn ends.
+          runTrace.status(chunk.step ?? null, chunk.message ?? '');
+          continue;
+        }
+
+        // Anything else the backend narrates — a tool invocation, an event type
+        // this build doesn't know yet — goes into the trace rather than being
+        // dropped. The Logs panel is only trustworthy if it can't quietly omit
+        // a step, and the step vocabulary here is not a fixed contract.
+        if (chunk.object && chunk.object !== 'chat.completion.chunk') {
+          // Only events that narrate something. `chat.message_id` and
+          // `chat.usage` are envelope metadata — they were landing in the log as
+          // rows whose text was their own type name, which told the reader
+          // nothing about what the model was doing.
+          if (chunk.message) runTrace.status(chunk.step ?? chunk.object, chunk.message);
           continue;
         }
 
         // Skip status/non-standard chunks from local SLP server
         if (!chunk.choices || !chunk.choices[0]) continue;
 
+        // Tool calls arrive inside the delta, in fragments: the first carries the
+        // function name, the rest only argument text. Recording on a non-empty
+        // name logs each call exactly once.
+        const toolCalls = chunk.choices[0]?.delta?.tool_calls;
+        if (Array.isArray(toolCalls)) {
+          toolCalls.forEach((call: any) => {
+            const name = call?.function?.name;
+            if (name) runTrace.status('tool', `Calling ${name}`);
+          });
+        }
+
         const content = chunk.choices[0]?.delta?.content;
 
         if (content) {
           fullText += content;
           streamTokenCountRef.current++;
-
-          // First real token — stop the status ticker and drop any pending statuses
-          if (statusTimerRef.current || statusQueueRef.current.length) clearStatusQueue();
 
           // Check if the response contains a memory/context limit error
           if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
@@ -920,14 +982,13 @@ export default function Chat(props: {
         }
       }
 
-      // Stream ended — make sure the status ticker is stopped
-      clearStatusQueue();
-
       // Calculate tok/s
       const elapsedSec = (Date.now() - streamStartRef.current) / 1000;
       const tps = elapsedSec > 0 && streamTokenCountRef.current > 0
         ? Math.round(streamTokenCountRef.current / elapsedSec)
         : undefined;
+
+      runTrace.end({ tokensPerSecond: tps ?? null, outcome: 'done' });
 
       // Persist last tok/s for display (single source of truth: SQLite tps_history)
       if (tps) {
@@ -966,8 +1027,16 @@ export default function Chat(props: {
       }
 
     } catch (error: any) {
-      clearStatusQueue();
-      if (error.message === 'AbortError' || error.name === 'AbortError') {
+      // The explicit throw inside the loop only fires when a chunk arrives after
+      // the abort. Cancel while the stream is idle — waiting on a model, or
+      // mid-search — and the SDK rejects with its own APIUserAbortError instead,
+      // which was being recorded as a failure rather than a cancel.
+      const aborted = abortControllerRef.current?.signal.aborted
+        || error.message === 'AbortError'
+        || error.name === 'AbortError'
+        || error.name === 'APIUserAbortError';
+      runTrace.end({ outcome: aborted ? 'stopped' : 'error' });
+      if (aborted) {
         console.log('Request aborted by user');
         // Keep the partial response as-is, just mark it as complete
         setMessages((prevMessages: any) => {
@@ -1093,6 +1162,10 @@ export default function Chat(props: {
         });
       }
     } finally {
+      // Backstop: whatever path got here, the turn is over. `end` no-ops on an
+      // already-closed turn, so this only catches a bail-out that returned
+      // without closing — which would otherwise render as "Running" forever.
+      runTrace.end({ outcome: abortControllerRef.current?.signal.aborted ? 'stopped' : 'done' });
       setIsLoading(false);
       sendingMessageRef.current = false;  // Reset sending flag
       abortControllerRef.current = null;
@@ -1145,7 +1218,6 @@ export default function Chat(props: {
 
     // Update messages from conversation
     setMessages(conversationMessages);
-    setShowTips(conversationMessages.length === 0);
 
     // Update conversation ref
     currentConversationIdRef.current = incomingConversationId;
@@ -1287,10 +1359,163 @@ export default function Chat(props: {
   // The backend handles persistence
 
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
+  // Nothing said yet — and not mid-search or mid-download, both of which have
+  // their own things to show in the message area.
+  const isEmptyConversation = (displayMessages || []).length === 0
+    && searchQuery.trim() === ""
+    && !modelDownloadProgress;
+
+  // The composer, rendered either pinned to the bottom or centred in an empty
+  // conversation. One definition, so the two placements cannot drift apart.
+  const composerBlock = (
+    <>
+            <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
+              {/* One bracketed marker at the head of the line, in the same idiom
+                  as the [esc] / [?] hints on the right: a bar at rest, sweeping
+                  through | / - \\ while a response streams. Both frames are
+                  monospace at a fixed 6px, so the text beside them never shifts. */}
+              {isLoading ? (
+                <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
+                  <span className="flex items-center font-mono shrink-0">
+                    [<span className="mx-[3px]"><StreamingMarker /></span>]
+                  </span>
+                  <span className="truncate"><LiveStatusText /></span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
+                  <span className="flex items-center font-mono shrink-0">
+                    [<span className="inline-block text-center mx-[3px]" style={{ width: 6 }}>-</span>]
+                  </span>
+                  <span className="truncate">Token Performance</span>
+                  <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
+                </span>
+              )}
+            </div>
+            <MessageInput
+              message={formData.message}
+              onMessageChange={(value) => setFormData({ message: value })}
+              onSend={() => sendMessage(null)}
+              onStop={() => {
+                if (abortControllerRef.current) {
+                  abortControllerRef.current.abort();
+                }
+              }}
+              placeholder={modelDownloadProgress?.downloading
+                ? "Waiting for model to be ready..."
+                // Match the "/" picker's own availability: it opens when there are
+                // skills to run OR skills can be created (onCreateSkill is set).
+                : (skillList.length > 0 || !!props.onCreateSkill)
+                  ? "Enter your prompt, or type / to run or create skills"
+                  : "Enter your prompt..."}
+              disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
+              isLoading={isLoading}
+              allowAttachments={true}
+              allowImages={visionEnabled}
+              conversation={props.conversation}
+              onFileAttached={handleFileAttached}
+              onAttachmentClear={() => {
+                setTimeout(() => {
+                  messageAttachmentsRef.current = [];
+                  if (props.onAttachmentsClear) {
+                    props.onAttachmentsClear();
+                  }
+                }, 100);
+              }}
+              clearAttachmentTrigger={clearAttachmentTrigger}
+              showDragDrop={true}
+              minRows={1}
+              maxRows={4}
+              skills={skillList}
+              onCreateSkill={props.onCreateSkill}
+              rightSlot={
+                // Left enabled while a model loads: reaching for the switcher is
+                // exactly what you do when a load is dragging, so a slow warm
+                // shouldn't trap the choice the user is trying to get out of.
+                <ModelPicker model={model} disabled={!isServiceReady} />
+              }
+            />
+            <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
+              {isServiceReady ? (
+                <>
+                  {indexingProgress ? (
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+                      <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                          style={{
+                            backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
+                            ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
+                          }}
+                        ></span>
+                      ))}
+                    </span>
+                  )}
+                  {/* The orchestrator itself — the model that receives every
+                      request and routes it. The composer's pill can't stand in for
+                      this: it names Auto, or whichever auxiliary model is answering
+                      right now, and never the router behind them. */}
+                  {model && (
+                    <Tooltip title={model} placement="top" arrow>
+                      <span
+                        className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
+                        style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                          <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                          <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
+                          <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                  )}
+                  {props.onWebSearchChange && (
+                    <Tooltip
+                      title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
+                      placement="top"
+                      arrow
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={webSearchOn}
+                        onClick={() => props.onWebSearchChange?.(!webSearchOn)}
+                        className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
+                        style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                      </button>
+                    </Tooltip>
+                  )}
+                  <span className="flex items-center gap-1.5 ml-auto">
+                    <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
+                    <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
+                  </span>
+                </>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+                  <span>starting</span>
+                </span>
+              )}
+            </div>
+    </>
+  );
+
 
   return (
     <>
       <Box className="chat__box flex flex-col h-full bg-sl-bg-base overflow-hidden" sx={{ borderLeft: '1px solid var(--sl-border-subtle)' }}>
+        {/* Kept in the layout when empty rather than hidden: it renders nothing,
+            but its flex-1 is the weight above the composer that the spacer below
+            balances against. Take it out and the composer rides to the top. */}
         <section className="chat__body flex-1 overflow-hidden">
           <div className="flex flex-col-reverse h-full overflow-y-auto px-3 md:px-4 pt-8 md:pt-12 pb-4 md:pb-6 sidebar-scroll">
             <div ref={messagesEndRef} />
@@ -1391,63 +1616,6 @@ export default function Chat(props: {
                 <div className="flex-1"></div>
               </div>
             }
-            {(displayMessages || []).length === 0 && showTips && searchQuery.trim() === "" && !modelDownloadProgress && isServiceReady && props.project &&
-              <div className="flex flex-col gap-2 h-full w-full justify-center items-center px-3 md:px-6">
-                <div className="flex-1"></div>
-                <Box
-                  sx={{
-                    bgcolor: 'transparent',
-                    border: '1px solid var(--sl-border-subtle)',
-                    borderRadius: '16px',
-                    padding: { xs: '20px', md: '32px' },
-                    maxWidth: '700px',
-                    width: '100%',
-                  }}
-                >
-                  <div className="flex items-center gap-3 mb-6">
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        bgcolor: 'var(--sl-brand-alpha-10)',
-                        border: '1px solid var(--sl-brand-alpha-20)',
-                      }}
-                    >
-                      <LightbulbIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 24 }} />
-                    </Box>
-                    <h2 className="text-lg md:text-xl font-semibold text-sl-text-primary">Tips to Get Started</h2>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-sl-bg-surface-3 text-sl-text-primary rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
-                      </p>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
-                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
-                      </p>
-                    </div>
-                  </div>
-                </Box>
-                <div className="flex-1"></div>
-              </div>
-            }
             {(displayMessages || []).length === 0 && searchQuery.trim() !== "" &&
               <div className="flex flex-col gap-2 h-full w-full justify-center">
                 <div className="flex justify-center">
@@ -1502,15 +1670,15 @@ export default function Chat(props: {
                                     // query strings and hashes are what blow the layout out; the
                                     // full URL stays on the tooltip and is what actually opens.
                                     const baseUrl = (u: string) => {
-                                        try {
-                                            const parsed = new URL(/^www\./i.test(u) ? `https://${u}` : u);
-                                            // `host`, not `hostname`: keeps a non-default port.
-                                            return `${parsed.protocol}//${parsed.host.replace(/^www\./, '')}`;
-                                        } catch { return u; }
+                                      try {
+                                        const parsed = new URL(/^www\./i.test(u) ? `https://${u}` : u);
+                                        // `host`, not `hostname`: keeps a non-default port.
+                                        return `${parsed.protocol}//${parsed.host.replace(/^www\./, '')}`;
+                                      } catch { return u; }
                                     };
                                     const displayLabel = isLink
-                                        ? baseUrl(linkUrl || label || '')
-                                        : (label || '');
+                                      ? baseUrl(linkUrl || label || '')
+                                      : (label || '');
                                     const folderPath = props.project?.folder_path;
                                     // Prefer a path the backend gave us; only fall back to the
                                     // <project>/documents/<name> convention when it didn't.
@@ -1525,8 +1693,8 @@ export default function Chat(props: {
                                     const meta = isLink
                                       ? ''
                                       : [size ? formatBytes(size) : '', docTypeLabel(label)]
-                                          .filter(Boolean)
-                                          .join(' · ');
+                                        .filter(Boolean)
+                                        .join(' · ');
                                     const openDoc = () => {
                                       if (isLink) {
                                         const target = /^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl;
@@ -1628,131 +1796,131 @@ export default function Chat(props: {
                                 const feedbackId = msg.message_id || msg.id;
                                 return (
                                   <>
-                                  {/* Thumbs up */}
-                                  <Tooltip title="Good response" arrow placement="top">
-                                  <button
-                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
-                                    style={{
-                                      color: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                                      borderColor: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
-                                      background: 'transparent',
-                                    }}
-                                    onClick={async () => {
-                                      const isActive = feedback[feedbackId] === 'up';
-                                      if (isActive) {
-                                        setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
-                                        try {
-                                          const baseUrl = await getLocalApiEndpoint();
-                                          const params = new URLSearchParams({
-                                            session_id: currentConversationIdRef.current || '',
-                                            message_id: feedbackId,
-                                          });
-                                          if (props.project?.id) params.set('project_id', props.project.id);
-                                          await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
-                                        } catch { }
-                                      } else {
-                                        setFeedback(prev => ({ ...prev, [feedbackId]: 'up' }));
-                                        try {
-                                          const baseUrl = await getLocalApiEndpoint();
-                                          await fetch(`${baseUrl}/v1/feedback`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                              session_id: currentConversationIdRef.current,
-                                              message_id: feedbackId,
-                                              ...(props.project?.id ? { project_id: props.project.id } : {}),
-                                              rating: 'up',
-                                            }),
-                                          });
-                                        } catch { }
-                                      }
-                                    }}
-                                  >
-                                    <ThumbUpIcon sx={{ fontSize: 14 }} />
-                                  </button>
-                                  </Tooltip>
-                                  {/* Thumbs down */}
-                                  <Tooltip title="Bad response" arrow placement="top">
-                                  <button
-                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
-                                    style={{
-                                      color: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
-                                      borderColor: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
-                                      background: 'transparent',
-                                    }}
-                                    onClick={async () => {
-                                      console.log('[Chat] Thumbs down clicked, feedbackId:', feedbackId, 'current feedback:', feedback[feedbackId]);
-                                      const isActive = feedback[feedbackId] === 'down';
-                                      if (isActive) {
-                                        setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
-                                        try {
-                                          const baseUrl = await getLocalApiEndpoint();
-                                          const params = new URLSearchParams({
-                                            session_id: currentConversationIdRef.current || '',
-                                            message_id: feedbackId,
-                                          });
-                                          if (props.project?.id) params.set('project_id', props.project.id);
-                                          await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
-                                        } catch { }
-                                      } else {
-                                        setFeedback(prev => ({ ...prev, [feedbackId]: 'down' }));
-                                        try {
-                                          const baseUrl = await getLocalApiEndpoint();
-                                          await fetch(`${baseUrl}/v1/feedback`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                              session_id: currentConversationIdRef.current,
-                                              message_id: feedbackId,
-                                              ...(props.project?.id ? { project_id: props.project.id } : {}),
-                                              rating: 'down',
-                                            }),
-                                          });
-                                        } catch { }
-                                      }
-                                    }}
-                                  >
-                                    <ThumbDownIcon sx={{ fontSize: 14 }} />
-                                  </button>
-                                  </Tooltip>
+                                    {/* Thumbs up */}
+                                    <Tooltip title="Good response" arrow placement="top">
+                                      <button
+                                        className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
+                                        style={{
+                                          color: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                          borderColor: feedback[feedbackId] === 'up' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                          background: 'transparent',
+                                        }}
+                                        onClick={async () => {
+                                          const isActive = feedback[feedbackId] === 'up';
+                                          if (isActive) {
+                                            setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
+                                            try {
+                                              const baseUrl = await getLocalApiEndpoint();
+                                              const params = new URLSearchParams({
+                                                session_id: currentConversationIdRef.current || '',
+                                                message_id: feedbackId,
+                                              });
+                                              if (props.project?.id) params.set('project_id', props.project.id);
+                                              await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
+                                            } catch { }
+                                          } else {
+                                            setFeedback(prev => ({ ...prev, [feedbackId]: 'up' }));
+                                            try {
+                                              const baseUrl = await getLocalApiEndpoint();
+                                              await fetch(`${baseUrl}/v1/feedback`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  session_id: currentConversationIdRef.current,
+                                                  message_id: feedbackId,
+                                                  ...(props.project?.id ? { project_id: props.project.id } : {}),
+                                                  rating: 'up',
+                                                }),
+                                              });
+                                            } catch { }
+                                          }
+                                        }}
+                                      >
+                                        <ThumbUpIcon sx={{ fontSize: 14 }} />
+                                      </button>
+                                    </Tooltip>
+                                    {/* Thumbs down */}
+                                    <Tooltip title="Bad response" arrow placement="top">
+                                      <button
+                                        className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
+                                        style={{
+                                          color: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)',
+                                          borderColor: feedback[feedbackId] === 'down' ? 'var(--sl-brand-primary)' : 'var(--sl-border-default, #374151)',
+                                          background: 'transparent',
+                                        }}
+                                        onClick={async () => {
+                                          console.log('[Chat] Thumbs down clicked, feedbackId:', feedbackId, 'current feedback:', feedback[feedbackId]);
+                                          const isActive = feedback[feedbackId] === 'down';
+                                          if (isActive) {
+                                            setFeedback(prev => { const s = { ...prev }; delete s[feedbackId]; return s; });
+                                            try {
+                                              const baseUrl = await getLocalApiEndpoint();
+                                              const params = new URLSearchParams({
+                                                session_id: currentConversationIdRef.current || '',
+                                                message_id: feedbackId,
+                                              });
+                                              if (props.project?.id) params.set('project_id', props.project.id);
+                                              await fetch(`${baseUrl}/v1/feedback?${params}`, { method: 'DELETE' });
+                                            } catch { }
+                                          } else {
+                                            setFeedback(prev => ({ ...prev, [feedbackId]: 'down' }));
+                                            try {
+                                              const baseUrl = await getLocalApiEndpoint();
+                                              await fetch(`${baseUrl}/v1/feedback`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  session_id: currentConversationIdRef.current,
+                                                  message_id: feedbackId,
+                                                  ...(props.project?.id ? { project_id: props.project.id } : {}),
+                                                  rating: 'down',
+                                                }),
+                                              });
+                                            } catch { }
+                                          }
+                                        }}
+                                      >
+                                        <ThumbDownIcon sx={{ fontSize: 14 }} />
+                                      </button>
+                                    </Tooltip>
                                   </>
                                 );
                               })()}
                               {/* Save to project folder */}
                               <Tooltip title={saved === msg.id ? "Saved" : "Save"} arrow placement="top">
-                              <span className="inline-flex">
-                              <button
-                                className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
-                                disabled={saving === msg.id}
-                                style={{
-                                  color: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
-                                  borderColor: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-border-default, #374151)',
-                                  background: 'transparent',
-                                  opacity: saving === msg.id ? 0.4 : 1,
-                                  cursor: saving === msg.id ? 'not-allowed' : 'pointer',
-                                }}
-                                onClick={async () => {
-                                  if (!window.electronAPI?.saveFileDialog) return;
-                                  setSaving(msg.id);
-                                  const folderPath = props.project?.folder_path;
-                                  if (!folderPath) { setSaving(''); return; }
-                                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-                                  const defaultName = `${timestamp}.md`;
-                                  const result = await window.electronAPI.saveFileDialog(defaultName, msg.content, folderPath);
-                                  setSaving('');
-                                  if (result.success) {
-                                    setSaved(msg.id);
-                                    setTimeout(() => setSaved(''), 1500);
-                                  }
-                                }}
-                              >
-                                {saving === msg.id
-                                  ? <CircularProgress size={14} sx={{ color: 'var(--sl-text-muted)' }} />
-                                  : saved === msg.id
-                                    ? <CheckIcon sx={{ fontSize: 14 }} />
-                                    : <SaveAltIcon sx={{ fontSize: 14 }} />}
-                              </button>
-                              </span>
+                                <span className="inline-flex">
+                                  <button
+                                    className="flex items-center justify-center w-7 h-7 rounded border transition-colors"
+                                    disabled={saving === msg.id}
+                                    style={{
+                                      color: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-text-muted)',
+                                      borderColor: saved === msg.id ? 'var(--sl-status-success)' : 'var(--sl-border-default, #374151)',
+                                      background: 'transparent',
+                                      opacity: saving === msg.id ? 0.4 : 1,
+                                      cursor: saving === msg.id ? 'not-allowed' : 'pointer',
+                                    }}
+                                    onClick={async () => {
+                                      if (!window.electronAPI?.saveFileDialog) return;
+                                      setSaving(msg.id);
+                                      const folderPath = props.project?.folder_path;
+                                      if (!folderPath) { setSaving(''); return; }
+                                      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                                      const defaultName = `${timestamp}.md`;
+                                      const result = await window.electronAPI.saveFileDialog(defaultName, msg.content, folderPath);
+                                      setSaving('');
+                                      if (result.success) {
+                                        setSaved(msg.id);
+                                        setTimeout(() => setSaved(''), 1500);
+                                      }
+                                    }}
+                                  >
+                                    {saving === msg.id
+                                      ? <CircularProgress size={14} sx={{ color: 'var(--sl-text-muted)' }} />
+                                      : saved === msg.id
+                                        ? <CheckIcon sx={{ fontSize: 14 }} />
+                                        : <SaveAltIcon sx={{ fontSize: 14 }} />}
+                                  </button>
+                                </span>
                               </Tooltip>
                             </div>
                           )}
@@ -1783,25 +1951,25 @@ export default function Chat(props: {
                                         />
                                       </Box>
                                     ) : (
-                                    <Box
-                                      key={idx}
-                                      className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-sl-bg-surface-2 rounded-sm border border-sl-border-default"
-                                    >
                                       <Box
-                                        sx={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          width: 24,
-                                          height: 24,
-                                          borderRadius: '50%',
-                                          bgcolor: 'var(--sl-brand-alpha-15)',
-                                        }}
+                                        key={idx}
+                                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs bg-sl-bg-surface-2 rounded-sm border border-sl-border-default"
                                       >
-                                        <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                        <Box
+                                          sx={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            width: 24,
+                                            height: 24,
+                                            borderRadius: '50%',
+                                            bgcolor: 'var(--sl-brand-alpha-15)',
+                                          }}
+                                        >
+                                          <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                        </Box>
+                                        <span className="text-sl-text-tertiary truncate max-w-[150px]">{attachment.name || 'Document'}</span>
                                       </Box>
-                                      <span className="text-sl-text-tertiary truncate max-w-[150px]">{attachment.name || 'Document'}</span>
-                                    </Box>
                                     );
                                   })}
                               </Box>
@@ -1825,137 +1993,58 @@ export default function Chat(props: {
             </div>
           </div>
         </section>
-        <footer className="relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base border-t border-sl-border-subtle">
-          <div className="flex items-center gap-1 px-1 text-[10px] text-sl-text-faint pointer-events-none overflow-hidden">
-            {statusText || isLoading ? (
-              <span className="flex items-center gap-1 text-sl-text-disabled min-w-0 overflow-hidden">
-                <span className="font-mono shrink-0">&gt;</span>
-                <span className="truncate">{statusText || 'Generating response…'}</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-sl-text-disabled min-w-0 overflow-hidden">
-                <span className="font-mono shrink-0">&gt;</span>
-                <span className="truncate">Token Performance</span>
-                <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
-              </span>
-            )}
-          </div>
-          <MessageInput
-            message={formData.message}
-            onMessageChange={(value) => setFormData({ message: value })}
-            onSend={() => sendMessage(null)}
-            onStop={() => {
-              if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-              }
-            }}
-            placeholder={modelDownloadProgress?.downloading
-              ? "Waiting for model to be ready..."
-              // Match the "/" picker's own availability: it opens when there are
-              // skills to run OR skills can be created (onCreateSkill is set).
-              : (skillList.length > 0 || !!props.onCreateSkill)
-                ? "Enter your prompt, or type / to run or create skills"
-                : "Enter your prompt..."}
-            disabled={!isServiceReady || !!modelDownloadProgress?.downloading}
-            isLoading={isLoading}
-            allowAttachments={true}
-            allowImages={visionEnabled}
-            conversation={props.conversation}
-            onFileAttached={handleFileAttached}
-            onAttachmentClear={() => {
-              setTimeout(() => {
-                messageAttachmentsRef.current = [];
-                if (props.onAttachmentsClear) {
-                  props.onAttachmentsClear();
-                }
-              }, 100);
-            }}
-            clearAttachmentTrigger={clearAttachmentTrigger}
-            showDragDrop={true}
-            minRows={1}
-            maxRows={4}
-            skills={skillList}
-            onCreateSkill={props.onCreateSkill}
-            rightSlot={
-              // Left enabled while a model loads: reaching for the switcher is
-              // exactly what you do when a load is dragging, so a slow warm
-              // shouldn't trap the choice the user is trying to get out of.
-              <ModelPicker model={model} disabled={!isServiceReady} />
-            }
-          />
-          <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
-            {isServiceReady ? (
-              <>
-                {indexingProgress ? (
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
-                    <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-[3px]" title={isLoading ? 'thinking' : 'ready'} aria-label={isLoading ? 'thinking' : 'ready'}>
-                    {[0, 1, 2].map((i) => (
-                      <span
-                        key={i}
-                        className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
-                        style={{
-                          backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
-                          ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
-                        }}
-                      ></span>
-                    ))}
-                  </span>
-                )}
-                {/* The orchestrator itself — the model that receives every
-                    request and routes it. The composer's pill can't stand in for
-                    this: it names Auto, or whichever auxiliary model is answering
-                    right now, and never the router behind them. */}
-                {model && (
-                  <Tooltip title={model} placement="top" arrow>
-                    <span
-                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default"
-                      style={{ color: model.toLowerCase().includes('orchestra-mini') ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                        <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                        <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
-                        <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
-                      </svg>
-                    </span>
-                  </Tooltip>
-                )}
-                {props.onWebSearchChange && (
-                  <Tooltip
-                    title={`${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`}
-                    placement="top"
-                    arrow
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={webSearchOn}
-                      onClick={() => props.onWebSearchChange?.(!webSearchOn)}
-                      className="inline-flex items-center justify-center w-[18px] h-[18px] rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
-                      style={{ color: webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="11" cy="11" r="8" />
-                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                    </button>
-                  </Tooltip>
-                )}
-                <span className="flex items-center gap-1.5 ml-auto">
-                  <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
-                  <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
-                </span>
-              </>
-            ) : (
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
-                <span>starting</span>
-              </span>
-            )}
+
+        {/* One quiet line over an empty conversation. Small and muted on
+            purpose: the 26px headline that sat here first took a fifth of the
+            view to say something you read once. Collapses rather than
+            unmounting, so its exit is a transition. */}
+        <div
+          className="flex-none overflow-hidden"
+          style={{
+            maxHeight: isEmptyConversation ? 90 : 0,
+            opacity: isEmptyConversation ? 1 : 0,
+            transition: 'max-height 160ms ease-out, opacity 100ms ease-out',
+          }}
+        >
+          {/* The Claude/ChatGPT opening: one line, centred, at heading weight in
+              full-strength ink. It's an h1 in both senses now — the only heading
+              this view has, and sized like one. Being an h1 also means it picks
+              up the theme's heading face (globals.css maps h1–h6 to
+              `--sl-font-heading`), so a theme that ships a serif gets one here. */}
+          <h1 className="m-0 pb-6 text-center text-[26px] md:text-[30px] font-medium tracking-tight" style={{ color: 'var(--sl-text-primary)' }}>
+            What do you want to do?
+          </h1>
+        </div>
+
+        {/* One composer, always this same node. An empty conversation centres it
+            by growing the spacer below; the first message shrinks that spacer to
+            nothing and the box glides to the bottom. Rendering it in two places
+            instead would remount it mid-conversation — dropping focus, and any
+            half-typed IME composition with it. */}
+        <footer
+          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base transition-[border-color] duration-150 ${isEmptyConversation ? '' : 'border-t border-sl-border-subtle'}`}
+        >
+          <div className="w-full mx-auto" style={{ maxWidth: isEmptyConversation ? 760 : '100%', transition: 'max-width 160ms ease-out' }}>
+            {composerBlock}
           </div>
         </footer>
+
+        {/* The counterweight: equal to the message area's growth when empty, so
+            the composer lands mid-window; zero once a conversation exists. */}
+        <div
+          aria-hidden
+          style={{
+            // Declared longhand and transitioned inline: `flex-none` sets the
+            // `flex` shorthand, and a shorthand-set flex-grow is what browsers
+            // decline to interpolate — the collapse was landing in one frame.
+            // A shade more than the area above, so the composer rests just above
+            // true centre — dead centre reads as slightly low in a tall window.
+            flexGrow: isEmptyConversation ? 1.2 : 0,
+            flexShrink: 0,
+            flexBasis: 0,
+            transition: 'flex-grow 160ms ease-out',
+          }}
+        />
 
       </Box>
 

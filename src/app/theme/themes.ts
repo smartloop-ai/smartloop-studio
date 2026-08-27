@@ -13,7 +13,7 @@ export interface ThemeColors {
 }
 
 // Rail icons a theme may override with its own artwork (right-sidebar rail).
-export type RailIconName = 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+export type RailIconName = 'logs' | 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
 
 // Optional per-theme typography. `family` is applied to body/UI text (and MUI),
 // `heading` (falling back to `family`) to h1–h6, and `url` is a stylesheet the

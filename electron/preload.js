@@ -275,6 +275,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // TPS history
     addTpsEntry: (tps) => ipcRenderer.invoke('db-add-tps-entry', tps),
     getTpsHistory: (limit) => ipcRenderer.invoke('db-get-tps-history', limit),
+    addRunTrace: (trace) => ipcRenderer.invoke('db-add-run-trace', trace),
+    getRunTraces: (limit, projectId) => ipcRenderer.invoke('db-get-run-traces', limit, projectId),
+    clearRunTraces: (projectId, keepIds) => ipcRenderer.invoke('db-clear-run-traces', projectId, keepIds),
+    deleteRunTrace: (messageId) => ipcRenderer.invoke('db-delete-run-trace', messageId),
     // Settings
     getSetting: (key) => ipcRenderer.invoke('db-get-setting', key),
     setSetting: (key, value) => ipcRenderer.invoke('db-set-setting', key, value),

@@ -38,6 +38,9 @@ export function sizeTier(m: any): { label: string; tip: string } | null {
     };
 }
 
+// Short tokens that are acronyms, not words, so title-casing them looks wrong.
+const ACRONYMS = new Set(['sl', 'ai', 'ml', 'llm', 'slm', 'gpt', 'tts', 'stt', 'ocr']);
+
 // Engineering tokens that mean nothing to a regular user — dropped from the
 // friendly name (quantization, fine-tune method, date tags, etc.).
 const NAME_NOISE = new Set([
@@ -71,6 +74,8 @@ export function prettyModelName(m: any): string {
             const l = t.toLowerCase();
             if (l === 'vl' || l === 'vision') return 'Vision';
             if (l === 'coder') return 'Coder';
+            // Brand acronyms stay upper case — "sl-mini" is SL Mini, not Sl Mini.
+            if (ACRONYMS.has(l)) return t.toUpperCase();
             // Strip the version/size digits off a family token: "gemma3" → "Gemma",
             // "qwen2.5" → "Qwen", "llama3.2" → "Llama".
             const alpha = t.replace(/[\d.].*$/, '') || t;

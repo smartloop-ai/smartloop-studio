@@ -2,7 +2,7 @@
 // Minecraft theme is active. All use currentColor so they inherit the rail's
 // muted / brand-active states like the vector icons they replace.
 interface PixelRailIconProps {
-    name: 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
+    name: 'logs' | 'models' | 'documents' | 'mcp' | 'skills' | 'settings';
     size?: number;
 }
 
@@ -10,6 +10,18 @@ export default function PixelRailIcon({ name, size = 18 }: PixelRailIconProps) {
     const common = { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', className: 'mc-pixel flex-shrink-0' };
 
     switch (name) {
+        case 'logs':
+            // A written log: entries stacked down the page.
+            return (
+                <svg {...common}>
+                    <rect x="2" y="3" width="2" height="2" fill="currentColor" />
+                    <rect x="6" y="3" width="8" height="2" fill="currentColor" />
+                    <rect x="2" y="7" width="2" height="2" fill="currentColor" />
+                    <rect x="6" y="7" width="8" height="2" fill="currentColor" />
+                    <rect x="2" y="11" width="2" height="2" fill="currentColor" />
+                    <rect x="6" y="11" width="5" height="2" fill="currentColor" />
+                </svg>
+            );
         case 'models':
             // Grass block: bright top, dirt body.
             return (

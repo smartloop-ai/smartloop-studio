@@ -417,11 +417,9 @@ export default function SettingsPage() {
                 </Box>
 
                 <Box className="max-w-4xl mx-auto mt-6 md:mt-8">
-                    {/* Header */}
-                    <Box className="mb-6 md:mb-8">
-                        <h1 className="text-2xl md:text-3xl font-bold mb-2" style={{ color: 'var(--sl-text-primary)' }}>Settings</h1>
-                        <p className="text-sm md:text-base" style={{ color: 'var(--sl-text-muted)' }}>Model configuration and default settings</p>
-                    </Box>
+                    {/* No page title: a native settings window doesn't repeat its
+                        own name inside itself — you got here from the gear, and
+                        the section headings below say what everything is. */}
 
                     {/* 0. App version / updates */}
                     <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>

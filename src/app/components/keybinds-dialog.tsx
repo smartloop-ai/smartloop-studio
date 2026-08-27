@@ -39,7 +39,8 @@ const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
     items: [
       { keys: `${MOD}+K`, label: 'Search projects' },
       { keys: `${MOD}+B`, label: 'Toggle right panel' },
-      { keys: `${MOD}+${SHIFT}+C / D / S`, label: 'Connections / Documents / Skills' },
+      { keys: `${MOD}+\\`, label: 'Collapse / expand the left sidebar' },
+      { keys: `${MOD}+${SHIFT}+D / S / C / L`, label: 'Documents / Skills / Connections / Logs' },
       { keys: `${MOD}+${SHIFT}+,`, label: 'Project settings' },
       { keys: `${MOD}+,`, label: 'Settings' },
       { keys: `${MOD}+S`, label: 'Save skill (in editor)' },

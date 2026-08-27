@@ -18,7 +18,7 @@ import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR, LEGACY_PINK, getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
@@ -1423,11 +1423,6 @@ description: A clear description of what this skill does and when to use it
     }
   };
 
-  const getProjectColor = (project: any) => {
-    const color = project?.color;
-    if (!color || color === LEGACY_PINK) return DEFAULT_COLOR;
-    return color;
-  };
 
   const handleOpenDeleteDocDialog = (doc: any) => {
     setDocumentToDelete(doc);
@@ -1825,54 +1820,13 @@ description: A clear description of what this skill does and when to use it
             {/* Chat View with 2-column layout */}
             <Box className="h-screen flex flex-col bg-sl-bg-base">
               <>
-                {/* Chat Header - matches project page style */}
-                <Box className="flex-none px-4 pb-4 pt-0">
-                  <Box className="flex items-center justify-between gap-4">
-                    <Box className="flex items-center gap-4 flex-1 min-w-0">
-                      <Box
-                        sx={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: '2px',
-                          bgcolor: getProjectColor(selectedProject),
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Box className="flex-1 min-w-0">
-                        {selectedProject && selectedProject.system !== true ? (
-                          <input
-                            key={`${selectedProject.id}-${selectedProject.name}`}
-                            defaultValue={selectedProject.name}
-                            onBlur={(e) => {
-                              e.currentTarget.style.borderBottomColor = 'transparent';
-                              const trimmed = e.target.value.trim();
-                              if (trimmed && trimmed !== selectedProject.name) {
-                                handleRenameProject(trimmed);
-                              } else {
-                                e.target.value = selectedProject.name;
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                              if (e.key === 'Escape') {
-                                (e.target as HTMLInputElement).value = selectedProject.name;
-                                (e.target as HTMLInputElement).blur();
-                              }
-                            }}
-                            className="text-xl md:text-2xl font-bold text-sl-text-primary bg-transparent border-none outline-none w-full truncate cursor-text hover:opacity-80 focus:opacity-100 focus:border-b"
-                            style={{ caretColor: 'var(--sl-brand-primary)', borderColor: 'transparent' }}
-                            onFocus={(e) => (e.currentTarget.style.borderBottomColor = 'var(--sl-brand-primary)')}
-                          />
-                        ) : (
-                          <div className="text-xl md:text-2xl font-bold text-sl-text-primary truncate">
-                            {selectedProject?.name || 'General'}
-                          </div>
-                        )}
-                      </Box>
-                    </Box>
-                    {/* App-update badge — top-right, opposite the project name */}
-                    <UpdatePill />
-                  </Box>
+                {/* The project name lived here; the left sidebar already names
+                    the project you are in, and the tabs below name the
+                    conversation, so the row was a third label for context you
+                    can already see. Renaming still lives in Project Settings.
+                    Only the update badge stays, since nothing else surfaces it. */}
+                <Box className="flex-none px-4 pb-2 pt-0 flex justify-end">
+                  <UpdatePill />
                 </Box>
 
                 {/* Content Tabs */}
