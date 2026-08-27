@@ -423,10 +423,13 @@ export default function Home() {
     if (!projectId) {
       setOpenTabs([]);
       setActiveTabId(null);
-      // No project means no conversation to wait on. Clearing here matters:
-      // the flag starts true, and leaving it set on this path would hold chat
-      // on a blank screen indefinitely.
-      setConversationHydrating(false);
+      // Only settle once the project list has actually resolved. Until then
+      // "no project" means "not known yet", not "none" — and clearing here let
+      // chat paint its empty view in the gap before the project arrived, which
+      // is the flash this flag exists to prevent. Gating on projectsReady still
+      // guarantees it clears, so a genuinely project-less window can't be held
+      // on a blank screen.
+      if (projectsReady) setConversationHydrating(false);
       return;
     }
     // Avoid reloading if already loaded for this project
@@ -499,7 +502,7 @@ export default function Home() {
     };
     setConversationHydrating(true);
     restoreTabs().finally(() => setConversationHydrating(false));
-  }, [selectedProject?.id]);
+  }, [selectedProject?.id, projectsReady]);
 
   // Persist open tabs to SQLite whenever they change
   const tabsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
