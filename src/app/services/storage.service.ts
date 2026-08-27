@@ -339,6 +339,25 @@ class StorageService {
       return [];
     }
   }
+
+  /** Persist a finished run's orchestration trace (keyed by message id). */
+  async addRunTrace(trace: any): Promise<void> {
+    try {
+      await (this.db as any).addRunTrace(trace);
+    } catch (error) {
+      console.error('[StorageService] addRunTrace failed:', error);
+    }
+  }
+
+  /** Recent runs, newest first. Scoped to a project when one is given. */
+  async getRunTraces(limit: number = 20, projectId?: string): Promise<any[]> {
+    try {
+      return await (this.db as any).getRunTraces(limit, projectId ?? null);
+    } catch (error) {
+      console.error('[StorageService] getRunTraces failed:', error);
+      return [];
+    }
+  }
   // --- MCP Servers (SQLite) ---
 
   async addMcpServer(server: { id: string; project_id: string; name: string; server_type?: string; config?: any }): Promise<any> {
