@@ -270,6 +270,10 @@ export default function Chat(props: {
   onAttachmentsClear?: () => void,
   onFileAttached?: (documentId: string, fileName: string) => void,
   conversation?: any,
+  // The parent is still resolving which conversation this tab holds. Until it
+  // settles, the view must not commit to showing the empty state — see
+  // `hydratingContent`.
+  conversationHydrating?: boolean,
   onConversationCreated?: (conversation: any) => void,
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
@@ -1372,13 +1376,18 @@ export default function Chat(props: {
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
   // Nothing said yet — and not mid-search or mid-download, both of which have
   // their own things to show in the message area.
-  // A conversation carrying stored messages that haven't been copied into local
-  // state yet is not empty — it's mid-hydration. `messages` starts [] and is
-  // filled by an effect, which runs after the first paint, so without this the
-  // empty view paints for a frame on every open and then flicks to the content.
-  // Local messages still win: a just-created conversation whose parent prop
-  // momentarily carries none is already non-empty by the first clause.
-  const hydratingContent = (props.conversation?.messages?.length ?? 0) > 0;
+  // Nothing is "empty" until we know what the conversation holds, and that takes
+  // two hops. The parent restores the active tab asynchronously, so on a remount
+  // (navigating back from Settings) `props.conversation` is null for as long as
+  // that read takes — `conversationHydrating` covers it. Then `messages` starts
+  // [] and is filled by an effect that runs after the first paint, so a
+  // conversation whose stored messages haven't reached local state yet isn't
+  // empty either. Without both, the empty view paints first and flicks to the
+  // content of a tab that always had some. Local messages still win: a
+  // just-created conversation whose parent prop momentarily carries none is
+  // already non-empty by the first clause.
+  const hydratingContent = props.conversationHydrating
+    || (props.conversation?.messages?.length ?? 0) > 0;
   const isEmptyConversation = (displayMessages || []).length === 0
     && !hydratingContent
     && searchQuery.trim() === ""

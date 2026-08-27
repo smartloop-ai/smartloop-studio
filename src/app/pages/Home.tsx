@@ -53,6 +53,11 @@ export default function Home() {
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
   const [messageAttachments, setMessageAttachments] = useState<Array<{ file_id: string; name: string }>>([]);
   const [conversation, setConversation] = useState<any>(null);
+  // True from mount until restoreTabs has resolved the active tab's conversation.
+  // Navigating back from Settings remounts this page, so `conversation` is null
+  // for as long as the restore takes — and Chat would render its empty view in
+  // the meantime, then flick to the content of a tab that always had some.
+  const [conversationHydrating, setConversationHydrating] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -418,6 +423,10 @@ export default function Home() {
     if (!projectId) {
       setOpenTabs([]);
       setActiveTabId(null);
+      // No project means no conversation to wait on. Clearing here matters:
+      // the flag starts true, and leaving it set on this path would hold chat
+      // on a blank screen indefinitely.
+      setConversationHydrating(false);
       return;
     }
     // Avoid reloading if already loaded for this project
@@ -488,7 +497,8 @@ export default function Home() {
         setConversation(null);
       }
     };
-    restoreTabs();
+    setConversationHydrating(true);
+    restoreTabs().finally(() => setConversationHydrating(false));
   }, [selectedProject?.id]);
 
   // Persist open tabs to SQLite whenever they change
@@ -1872,6 +1882,7 @@ description: A clear description of what this skill does and when to use it
                           initialMessage={chatMessage}
                           attachments={messageAttachments}
                           conversation={conversation}
+                          conversationHydrating={conversationHydrating}
                           onFileAttached={handleFileAttached}
                           onAttachmentsClear={() => {
                             setMessageAttachments([]);
