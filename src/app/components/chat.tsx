@@ -342,6 +342,8 @@ export default function Chat(props: {
   const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
+  // Armed by a send, disarmed by a conversation load — see `animateLayout`.
+  const animateLayoutRef = useRef(false);
   const [imagePreviews, setImagePreviews] = useState<Record<string, string>>({});  // asset_id -> data URL for image attachments in the transcript
   const requestedPreviewsRef = useRef<Set<string>>(new Set());  // asset_ids already requested, to avoid duplicate reads
   const { indexingProgress } = useAppStatus();
@@ -562,6 +564,11 @@ export default function Chat(props: {
 
     // Mark as sending
     sendingMessageRef.current = true;
+    // Arm the empty→content glide for this send. A ref, not state: it has to be
+    // true in the very render that the setMessages below triggers, and a state
+    // update would only land a commit later — after the layout had already
+    // snapped.
+    animateLayoutRef.current = true;
 
     const messageId = `msg-${Date.now()}`;
     const responseId = `temp-${Date.now()}`;
@@ -1176,6 +1183,9 @@ export default function Chat(props: {
 
   // Reset input when conversation changes (switching tabs)
   useEffect(() => {
+    // A conversation being loaded lands in its final layout without animating
+    // there; only a send earns the glide.
+    animateLayoutRef.current = false;
     // Reset input box when switching to a different conversation
     setFormData({ message: "" });
     clearQuoteHighlight();
@@ -1364,6 +1374,14 @@ export default function Chat(props: {
   const isEmptyConversation = (displayMessages || []).length === 0
     && searchQuery.trim() === ""
     && !modelDownloadProgress;
+  // Whether the empty→content layout change should animate. It should for a
+  // message you just sent: the greeting collapses and the composer glides from
+  // the centre to the bottom, which is the movement those transitions exist for.
+  // It should NOT on load. `messages` starts empty, so opening a conversation
+  // that already has content mounts in the centred empty layout and then plays
+  // the whole glide on the way to where it was always going to sit — a push-down
+  // on every open that reads as the app booting slowly. Loads render static.
+  const animateLayout = animateLayoutRef.current;
 
   // The composer, rendered either pinned to the bottom or centred in an empty
   // conversation. One definition, so the two placements cannot drift apart.
@@ -2003,7 +2021,7 @@ export default function Chat(props: {
           style={{
             maxHeight: isEmptyConversation ? 90 : 0,
             opacity: isEmptyConversation ? 1 : 0,
-            transition: 'max-height 160ms ease-out, opacity 100ms ease-out',
+            transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
         >
           {/* The Claude/ChatGPT opening: one line, centred, at heading weight in
@@ -2022,9 +2040,9 @@ export default function Chat(props: {
             instead would remount it mid-conversation — dropping focus, and any
             half-typed IME composition with it. */}
         <footer
-          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base transition-[border-color] duration-150 ${isEmptyConversation ? '' : 'border-t border-sl-border-subtle'}`}
+          className={`relative flex-none flex flex-col gap-1 px-3 md:px-4 py-3 bg-sl-bg-base ${animateLayout ? 'transition-[border-color] duration-150' : ''} ${isEmptyConversation ? '' : 'border-t border-sl-border-subtle'}`}
         >
-          <div className="w-full mx-auto" style={{ maxWidth: isEmptyConversation ? 760 : '100%', transition: 'max-width 160ms ease-out' }}>
+          <div className="w-full mx-auto" style={{ maxWidth: isEmptyConversation ? 760 : '100%', transition: animateLayout ? 'max-width 160ms ease-out' : 'none' }}>
             {composerBlock}
           </div>
         </footer>
@@ -2042,7 +2060,7 @@ export default function Chat(props: {
             flexGrow: isEmptyConversation ? 1.2 : 0,
             flexShrink: 0,
             flexBasis: 0,
-            transition: 'flex-grow 160ms ease-out',
+            transition: animateLayout ? 'flex-grow 160ms ease-out' : 'none',
           }}
         />
 
