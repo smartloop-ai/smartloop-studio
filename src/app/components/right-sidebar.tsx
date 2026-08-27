@@ -3,6 +3,7 @@ import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
+import { usePanels } from '@/app/contexts/PanelContext';
 import PixelRailIcon from './pixel-rail-icons';
 import { ThemeRailIcon } from './theme-rail-icon';
 import SkillsPanel from './right-sidebar/skills-panel';
@@ -123,6 +124,17 @@ export default function RightSidebar({
   useEffect(() => {
     if (activeSection) lastSectionRef.current = activeSection;
   }, [activeSection]);
+
+  // Publish the panel's open/closed state app-wide. The chat view lays its empty
+  // conversation out differently when a panel is already taking part of the
+  // window — see PanelContext.
+  const { setRightOpen } = usePanels();
+  useEffect(() => {
+    setRightOpen(!!activeSection);
+  }, [activeSection, setRightOpen]);
+  // Leaving the conversation view (e.g. for Settings) unmounts the panel, so
+  // clear the flag rather than leave the rest of the app believing it's open.
+  useEffect(() => () => setRightOpen(false), [setRightOpen]);
 
   // Restore whatever the user last left showing. `SIDEBAR_CLOSED` is stored
   // rather than nothing, so "closed deliberately" and "never touched" stay

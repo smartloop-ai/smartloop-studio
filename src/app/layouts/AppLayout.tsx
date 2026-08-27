@@ -5,6 +5,7 @@ import Sidebar from '@/app/components/sidebar';
 import { SIDEBAR_ANIM_MS } from '@/app/components/sidebar-motion';
 import MobileNav from '@/app/components/mobile-nav';
 import { useAuthContext } from '@/app/contexts/AuthContext';
+import { PanelProvider } from '@/app/contexts/PanelContext';
 import { storageService } from '@/app/services/storage.service';
 
 // Width of the left sidebar, and of the rail it leaves behind when collapsed.
@@ -69,20 +70,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [navigate]);
 
   return (
-    <div className="wrapper">
-      <Sidebar
-        user={user}
-        mobileOpen={mobileMenuOpen}
-        onMobileClose={() => setMobileMenuOpen(false)}
-        collapsed={collapsed}
-        onToggleCollapse={toggleCollapsed}
-      />
-      <Box sx={{ marginLeft: { xs: 0, md: collapsed ? SIDEBAR_RAIL : SIDEBAR_WIDTH }, transition: `margin-left ${SIDEBAR_ANIM_MS}ms ease` }}>
-        <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-          <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
+    <PanelProvider leftOpen={!collapsed}>
+      <div className="wrapper">
+        <Sidebar
+          user={user}
+          mobileOpen={mobileMenuOpen}
+          onMobileClose={() => setMobileMenuOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapsed}
+        />
+        <Box sx={{ marginLeft: { xs: 0, md: collapsed ? SIDEBAR_RAIL : SIDEBAR_WIDTH }, transition: `margin-left ${SIDEBAR_ANIM_MS}ms ease` }}>
+          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+            <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
+          </Box>
+          {children}
         </Box>
-        {children}
-      </Box>
-    </div>
+      </div>
+    </PanelProvider>
   );
 }
