@@ -24,6 +24,7 @@ import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import MessageInput from './message-input';
+import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
 import { runTrace } from '@/app/services/run-trace.service';
 
@@ -1371,7 +1372,15 @@ export default function Chat(props: {
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
   // Nothing said yet — and not mid-search or mid-download, both of which have
   // their own things to show in the message area.
+  // A conversation carrying stored messages that haven't been copied into local
+  // state yet is not empty — it's mid-hydration. `messages` starts [] and is
+  // filled by an effect, which runs after the first paint, so without this the
+  // empty view paints for a frame on every open and then flicks to the content.
+  // Local messages still win: a just-created conversation whose parent prop
+  // momentarily carries none is already non-empty by the first clause.
+  const hydratingContent = (props.conversation?.messages?.length ?? 0) > 0;
   const isEmptyConversation = (displayMessages || []).length === 0
+    && !hydratingContent
     && searchQuery.trim() === ""
     && !modelDownloadProgress;
   // Whether the empty→content layout change should animate. It should for a
@@ -2024,14 +2033,14 @@ export default function Chat(props: {
             transition: animateLayout ? 'max-height 160ms ease-out, opacity 100ms ease-out' : 'none',
           }}
         >
-          {/* The Claude/ChatGPT opening: one line, centred, at heading weight in
-              full-strength ink. It's an h1 in both senses now — the only heading
-              this view has, and sized like one. Being an h1 also means it picks
-              up the theme's heading face (globals.css maps h1–h6 to
-              `--sl-font-heading`), so a theme that ships a serif gets one here. */}
-          <h1 className="m-0 pb-6 text-center text-[26px] md:text-[30px] font-medium tracking-tight" style={{ color: 'var(--sl-text-primary)' }}>
-            What do you want to do?
-          </h1>
+          {/* The mark alone, no wordmark and no opening line. A sentence here
+              is read once and then only takes up room, and the app doesn't need
+              to spell its own name in its own window — the glyph is enough to
+              say whose this is. Fills from `--sl-brand-mark`, so it survives a
+              light theme (see logo.tsx). */}
+          <div className="flex justify-center pb-6">
+            <LogoMark className="h-10 md:h-12 w-auto" />
+          </div>
         </div>
 
         {/* One composer, always this same node. An empty conversation centres it
