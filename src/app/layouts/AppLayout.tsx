@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '@/app/components/sidebar';
+import { SIDEBAR_ANIM_MS } from '@/app/components/sidebar-motion';
 import MobileNav from '@/app/components/mobile-nav';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { storageService } from '@/app/services/storage.service';
@@ -76,7 +77,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         collapsed={collapsed}
         onToggleCollapse={toggleCollapsed}
       />
-      <Box sx={{ marginLeft: { xs: 0, md: collapsed ? SIDEBAR_RAIL : SIDEBAR_WIDTH }, transition: 'margin-left 0.15s ease' }}>
+      <Box sx={{ marginLeft: { xs: 0, md: collapsed ? SIDEBAR_RAIL : SIDEBAR_WIDTH }, transition: `margin-left ${SIDEBAR_ANIM_MS}ms ease` }}>
         <Box sx={{ display: { xs: 'block', md: 'none' } }}>
           <MobileNav onMenuClick={() => setMobileMenuOpen(true)} />
         </Box>

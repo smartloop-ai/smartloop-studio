@@ -12,6 +12,7 @@ import ProjectSettingsPanel from './right-sidebar/project-settings-panel';
 import { useProjectDocuments } from './right-sidebar/use-project-documents';
 import { useMcpServers } from './right-sidebar/use-mcp-servers';
 import LogsPanel from './logs-panel';
+import { SIDEBAR_ANIM_MS } from './sidebar-motion';
 import ProjectInstructionsDialog from './project-instructions-dialog';
 import '../styles/home.css';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -179,6 +180,22 @@ export default function RightSidebar({
   // Resizable sidebar
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const isResizing = useRef(false);
+  // Mirrors isResizing for rendering: a width transition during a drag makes the
+  // edge lag behind the cursor, so the animation is switched off while resizing.
+  const [resizing, setResizing] = useState(false);
+
+  // What the panel body is showing. Trails activeSection on close so the panel
+  // collapses with its content still in it, instead of the content vanishing and
+  // an empty gap sliding shut.
+  const [renderedSection, setRenderedSection] = useState<RailSection | null>(null);
+  useEffect(() => {
+    if (activeSection) {
+      setRenderedSection(activeSection);
+      return;
+    }
+    const timer = setTimeout(() => setRenderedSection(null), SIDEBAR_ANIM_MS);
+    return () => clearTimeout(timer);
+  }, [activeSection]);
 
   // Follow the backend's folder for this project. The name field moved to the
   // settings panel, which syncs its own.
@@ -190,6 +207,7 @@ export default function RightSidebar({
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isResizing.current = true;
+    setResizing(true);
     const startX = e.clientX;
     const startWidth = sidebarWidth;
 
@@ -202,6 +220,7 @@ export default function RightSidebar({
 
     const onMouseUp = () => {
       isResizing.current = false;
+      setResizing(false);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.body.style.cursor = '';
@@ -294,10 +313,11 @@ export default function RightSidebar({
         overflow: 'hidden',
         borderLeft: '1px solid',
         borderColor: 'var(--sl-border-default)',
+        transition: resizing ? 'none' : `width ${SIDEBAR_ANIM_MS}ms ease, min-width ${SIDEBAR_ANIM_MS}ms ease, max-width ${SIDEBAR_ANIM_MS}ms ease`,
       }}
     >
       {/* Resize Handle */}
-      {activeSection && (
+      {renderedSection && (
         <Box
           onMouseDown={handleMouseDown}
           sx={{
@@ -313,28 +333,32 @@ export default function RightSidebar({
         />
       )}
       {/* Content Area */}
-      {activeSection && (
+      {renderedSection && (
         <Box
           className="flex-1 overflow-y-auto p-3 space-y-4 sidebar-scroll"
           sx={{
+            // minWidth 0 lets the body squeeze to nothing as the panel closes;
+            // without it the flex default (auto) holds it at its content width
+            // and the rail gets pushed out of the clipped box.
+            minWidth: 0,
             opacity: activeSection ? 1 : 0,
-            transition: 'opacity 0.3s ease',
+            transition: resizing ? 'none' : `opacity ${SIDEBAR_ANIM_MS}ms ease`,
           }}
         >
           {/* Section Title */}
           <Box className="flex items-center justify-between pb-3 mb-2" sx={{ borderBottom: '1px solid var(--sl-border-subtle)' }}>
             <span className="text-[10px] font-medium text-sl-text-disabled uppercase tracking-wider">
-              {activeSection === 'logs' ? 'Logs' : activeSection === 'mcp' ? 'Connections' : activeSection === 'documents' ? 'Documents' : activeSection === 'skills' ? 'Skills' : activeSection === 'settings' ? 'Project Settings' : ''}
+              {renderedSection === 'logs' ? 'Logs' : renderedSection === 'mcp' ? 'Connections' : renderedSection === 'documents' ? 'Documents' : renderedSection === 'skills' ? 'Skills' : renderedSection === 'settings' ? 'Project Settings' : ''}
             </span>
           </Box>
 
 
           {/* Logs — read-only, so it needs no project or capability gate: there
               is always either a run to show or an empty state. */}
-          {activeSection === 'logs' && <LogsPanel projectId={selectedProject?.id} />}
+          {renderedSection === 'logs' && <LogsPanel projectId={selectedProject?.id} />}
 
           {/* Documents Section */}
-          {activeSection === 'documents' && (
+          {renderedSection === 'documents' && (
             <DocumentsPanel
               docs={docs}
               project={selectedProject}
@@ -343,12 +367,12 @@ export default function RightSidebar({
             />
           )}
 
-          {activeSection === 'mcp' && (
+          {renderedSection === 'mcp' && (
             <ConnectionsPanel mcp={mcp} projectId={selectedProject?.id} />
           )}
 
           {/* Skills Section */}
-          {activeSection === 'skills' && (
+          {renderedSection === 'skills' && (
             <SkillsPanel
               projectId={selectedProject?.id}
               onSaveSkills={onSaveSkills}
@@ -357,7 +381,7 @@ export default function RightSidebar({
           )}
 
           {/* Project Settings Section */}
-          {activeSection === 'settings' && selectedProject && currentProjectData && (
+          {renderedSection === 'settings' && selectedProject && currentProjectData && (
             <ProjectSettingsPanel
               project={selectedProject}
               projectData={currentProjectData}
