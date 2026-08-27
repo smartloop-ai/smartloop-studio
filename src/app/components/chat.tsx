@@ -1414,7 +1414,7 @@ export default function Chat(props: {
     'What can you help me with?',
     'What is the capital of France?',
     'Draft an email for me',
-    'Help me proofread the following content',
+    'Help me proofread the content',
   ];
 
   const applyExamplePrompt = (text: string) => {
