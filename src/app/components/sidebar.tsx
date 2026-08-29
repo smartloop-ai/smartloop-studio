@@ -175,6 +175,18 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     }
   };
 
+  // Sign-in requested from elsewhere in the app (e.g. a model download refused
+  // for an anonymous user). Routed here rather than duplicated: this is where the
+  // OAuth poll and the authStateChanged broadcast already live. Read through a
+  // ref so the listener mounts once instead of resubscribing every render.
+  const loginRef = useRef(handleLogin);
+  loginRef.current = handleLogin;
+  useEffect(() => {
+    const onRequest = () => { loginRef.current(); };
+    window.addEventListener('requestSignIn', onRequest);
+    return () => window.removeEventListener('requestSignIn', onRequest);
+  }, []);
+
   const handleLogout = async () => {
     // Stop any active login polling
     if (loginPollRef.current) {
