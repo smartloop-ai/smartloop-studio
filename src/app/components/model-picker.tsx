@@ -5,6 +5,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
@@ -79,7 +80,7 @@ function Tag({ label, color, border, tip, icon }: { label: string; color: string
  * well before the list stops being useful.
  */
 export default function ModelPicker({ model, disabled = false }: ModelPickerProps) {
-    const { localModels, downloads, isDownloading, isEnabled, handleToggleModel, handleCancelDownload } = useLocalModels();
+    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel } = useLocalModels();
     const [user] = useAuthContext();
 
     const [open, setOpen] = useState(false);
@@ -102,10 +103,13 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     }, []);
 
     // A fresh open is a fresh search — a stale filter would hide models the
-    // user came back to find.
+    // user came back to find. Closing also dismisses any download refusal:
+    // it's a reply to the click that earned it, not a condition of the model,
+    // so it shouldn't be waiting there the next time the dialog opens.
     useEffect(() => {
         if (open) setQuery('');
-    }, [open]);
+        else clearDownloadErrors();
+    }, [open, clearDownloadErrors]);
 
     // Total system RAM, used to compute each model's memory pressure relative to
     // this machine (a 4GB model is "High" on 8GB, "Low" on 32GB).
@@ -141,6 +145,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
     // Admins and internal-eligible users can download plan-gated models. Internal
     // models are only sent to eligible users, so their presence marks the account.
+    // Signed out is NOT a null user: useAuth hands back a guest placeholder
+    // ({ name: 'Local', guest: true }), so a plain truthiness test reads as
+    // signed in for exactly the person who needs the sign-in prompt.
+    const isSignedIn = !!user && !user.guest;
     const isAdmin = !!user?.admin;
     const hasInternalAccess = localModels.some((m: any) => m.access_level === 'internal');
     const canDownloadGated = isAdmin || hasInternalAccess;
@@ -247,26 +255,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
     const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; needsLogin: boolean; busy: boolean; isActive: boolean }) => {
-        const btn = {
-            padding: '2px',
-            '&:hover': { color: 'var(--sl-brand-primary)' },
-        } as const;
-
+        // Downloading. No cancel affordance: aborting the HTTP request left the
+        // backend downloading anyway, so the X stopped the progress stream and
+        // nothing else — a control that looked like it stopped the download and
+        // didn't.
         if (st.busy) {
-            return (
-                <>
-                    <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />
-                    <Tooltip title="Cancel download" arrow placement="top">
-                        <IconButton
-                            size="small"
-                            onClick={(e) => { e.stopPropagation(); handleCancelDownload(st.name); }}
-                            sx={{ ...btn, color: 'var(--sl-text-faint)', '&:hover': { color: 'var(--sl-status-error)' } }}
-                        >
-                            <CloseIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                    </Tooltip>
-                </>
-            );
+            return <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />;
         }
 
         if (st.locked) {
@@ -325,6 +319,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const downloaded = !!m.downloaded;
         const busy = isDownloading(name);
         const percent = downloads.get(name)?.percent ?? 0;
+        const failure = downloadErrors.get(name);
+        // The refusal an account can actually clear by signing in. A signed-in
+        // user hitting the same gate needs a plan, not a login.
+        const needsSignIn = !!failure?.requiresAuth && !isSignedIn;
         // An already-downloaded model stays usable whatever the plan; the gate
         // only applies to a first download.
         const locked = !canDownloadGated && m.is_accessible === false && !downloaded;
@@ -349,7 +347,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 sx={{
                     padding: '12px 14px',
                     cursor: locked ? 'default' : 'pointer',
-                    border: '1px solid var(--sl-border-subtle)',
+                    border: failure ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-subtle)',
                     // Deliberately identical on or off, for the same reason a
                     // connection card doesn't tint when connected: the bulb
                     // already carries the state, and tinting the card as well
@@ -359,7 +357,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     opacity: locked ? 0.6 : 1,
                     transition: 'box-shadow 0.15s ease, background 0.15s ease',
                     '&:hover': {
-                        boxShadow: locked ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
+                        boxShadow: locked || failure ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
                     },
                 }}
             >
@@ -446,6 +444,85 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             <span className="h-full rounded-full block transition-all" style={{ width: `${percent}%`, backgroundColor: 'var(--sl-brand-primary)' }} />
                         </span>
                         <span className="text-[10px] font-mono tabular-nums flex-shrink-0" style={{ color: 'var(--sl-brand-primary)' }}>{percent}%</span>
+                    </div>
+                )}
+
+                {/* Why the download stopped. Set off from the card's own content
+                    by a hairline rather than shouted in red: the entitlement case
+                    (SLP answers 400 anonymously, 403 for an account without the
+                    plan) is not a fault, it's a step the user hasn't taken yet —
+                    so it reads as a prompt with an action, the same shape as a
+                    connection card's auth state. */}
+                {!busy && failure && (
+                    <div
+                        className="mt-3 pt-3 flex items-start gap-2.5"
+                        style={{ borderTop: '1px solid var(--sl-border-subtle)' }}
+                    >
+                        <Box
+                            sx={{
+                                width: 22,
+                                height: 22,
+                                flexShrink: 0,
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: failure.requiresAuth ? 'var(--sl-brand-primary)' : 'var(--sl-status-error)',
+                                backgroundColor: 'var(--sl-white-alpha-7)',
+                                border: '1px solid',
+                                borderColor: failure.requiresAuth ? 'var(--sl-brand-alpha-30)' : 'var(--sl-status-error)',
+                            }}
+                        >
+                            {failure.requiresAuth
+                                ? <LockOutlinedIcon sx={{ fontSize: 13 }} />
+                                : <ErrorOutlineIcon sx={{ fontSize: 13 }} />}
+                        </Box>
+
+                        <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                            <span className="text-[12px] font-semibold text-sl-text-primary">
+                                {needsSignIn
+                                    ? 'Sign in to download this model'
+                                    : failure.requiresAuth
+                                        ? 'Your plan doesn\u2019t include this model'
+                                        : 'Download failed'}
+                            </span>
+                            <span className="text-[11px] leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                                {needsSignIn
+                                    ? "Model weights are tied to your account \u2014 signing in is free and takes a few seconds."
+                                    : failure.requiresAuth
+                                        ? 'Tell us which models you need and we\u2019ll sort out access.'
+                                        : failure.message}
+                            </span>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                clearDownloadError(name);
+                                if (needsSignIn) {
+                                    // Straight into the OAuth flow the sidebar owns —
+                                    // it already runs the poll and broadcasts the result.
+                                    setOpen(false);
+                                    window.dispatchEvent(new CustomEvent('requestSignIn'));
+                                } else if (failure.requiresAuth) {
+                                    setOpen(false);
+                                    setContactOpen(true);
+                                } else {
+                                    toggle(m);
+                                }
+                            }}
+                            className="flex-shrink-0 px-2.5 rounded-md text-[11px] font-semibold border transition-colors"
+                            style={{
+                                height: '26px',
+                                color: 'var(--sl-brand-primary)',
+                                borderColor: 'var(--sl-brand-alpha-30)',
+                                backgroundColor: 'var(--sl-brand-alpha-10)',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            {needsSignIn ? 'Sign in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
+                        </button>
                     </div>
                 )}
             </Box>

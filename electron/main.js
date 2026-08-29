@@ -2151,8 +2151,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        failModelDownload(modelName, res, { kind: 'primary' }).then(resolve);
         return;
       }
 
@@ -2265,6 +2264,48 @@ function clearActiveDownload(name) {
   modelDownloadState.delete(name);
 }
 
+// SLP answers a request for weights the account isn't entitled to with 400 or
+// 403 — anonymously, every gated model is a 400. There is nothing to retry until
+// the user signs in, so it's flagged separately from a transport failure and the
+// renderer turns it into a sign-in prompt rather than a bare "HTTP 400".
+const AUTH_REQUIRED_STATUSES = new Set([400, 401, 403]);
+
+function readResponseBody(res) {
+  return new Promise((resolve) => {
+    let body = '';
+    res.on('data', (chunk) => { body += chunk.toString(); });
+    res.on('end', () => resolve(body));
+    res.on('error', () => resolve(body));
+  });
+}
+
+// Terminal handling for a download that answered non-200: drain the body for a
+// usable message, broadcast a terminal event so any renderer that adopted this
+// download drops its ring instead of sitting at the percent it died on, and hand
+// the caller back a structured failure.
+async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
+  const body = (await readResponseBody(res)).trim();
+  const requiresAuth = AUTH_REQUIRED_STATUSES.has(res.statusCode);
+  let detail = '';
+  try {
+    const parsed = JSON.parse(body);
+    detail = parsed?.detail || parsed?.error || parsed?.message || '';
+  } catch {
+    detail = body;
+  }
+  const error = requiresAuth
+    ? 'Sign in to download this model'
+    : `HTTP ${res.statusCode}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
+  console.warn(`[Models] Download of ${modelName} failed: HTTP ${res.statusCode} ${String(detail).slice(0, 200)}`);
+  emitModelDownloadProgress(
+    modelName,
+    { percent: 0, status: error, downloading: false, error, requiresAuth },
+    { kind },
+  );
+  clearActiveDownload(modelName);
+  return { success: false, error, code: res.statusCode, requiresAuth };
+}
+
 // IPC: snapshot of in-flight downloads so a freshly mounted renderer can rehydrate.
 ipcMain.handle('slp-get-download-state', async () => {
   const downloads = {};
@@ -2316,8 +2357,7 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        failModelDownload(modelName, res, { kind: 'primary' }).then(resolve);
         return;
       }
 
@@ -2441,8 +2481,12 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
           headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
         }, (res) => {
           if (res.statusCode !== 200) {
-            clearActiveDownload(modelName);
-            reject(new Error(`HTTP ${res.statusCode}`));
+            failModelDownload(modelName, res).then((fail) => {
+              const err = new Error(fail.error);
+              err.code = fail.code;
+              err.requiresAuth = fail.requiresAuth;
+              reject(err);
+            });
             return;
           }
           let buffer = '';
@@ -2481,7 +2525,7 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
       console.log(`[Models] Download complete for ${modelName}`);
     } catch (err) {
       console.error('[Models] Download error:', err.message);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message, code: err.code, requiresAuth: !!err.requiresAuth };
     }
 
     // No name re-resolution round trip here: both PATCH routes canonicalize the
@@ -2515,6 +2559,11 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
       } catch {
         return { success: true, downloading: alreadyDownloading };
       }
+    }
+    // The enable itself is entitlement-checked too, so a gated model reached
+    // without an account fails here rather than at the download.
+    if (AUTH_REQUIRED_STATUSES.has(res.status)) {
+      return { success: false, error: 'Sign in to use this model', code: res.status, requiresAuth: true };
     }
     return { success: false, error: `HTTP ${res.status}: ${text}` };
   } catch (err) {
@@ -2882,8 +2931,7 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
       },
     }, (res) => {
       if (res.statusCode !== 200) {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: `HTTP ${res.statusCode}` });
+        failModelDownload(modelName, res, { kind: 'aux' }).then(resolve);
         return;
       }
 
