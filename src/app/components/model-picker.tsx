@@ -213,6 +213,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             if (!matches(m)) continue;
             const name = m.name || m.id || m.model;
             const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
+            // /v1/models is a straight proxy of the cloud catalog now, so
+            // plan-gated models arrive here instead of being dropped upstream.
+            // Whether to show them is this component's call, and for now it is
+            // no. Delete this line to bring the 'locked' bucket below back to
+            // life as an upgrade prompt — everything it needs is still here.
+            if (locked) continue;
             const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
@@ -449,10 +455,11 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
                 {/* Why the download stopped. Set off from the card's own content
                     by a hairline rather than shouted in red: the entitlement case
-                    (SLP answers 400 anonymously, 403 for an account without the
-                    plan) is not a fault, it's a step the user hasn't taken yet —
-                    so it reads as a prompt with an action, the same shape as a
-                    connection card's auth state. */}
+                    (SLP resolves entitlement before streaming and answers 401
+                    signed out, 403 for an account without the plan) is not a
+                    fault, it's a step the user hasn't taken yet — so it reads as
+                    a prompt with an action, the same shape as a connection
+                    card's auth state. */}
                 {!busy && failure && (
                     <div
                         className="mt-3 pt-3 flex items-start gap-2.5"
@@ -490,39 +497,48 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                 {needsSignIn
                                     ? "Model weights are tied to your account \u2014 signing in is free and takes a few seconds."
                                     : failure.requiresAuth
-                                        ? 'Tell us which models you need and we\u2019ll sort out access.'
+                                        // The server already said the useful thing ("Upgrade
+                                        // required to access this model"); fall back to the
+                                        // generic line only when it said nothing.
+                                        ? (failure.detail || 'Tell us which models you need and we\u2019ll sort out access.')
                                         : failure.message}
                             </span>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                clearDownloadError(name);
-                                if (needsSignIn) {
-                                    // Straight into the OAuth flow the sidebar owns —
-                                    // it already runs the poll and broadcasts the result.
-                                    setOpen(false);
-                                    window.dispatchEvent(new CustomEvent('requestSignIn'));
-                                } else if (failure.requiresAuth) {
-                                    setOpen(false);
-                                    setContactOpen(true);
-                                } else {
-                                    toggle(m);
-                                }
-                            }}
-                            className="flex-shrink-0 px-2.5 rounded-md text-[11px] font-semibold border transition-colors"
-                            style={{
-                                height: '26px',
-                                color: 'var(--sl-brand-primary)',
-                                borderColor: 'var(--sl-brand-alpha-30)',
-                                backgroundColor: 'var(--sl-brand-alpha-10)',
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {needsSignIn ? 'Sign in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
-                        </button>
+                        {/* No button for a plan refusal we can't act on: the contact
+                            dialog needs an email on the profile, and rendering
+                            "Contact us" without one gave a button that closed the
+                            picker and did nothing. */}
+                        {(needsSignIn || !failure.requiresAuth || canContact) && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearDownloadError(name);
+                                    if (needsSignIn) {
+                                        // Straight into the OAuth flow the sidebar owns —
+                                        // it already runs the poll and broadcasts the result.
+                                        setOpen(false);
+                                        window.dispatchEvent(new CustomEvent('requestSignIn'));
+                                    } else if (failure.requiresAuth) {
+                                        setOpen(false);
+                                        setContactOpen(true);
+                                    } else {
+                                        toggle(m);
+                                    }
+                                }}
+                                className="flex-shrink-0 px-2.5 rounded-md text-[11px] font-semibold border transition-colors"
+                                style={{
+                                    height: '26px',
+                                    color: 'var(--sl-brand-primary)',
+                                    borderColor: 'var(--sl-brand-alpha-30)',
+                                    backgroundColor: 'var(--sl-brand-alpha-10)',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {needsSignIn ? 'Sign in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
+                            </button>
+                        )}
                     </div>
                 )}
             </Box>

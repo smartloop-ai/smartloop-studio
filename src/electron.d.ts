@@ -20,20 +20,25 @@ export interface ModelDownloadState {
 
 // Live progress event. Same shape as the tracked state, except terminal events
 // arrive with downloading: false and are not retained in the snapshot. A download
-// that failed is terminal too, and carries why: `requiresAuth` marks the 400/403
+// that failed is terminal too, and carries why: `requiresAuth` marks the 401/403
 // SLP answers for weights the account isn't entitled to, which the UI turns into
-// a sign-in prompt instead of an error code.
+// a sign-in prompt instead of an error code. `detail` is the server's own words
+// for the failure, kept because "sign in" is wrong for a signed-in user whose
+// plan is the problem.
 export interface ModelDownloadProgress extends Omit<ModelDownloadState, 'kind'> {
   kind?: 'primary' | 'aux';
   error?: string;
+  detail?: string;
   requiresAuth?: boolean;
 }
 
 // Result of a model action that can hit the entitlement gate (download, load,
-// enable). `requiresAuth` is the 400/403 case — signing in is the fix.
+// enable). `requiresAuth` is the 401/403 case — signing in or upgrading is the
+// fix, and retrying is not.
 export interface ModelActionResult {
   success: boolean;
   error?: string;
+  detail?: string;
   code?: number;
   requiresAuth?: boolean;
 }
@@ -125,7 +130,7 @@ export interface ElectronAPI {
   slpMcpCatalog: () => Promise<{ success: boolean; entries?: any[]; error?: string }>;
   slpInitModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult>;
   slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<ModelActionResult & { downloading?: boolean }>;
-  slpDownloadModel: (modelName: string) => Promise<{ success: boolean; model?: string; error?: string }>;
+  slpDownloadModel: (modelName: string) => Promise<ModelActionResult & { model?: string }>;
   slpLoadModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult & { model?: string; downloading?: boolean }>;
   slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
   slpGetDownloadState: () => Promise<{ success: boolean; downloads: Record<string, ModelDownloadState> }>;
