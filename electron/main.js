@@ -2101,18 +2101,19 @@ async function bootstrapOnSplash(baseUrl) {
 
   await runBootstrap(baseUrl);
 
-  // Bootstrap can report "completed" and still leave the workspace empty: a
-  // service that kept running after its data dir was wiped (the agent outlives
-  // the app) answers /health with the old model still loaded, so bootstrap
-  // skips the work and returns a project it no longer has. The app then opened
-  // on an empty workspace — no projects, nothing to chat with. Restart the
-  // service so it re-reads what is actually on disk, then bootstrap for real.
+  // Bootstrap can leave the workspace empty two ways, and this repair covers
+  // both. A service that kept running after its data dir was wiped (the agent
+  // outlives the app) answers /health with the old model still loaded, so
+  // bootstrap skips the work and returns a project it no longer has. Or the
+  // download genuinely failed — runBootstrap logs that and resolves anyway, so
+  // we arrive here either way. Restart the service so it re-reads what is
+  // actually on disk, then bootstrap for real.
   //
   // Only an empty list counts as evidence — a failed call tells us nothing.
   const projects = await getProjects(baseUrl);
   if (projects === null || projects.length > 0) return baseUrl;
 
-  console.warn('[SLP] Bootstrap reported success but the workspace has no projects — restarting the service and retrying');
+  console.warn('[SLP] Bootstrap left the workspace with no projects — restarting the service and retrying');
   updateSplashProgress({ status: 'preparing', message: 'Repairing workspace...' });
 
   try {
