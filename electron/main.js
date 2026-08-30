@@ -1825,6 +1825,8 @@ async function bootstrapSlpService(baseUrl, onProgress) {
       }
 
       let buffer = '';
+      let eventName = 'progress';
+      let streamError = null;
 
       res.on('data', (chunk) => {
         buffer += chunk.toString();
@@ -1832,7 +1834,24 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         buffer = lines.pop(); // keep incomplete line
 
         for (const line of lines) {
+          // Track the event name: /v1/bootstrap reports a failure as an
+          // `event: error` frame inside a response that already returned 200.
+          // Reading only `data: ` lines made a failed bootstrap indistinguishable
+          // from a successful one, and `on('end')` then declared it complete.
+          if (!line.trim()) { eventName = 'progress'; continue; }
+          if (line.startsWith('event: ')) { eventName = line.slice(7).trim(); continue; }
           if (line.startsWith('data: ')) {
+            if (eventName === 'error') {
+              try {
+                const data = JSON.parse(line.slice(6));
+                streamError = new Error(data.message || 'Bootstrap failed');
+                streamError.code = data.code;
+              } catch {
+                streamError = new Error('Bootstrap failed');
+              }
+              console.error('[SLP] Bootstrap failed:', streamError.message);
+              continue;
+            }
             try {
               const data = JSON.parse(line.slice(6));
               const progress = bootstrapProgress(data);
@@ -1863,6 +1882,10 @@ async function bootstrapSlpService(baseUrl, onProgress) {
       });
 
       res.on('end', () => {
+        if (streamError) {
+          reject(streamError);
+          return;
+        }
         console.log('[SLP] Bootstrap completed');
 
         // Send a final completed event so the renderer clears the progress UI
@@ -2155,28 +2178,14 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
         return;
       }
 
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const progress = bootstrapProgress(data);
-              emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
-            } catch {
-              // ignore unparseable SSE data
-            }
-          }
+      consumeSseStream(res, modelName, { kind: 'primary' }).then(async (result) => {
+        if (!result.ok) {
+          resolve({ success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
+          return;
         }
-      });
-
-      res.on('end', async () => {
-        // Persist selected_model in the SLP user profile
+        // Persist selected_model in the SLP user profile. Only on success:
+        // recording a model the user cannot actually run is worse than not
+        // recording it.
         try {
           await fetch(`${baseUrl}/v1/users/me`, {
             method: 'PATCH',
@@ -2185,14 +2194,7 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
           });
         } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
 
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
-        clearActiveDownload(modelName);
         resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
       });
     });
 
@@ -2264,11 +2266,16 @@ function clearActiveDownload(name) {
   modelDownloadState.delete(name);
 }
 
-// SLP answers a request for weights the account isn't entitled to with 400 or
-// 403 — anonymously, every gated model is a 400. There is nothing to retry until
-// the user signs in, so it's flagged separately from a transport failure and the
-// renderer turns it into a sign-in prompt rather than a bare "HTTP 400".
-const AUTH_REQUIRED_STATUSES = new Set([400, 401, 403]);
+// SLP answers a request for weights the account isn't entitled to with 401 or
+// 403: it resolves entitlement with the platform before opening its progress
+// stream, so the refusal arrives as a status rather than inside a 200. There is
+// nothing to retry until the user signs in or upgrades, so it's flagged apart
+// from a transport failure and the renderer turns it into a sign-in prompt.
+//
+// 400 is deliberately not in here. The only 400s on these routes are "Unknown
+// model" and "this model is always enabled" — neither is fixed by signing in,
+// and treating them as auth failures hid the real reason behind a login prompt.
+const AUTH_REQUIRED_STATUSES = new Set([401, 403]);
 
 function readResponseBody(res) {
   return new Promise((resolve) => {
@@ -2297,13 +2304,109 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
     ? 'Sign in to download this model'
     : `HTTP ${res.statusCode}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
   console.warn(`[Models] Download of ${modelName} failed: HTTP ${res.statusCode} ${String(detail).slice(0, 200)}`);
+  // `detail` rides along even on the auth branch. A signed-in user hitting a 403
+  // is not helped by "sign in", and the server already said the useful thing
+  // ("Upgrade required to access this model") — dropping it left the only
+  // accurate account of the failure in a console log.
   emitModelDownloadProgress(
     modelName,
-    { percent: 0, status: error, downloading: false, error, requiresAuth },
+    { percent: 0, status: error, downloading: false, error, detail: String(detail).slice(0, 200), requiresAuth },
     { kind },
   );
   clearActiveDownload(modelName);
-  return { success: false, error, code: res.statusCode, requiresAuth };
+  return { success: false, error, detail: String(detail).slice(0, 200), code: res.statusCode, requiresAuth };
+}
+
+// Consume one of SLP's SSE progress streams, broadcasting each frame as model
+// download progress.
+//
+// Every reader of these streams needs the same two things, and none of them had
+// either while this logic was copy-pasted per handler:
+//
+// 1. An `event: error` frame is terminal. SLP settles entitlement before the
+//    stream opens, so a failure arriving here happened mid-transfer — an
+//    expired signed URL, a full disk, a dropped socket — inside a response that
+//    already committed to 200. Reading only `data: ` lines fed that frame to
+//    bootstrapProgress, which has no error branch and normalised it to
+//    "0%, still downloading": a spinner that never resolves.
+// 2. The end of a failed stream is not a success. `res.on('end')` used to emit
+//    `{percent: 100, status: 'Ready'}` unconditionally, so a refused download
+//    reported completion — and in slp-set-model-enabled the caller went on to
+//    PATCH the model enabled with no weights on disk.
+//
+// Resolves `{ ok, error, detail, code, requiresAuth }`; never rejects, so
+// callers decide what a failure means to them.
+function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', logOther = false } = {}) {
+  return new Promise((resolve) => {
+    let buffer = '';
+    let eventName = 'progress';
+    let failure = null;
+
+    const fail = (data) => {
+      if (failure) return;
+      const code = typeof data.code === 'number' ? data.code : null;
+      const requiresAuth = AUTH_REQUIRED_STATUSES.has(code);
+      const detail = data.message || data.error || 'Download failed';
+      const error = requiresAuth ? 'Sign in to download this model' : String(detail).slice(0, 200);
+      failure = { ok: false, error, detail, code, requiresAuth };
+      console.warn(`[Models] ${modelName} stream failed${code ? ` (${code})` : ''}: ${String(detail).slice(0, 200)}`);
+      emitModelDownloadProgress(
+        modelName,
+        { percent: 0, status: error, downloading: false, error, detail, requiresAuth },
+        { kind },
+      );
+      clearActiveDownload(modelName);
+    };
+
+    res.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // A blank line closes a frame; the event name does not carry to the next.
+        if (!trimmed) { eventName = 'progress'; continue; }
+        if (trimmed.startsWith('event: ')) { eventName = trimmed.slice(7).trim(); continue; }
+        if (trimmed.startsWith(':')) continue;  // keepalive comment
+        if (!trimmed.startsWith('data: ')) {
+          // /v1/models/load can answer with a plain JSON body rather than SSE,
+          // so bare lines are logged, never parsed — parsing them turned that
+          // body into a bogus 0% progress event for an already-resident model.
+          if (logOther) console.log(`[Models] ${modelName}:`, trimmed);
+          continue;
+        }
+        let data;
+        try {
+          data = JSON.parse(trimmed.slice(6));
+        } catch {
+          if (logOther) console.log(`[Models] ${modelName}:`, trimmed);
+          continue;
+        }
+        if (eventName === 'error' || data.status === 'error') { fail(data); continue; }
+        if (failure) continue;  // already terminal — ignore anything trailing
+        emitModelDownloadProgress(modelName, bootstrapProgress(data), { kind });
+      }
+    });
+
+    res.on('end', () => {
+      if (failure) { resolve(failure); return; }
+      emitModelDownloadProgress(
+        modelName,
+        { percent: 100, status: doneStatus, downloading: false },
+        { kind },
+      );
+      clearActiveDownload(modelName);
+      resolve({ ok: true });
+    });
+
+    // A stream that dies mid-transfer has to go terminal too, or the renderer's
+    // ring sits at the percent it died on until the dialog is closed.
+    res.on('error', (err) => {
+      fail({ message: err.message });
+      resolve(failure);
+    });
+  });
 }
 
 // IPC: snapshot of in-flight downloads so a freshly mounted renderer can rehydrate.
@@ -2361,42 +2464,10 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
         return;
       }
 
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          // Only `data: ` lines are progress. /v1/models/load answers with a
-          // plain JSON body, not SSE, so parsing bare lines turned that body
-          // into a bogus `status: "ok"` event at 0% — a progress bar for a
-          // model that was already resident.
-          if (!trimmed.startsWith('data: ')) {
-            console.log('[Models] Model load:', trimmed);
-            continue;
-          }
-          try {
-            const progress = bootstrapProgress(JSON.parse(trimmed.slice(6)));
-            emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
-          } catch {
-            console.log('[Models] Model load:', trimmed);
-          }
-        }
-      });
-
-      res.on('end', () => {
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
-        clearActiveDownload(modelName);
-        resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
+      consumeSseStream(res, modelName, { kind: 'primary', logOther: true }).then((result) => {
+        resolve(result.ok
+          ? { success: true, model: modelName }
+          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
       });
     });
 
@@ -2489,28 +2560,13 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
             });
             return;
           }
-          let buffer = '';
-          res.on('data', (chunk) => {
-            buffer += chunk.toString();
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  const progress = bootstrapProgress(data);
-                  emitModelDownloadProgress(modelName, progress);
-                } catch {}
-              }
-            }
-          });
-          res.on('end', () => {
-            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false });
-            clearActiveDownload(modelName);
-            resolve(true);
-          });
-          res.on('error', (err) => {
-            clearActiveDownload(modelName);
+          consumeSseStream(res, modelName, { doneStatus: 'Complete' }).then((result) => {
+            if (result.ok) { resolve(true); return; }
+            // Reject rather than resolve: the PATCH below would otherwise mark a
+            // model enabled whose weights never arrived.
+            const err = new Error(result.error);
+            err.code = result.code;
+            err.requiresAuth = result.requiresAuth;
             reject(err);
           });
         });
@@ -2560,12 +2616,25 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
         return { success: true, downloading: alreadyDownloading };
       }
     }
-    // The enable itself is entitlement-checked too, so a gated model reached
-    // without an account fails here rather than at the download.
+    // These PATCH routes do no entitlement check of their own — a gated model is
+    // refused at the download above, not here. A 401/403 reaching this point is
+    // the local API rejecting the request, and it is still not retryable, so it
+    // is reported the same way. Broadcast it as well as returning it: a picker
+    // that remounted mid-flight only learns about failures through the event.
     if (AUTH_REQUIRED_STATUSES.has(res.status)) {
-      return { success: false, error: 'Sign in to use this model', code: res.status, requiresAuth: true };
+      const error = 'Sign in to use this model';
+      emitModelDownloadProgress(
+        modelName,
+        { percent: 0, status: error, downloading: false, error, detail: text.slice(0, 200), requiresAuth: true },
+      );
+      return { success: false, error, detail: text.slice(0, 200), code: res.status, requiresAuth: true };
     }
-    return { success: false, error: `HTTP ${res.status}: ${text}` };
+    const error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 0, status: error, downloading: false, error, requiresAuth: false },
+    );
+    return { success: false, error, code: res.status };
   } catch (err) {
     console.error('[Models] PATCH error:', err.message);
     return { success: false, error: err.message };
@@ -2935,35 +3004,10 @@ ipcMain.handle('slp-download-model', async (event, modelName) => {
         return;
       }
 
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const progress = bootstrapProgress(data);
-              emitModelDownloadProgress(modelName, progress);
-            } catch {
-              // ignore unparseable SSE data
-            }
-          }
-        }
-      });
-
-      res.on('end', () => {
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false });
-        clearActiveDownload(modelName);
-        resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
+      consumeSseStream(res, modelName, { kind: 'aux' }).then((result) => {
+        resolve(result.ok
+          ? { success: true, model: modelName }
+          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
       });
     });
 
