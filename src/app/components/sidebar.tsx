@@ -95,16 +95,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   const modelLoading = !!primaryProgress?.downloading;
   const menuOpen = Boolean(anchorEl);
   const [authUser, setAuthUser] = useState<any>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loggingOutRef = useRef(false);
 
   // Check auth status on mount and listen for changes
   useEffect(() => {
     // Initial auth check — wait for full profile (includes is_paid) before showing user
     const checkAuth = async () => {
-      if (loginPollRef.current || loggingOutRef.current) return;
+      if (loggingOutRef.current) return;
       try {
         if (window.electronAPI?.slpAuthStatus) {
           const status = await window.electronAPI.slpAuthStatus();
@@ -134,54 +132,37 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
 
     return () => {
-      if (loginPollRef.current) {
-        clearInterval(loginPollRef.current);
-        loginPollRef.current = null;
-      }
       window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
     };
   }, []);
 
+  // main.js watches for the token and announces the logged-in user. Nothing to
+  // reflect while it waits — the button stays put and the UI changes on success.
+  useEffect(() => {
+    const onLoginState = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.state !== 'success') return;
+      setAuthUser(detail.user);
+      window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: detail.user } }));
+    };
+    window.addEventListener('loginState', onLoginState);
+    return () => window.removeEventListener('loginState', onLoginState);
+  }, []);
+
+  // Fire and forget: open the browser and let main.js do the waiting.
   const handleLogin = async () => {
-    setIsLoggingIn(true);
+    if (!isElectron || !window.electronAPI) return;
     try {
-      if (isElectron && window.electronAPI) {
-        const result = await window.electronAPI.oauthLogin() as any;
-        if (result?.status === 'error') {
-          console.error('Login error:', result.error);
-          setIsLoggingIn(false);
-          return;
-        }
-        // Poll auth/status until authenticated
-        loginPollRef.current = setInterval(async () => {
-          try {
-            const status = await window.electronAPI!.slpAuthStatus();
-            if (status?.success && status?.has_access_token && status?.user) {
-              if (loginPollRef.current) {
-                clearInterval(loginPollRef.current);
-                loginPollRef.current = null;
-              }
-              // Fetch full profile before showing user to avoid "Free" flash
-              const profileResult = await window.electronAPI!.slpFetchUser();
-              const fullUser = profileResult?.success && profileResult.user
-                ? { ...status.user, ...profileResult.user }
-                : status.user;
-              setAuthUser(fullUser);
-              setIsLoggingIn(false);
-              window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: fullUser } }));
-            }
-          } catch { }
-        }, 2000);
-      }
+      const result = await window.electronAPI.oauthLogin() as any;
+      if (result?.status === 'error') console.error('Login error:', result.error);
     } catch (error) {
       console.error('Login error:', error);
-      setIsLoggingIn(false);
     }
   };
 
   // Sign-in requested from elsewhere in the app (e.g. a model download refused
   // for an anonymous user). Routed here rather than duplicated: this is where the
-  // OAuth poll and the authStateChanged broadcast already live. Read through a
+  // login button state and the authStateChanged broadcast already live. Read through a
   // ref so the listener mounts once instead of resubscribing every render.
   const loginRef = useRef(handleLogin);
   loginRef.current = handleLogin;
@@ -192,12 +173,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   }, []);
 
   const handleLogout = async () => {
-    // Stop any active login polling
-    if (loginPollRef.current) {
-      clearInterval(loginPollRef.current);
-      loginPollRef.current = null;
-    }
-    setIsLoggingIn(false);
+    // main.js stops any active login wait on the logout IPC
     loggingOutRef.current = true;
     // Delete token first so no in-flight or subsequent checkAuth can re-read it
     if (window.electronAPI?.slpAuthLogout) {
@@ -1158,29 +1134,19 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
               bgcolor: 'var(--sl-brand-alpha-10)',
               border: '1px solid var(--sl-brand-alpha-20)',
               borderRadius: '8px',
-              cursor: isLoggingIn ? 'not-allowed' : 'pointer',
+              cursor: 'pointer',
               fontSize: '13px',
               fontWeight: 600,
               color: 'var(--sl-brand-primary)',
               transition: 'all 0.15s ease',
-              opacity: isLoggingIn ? 0.6 : 1,
               '&:hover': {
                 bgcolor: 'var(--sl-brand-alpha-20)',
                 border: '1px solid var(--sl-brand-alpha-40)',
               },
             }}
           >
-            {isLoggingIn ? (
-              <>
-                <CircularProgress size={16} sx={{ color: 'var(--sl-brand-primary)' }} />
-                <span>Signing in...</span>
-              </>
-            ) : (
-              <>
-                <LoginIcon sx={{ fontSize: 18 }} />
-                <span>Login</span>
-              </>
-            )}
+            <LoginIcon sx={{ fontSize: 18 }} />
+            <span>Login</span>
           </Box>
 
           {/* Settings link for guests */}

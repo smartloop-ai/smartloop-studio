@@ -333,6 +333,11 @@ ipcRenderer.on('user-profile-updated', (event, data) => {
   window.dispatchEvent(new CustomEvent('userProfileUpdated', { detail: data }));
 });
 
+// Bridge the outcome of the main-process login wait (success / timeout / cancelled)
+ipcRenderer.on('login-state', (event, data) => {
+  window.dispatchEvent(new CustomEvent('loginState', { detail: data }));
+});
+
 // Bridge main-process project changes to a DOM event so ProjectContext can
 // subscribe with a plain window.addEventListener (single refresh trigger).
 ipcRenderer.on('projects-changed', () => {
