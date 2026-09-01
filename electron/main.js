@@ -2589,8 +2589,9 @@ ipcMain.handle('unload-model', async () => {
   return { success: true };
 });
 
-// IPC: Check auth status on local SLP service
-ipcMain.handle('slp-auth-status', async () => {
+// Read credential state from the local service. Shared by the status IPC, the
+// login wait and the window-focus check so the fetch isn't spelled out three times.
+async function readAuthStatus() {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
   try {
@@ -2604,10 +2605,14 @@ ipcMain.handle('slp-auth-status', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
-});
+}
+
+// IPC: Check auth status on local SLP service
+ipcMain.handle('slp-auth-status', readAuthStatus);
 
 // IPC: Logout from local SLP service (clear access token)
 ipcMain.handle('slp-auth-logout', async () => {
+  stopLoginWait();
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'No local service' };
   try {
@@ -2689,6 +2694,71 @@ ipcMain.handle('slp-fetch-user', async () => {
   const profile = await fetchUserProfile();
   return { success: !!profile, user: profile };
 });
+
+// -- Login wait ---------------------------------------------------------------
+// The browser OAuth flow POSTs its tokens straight to the local service, so
+// nothing signals the app when they land — credential state has to be watched.
+// Main owns that watch rather than the renderer, so there is exactly one of them
+// and it can be bounded and cancelled.
+//
+// It announces only success; timing out is silent. Swap point: when the backend
+// grows a blocking GET /v1/auth/wait, only waitForLogin's body changes.
+const LOGIN_WAIT_TIMEOUT_MS = 90_000;
+const LOGIN_WAIT_INTERVAL_MS = 2_000;
+
+// The in-flight wait, if any. Its object identity doubles as the generation
+// token: a tick whose session is no longer the current one has been cancelled or
+// superseded, and drops its result.
+let loginWait = null;
+
+function sendLoginState(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('login-state', payload);
+  }
+}
+
+function stopLoginWait() {
+  if (loginWait && loginWait.timer) clearTimeout(loginWait.timer);
+  loginWait = null;
+}
+
+function waitForLogin() {
+  stopLoginWait();
+  const session = { timer: null };
+  loginWait = session;
+  const deadline = Date.now() + LOGIN_WAIT_TIMEOUT_MS;
+
+  // Self-rescheduling rather than setInterval, so a slow status call can't stack.
+  const tick = async () => {
+    if (loginWait !== session) return;
+    const status = await readAuthStatus();
+    if (loginWait !== session) return;
+
+    if (status && status.success && status.has_access_token && status.user) {
+      stopLoginWait();
+      // Merge the full profile before announcing so the UI never flashes a
+      // half-populated user — is_paid in particular gates the model list.
+      const profile = await fetchUserProfile();
+      sendLoginState({ state: 'success', user: { ...status.user, ...(profile || {}) } });
+      healthMonitor.poke();
+      return;
+    }
+
+    // Deadline is tested after the read, so the final tick doubles as a last
+    // re-check: a token landing inside the closing interval still wins. Giving
+    // up is silent: the button never entered a waiting state to come back from,
+    // and a token that lands later is still picked up by the focus check.
+    if (Date.now() >= deadline) {
+      stopLoginWait();
+      console.log('[OAuth] Login wait timed out');
+      return;
+    }
+
+    session.timer = setTimeout(tick, LOGIN_WAIT_INTERVAL_MS);
+  };
+
+  session.timer = setTimeout(tick, LOGIN_WAIT_INTERVAL_MS);
+}
 
 // IPC: Renderer requests settings update via PATCH /users/me
 ipcMain.handle('slp-update-user-settings', async (event, settings) => {
@@ -3220,21 +3290,15 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
     rendererReady = false;
+    stopLoginWait();
   });
 
   // On focus: check auth status and refresh user profile (throttled)
   mainWindow.on('focus', async () => {
-    const baseUrl = slpService.getLocalBaseUrl();
-    if (!baseUrl) return;
-    try {
-      const res = await fetch(`${baseUrl}/v1/auth/status`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.has_access_token) {
-          fetchUserProfile();
-        }
-      }
-    } catch { }
+    const status = await readAuthStatus();
+    if (status.success && status.has_access_token) {
+      fetchUserProfile();
+    }
   });
 
   // Open external links in default browser
@@ -3266,7 +3330,10 @@ ipcMain.handle('oauth-login', async (event) => {
   await shell.openExternal(authUrl);
   console.log('[OAuth] Browser opened successfully');
 
-  // Return immediately - webapp will POST tokens directly to local service
+  // Watch for the tokens the webapp will POST directly to the local service.
+  // Returns immediately either way — the outcome arrives on 'login-state'.
+  waitForLogin();
+
   return { status: 'browser_opened', port };
 });
 
