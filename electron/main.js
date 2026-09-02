@@ -1847,6 +1847,67 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
+// Line-buffered reader for SLP's SSE streams. Owns the framing — partial
+// chunks, the `event:` name that applies until the blank line closes a frame,
+// keepalive comments — and hands each frame to `onFrame(data, eventName)`
+// already parsed. A line that is not a parseable `data:` frame goes to `onRaw`
+// instead: /v1/models/load answers some requests with a plain JSON body rather
+// than a stream, and feeding that body to a progress parser invented a 0%
+// download for an already-resident model.
+//
+// Resolves when the response ends and rejects on a transport error; what a
+// half-finished stream means is the caller's to decide.
+function readSseStream(res, { onFrame, onRaw } = {}) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    let eventName = 'progress';
+
+    const handleLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) { eventName = 'progress'; return; }
+      if (trimmed.startsWith(':')) return;  // keepalive comment
+      if (trimmed.startsWith('event: ')) { eventName = trimmed.slice(7).trim(); return; }
+      if (!trimmed.startsWith('data: ')) { if (onRaw) onRaw(trimmed); return; }
+      let data;
+      try {
+        data = JSON.parse(trimmed.slice(6));
+      } catch {
+        // An error frame stays terminal even when its payload is malformed.
+        // Passing it to onRaw instead would report the failure as a success —
+        // the exact bug this framing exists to prevent.
+        if (eventName === 'error') { if (onFrame) onFrame({}, eventName); return; }
+        if (onRaw) onRaw(trimmed);
+        return;
+      }
+      if (onFrame) onFrame(data, eventName);
+    };
+
+    res.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+      for (const line of lines) handleLine(line);
+    });
+
+    res.on('end', () => {
+      // Flush a last line that arrived without its terminating newline. SLP's
+      // SSE frames always end in \n\n, but /v1/models/load's plain JSON body
+      // does not — and dropping it silently would also drop an unterminated
+      // final error frame.
+      if (buffer.trim()) handleLine(buffer);
+      resolve();
+    });
+    res.on('error', (err) => reject(err));
+  });
+}
+
+// A failure inside a stream that already returned 200. SLP settles entitlement
+// before opening the stream, so this is a mid-transfer fault — an expired
+// signed URL, a full disk, a dropped socket.
+function isErrorFrame(data, eventName) {
+  return eventName === 'error' || data.status === 'error';
+}
+
 async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -1865,64 +1926,48 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         return;
       }
 
-      let buffer = '';
-      let eventName = 'progress';
+      // A failed bootstrap arrives as an `event: error` frame inside a response
+      // that already returned 200. Reading only `data:` lines made it
+      // indistinguishable from a success, and the end of the stream then
+      // declared it complete.
       let streamError = null;
 
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete line
-
-        for (const line of lines) {
-          // Track the event name: /v1/bootstrap reports a failure as an
-          // `event: error` frame inside a response that already returned 200.
-          // Reading only `data: ` lines made a failed bootstrap indistinguishable
-          // from a successful one, and `on('end')` then declared it complete.
-          if (!line.trim()) { eventName = 'progress'; continue; }
-          if (line.startsWith('event: ')) { eventName = line.slice(7).trim(); continue; }
-          if (line.startsWith('data: ')) {
-            if (eventName === 'error') {
-              try {
-                const data = JSON.parse(line.slice(6));
-                streamError = new Error(data.message || 'Bootstrap failed');
-                streamError.code = data.code;
-              } catch {
-                streamError = new Error('Bootstrap failed');
-              }
-              console.error('[SLP] Bootstrap failed:', streamError.message);
-              continue;
-            }
-            try {
-              const data = bootstrapSplashEvent(JSON.parse(line.slice(6)));
-              const progress = bootstrapProgress(data);
-
-              if (progress.percent > 0) {
-                if (progress.percent % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${progress.percent}%`);
-              } else {
-                console.log('[SLP] Bootstrap:', progress.status);
-              }
-
-              // Let the caller know the stream is alive (stall watchdog).
-              if (onProgress) onProgress(progress);
-
-              // Send to splash screen only when main window isn't visible yet
-              if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
-                updateSplashProgress(data);
-              }
-
-              // Send normalised progress to renderer so the chat UI can show it
-              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-                mainWindow.webContents.send('bootstrap-progress', progress);
-              }
-            } catch {
-              // ignore unparseable SSE data
-            }
+      readSseStream(res, {
+        onFrame: (frame, eventName) => {
+          if (isErrorFrame(frame, eventName)) {
+            if (streamError) return;
+            streamError = new Error(frame.message || 'Bootstrap failed');
+            streamError.code = frame.code;
+            console.error('[SLP] Bootstrap failed:', streamError.message);
+            return;
           }
-        }
-      });
+          if (streamError) return;  // already terminal — ignore anything trailing
 
-      res.on('end', () => {
+          // Already-seeded weights report a transfer; show "Checking" instead.
+          const data = bootstrapSplashEvent(frame);
+
+          const progress = bootstrapProgress(data);
+
+          if (progress.percent > 0) {
+            if (progress.percent % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${progress.percent}%`);
+          } else {
+            console.log('[SLP] Bootstrap:', progress.status);
+          }
+
+          // Let the caller know the stream is alive (stall watchdog).
+          if (onProgress) onProgress(progress);
+
+          // Send to splash screen only when main window isn't visible yet
+          if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
+            updateSplashProgress(data);
+          }
+
+          // Send normalised progress to renderer so the chat UI can show it
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+            mainWindow.webContents.send('bootstrap-progress', progress);
+          }
+        },
+      }).then(() => {
         if (streamError) {
           reject(streamError);
           return;
@@ -1943,9 +1988,7 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         }
 
         resolve(true);
-      });
-
-      res.on('error', (err) => {
+      }, (err) => {
         reject(new Error(`Bootstrap stream error: ${err.message}`));
       });
     });
@@ -2816,10 +2859,7 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
 // Every reader of these streams needs the same two things, and none of them had
 // either while this logic was copy-pasted per handler:
 //
-// 1. An `event: error` frame is terminal. SLP settles entitlement before the
-//    stream opens, so a failure arriving here happened mid-transfer — an
-//    expired signed URL, a full disk, a dropped socket — inside a response that
-//    already committed to 200. Reading only `data: ` lines fed that frame to
+// 1. An error frame is terminal. Reading only `data: ` lines fed it to
 //    bootstrapProgress, which has no error branch and normalised it to
 //    "0%, still downloading": a spinner that never resolves.
 // 2. The end of a failed stream is not a success. `res.on('end')` used to emit
@@ -2830,75 +2870,45 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
 // Resolves `{ ok, error, detail, code, requiresAuth }`; never rejects, so
 // callers decide what a failure means to them.
 function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', logOther = false } = {}) {
-  return new Promise((resolve) => {
-    let buffer = '';
-    let eventName = 'progress';
-    let failure = null;
+  let failure = null;
 
-    const fail = (data) => {
-      if (failure) return;
-      const code = typeof data.code === 'number' ? data.code : null;
-      const requiresAuth = AUTH_REQUIRED_STATUSES.has(code);
-      const detail = data.message || data.error || 'Download failed';
-      const error = requiresAuth ? 'Sign in to download this model' : String(detail).slice(0, 200);
-      failure = { ok: false, error, detail, code, requiresAuth };
-      console.warn(`[Models] ${modelName} stream failed${code ? ` (${code})` : ''}: ${String(detail).slice(0, 200)}`);
-      emitModelDownloadProgress(
-        modelName,
-        { percent: 0, status: error, downloading: false, error, detail, requiresAuth },
-        { kind },
-      );
-      clearActiveDownload(modelName);
-    };
+  const fail = (data) => {
+    if (failure) return;
+    const code = typeof data.code === 'number' ? data.code : null;
+    const requiresAuth = AUTH_REQUIRED_STATUSES.has(code);
+    const detail = data.message || data.error || 'Download failed';
+    const error = requiresAuth ? 'Sign in to download this model' : String(detail).slice(0, 200);
+    failure = { ok: false, error, detail, code, requiresAuth };
+    console.warn(`[Models] ${modelName} stream failed${code ? ` (${code})` : ''}: ${String(detail).slice(0, 200)}`);
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 0, status: error, downloading: false, error, detail, requiresAuth },
+      { kind },
+    );
+    clearActiveDownload(modelName);
+  };
 
-    res.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        // A blank line closes a frame; the event name does not carry to the next.
-        if (!trimmed) { eventName = 'progress'; continue; }
-        if (trimmed.startsWith('event: ')) { eventName = trimmed.slice(7).trim(); continue; }
-        if (trimmed.startsWith(':')) continue;  // keepalive comment
-        if (!trimmed.startsWith('data: ')) {
-          // /v1/models/load can answer with a plain JSON body rather than SSE,
-          // so bare lines are logged, never parsed — parsing them turned that
-          // body into a bogus 0% progress event for an already-resident model.
-          if (logOther) console.log(`[Models] ${modelName}:`, trimmed);
-          continue;
-        }
-        let data;
-        try {
-          data = JSON.parse(trimmed.slice(6));
-        } catch {
-          if (logOther) console.log(`[Models] ${modelName}:`, trimmed);
-          continue;
-        }
-        if (eventName === 'error' || data.status === 'error') { fail(data); continue; }
-        if (failure) continue;  // already terminal — ignore anything trailing
-        emitModelDownloadProgress(modelName, bootstrapProgress(data), { kind });
-      }
-    });
-
-    res.on('end', () => {
-      if (failure) { resolve(failure); return; }
-      emitModelDownloadProgress(
-        modelName,
-        { percent: 100, status: doneStatus, downloading: false },
-        { kind },
-      );
-      clearActiveDownload(modelName);
-      resolve({ ok: true });
-    });
-
+  return readSseStream(res, {
+    onFrame: (data, eventName) => {
+      if (isErrorFrame(data, eventName)) { fail(data); return; }
+      if (failure) return;  // already terminal — ignore anything trailing
+      emitModelDownloadProgress(modelName, bootstrapProgress(data), { kind });
+    },
+    onRaw: (line) => { if (logOther) console.log(`[Models] ${modelName}:`, line); },
+  }).then(() => {
+    if (failure) return failure;
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 100, status: doneStatus, downloading: false },
+      { kind },
+    );
+    clearActiveDownload(modelName);
+    return { ok: true };
+  }, (err) => {
     // A stream that dies mid-transfer has to go terminal too, or the renderer's
     // ring sits at the percent it died on until the dialog is closed.
-    res.on('error', (err) => {
-      fail({ message: err.message });
-      resolve(failure);
-    });
+    fail({ message: err.message });
+    return failure;
   });
 }
 
