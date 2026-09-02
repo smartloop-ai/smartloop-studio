@@ -139,7 +139,6 @@ export interface ElectronAPI {
   slpMcpCatalog: () => Promise<{ success: boolean; entries?: any[]; error?: string }>;
   slpInitModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult>;
   slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<ModelActionResult & { downloading?: boolean }>;
-  slpDownloadModel: (modelName: string) => Promise<ModelActionResult & { model?: string }>;
   slpLoadModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult & { model?: string; downloading?: boolean }>;
   slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
   slpGetDownloadState: () => Promise<{ success: boolean; downloads: Record<string, ModelDownloadState> }>;
