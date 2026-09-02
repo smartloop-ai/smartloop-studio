@@ -3590,58 +3590,6 @@ ipcMain.handle('slp-list-models', async (event, projectId) => {
   return { success: true, models };
 });
 
-// IPC: Download a model via local SLP service (SSE streaming progress)
-ipcMain.handle('slp-download-model', async (event, modelName) => {
-  console.log(`[Models] Download requested: ${modelName}`);
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
-
-  // Already downloading — don't start a duplicate request.
-  if (activeModelDownloads.has(modelName)) {
-    console.log(`[Models] ${modelName} already downloading; ignoring duplicate request`);
-    return { success: false, error: 'already-downloading', downloading: true };
-  }
-
-  return new Promise((resolve) => {
-    const http = require('http');
-    const url = new URL(`${baseUrl}/v1/models/download`);
-
-    const postData = JSON.stringify({ model: modelName });
-
-    const req = http.request({
-      hostname: url.hostname,
-      port: url.port,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-      },
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        failModelDownload(modelName, res, { kind: 'aux' }).then(resolve);
-        return;
-      }
-
-      consumeSseStream(res, modelName, { kind: 'aux' }).then((result) => {
-        resolve(result.ok
-          ? { success: true, model: modelName }
-          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
-      });
-    });
-
-    beginModelDownload(modelName, req, { status: 'Starting download…' });
-
-    req.on('error', (err) => {
-      clearActiveDownload(modelName);
-      resolve({ success: false, error: err.message });
-    });
-
-    req.write(postData);
-    req.end();
-  });
-});
-
 // Register custom protocol for OAuth callback
 const PROTOCOL = 'smartloop';
 
