@@ -71,7 +71,6 @@ const getUser = async () => {
 
         is_paid: result.is_paid || false, // Subscription status from API
         is_premium: result.is_premium || false, // Premium status from API
-        selected_model: result.selected_model || null,
 
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
@@ -164,7 +163,6 @@ const fetchAndStoreUser = async () => {
         admin: result.is_superuser,
         is_paid: result.is_paid || false,
         premium: result.is_paid || false,
-        selected_model: result.selected_model || null,
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
 
