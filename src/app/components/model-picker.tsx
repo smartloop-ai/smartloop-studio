@@ -208,13 +208,13 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         for (const m of pickable) {
             if (!matches(m)) continue;
             const name = m.name || m.id || m.model;
+            // A model the plan doesn't grant is listed, not hidden. The cloud
+            // returns it for exactly that reason — an anonymous caller gets the
+            // whole catalog with is_accessible false on the Pro tier "so the
+            // client can show pro models as signup incentive" — so dropping it
+            // here would discard the one thing it was sent for. It goes in the
+            // 'locked' bucket: greyed, lock icon, not clickable.
             const locked = isLocked(m);
-            // /v1/models is a straight proxy of the cloud catalog, so a model
-            // the plan doesn't grant arrives here rather than being dropped
-            // upstream. Whether to show it is this component's call, and for
-            // now it is no. Delete this line to bring the 'locked' bucket below
-            // back to life as an upgrade prompt — everything it needs is here.
-            if (locked) continue;
             const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
