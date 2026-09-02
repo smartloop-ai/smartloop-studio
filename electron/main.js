@@ -2219,23 +2219,10 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
         return;
       }
 
-      consumeSseStream(res, modelName, { kind: 'primary' }).then(async (result) => {
-        if (!result.ok) {
-          resolve({ success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
-          return;
-        }
-        // Persist selected_model in the SLP user profile. Only on success:
-        // recording a model the user cannot actually run is worse than not
-        // recording it.
-        try {
-          await fetch(`${baseUrl}/v1/users/me`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selected_model: modelName }),
-          });
-        } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
-
-        resolve({ success: true, model: modelName });
+      consumeSseStream(res, modelName, { kind: 'primary' }).then((result) => {
+        resolve(result.ok
+          ? { success: true, model: modelName }
+          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
       });
     });
 
@@ -2734,7 +2721,6 @@ async function fetchUserProfile() {
         admin: result.is_superuser,
         is_paid: result.is_paid || false,
         premium: result.is_paid || false,
-        selected_model: result.selected_model || null,
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
         // NOTE: `projects` is intentionally NOT copied from /users/me — that
