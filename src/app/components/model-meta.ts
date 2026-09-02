@@ -156,15 +156,28 @@ export const CAPABILITY_STYLE: Record<string, { color: string; border: string }>
 // Short explanation for each plan/access tier tag, shown on hover.
 export const TIER_INFO: Record<string, string> = {
     Pro: 'Pro model — included with a Pro plan',
-    Premium: 'Premium model — requires an upgraded plan',
     Internal: 'Internal model — available to your account',
 };
 
-// Tier tag shown on gated models: pro uses the brand color, internal collapses
-// into a blue "Internal", other gated tiers into a gold "Premium".
+// Tier tag shown on gated models: pro uses the brand color, internal a blue
+// "Internal". Those are the only tiers the cloud publishes — its
+// ModelAccessLevel is FREE/PRO/INTERNAL — so a free model gets no tag.
 export function tierTag(m: any): { label: string; color: string; border: string } | null {
     if (m.access_level === 'pro') return { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' };
     if (m.access_level === 'internal') return { label: 'Internal', color: 'rgb(96,165,250)', border: 'rgba(96,165,250,0.3)' };
-    if (m.access_level === 'premium') return { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' };
     return null;
+}
+
+// The single gate on a model the user cannot download. `is_accessible` is
+// computed per-user by the cloud catalog (ModelAccessManager.can_access_model)
+// and already accounts for every tier: free is true for everyone, anonymous
+// callers included; pro is true for paid accounts and superusers; internal is
+// true for superusers and withheld from the catalog entirely for anyone else.
+// So there is nothing to combine it with — reading `access_level` alongside it
+// only ever risks disagreeing with the cloud.
+//
+// Weights already on disk stay usable whatever the plan says now, so a
+// downloaded model is never locked.
+export function isLocked(m: any): boolean {
+    return m.is_accessible === false && !m.downloaded;
 }

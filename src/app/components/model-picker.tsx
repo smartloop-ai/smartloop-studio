@@ -21,6 +21,7 @@ import {
     CAPABILITY_INFO,
     CAPABILITY_STYLE,
     TIER_INFO,
+    isLocked,
     matchTitle,
     memoryGb,
     memoryPressure,
@@ -143,15 +144,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         return () => window.removeEventListener('activeModelChanged', onActive);
     }, [localModels]);
 
-    // Admins and internal-eligible users can download plan-gated models. Internal
-    // models are only sent to eligible users, so their presence marks the account.
     // Signed out is NOT a null user: useAuth hands back a guest placeholder
     // ({ name: 'Local', guest: true }), so a plain truthiness test reads as
     // signed in for exactly the person who needs the sign-in prompt.
     const isSignedIn = !!user && !user.guest;
-    const isAdmin = !!user?.admin;
-    const hasInternalAccess = localModels.some((m: any) => m.access_level === 'internal');
-    const canDownloadGated = isAdmin || hasInternalAccess;
     const canContact = !!user?.email;
 
     // Everything except the orchestrator — it's represented by the Auto trigger.
@@ -172,7 +168,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         if (!totalRamGb) return null;
         const candidates = pickable
             .filter((m: any) => {
-                const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
+                const locked = isLocked(m);
                 return !locked && memoryGb(m) != null;
             })
             .map((m: any) => {
@@ -183,7 +179,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
         const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
         return pick ? pick.name : null;
-    }, [pickable, totalRamGb, canDownloadGated]);
+    }, [pickable, totalRamGb]);
 
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
@@ -212,18 +208,18 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         for (const m of pickable) {
             if (!matches(m)) continue;
             const name = m.name || m.id || m.model;
-            const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
-            // /v1/models is a straight proxy of the cloud catalog now, so
-            // plan-gated models arrive here instead of being dropped upstream.
-            // Whether to show them is this component's call, and for now it is
-            // no. Delete this line to bring the 'locked' bucket below back to
-            // life as an upgrade prompt — everything it needs is still here.
+            const locked = isLocked(m);
+            // /v1/models is a straight proxy of the cloud catalog, so a model
+            // the plan doesn't grant arrives here rather than being dropped
+            // upstream. Whether to show it is this component's call, and for
+            // now it is no. Delete this line to bring the 'locked' bucket below
+            // back to life as an upgrade prompt — everything it needs is here.
             if (locked) continue;
             const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
         return buckets.filter((b) => b.models.length > 0);
-    }, [pickable, query, canDownloadGated, isEnabled]);
+    }, [pickable, query, isEnabled]);
 
     const matchCount = groups.reduce((n, g) => n + g.models.length, 0);
 
@@ -260,7 +256,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model can be in, so there is exactly one place to look for "what is this
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
-    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; needsLogin: boolean; busy: boolean; isActive: boolean }) => {
+    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
         // Downloading. No cancel affordance: aborting the HTTP request left the
         // backend downloading anyway, so the X stopped the progress stream and
         // nothing else — a control that looked like it stopped the download and
@@ -271,7 +267,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title={st.needsLogin ? 'Log in to download this model' : 'Upgrade to a Pro plan to use this model'} arrow placement="top">
+                <Tooltip title="Upgrade to a Pro plan to use this model" arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -329,13 +325,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         // The refusal an account can actually clear by signing in. A signed-in
         // user hitting the same gate needs a plan, not a login.
         const needsSignIn = !!failure?.requiresAuth && !isSignedIn;
-        // An already-downloaded model stays usable whatever the plan; the gate
-        // only applies to a first download.
-        const locked = !canDownloadGated && m.is_accessible === false && !downloaded;
-        const isGated = m.access_level === 'pro' || m.access_level === 'premium';
-        // A free model reported inaccessible only because the user is signed out
-        // is a login gate, not an upgrade prompt.
-        const needsLogin = locked && !isGated;
+        const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
         const pressure = memoryPressure(m, totalRamGb);
@@ -394,7 +384,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </span>
 
                     <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                        {renderState({ name, on, downloaded, locked, needsLogin, busy, isActive })}
+                        {renderState({ name, on, downloaded, locked, busy, isActive })}
                     </div>
                 </div>
 
@@ -455,11 +445,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
                 {/* Why the download stopped. Set off from the card's own content
                     by a hairline rather than shouted in red: the entitlement case
-                    (SLP resolves entitlement before streaming and answers 401
-                    signed out, 403 for an account without the plan) is not a
-                    fault, it's a step the user hasn't taken yet — so it reads as
-                    a prompt with an action, the same shape as a connection
-                    card's auth state. */}
+                    (403 for anything the plan doesn't grant, signed in or not;
+                    401 only when the token itself is bad) is not a fault, it's a
+                    step the user hasn't taken yet — so it reads as a prompt with
+                    an action, the same shape as a connection card's auth state.
+                    A rate limit (429) or a dead transfer (502) is neither, so it
+                    keeps its retry button and shows the server's own words. */}
                 {!busy && failure && (
                     <div
                         className="mt-3 pt-3 flex items-start gap-2.5"
