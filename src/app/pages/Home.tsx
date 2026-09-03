@@ -59,7 +59,9 @@ export default function Home() {
   // the meantime, then flick to the content of a tab that always had some.
   const [conversationHydrating, setConversationHydrating] = useState(true);
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Bumped when a navigation asks for the composer (see the focus=1 effect).
+  const [composerFocus, setComposerFocus] = useState(0);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showKeybinds, setShowKeybinds] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -290,6 +292,17 @@ export default function Home() {
       };
       restoreProject();
     }
+  }, [searchParams]);
+
+  // focus=1 — set by the sidebar right after a project is created — hands focus
+  // to the composer so the user can type straight away. Stripped once consumed,
+  // so a reload or a back-nav doesn't steal focus again.
+  useEffect(() => {
+    if (searchParams.get('focus') !== '1') return;
+    setComposerFocus((n) => n + 1);
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
   }, [searchParams]);
 
   // Clear chatMessage after it's been passed to Chat component
@@ -1899,6 +1912,7 @@ description: A clear description of what this skill does and when to use it
                           onCreateSkill={createSkillFromTemplate}
                           webSearchEnabled={currentProjectData?.web_search_enabled}
                           onWebSearchChange={handleWebSearchChange}
+                          focusComposerTrigger={composerFocus}
                         />
                       );
                     })()}
