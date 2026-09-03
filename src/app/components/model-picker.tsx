@@ -80,7 +80,7 @@ function Tag({ label, color, border, tip, icon }: { label: string; color: string
  * well before the list stops being useful.
  */
 export default function ModelPicker({ model, disabled = false }: ModelPickerProps) {
-    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel } = useLocalModels();
+    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel, fetchLocalModels } = useLocalModels();
     const [user] = useAuthContext();
 
     const [open, setOpen] = useState(false);
@@ -110,6 +110,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         if (open) setQuery('');
         else clearDownloadErrors();
     }, [open, clearDownloadErrors]);
+
+    // The catalog changes server-side, so the list captured at mount goes stale.
+    // Silent: rows stay put, and main's 30s window keeps reopens cheap.
+    useEffect(() => {
+        if (open) fetchLocalModels({ silent: true });
+    }, [open, fetchLocalModels]);
 
     // Total system RAM, used to compute each model's memory pressure relative to
     // this machine (a 4GB model is "High" on 8GB, "Low" on 32GB).

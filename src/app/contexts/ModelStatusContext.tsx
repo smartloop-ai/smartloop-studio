@@ -29,7 +29,7 @@ export interface ModelStatusValue {
   // `enabledModels`, so a pending toggle is reflected optimistically — an
   // enabling model still reports enabled=false from the backend.
   enabledCapabilities: Set<string>;
-  fetchLocalModels: () => Promise<void>;
+  fetchLocalModels: (options?: { silent?: boolean }) => Promise<void>;
 
   // --- Auxiliary downloads in flight, keyed by model name ---
   // Weights are workspace-wide, so these are NOT project-scoped: a download
@@ -108,22 +108,30 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     return caps;
   }, [localModels, enabledModels]);
 
-  const fetchLocalModels = useCallback(async () => {
-    setLocalModelsLoading(true);
+  // Only writer for `localModels`, so the pushed `models-updated` is guarded too.
+  // An unchanged payload keeps the old array rather than re-running every memo.
+  const commitModels = useCallback((next: any[]) => {
+    setLocalModels(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+  }, []);
+
+  // `silent` skips the loading flag so a list already on screen never blanks.
+  const fetchLocalModels = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setLocalModelsLoading(true);
     try {
       const api = window.electronAPI;
       if (api?.slpListModels) {
         const result = await api.slpListModels(projectId);
         if (result?.success && result.models) {
-          setLocalModels(result.models);
+          commitModels(result.models);
         }
       }
     } catch (err) {
       console.warn('[ModelStatus] Failed to fetch local models:', err);
     } finally {
-      setLocalModelsLoading(false);
+      if (!silent) setLocalModelsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, commitModels]);
 
   // Read through refs inside the IPC subscription so it can mount once and stay
   // mounted, instead of resubscribing on every project change.
@@ -383,14 +391,14 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     const unsubscribe = api?.onModelsUpdated?.(({ models, projectId: payloadProjectId }) => {
       // Ignore refreshes for other projects — they would clobber this view.
       if ((payloadProjectId ?? null) !== projectIdRef.current) return;
-      if (Array.isArray(models)) setLocalModels(models);
+      if (Array.isArray(models)) commitModels(models);
     });
 
     return () => {
       window.removeEventListener('authStateChanged', handleAuthChange);
       unsubscribe?.();
     };
-  }, [fetchLocalModels, clearDownloadErrors]);
+  }, [fetchLocalModels, clearDownloadErrors, commitModels]);
 
   const value = useMemo<ModelStatusValue>(() => ({
     localModels,

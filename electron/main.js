@@ -2922,23 +2922,28 @@ let modelsCache = new Map(); // projectId -> { data, timestamp }
 let modelsRefreshPromises = new Map(); // projectId -> in-flight refresh
 const MODELS_FRESH_TTL_MS = 30_000;
 
+// `undefined` (startup warmup) and `null` (renderer, no project) name the same
+// list — key them alike, or the warmup fills a slot nothing reads.
+const modelsCacheKey = (projectId) => projectId ?? null;
+
 function refreshModelsCache(projectId) {
-  if (modelsRefreshPromises.has(projectId)) return modelsRefreshPromises.get(projectId);
+  const key = modelsCacheKey(projectId);
+  if (modelsRefreshPromises.has(key)) return modelsRefreshPromises.get(key);
   const promise = (async () => {
     try {
-      const models = await fetchModelsWithMerge(projectId);
+      const models = await fetchModelsWithMerge(key);
       if (models) {
-        modelsCache.set(projectId, { data: models, timestamp: Date.now() });
+        modelsCache.set(key, { data: models, timestamp: Date.now() });
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('models-updated', { models, projectId });
+          mainWindow.webContents.send('models-updated', { models, projectId: key });
         }
       }
       return models;
     } finally {
-      modelsRefreshPromises.delete(projectId);
+      modelsRefreshPromises.delete(key);
     }
   })();
-  modelsRefreshPromises.set(projectId, promise);
+  modelsRefreshPromises.set(key, promise);
   return promise;
 }
 
@@ -2959,7 +2964,7 @@ async function fetchModels() {
 // returns immediately while a background refresh emits `models-updated`.
 ipcMain.handle('slp-list-models', async (event, projectId) => {
   const now = Date.now();
-  const cached = modelsCache.get(projectId);
+  const cached = modelsCache.get(modelsCacheKey(projectId));
   if (cached && now - cached.timestamp < MODELS_FRESH_TTL_MS) {
     return { success: true, models: cached.data };
   }
