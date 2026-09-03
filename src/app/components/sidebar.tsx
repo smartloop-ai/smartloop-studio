@@ -14,6 +14,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import { storageService } from '@/app/services/storage.service';
 import { dialogStyles } from '@/app/shared/utils';
 import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
@@ -63,9 +64,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   const [isDeleting, setIsDeleting] = useState(false);
   const [conversations, setConversations] = useState<any[]>([]);
   const [openCreateProjectDialog, setOpenCreateProjectDialog] = useState(false);
-  // No step, and no separate "source": a project is a name and a color, and an
-  // optional .zip to seed it from. `createZipPath` is that choice — set means
-  // import, unset means the blank template.
+  // A project is a name, a color, and where it starts from. "Blank" is the
+  // default and is a real choice on the form rather than the absence of one —
+  // picking "existing" seeds it from a .zip export in `createZipPath`.
+  const [createSource, setCreateSource] = useState<'blank' | 'existing'>('blank');
   const [createZipPath, setCreateZipPath] = useState<string | null>(null);
   const [createProjectName, setCreateProjectName] = useState('');
   const [createProjectColor, setCreateProjectColor] = useState(DEFAULT_COLOR);
@@ -499,6 +501,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
 
   const handleCloseCreateProjectDialog = () => {
     setOpenCreateProjectDialog(false);
+    setCreateSource('blank');
     setCreateZipPath(null);
     setCreateProjectName('');
     setCreateProjectColor(DEFAULT_COLOR);
@@ -558,6 +561,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     }
 
     const fileName = filePath.split(/[/\\]/).pop() || 'project.zip';
+    setCreateSource('existing');
     setCreateZipPath(filePath);
     // The archive's name is a suggestion, not an override — a name already
     // typed is the one the user meant.
@@ -585,6 +589,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
       return;
     }
 
+    setCreateSource('existing');
     setCreateZipPath(filePath);
     setCreateProjectName(prev => prev.trim() || nameFromZip(file.name));
   };
@@ -640,6 +645,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     }
     if (!filePath) return;
 
+    setCreateSource('existing');
     setCreateZipPath(filePath);
     setCreateProjectName(nameFromZip(file.name));
     setOpenCreateProjectDialog(true);
@@ -1199,6 +1205,14 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     </>
   );
 
+  // "From existing" with nothing attached isn't creatable — the archive is the
+  // whole point of that choice, so the button waits rather than quietly making
+  // a blank project instead.
+  const createDisabled =
+    isImporting ||
+    !createProjectName.trim() ||
+    (createSource === 'existing' && !createZipPath);
+
   return (
     <>
       {/* Create Project Dialog */}
@@ -1260,7 +1274,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
           {/* Project name */}
           <Box className="mb-4">
             <TextField
-              size="small"
               placeholder="Project name"
               value={createProjectName}
               onChange={(e) => setCreateProjectName(e.target.value)}
@@ -1274,16 +1287,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                 }
               }}
               sx={{
+                // Same shape as the chat composer: 8px radius, the surface
+                // tint over the app background, and roomy padding.
                 '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'var(--sl-bg-surface-1)',
-                  fontSize: '0.85rem',
-                  '& fieldset': { borderColor: 'var(--sl-border-default)' },
-                  '&:hover fieldset': { borderColor: 'var(--sl-brand-alpha-30)' },
+                  backgroundColor: 'var(--sl-white-alpha-5)',
+                  borderRadius: '8px',
+                  fontSize: '15px',
+                  lineHeight: 1.5,
+                  '& fieldset': { borderColor: 'var(--sl-border-subtle)' },
+                  '&:hover fieldset': { borderColor: 'var(--sl-border-hover)' },
                   '&.Mui-focused fieldset': { borderColor: 'var(--sl-brand-primary)' },
                 },
                 '& .MuiInputBase-input': {
                   color: 'var(--sl-text-primary)',
-                  padding: '10px 12px',
+                  padding: '16px 20px',
+                  caretColor: 'var(--sl-brand-primary)',
                   '&::placeholder': { color: 'var(--sl-text-muted)', opacity: 1 },
                 },
               }}
@@ -1316,86 +1334,123 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
             </Box>
           </Box>
 
-          {/* Optional starting point. One slim row rather than a pair of big
-              cards: "blank" was never a decision anyone made deliberately, it
-              was the answer you gave to get past the first screen. */}
-          <Box
-            onDrop={handleImportDrop}
-            onDragOver={handleImportDragOver}
-            onDragLeave={handleImportDragLeave}
-            onClick={() => { if (!createZipPath) handleImportBrowse(); }}
-            className="mb-5"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              px: 1.75,
-              py: 1.25,
-              borderRadius: '8px',
-              border: isDragOver
-                ? '1.5px dashed var(--sl-brand-primary)'
-                : createZipPath
-                  ? '1px solid var(--sl-brand-alpha-30)'
-                  : '1px dashed var(--sl-border-default)',
-              bgcolor: isDragOver || createZipPath ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
-              cursor: createZipPath ? 'default' : 'pointer',
-              transition: 'all 0.15s ease',
-              '&:hover': {
-                borderColor: createZipPath ? 'var(--sl-brand-alpha-30)' : 'var(--sl-brand-alpha-40)',
-              },
-            }}
-          >
-            <FileDownloadIcon
+          {/* Where it starts from. Two options, blank preselected: the empty
+              project is a deliberate choice on the form, not the fallback you
+              land on by ignoring an import row. */}
+          <Box className="flex gap-2 mb-5">
+            {/* Blank */}
+            <Box
+              onClick={() => { setCreateSource('blank'); setImportError(''); }}
+              className="flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all min-w-0"
               sx={{
-                fontSize: 18,
-                flexShrink: 0,
-                color: isDragOver || createZipPath ? 'var(--sl-brand-primary)' : 'var(--sl-text-disabled)',
+                border: createSource === 'blank'
+                  ? '1px solid var(--sl-brand-alpha-40)'
+                  : '1px solid var(--sl-border-subtle)',
+                bgcolor: createSource === 'blank' ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
+                '&:hover': {
+                  borderColor: createSource === 'blank' ? 'var(--sl-brand-alpha-40)' : 'var(--sl-brand-alpha-30)',
+                },
               }}
-            />
-            <Box className="flex flex-col min-w-0 flex-1">
-              <Typography sx={{ fontSize: '12.5px', color: 'var(--sl-text-primary)', fontWeight: 500 }} noWrap>
-                {isDragOver
-                  ? 'Drop to import'
-                  : createZipPath
-                    ? (createZipPath.split(/[/\\]/).pop() || 'project.zip')
-                    : 'Start from an existing project'}
-              </Typography>
-              <Typography sx={{ fontSize: '11.5px', color: 'var(--sl-text-faint)' }} noWrap>
-                {isDragOver
-                  ? 'Release to attach the archive'
-                  : createZipPath
-                    ? 'Its conversations, documents and tools come with it'
-                    : 'Optional — drop or browse a .zip export'}
-              </Typography>
+            >
+              <NoteAddOutlinedIcon
+                sx={{
+                  fontSize: 18,
+                  flexShrink: 0,
+                  color: createSource === 'blank' ? 'var(--sl-brand-primary)' : 'var(--sl-text-disabled)',
+                }}
+              />
+              <Box className="flex flex-col min-w-0">
+                <Typography sx={{ fontSize: '12.5px', fontWeight: 500, color: 'var(--sl-text-primary)' }} noWrap>
+                  Blank
+                </Typography>
+                <Typography sx={{ fontSize: '11.5px', color: 'var(--sl-text-faint)' }} noWrap>
+                  Start from scratch
+                </Typography>
+              </Box>
             </Box>
-            {createZipPath && !isDragOver && (
-              <Tooltip title="Remove — start from a blank project instead" placement="top" arrow>
-                <IconButton
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); setCreateZipPath(null); setImportError(''); }}
-                  sx={{
-                    flexShrink: 0,
-                    color: 'var(--sl-text-faint)',
-                    '&:hover': { color: 'var(--sl-status-error)', bgcolor: 'transparent' },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 15 }} />
-                </IconButton>
-              </Tooltip>
-            )}
+
+            {/* Import from a .zip export — also the drop target */}
+            <Box
+              onDrop={handleImportDrop}
+              onDragOver={handleImportDragOver}
+              onDragLeave={handleImportDragLeave}
+              onClick={() => {
+                setImportError('');
+                setCreateSource('existing');
+                if (!createZipPath) handleImportBrowse();
+              }}
+              className="flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all min-w-0"
+              sx={{
+                border: isDragOver
+                  ? '1px dashed var(--sl-brand-primary)'
+                  : createSource === 'existing'
+                    ? '1px solid var(--sl-brand-alpha-40)'
+                    : '1px solid var(--sl-border-subtle)',
+                bgcolor: isDragOver || createSource === 'existing' ? 'var(--sl-brand-alpha-10)' : 'var(--sl-white-alpha-5)',
+                '&:hover': {
+                  borderColor: createSource === 'existing' ? 'var(--sl-brand-alpha-40)' : 'var(--sl-brand-alpha-30)',
+                },
+              }}
+            >
+              <FileDownloadIcon
+                sx={{
+                  fontSize: 18,
+                  flexShrink: 0,
+                  color: isDragOver || createSource === 'existing' ? 'var(--sl-brand-primary)' : 'var(--sl-text-disabled)',
+                }}
+              />
+              <Box className="flex flex-col min-w-0 flex-1">
+                <Typography sx={{ fontSize: '12.5px', fontWeight: 500, color: 'var(--sl-text-primary)' }} noWrap>
+                  {isDragOver
+                    ? 'Drop to import'
+                    : createZipPath
+                      ? (createZipPath.split(/[/\\]/).pop() || 'project.zip')
+                      : 'Import'}
+                </Typography>
+                <Typography sx={{ fontSize: '11.5px', color: 'var(--sl-text-faint)' }} noWrap>
+                  {isDragOver
+                    ? 'Release to attach'
+                    : createZipPath
+                      ? 'Chats, docs and tools included'
+                      : 'Drop or browse a .zip'}
+                </Typography>
+              </Box>
+              {createZipPath && !isDragOver && (
+                <Tooltip title="Remove — start from a blank project instead" placement="top" arrow>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCreateZipPath(null);
+                      setCreateSource('blank');
+                      setImportError('');
+                    }}
+                    sx={{
+                      flexShrink: 0,
+                      color: 'var(--sl-text-faint)',
+                      '&:hover': { color: 'var(--sl-status-error)', bgcolor: 'transparent' },
+                    }}
+                  >
+                    <CloseIcon sx={{ fontSize: 15 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           </Box>
 
           {/* Create */}
           <Box
             id="create-project-continue-btn"
             onClick={async () => {
-              if (isImporting || !createProjectName.trim()) return;
+              if (createDisabled) return;
               setIsImporting(true);
               setImportError('');
               try {
-                // No zip attached means the blank template, which is itself a
-                // zip — so both paths land in the same importer.
-                const zipPath = createZipPath || await window.electronAPI?.getTemplateZipPath();
+                // The blank template is itself a zip, so both sources land in
+                // the same importer.
+                const zipPath = createSource === 'existing'
+                  ? createZipPath
+                  : await window.electronAPI?.getTemplateZipPath();
                 if (!zipPath) {
                   setImportError('Template not found');
                   setIsImporting(false);
@@ -1415,17 +1470,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
               gap: 1.5,
               px: 2,
               py: 1.5,
-              bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-10)',
-              border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-20)',
+              bgcolor: createDisabled ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-10)',
+              border: createDisabled ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-20)',
               borderRadius: '8px',
-              cursor: (isImporting || !createProjectName.trim()) ? 'not-allowed' : 'pointer',
+              cursor: createDisabled ? 'not-allowed' : 'pointer',
               fontSize: '13px',
               fontWeight: 600,
-              color: (isImporting || !createProjectName.trim()) ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)',
+              color: createDisabled ? 'var(--sl-text-disabled)' : 'var(--sl-brand-primary)',
               transition: 'all 0.15s ease',
               '&:hover': {
-                bgcolor: (isImporting || !createProjectName.trim()) ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-20)',
-                border: (isImporting || !createProjectName.trim()) ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-40)',
+                bgcolor: createDisabled ? 'var(--sl-bg-surface-1)' : 'var(--sl-brand-alpha-20)',
+                border: createDisabled ? '1px solid var(--sl-border-subtle)' : '1px solid var(--sl-brand-alpha-40)',
               },
             }}
           >
@@ -1435,7 +1490,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                 <span>Creating...</span>
               </>
             ) : (
-              <span>Create project</span>
+              <span>{createSource === 'existing' && createZipPath ? 'Import project' : 'Create project'}</span>
             )}
           </Box>
 
