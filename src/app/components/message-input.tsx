@@ -164,16 +164,22 @@ export default function MessageInput({
     return () => clearInterval(t);
   }, [isLoading]);
 
+  // Each trigger value is honoured once. A disabled composer can't take focus,
+  // so the request is left pending and `disabled` in the deps retries it the
+  // moment the input enables — a project created while SLP is still warming
+  // still ends up focused.
+  const handledFocusRef = useRef(0);
   useEffect(() => {
-    if (!focusTrigger) return;
+    if (!focusTrigger || focusTrigger === handledFocusRef.current) return;
     const el = inputRef.current;
-    if (!el) return;
+    if (!el || disabled) return;
+    handledFocusRef.current = focusTrigger;
     el.focus();
     // Caret to the end, not wherever it last sat: the text arrived from
     // outside, and the user's next keystroke should continue it.
     const end = el.value?.length ?? 0;
     el.setSelectionRange?.(end, end);
-  }, [focusTrigger]);
+  }, [focusTrigger, disabled]);
 
   // Refocus input when response generation completes
   const wasLoadingRef = useRef(false);

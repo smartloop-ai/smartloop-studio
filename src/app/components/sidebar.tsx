@@ -57,6 +57,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const createNameInputRef = useRef<HTMLInputElement>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -482,6 +483,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     setOpenCreateProjectDialog(true);
   };
 
+  // Cmd/Ctrl+N opens the create-project dialog, same as the button. Matched on
+  // e.code so a non-QWERTY layout still triggers on the N key. Electron's
+  // default macOS menu leaves Cmd+N unbound, so a window listener is enough.
+  useEffect(() => {
+    const handleNewProjectHotkey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.code !== 'KeyN') return;
+      e.preventDefault();
+      handleOpenCreateProjectDialog();
+    };
+    window.addEventListener('keydown', handleNewProjectHotkey);
+    return () => window.removeEventListener('keydown', handleNewProjectHotkey);
+  }, []);
+
   const handleCloseCreateProjectDialog = () => {
     setOpenCreateProjectDialog(false);
     setCreateZipPath(null);
@@ -520,7 +535,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
       await refreshConversations();
 
       handleCloseCreateProjectDialog();
-      navigate(`/?project=${projectId}`);
+      // focus=1 asks Home to pull focus into the composer — a project created
+      // from scratch has nothing to click, so the caret should already be there.
+      navigate(`/?project=${projectId}&focus=1`);
     } catch (error: any) {
       console.error('Error importing project:', error);
       setImportError(error.message || 'An error occurred while importing the project.');
@@ -899,31 +916,33 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
         })()}
 
         {/* New Project button */}
-        <Box
-          onClick={handleOpenCreateProjectDialog}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            padding: '9px 11px',
-            borderRadius: '7px',
-            cursor: 'pointer',
-            bgcolor: 'transparent',
-            color: 'var(--sl-text-muted)',
-            fontWeight: 500,
-            fontSize: '13.5px',
-            transition: 'all 0.12s ease',
-            border: '1px solid transparent',
-            '&:hover': {
-              bgcolor: 'var(--sl-white-alpha-5)',
-              color: 'var(--sl-text-primary)',
-            },
-            mb: 0.5,
-          }}
-        >
-          <AddIcon sx={{ fontSize: 18 }} />
-          <span style={{ flex: 1 }}>new project</span>
-        </Box>
+        <Tooltip title="Create a new project (⌘N)" placement="right" arrow>
+          <Box
+            onClick={handleOpenCreateProjectDialog}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              padding: '9px 11px',
+              borderRadius: '7px',
+              cursor: 'pointer',
+              bgcolor: 'transparent',
+              color: 'var(--sl-text-muted)',
+              fontWeight: 500,
+              fontSize: '13.5px',
+              transition: 'all 0.12s ease',
+              border: '1px solid transparent',
+              '&:hover': {
+                bgcolor: 'var(--sl-white-alpha-5)',
+                color: 'var(--sl-text-primary)',
+              },
+              mb: 0.5,
+            }}
+          >
+            <AddIcon sx={{ fontSize: 18 }} />
+            <span style={{ flex: 1 }}>new project</span>
+          </Box>
+        </Tooltip>
       </Box>
 
       {/* Recent Conversations Section */}
@@ -1194,6 +1213,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
         BackdropProps={{
           sx: dialogStyles.backdrop
         }}
+        // The field's autoFocus lands during React's commit, ahead of MUI's
+        // focus trap — which holds when a React click opens the dialog, but not
+        // when the Cmd+N window listener does, where the trap gets there first
+        // and focuses the paper instead. onEntered runs after the trap either
+        // way. Skipped when autoFocus already won, so a name typed during the
+        // transition isn't selected out from under the next keystroke.
+        TransitionProps={{
+          onEntered: () => {
+            const el = createNameInputRef.current;
+            if (!el || document.activeElement === el) return;
+            el.focus();
+            el.select();
+          },
+        }}
       >
         <Box className="relative p-6">
           <IconButton
@@ -1232,6 +1265,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
               value={createProjectName}
               onChange={(e) => setCreateProjectName(e.target.value)}
               autoFocus
+              inputRef={createNameInputRef}
               fullWidth
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && createProjectName.trim()) {

@@ -294,7 +294,10 @@ export default function Chat(props: {
   // status bar can flip it without opening the rail. Undefined reads as ON, the
   // same default the backend applies to projects predating the flag.
   webSearchEnabled?: boolean,
-  onWebSearchChange?: (enabled: boolean) => void
+  onWebSearchChange?: (enabled: boolean) => void,
+  // Bumped by the parent to pull focus into the composer — set after a project
+  // is created, so the new project opens ready to type into.
+  focusComposerTrigger?: number
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
@@ -1487,6 +1490,13 @@ export default function Chat(props: {
     setFormData({ message: text });
     setComposerFocusTrigger((n) => n + 1);
   };
+
+  // Fold the parent's focus request into the composer's own trigger, so both
+  // reasons to focus travel down the one channel.
+  useEffect(() => {
+    if (!props.focusComposerTrigger) return;
+    setComposerFocusTrigger((n) => n + 1);
+  }, [props.focusComposerTrigger]);
 
   const composerBlock = (
     <>
