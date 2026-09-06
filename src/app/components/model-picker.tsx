@@ -265,7 +265,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title={st.needsLogin ? 'Sign in to download this model' : 'Upgrade to a Pro plan to use this model'} arrow placement="top">
+                <Tooltip title={st.needsLogin ? 'Log in to download this model' : 'Upgrade to a Pro plan to use this model'} arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -481,14 +481,14 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                             <span className="text-[12px] font-semibold text-sl-text-primary">
                                 {needsSignIn
-                                    ? 'Sign in to download this model'
+                                    ? 'Log in to download this model'
                                     : failure.requiresAuth
                                         ? 'Your plan doesn\u2019t include this model'
                                         : 'Download failed'}
                             </span>
                             <span className="text-[11px] leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
                                 {needsSignIn
-                                    ? "Model weights are tied to your account \u2014 signing in is free and takes a few seconds."
+                                    ? "Model weights are tied to your account \u2014 logging in is free and takes a few seconds."
                                     : failure.requiresAuth
                                         ? 'Tell us which models you need and we\u2019ll sort out access.'
                                         : failure.message}
@@ -521,7 +521,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                 cursor: 'pointer',
                             }}
                         >
-                            {needsSignIn ? 'Sign in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
+                            {needsSignIn ? 'Log in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
                         </button>
                     </div>
                 )}
@@ -655,7 +655,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                         still have a route to ask for models or a bigger plan. */}
                     <div className="flex items-center justify-between gap-2 px-5 py-3 border-t flex-shrink-0" style={{ borderColor: 'var(--sl-border-subtle)' }}>
                         <span className="text-[11px]" style={{ color: 'var(--sl-text-muted)' }}>Need a model we don't list?</span>
-                        <Tooltip title={canContact ? '' : 'Sign in to send us a message'} placement="top" arrow>
+                        <Tooltip title={canContact ? '' : 'Log in to send us a message'} placement="top" arrow>
                             <span className="inline-flex">
                                 <button
                                     type="button"
