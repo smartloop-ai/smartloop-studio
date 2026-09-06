@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Box, CircularProgress, InputAdornment, TextField } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
-import DownloadIcon from '@mui/icons-material/Download';
+// Mirrors the FileDownloadIcon on the new-project dialog's Import card:
+// arrow out for export, arrow in for import.
+import FileUploadIcon from '@mui/icons-material/FileUpload';
 import NotesIcon from '@mui/icons-material/Notes';
 import CheckIcon from '@mui/icons-material/Check';
+import Tooltip from '@mui/material/Tooltip';
 import { PROJECT_COLORS } from '@/app/constants';
+import { useAuthContext } from '@/app/contexts/AuthContext';
 
 /**
  * Project Settings — name, color, folder, instructions, export.
@@ -38,6 +42,12 @@ export default function ProjectSettingsPanel({
   const [localProjectName, setLocalProjectName] = useState(project?.name || '');
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
+  // Export is account-gated, the same way the chat status bar gates web search.
+  // Signed out is NOT a null user: useAuth stands in a guest placeholder
+  // ({ name: 'Local', guest: true }), so the guest flag is what decides.
+  const [user] = useAuthContext();
+  const canExport = !!user && !user.guest;
+  const exportBlocked = exporting || !canExport;
 
   // Follow the selected project, so the field never shows the last one's name.
   useEffect(() => {
@@ -180,12 +190,15 @@ export default function ProjectSettingsPanel({
       </div>
     </div>
 
-    {/* Download Project — not available for the general/system project */}
+    {/* Export Project — pairs with Import in the new-project dialog
+        (sidebar.tsx), so it uses the same word for the same .zip. Not
+        available for the general/system project. */}
     <div>
-      <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Download</div>
+      <div className="text-[10px] text-sl-text-disabled font-medium uppercase tracking-wider mb-2">Export</div>
+      <Tooltip title={canExport ? '' : 'Log in to export this project'} placement="top" arrow>
       <Box
         onClick={async () => {
-          if (exporting || !project?.id) return;
+          if (exportBlocked || !project?.id) return;
           setExporting(true);
           setExportDone(false);
           try {
@@ -208,11 +221,11 @@ export default function ProjectSettingsPanel({
           borderRadius: '6px',
           backgroundColor: 'var(--sl-bg-surface-1)',
           border: '1px solid var(--sl-border-default)',
-          cursor: exporting ? 'not-allowed' : 'pointer',
-          opacity: exporting ? 0.5 : 1,
+          cursor: exportBlocked ? 'not-allowed' : 'pointer',
+          opacity: exportBlocked ? 0.5 : 1,
           '&:hover': {
             backgroundColor: 'var(--sl-bg-surface-1)',
-            borderColor: exporting ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
+            borderColor: exportBlocked ? 'var(--sl-border-default)' : 'var(--sl-brand-alpha-30)',
           },
         }}
       >
@@ -221,16 +234,17 @@ export default function ProjectSettingsPanel({
         ) : exportDone ? (
           <CheckIcon sx={{ fontSize: 16, color: 'var(--sl-brand-primary)' }} />
         ) : (
-          <DownloadIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+          <FileUploadIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
         )}
         <span className="text-xs text-[var(--sl-text-primary)]">
-          {exporting ? 'Downloading...' : exportDone ? 'Downloaded' : (
-            <>Download <span className="text-[var(--sl-text-muted)] bg-[var(--sl-bg-surface-1)] px-1.5 py-0.5 rounded text-[11px]">{project.name || 'Project'}</span></>
+          {exporting ? 'Exporting...' : exportDone ? 'Exported' : (
+            <>Export <span className="text-[var(--sl-text-muted)] bg-[var(--sl-bg-surface-1)] px-1.5 py-0.5 rounded text-[11px]">{project.name || 'Project'}</span></>
           )}
         </span>
       </Box>
+      </Tooltip>
       <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-        Download the project and all its contents as a zip file.
+        {canExport ? 'Chats, docs and tools included, as a .zip.' : 'Log in to export this project as a .zip.'}
       </p>
     </div>
   </div>

@@ -952,17 +952,30 @@ export default function SettingsPage() {
                         </Box>
 
                     {/* 4. Active Model Card — specs + performance graph */}
-                    {slpConfig && (() => {
+                    {(() => {
                         const activeModel = slpConfig?.workspace?.models?.find((m: any) => m.is_active);
-                        if (!activeModel) return null;
 
                         const healthModelName = serverHealth?.details?.model_name || serverHealth?.details?.model;
                         const displayModel = (healthModelName && slpConfig?.workspace?.models?.find((m: any) => m.model_name === healthModelName)) || activeModel;
                         // Use health endpoint quantization (reflects what's actually running)
                         const healthQuantize = serverHealth?.details?.quantization;
-                        const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel.config?.quantize?.toUpperCase()) || '—';
+                        const quantize = (healthQuantize ? String(healthQuantize).toUpperCase() : displayModel?.config?.quantize?.toUpperCase()) || null;
                         const ramUsed = systemInfo ? (systemInfo.totalMemGb - systemInfo.freeMemGb).toFixed(1) : null;
                         const ramTotal = systemInfo?.totalMemGb;
+
+                        const specs = [
+                            ...(quantize ? [{ label: 'Quantization', value: quantize }] : []),
+                            ...(ramUsed && ramTotal ? [{ label: 'RAM', value: `${ramUsed} / ${ramTotal} GB` }] : []),
+                            ...(systemInfo?.gpu ? [{ label: 'GPU', value: systemInfo.gpu }] : []),
+                        ];
+
+                        // Tok/s comes from the local tps_history table, not from SLP's
+                        // config.json, so it must not hang off the config being readable.
+                        // It isn't in the snap build — SLP's home there is not the dir the
+                        // app reads config.json from — which hid the whole card, graph
+                        // included, even though the history was recorded fine.
+                        const hasTps = tpsHistory.length > 0 || latestTps !== null;
+                        if (specs.length === 0 && !hasTps) return null;
 
                         return (
                             <Box
@@ -975,14 +988,11 @@ export default function SettingsPage() {
                                 }}
                             >
                                 {/* Active model specs */}
+                                {specs.length > 0 && (
                                 <Box sx={{ p: { xs: 2.5, md: 3 }, pb: 0 }}>
                                     {/* Specs Row */}
                                     <Box className="flex flex-wrap gap-2 mb-3">
-                                        {[
-                                            { label: 'Quantization', value: quantize },
-                                            ...(ramUsed && ramTotal ? [{ label: 'RAM', value: `${ramUsed} / ${ramTotal} GB` }] : []),
-                                            ...(systemInfo?.gpu ? [{ label: 'GPU', value: systemInfo.gpu }] : []),
-                                        ].map(({ label, value }) => (
+                                        {specs.map(({ label, value }) => (
                                             <Box
                                                 key={label}
                                                 sx={{
@@ -1002,11 +1012,13 @@ export default function SettingsPage() {
                                         ))}
                                     </Box>
                                 </Box>
+                                )}
 
                                 {/* Tok/s Performance Section */}
-                                {(tpsHistory.length > 0 || latestTps !== null) && (
+                                {hasTps && (
                                     <Box sx={{
                                         mx: { xs: 2.5, md: 3 },
+                                        mt: specs.length > 0 ? 0 : { xs: 2.5, md: 3 },
                                         mb: { xs: 2.5, md: 3 },
                                         p: 2,
                                         bgcolor: 'var(--sl-white-alpha-5)',
