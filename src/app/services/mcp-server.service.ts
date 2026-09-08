@@ -240,6 +240,34 @@ export const buildTagColorMap = (names: (string | undefined)[]): Map<string, Tag
 export const tagColorFrom = (map: Map<string, TagColor>, name?: string): TagColor =>
   map.get((name || '').trim().toLowerCase()) || TAG_FALLBACK;
 
+/** What the card says when the file didn't parse. */
+const CONNECTION_FILE_ERROR = 'Invalid Connection Definition, use a valid .toml file';
+
+/**
+ * Condense a connection-file error down to the inline slot under the card.
+ *
+ * The backend returns whatever pydantic raised, and for a validation failure
+ * that is a multi-line dump — one paragraph per bad field, each with a
+ * `[type=extra_forbidden, input_value=...]` tail and a docs URL — landing in a
+ * space sized for one line of red text. The full text is worth having, just
+ * not there: callers log it, and the card gets the short version.
+ *
+ * A backend error that is already one short line is the useful kind ("a url
+ * and a package name are alternatives", "that file is empty"), so it survives
+ * as written rather than being flattened into the generic message too.
+ */
+const condenseDefinitionError = (message: string): string => {
+  const text = (message || '').replace(/^Could not read this connection file:\s*/i, '').trim();
+  if (!text) return CONNECTION_FILE_ERROR;
+  // A pydantic dump announces itself: a validation-error header, a bracketed
+  // type tag, or the errors.pydantic.dev link it appends per error.
+  if (/\d+ validation errors?\b|\[type=|errors\.pydantic\.dev/i.test(text)) {
+    return CONNECTION_FILE_ERROR;
+  }
+  const [firstLine] = text.split('\n');
+  return firstLine.length > 120 ? CONNECTION_FILE_ERROR : firstLine.trim();
+};
+
 /**
  * Extract error message from API response
  * Handles FastAPI/Pydantic validation errors which can be arrays of objects
@@ -550,15 +578,16 @@ const registerMcpFromDefinition = async (
     }
 
     const errorData = await response.json().catch(() => ({}));
-    return {
-      success: false,
-      error: extractErrorMessage(errorData, 'Could not read this connection file'),
-    };
+    const detail = extractErrorMessage(errorData, CONNECTION_FILE_ERROR);
+    // The console keeps the whole thing — the field names and the offending
+    // values are what actually says which line of the file is wrong.
+    console.error(`[MCP] ${filename || 'connection file'} rejected:`, detail);
+    return { success: false, error: condenseDefinitionError(detail) };
   } catch (error: any) {
     console.error('Error registering MCP from definition:', error);
     return {
       success: false,
-      error: error.message || 'An error occurred while reading the connection file',
+      error: condenseDefinitionError(error?.message || ''),
     };
   }
 };

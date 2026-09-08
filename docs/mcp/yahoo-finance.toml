@@ -1,88 +1,35 @@
-# Yahoo Finance — company and market data for a watchlist.
+# Yahoo Finance — company and market data.
 #
-# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to both
-# install the connection and tell the crawler what to keep indexed.
+# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to
+# install the connection.
 #
-# Verified against the published package: every tool name and argument below was
-# read back from the running server, and every step was called once for AAPL.
+# Verified against the published package: the server reports get_stock_info,
+# get_yahoo_finance_news, get_recommendations, get_stock_actions and
+# get_financial_statement, each taking a ticker.
+#
+# Nothing here indexes anything. Those tools are enumerated once at
+# registration and called when a question needs them, so a quote is as fresh as
+# the question asking for it. This file used to carry a seven-ticker watchlist
+# re-crawled every 15 minutes — 35 calls a quarter-hour spent keeping a
+# snapshot that was stale by the time anyone read it, and useless for the
+# eighth ticker. The watchlist is now whatever the question names.
 #
 # The package's dependency on the MCP SDK is unbounded and resolves to 2.x,
 # which it doesn't support, so a bare `uvx yahoo-finance-mcp` dies on import.
-# Nothing to do about that here — discovery notices the failure and retries with
-# `--with mcp<2` automatically.
-
-[alias]
-# One list, reused by every step. Add tickers here rather than to each step, so
-# a watchlist change is a single edit.
-#
-# Each ticker costs one call per step per crawl — seven tickers over the five
-# steps below is 35 calls every 15 minutes. Well inside the 400-call budget a
-# crawl gets, but worth knowing before the list grows: the cost is the product
-# of these two lists, not the sum.
-watchlist = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA"]
+# Discovery notices that failure and retries with `--with mcp<2` on its own, so
+# `package = "yahoo-finance-mcp"` does eventually work — but it pays for a dead
+# launch first. The explicit form below pins the SDK up front, and the retry
+# stands down when `--with` is already there.
 
 [[mcp]]
 name = "yahoo-finance"
-package = "yahoo-finance-mcp"
+# The long form of what `package` would do, written out because this package
+# needs the MCP SDK held at 1.x and a bare name has nowhere to say so. The same
+# form takes any launcher that needs flags — plus `env` for a server that reads
+# an API key out of the environment, and `cwd` for a checkout on disk. Set
+# `command` or `package`, never both.
+command = "uvx"
+args = ["--with", "mcp<2", "yahoo-finance-mcp"]
+# Extra substrings matched against an installed server's name, package and URL,
+# so this file attaches to a connection someone already added as "yfinance".
 match = ["yahoo", "yfinance"]
-
-# Quotes move all day; the profile and financials underneath them do not. The
-# cadence is per connection rather than per step, so this is the quote's needs
-# applied to everything — the financials get re-fetched every 15 minutes to
-# return the same numbers they returned last quarter.
-#
-# That is a call, not an embedding: unchanged records are recognised by content
-# hash and not re-indexed. Still, if the watchlist grows well past this, either
-# raise this to "1h" or drop the `financials` and `actions` steps and let a
-# live tool call answer the rare question about them.
-index_every = "15m"
-
-# This is the shape of server that has nothing to enumerate: no `list_*` tool to
-# walk, because it only answers questions you already know to ask. So the
-# subjects come from this file — `for_each` runs each step once per ticker.
-
-# The richest single call: company profile (name, sector, industry, employees,
-# HQ, business summary) together with the live quote, market cap, P/E and the
-# 52-week range. If you keep only one step, keep this one.
-[[mcp.index]]
-label = "stock-info"
-tools = ["get_stock_info"]
-for_each = { ticker = ["@watchlist"] }
-max_records = 10
-max_parents = 25
-
-[[mcp.index]]
-label = "news"
-tools = ["get_yahoo_finance_news"]
-for_each = { ticker = ["@watchlist"] }
-max_records = 60
-max_parents = 25
-
-# Analyst spread — strong buy / buy / hold / sell counts by month.
-# `recommendation_type` also takes "upgrades_downgrades" for the rating-change
-# history instead.
-[[mcp.index]]
-label = "recommendations"
-tools = ["get_recommendations"]
-for_each = { ticker = ["@watchlist"] }
-arguments = { recommendation_type = "recommendations" }
-max_records = 20
-max_parents = 25
-
-# Dividends and splits.
-[[mcp.index]]
-label = "actions"
-tools = ["get_stock_actions"]
-for_each = { ticker = ["@watchlist"] }
-max_records = 40
-max_parents = 25
-
-# Annual income statement. `financial_type` also takes "balance_sheet",
-# "cashflow", and the "quarterly_" variants of all three.
-[[mcp.index]]
-label = "financials"
-tools = ["get_financial_statement"]
-for_each = { ticker = ["@watchlist"] }
-arguments = { financial_type = "income_stmt" }
-max_records = 20
-max_parents = 25

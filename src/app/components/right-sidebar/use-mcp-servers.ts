@@ -380,7 +380,9 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
         projectId, text, file.name,
       );
       if (!result.success || !result.data) {
-        setMcpError(result.error || 'Could not read this connection file');
+        // Already condensed to one line by the service, which logged the full
+        // backend error to the console.
+        setMcpError(result.error || 'Invalid Connection Definition, use a valid .toml file');
         return;
       }
 
@@ -403,7 +405,8 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
       const serverId = data.id || data.server_id;
       if (serverId) setDiscoveringServerId(serverId);
     } catch (error: any) {
-      setMcpError(error?.message || 'Could not read this connection file');
+      console.error('[MCP] Failed to install connection file:', error);
+      setMcpError('Invalid Connection Definition, use a valid .toml file');
     } finally {
       setIsAddingMcp(false);
     }

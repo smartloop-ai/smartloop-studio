@@ -1,0 +1,33 @@
+# Air quality, as a connection.
+#
+# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to
+# install the connection. The file is the whole of what the app needs: what the
+# server is called, and how to start it.
+#
+# Verified against the published package: `uvx air-quality-mcp` starts, and the
+# server reports one tool — get_air_quality(city).
+#
+# Nothing here indexes anything. The tool is enumerated once at registration,
+# and called when a question needs it — so "how is the air in San Francisco"
+# and the same question about anywhere else are both answered from a reading
+# taken just then. This file used to name San Francisco and re-crawl it every
+# 30 minutes; the city now comes from the question, which is why the file no
+# longer names one.
+
+[[mcp]]
+name = "air-quality"
+# `package` is a command line, not only a PyPI name. A bare name runs under
+# uvx — the same thing typing it into "Add your own" does; a scoped npm name
+# (@scope/pkg) runs under `npx -y`; anything with a space in it is used as
+# written ("npx -y @foo/bar-mcp", "python -m my.server").
+#
+# For a launcher that needs flags, an API key, or a checkout on disk, use the
+# explicit form instead. `package` and `command` are alternatives — setting
+# both is an error, because it says the same thing twice.
+#
+#   command = "uvx"
+#   args = ["air-quality-mcp"]
+#   env = { AIR_QUALITY_API_KEY = "..." }
+#   cwd = "/path/to/checkout"
+#
+package = "air-quality-mcp"
