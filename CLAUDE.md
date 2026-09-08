@@ -109,24 +109,24 @@ In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).
 ## MCP connection files
 
 A connection is added by dropping a `.toml` onto the "Add your own" card. The
-file describes the server — `name`, plus `url` for a remote one or `package`
-for one run locally — and optionally how to index its content.
+file describes the server and nothing else — `name`, plus `url` for a remote
+one or `package` / `command` + `args` for one run locally.
 
 **When writing one, start from `docs/mcp/`.** Those examples are the source of
 truth for the format; the field reference lives in the backend's
-`smartloop/mcp/mcp.toml` header.
+`smartloop/mcp/mcp.toml.example` header.
 
 Two rules learned the hard way:
 
 - **Verify the package exists and the tool names are real** before writing the
   file. A plausible-sounding package name fails at install with "Package not
-  found", and a wrong tool name is worse — the step is silently skipped, so the
-  connection looks healthy and indexes nothing. Run `uvx <package>` and read
-  back the tools it reports.
-- **Servers that can't be enumerated need `for_each`.** A market-data or
-  weather server has no `list_*` tool to walk — every call needs a symbol or a
-  city — so the subjects come from the file. Pair it with `index_every` when
-  the source changes faster than the app-wide schedule (10 min idle, hourly).
+  found". Run `uvx <package>` and read back the tools it reports.
+- **The file does not index anything.** A connection's tools are enumerated
+  once at registration and called when a question needs them. `crawl`,
+  `index`, `index_every`, `step` and `extend` are retired: a file carrying them
+  still installs, with a log line naming the fields that did nothing, but
+  nothing schedules a crawl. Don't write them into a new file. Every *other*
+  unknown key is still an error, so a typo is reported rather than dropped.
 
 ## Label / badge style guide
 
