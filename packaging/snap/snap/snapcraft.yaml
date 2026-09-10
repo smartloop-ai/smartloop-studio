@@ -41,7 +41,7 @@ website: https://smartloop.ai
 contact: support@smartloop.ai
 
 # Kept in sync with package.json by `make build-snap` — don't hand-edit.
-version: 1.0.40
+version: 1.0.44
 base: core24
 grade: stable
 confinement: strict

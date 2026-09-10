@@ -1,0 +1,23 @@
+# Anacraft — GA4 analytics data over MCP.
+#
+# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to
+# install the connection. The file is the whole of what the app needs: what the
+# server is called, and how to start it.
+#
+# The official docs say:
+#   craft mcp --install
+#   craft mcp --demo
+# and for direct client config, the server is started as:
+#   /usr/local/bin/craft mcp
+#
+# The MCP server exposes read-only analytics tools such as site_status,
+# live_visitors, list_pages, list_events, list_referrers, list_traffic_sources,
+# list_countries, list_properties, search_pages, and search_events. The only
+# write endpoint is configure_site, which requires a fresh login and Elite plan.
+#
+# Use an absolute path here because a desktop app does not see the shell PATH.
+
+[[mcp]]
+name = "anacraft"
+command = "~/.local/bin/craft"
+args = ["mcp"]
