@@ -3,7 +3,6 @@ import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import CloseIcon from '@mui/icons-material/Close';
 import { useState } from 'react';
 import { McpCatalogEntry, McpServer, getMcpServerTools, TagColor, tagColorFrom } from '@/app/services/mcp-server.service';
 import McpToolsDialog from './mcp-tools-dialog';
@@ -118,8 +117,6 @@ export default function McpCatalogItem({
 
           <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
 
-            {busy && <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />}
-
             {isConnected && (
               <IconButton
                 size="small"
@@ -144,7 +141,10 @@ export default function McpCatalogItem({
                 browser we don't control and often isn't finished — abandoned at
                 the provider's login, or done in a window the user already
                 closed — so waiting has to be cancellable rather than something
-                to sit through. */}
+                to sit through. The spinner and the way out are the same
+                control: a stop square inside the turning ring, the way a
+                download reads on iOS, so there is one thing to aim at instead
+                of a progress glyph sitting next to an unrelated X. */}
             {busy && (
               <IconButton
                 size="small"
@@ -154,12 +154,35 @@ export default function McpCatalogItem({
                 }}
                 title="Stop waiting for authorization"
                 sx={{
-                  color: 'var(--sl-text-faint)',
+                  color: 'var(--sl-brand-primary)',
                   padding: '2px',
                   '&:hover': { color: 'var(--sl-status-error)' },
                 }}
               >
-                <CloseIcon sx={{ fontSize: 14 }} />
+                <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16 }}>
+                  {/* Static track, so the ring reads as a ring and not as a
+                      lone arc chasing itself around empty space. */}
+                  <CircularProgress
+                    variant="determinate"
+                    value={100}
+                    size={16}
+                    thickness={2.5}
+                    sx={{ color: 'currentColor', opacity: 0.2, position: 'absolute' }}
+                  />
+                  <CircularProgress
+                    size={16}
+                    thickness={2.5}
+                    sx={{ color: 'currentColor', position: 'absolute' }}
+                  />
+                  <Box
+                    sx={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '1px',
+                      backgroundColor: 'currentColor',
+                    }}
+                  />
+                </Box>
               </IconButton>
             )}
 
