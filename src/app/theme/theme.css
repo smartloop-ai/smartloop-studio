@@ -7,26 +7,26 @@
 
 :root {
   /* ── Backgrounds ───────────────────────────────────────── */
-  --sl-bg-base: #000000;
-  --sl-bg-surface-1: #1a1a1a;
-  --sl-bg-surface-2: #2a2a2a;
-  --sl-bg-surface-3: #3a3a3a;
-  --sl-bg-input: #303030;
-  --sl-bg-elevated: #1b1b1b;
+  --sl-bg-base: #100c0e;
+  --sl-bg-surface-1: #211b1f;
+  --sl-bg-surface-2: #31292e;
+  --sl-bg-surface-3: #43393f;
+  --sl-bg-input: #292126;
+  --sl-bg-elevated: #0c090b;
 
   /* ── Brand ─────────────────────────────────────────────── */
-  --sl-brand-primary: #ec4899;
-  --sl-brand-hover: #db2777;
-  --sl-brand-active: #be185d;
-  --sl-brand-light: #f472b6;
+  --sl-brand-primary: #e55d9c;
+  --sl-brand-hover: #dd408a;
+  --sl-brand-active: #ce2775;
+  --sl-brand-light: #f089b9;
 
   /* ── Text ──────────────────────────────────────────────── */
-  --sl-text-primary: #ffffff;
-  --sl-text-secondary: #e5e7eb;
-  --sl-text-tertiary: #d1d5db;
-  --sl-text-muted: #9ca3af;
-  --sl-text-disabled: #6b7280;
-  --sl-text-faint: #4b5563;
+  --sl-text-primary: #f6f1f4;
+  --sl-text-secondary: #e3dbe0;
+  --sl-text-tertiary: #cdc1c8;
+  --sl-text-muted: #aea0a8;
+  --sl-text-disabled: #887781;
+  --sl-text-faint: #736570;
 
   /* ── Status ────────────────────────────────────────────── */
   --sl-status-error: #ef4444;
@@ -37,21 +37,37 @@
   --sl-status-purple: #a855f7;
 
   /* ── Borders ───────────────────────────────────────────── */
-  --sl-border-subtle: #1a1a1a;
-  --sl-border-default: #2a2a2a;
-  --sl-border-hover: #3a3a3a;
-  --sl-border-code: #374151;
+  --sl-border-subtle: #2d2529;
+  --sl-border-default: #41373d;
+  --sl-border-hover: #594a53;
+  --sl-border-code: #4a3f46;
+
+  /* Foreground for filled brand surfaces (buttons, badges). The accent is a
+     light pink, so white on it only reaches 3.29:1 — below AA for body text —
+     while the base reaches 5.90:1. Dark-on-accent is also what the pastel
+     themes we sit beside do. */
+  --sl-brand-contrast: #100c0e;
+
+  /* ── Elevation ─────────────────────────────────────────────
+     The UI is deliberately flat, but a surface that floats over content —
+     dialog, menu, popover, the sign-in card — reads better with a shadow than
+     with another border. Tuned for a dark base, where a shadow has to be
+     larger and softer than the light-mode equivalent to register at all. */
+  --sl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sl-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --sl-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --sl-shadow-brand: 0 8px 32px rgba(229, 93, 156, 0.12);
 
   /* ── Brand alpha ───────────────────────────────────────── */
-  --sl-brand-alpha-10: rgba(236, 72, 153, 0.1);
-  --sl-brand-alpha-15: rgba(236, 72, 153, 0.15);
-  --sl-brand-alpha-18: rgba(236, 72, 153, 0.18);
-  --sl-brand-alpha-20: rgba(236, 72, 153, 0.2);
-  --sl-brand-alpha-30: rgba(236, 72, 153, 0.3);
-  --sl-brand-alpha-35: rgba(236, 72, 153, 0.35);
-  --sl-brand-alpha-40: rgba(236, 72, 153, 0.4);
-  --sl-brand-alpha-50: rgba(236, 72, 153, 0.5);
-  --sl-brand-alpha-60: rgba(236, 72, 153, 0.6);
+  --sl-brand-alpha-10: rgba(229, 93, 156, 0.1);
+  --sl-brand-alpha-15: rgba(229, 93, 156, 0.15);
+  --sl-brand-alpha-18: rgba(229, 93, 156, 0.18);
+  --sl-brand-alpha-20: rgba(229, 93, 156, 0.2);
+  --sl-brand-alpha-30: rgba(229, 93, 156, 0.3);
+  --sl-brand-alpha-35: rgba(229, 93, 156, 0.35);
+  --sl-brand-alpha-40: rgba(229, 93, 156, 0.4);
+  --sl-brand-alpha-50: rgba(229, 93, 156, 0.5);
+  --sl-brand-alpha-60: rgba(229, 93, 156, 0.6);
 
   /* ── Danger alpha ──────────────────────────────────────── */
   --sl-danger-alpha-10: rgba(239, 68, 68, 0.1);

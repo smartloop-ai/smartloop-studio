@@ -8,26 +8,26 @@
 
 export const colors = {
   bg: {
-    base: '#000000',
-    surface1: '#1a1a1a',
-    surface2: '#2a2a2a',
-    surface3: '#3a3a3a',
-    input: '#303030',
-    elevated: '#1b1b1b',
+    base: '#100c0e',
+    surface1: '#211b1f',
+    surface2: '#31292e',
+    surface3: '#43393f',
+    input: '#292126',
+    elevated: '#0c090b',
   },
   brand: {
-    primary: '#ec4899',
-    hover: '#db2777',
-    active: '#be185d',
-    light: '#f472b6',
+    primary: '#e55d9c',
+    hover: '#dd408a',
+    active: '#ce2775',
+    light: '#f089b9',
   },
   text: {
-    primary: '#ffffff',
-    secondary: '#e5e7eb',
-    tertiary: '#d1d5db',
-    muted: '#9ca3af',
-    disabled: '#6b7280',
-    faint: '#4b5563',
+    primary: '#f6f1f4',
+    secondary: '#e3dbe0',
+    tertiary: '#cdc1c8',
+    muted: '#aea0a8',
+    disabled: '#887781',
+    faint: '#736570',
   },
   status: {
     error: '#ef4444',
@@ -38,6 +38,6 @@ export const colors = {
     purple: '#a855f7',
   },
   border: {
-    code: '#374151',
+    code: '#4a3f46',
   },
 };
