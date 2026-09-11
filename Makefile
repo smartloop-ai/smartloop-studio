@@ -74,6 +74,8 @@ help-electron:
 	@echo "  make stop                    - Stop the running SLP service"
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
+	@echo "  make prefetch-dev            - Pre-download the bootstrap model + template (skips the splash download)"
+	@echo "  make stage-model             - Clone the bootstrap model into build/models/ so it ships inside the app"
 	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
 	@echo "  make logs-mac                - Tail the Electron main-process log (Mac App Store sandbox)"
 	@echo "  make logs-slp                - Tail the SLP backend service log (mac/win/linux)"
@@ -116,7 +118,7 @@ stop:
 	fi
 
 # Build Electron app for current platform
-build-electron: clean-electron stage-slp require-staged-slp
+build-electron: clean-electron stage-slp-latest require-staged-slp
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -187,12 +189,46 @@ stage-slp:
 # to clone the app simply downloads SLP on first launch, which is exactly what a
 # fresh machine does. Packaging is where a missing framework is fatal — that is
 # require-staged-slp's job, not this one.
+# Stage the bootstrap model into build/models/ so it ships inside the app and
+# first run downloads nothing. Cloned (cp -c) from a workspace that already has
+# it, so it costs no extra disk on APFS.
+#
+# The layout under build/models/ mirrors a workspace's models/ directory exactly
+# — <org>/<model>/<file>.gguf — because seedBundledModel copies the relative
+# path straight across.
+#
+# Only the orchestrator (sl-mini) by default. The embeddings model is another
+# ~418 MB and is only needed once someone indexes a document, so it stays a
+# download; add it with `make stage-model BUNDLE_EMBEDDINGS=1`.
+stage-model:
+	@./scripts/stage-model.sh
+
+# Best-effort variant for dev runs: never fails the build when the model has not
+# been downloaded yet.
+# Best-effort staging for dev runs. Never fails the run: with no model staged
+# the app simply downloads one on first launch, which is the old behaviour.
+# Errors are shown rather than swallowed — whether the model is there is the
+# difference between a 5-second first launch and a 770 MB one.
+stage-model-dev:
+	@$(MAKE) --no-print-directory stage-model || \
+		echo "ℹ️  No model staged — the app will download it on first launch."
+
+# Best-effort framework staging for dev runs.
+#
+# Prefers stage-slp-latest — an ETag-gated CDN download, so it is a no-op once
+# staged and picks up a newer framework when one is published. Falls back to
+# cloning a local install, then to starting without one.
+#
+# Why not just clone the local install: on a machine that has never run the app
+# there isn't one, and the app then downloads the 1.1 GB framework itself on
+# first launch — the exact thing staging exists to avoid.
 stage-slp-dev:
-	@$(MAKE) --no-print-directory stage-slp 2>/dev/null || \
-		echo "⚠️  No framework staged — starting anyway; the app will download SLP on first launch."
+	@$(MAKE) --no-print-directory stage-slp-latest 2>/dev/null \
+		|| $(MAKE) --no-print-directory stage-slp 2>/dev/null \
+		|| echo "⚠️  No framework staged — starting anyway; the app will download SLP on first launch."
 
 # Build Electron app for macOS (Developer ID: DMG, zip). SLP is bundled.
-build-electron-mac: clean-electron stage-slp require-staged-slp
+build-electron-mac: clean-electron stage-slp-latest stage-model require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -375,7 +411,24 @@ clean-snap:
 # NOT enforce the real macOS App Sandbox (a dev Electron isn't a MAS build), so
 # it won't reproduce spawn EPERM / mimetypes / sem_open — use `mas-dev` for that.
 #   MAS=1 make electron-dev
-run-electron-dev: stage-slp-dev
+# Pull what a first launch would otherwise fetch: the bootstrap model and the
+# blank-project template.
+#
+# NOT a prerequisite of `make electron-dev`, deliberately. It has to start SLP
+# to do its work, and a second agent started outside the app can wedge holding
+# the port the app then needs — which looks like "the workspace starts blank".
+# With the model bundled (`make stage-model`) this is only useful for a build
+# that ships without one. Run it by hand when you want it.
+prefetch-dev:
+	@SLP_VERSION=$(SLP_VERSION) ./scripts/prefetch-dev-assets.sh
+
+# Build the macOS AuthenticationServices addon against Electron's headers.
+# Separate from `install-app-deps`, which walks past a file: dependency and
+# leaves it built for the system Node ABI.
+rebuild-native:
+	@./scripts/rebuild-native.sh
+
+run-electron-dev: stage-slp-dev stage-model-dev rebuild-native
 	@echo "🚀 Starting Electron app in development mode..."
 ifdef MAS
 	@echo "🍎 MAS sandbox simulation (SMARTLOOP_FORCE_SANDBOX=1, run-in-place from build/slp/)"

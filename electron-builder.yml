@@ -63,6 +63,14 @@ mac:
       to: slp/
       filter:
         - "**/*"
+    # The bootstrap model, shipped so a first launch downloads nothing. Seeded
+    # into the workspace by seedBundledModel() in main.js — SLP resolves weights
+    # under <workspace>/models/, which only exists at runtime.
+    - &res_models
+      from: build/models/
+      to: models/
+      filter:
+        - "**/*"
   target:
     - target: dmg
       arch:
@@ -106,6 +114,7 @@ win:
   extraResources:
     - *res_data
     - *res_slp
+    - *res_models
   # Authenticode signing via Azure Trusted Signing — the same account/profile
   # that signs slp.exe in smartloop-ai/smartloop. The hook only signs in CI
   # (CI/GITHUB_ACTIONS env) with AZURE_TS_* set, so local builds always stay
@@ -126,6 +135,7 @@ linux:
   extraResources:
     - *res_data
     - *res_slp
+    - *res_models
   target:
     - target: AppImage
       arch:
