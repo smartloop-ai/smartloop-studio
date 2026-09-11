@@ -11,6 +11,12 @@ export const API_BASE_URL = BASE_URL; // For OAuth app_url parameter
 // launched; the Settings version pane picks it back up in a future release.
 export const CHANGELOG_URL = "https://smartloop.ai/docs/changelog";
 
+// Legal pages linked from the sign-in screen. Different hosts on purpose —
+// terms live on the app, the privacy policy on the marketing site — so neither
+// is derived from the other's base URL.
+export const TERMS_URL = `${APP_URL}/terms`;
+export const PRIVACY_URL = "https://smartloop.ai/privacy";
+
 // Local SLP service endpoint (cached)
 let _localApiUrl = null;
 let _localApiUrlPromise = null;

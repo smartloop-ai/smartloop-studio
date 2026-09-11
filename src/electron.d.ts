@@ -38,11 +38,24 @@ export interface ModelActionResult {
   requiresAuth?: boolean;
 }
 
+// Where a provider's consent page should sit, in window coordinates — the
+// login page measures its own content area and reports it.
+export interface ViewBounds { x: number; y: number; width: number; height: number }
+
+export interface AuthResult { success: boolean; user?: any; error?: string }
+
 export interface ElectronAPI {
   sendMessage: (channel: string, data: any) => void;
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
   // OAuth methods
-  oauthLogin: () => Promise<{ status: string; port?: number; error?: string }>;
+  slpStartSetup: () => Promise<{ success: boolean; error?: string }>;
+  authOtpRequest: (email: string) => Promise<{ success: boolean; code?: 'no-account'; error?: string }>;
+  authOtpVerify: (email: string, code: string) => Promise<AuthResult>;
+  authProviderStart: (provider: 'google' | 'apple', bounds: ViewBounds) => Promise<{ success: boolean; error?: string }>;
+  authProviderBounds: (bounds: ViewBounds) => Promise<{ success: boolean }>;
+  authProviderCancel: () => Promise<{ success: boolean }>;
+  authDeleteAccount: () => Promise<{ success: boolean; error?: string }>;
+  onAuthViewClosed: (callback: (data: { error?: string }) => void) => () => void;
   // Storage methods
   storageGet: (key: string) => Promise<any>;
   storageSet: (key: string, value: any) => Promise<void>;

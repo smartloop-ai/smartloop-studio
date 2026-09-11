@@ -35,7 +35,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
   // OAuth methods
-  oauthLogin: () => ipcRenderer.invoke('oauth-login'),
+  // In-app sign-in. Email sign-in is a one-time code handled entirely in the
+  // main process (no web context, no CORS, no password anywhere); Google and
+  // Apple need the provider's own consent page, which main layers over the
+  // login page as a WebContentsView.
+  authOtpRequest: (email) => ipcRenderer.invoke('auth-otp-request', email),
+  authOtpVerify: (email, code) => ipcRenderer.invoke('auth-otp-verify', email, code),
+  authProviderStart: (provider, bounds) => ipcRenderer.invoke('auth-provider-start', provider, bounds),
+  authProviderBounds: (bounds) => ipcRenderer.invoke('auth-provider-bounds', bounds),
+  authProviderCancel: () => ipcRenderer.invoke('auth-provider-cancel'),
+  authDeleteAccount: () => ipcRenderer.invoke('auth-delete-account'),
+  onAuthViewClosed: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('auth-view-closed', handler);
+    return () => ipcRenderer.off('auth-view-closed', handler);
+  },
   // MCP authorization callback
   onMcpAuthCallback: (callback) => {
     ipcRenderer.on('mcp-auth-callback', (event, data) => callback(data));
@@ -97,6 +111,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   unloadModel: () => ipcRenderer.invoke('unload-model'),
   loadModel: () => ipcRenderer.invoke('load-model'),
   // SLP auth and model management
+  // Start the first-run model download when the user declined it at launch.
+  // Re-asks for consent (size and all) before fetching anything.
+  slpStartSetup: () => ipcRenderer.invoke('slp-start-setup'),
   slpAuthStatus: () => ipcRenderer.invoke('slp-auth-status'),
   slpAuthLogout: () => ipcRenderer.invoke('slp-auth-logout'),
   slpFetchUser: () => ipcRenderer.invoke('slp-fetch-user'),
