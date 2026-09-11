@@ -55,6 +55,7 @@ export interface ElectronAPI {
   authProviderBounds: (bounds: ViewBounds) => Promise<{ success: boolean }>;
   authProviderCancel: () => Promise<{ success: boolean }>;
   authDeleteAccount: () => Promise<{ success: boolean; error?: string }>;
+  onAuthViewReady: (callback: () => void) => () => void;
   onAuthViewClosed: (callback: (data: { error?: string }) => void) => () => void;
   // Storage methods
   storageGet: (key: string) => Promise<any>;

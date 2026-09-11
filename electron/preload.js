@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   authProviderBounds: (bounds) => ipcRenderer.invoke('auth-provider-bounds', bounds),
   authProviderCancel: () => ipcRenderer.invoke('auth-provider-cancel'),
   authDeleteAccount: () => ipcRenderer.invoke('auth-delete-account'),
+  onAuthViewReady: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('auth-view-ready', handler);
+    return () => ipcRenderer.off('auth-view-ready', handler);
+  },
   onAuthViewClosed: (callback) => {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on('auth-view-closed', handler);

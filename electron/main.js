@@ -3888,8 +3888,31 @@ function openAuthView(provider, bounds) {
     }
   });
 
-  mainWindow.contentView.addChildView(authView);
-  authView.setBounds(normalizeViewBounds(bounds));
+  // Load BEFORE attaching, and attach on first paint.
+  //
+  // Attaching an empty view first puts a blank native layer over the page for
+  // the whole redirect chain — this API's authorize route, a 307, then
+  // Google's own load — which is seconds of nothing with no way to tell it
+  // from a hang. Nothing the renderer draws can help while that layer is on
+  // top, so the layer simply arrives later and the page shows its own spinner
+  // until it does.
+  const pendingView = authView;
+  let attached = false;
+  const attach = () => {
+    if (attached || pendingView !== authView) return;
+    if (!mainWindow || mainWindow.isDestroyed() || pendingView.webContents.isDestroyed()) return;
+    attached = true;
+    mainWindow.contentView.addChildView(pendingView);
+    pendingView.setBounds(normalizeViewBounds(bounds));
+    if (!mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('auth-view-ready');
+  };
+
+  authView.webContents.once('did-finish-load', attach);
+  // A page that stalls or never fires did-finish-load must not leave the view
+  // permanently hidden — show it regardless rather than stranding the flow.
+  const attachFallback = setTimeout(attach, 8000);
+  authView.webContents.once('destroyed', () => clearTimeout(attachFallback));
+
   authView.webContents.loadURL(
     `${platformUrl(`/auth/${provider}/desktop/authorize`)}?port=${port}`,
     { userAgent: authUserAgent() },
