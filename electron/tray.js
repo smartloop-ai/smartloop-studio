@@ -7,6 +7,10 @@ let tray = null;
 let mainWindow = null;
 let createWindowFn = null;
 let appReady = false;
+// Set while first-run setup (the model download) is still outstanding because
+// the user declined it at launch — see confirmModelDownload in main.js. Null
+// once there is nothing left to set up, which is the normal state.
+let setupHandler = null;
 
 /**
  * The menu bar / tray image.
@@ -45,6 +49,18 @@ function createTray() {
   tray.on('click', () => {
     showOrCreateWindow();
   });
+}
+
+/**
+ * Offer (or withdraw) the "Complete Setup" entry. Pass the function that starts
+ * the deferred first-run download, or null once it is no longer needed. This is
+ * the way back for a user who answered "Not Now" to the download prompt, so the
+ * choice is genuinely optional rather than a one-shot the app can't recover
+ * from.
+ */
+function setSetupHandler(fn) {
+  setupHandler = fn || null;
+  if (tray) refreshTray();
 }
 
 /**
@@ -203,6 +219,14 @@ async function refreshTray() {
     template.push({ type: 'separator' });
   }
 
+  if (setupHandler) {
+    template.push({
+      label: 'Complete Setup…',
+      click: () => { const run = setupHandler; if (run) run(); },
+    });
+    template.push({ type: 'separator' });
+  }
+
   template.push({
     label: 'Show Window',
     enabled: appReady,
@@ -240,4 +264,4 @@ function setTrayProgress(pct, status) {
   }
 }
 
-module.exports = { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress };
+module.exports = { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler };

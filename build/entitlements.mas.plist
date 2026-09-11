@@ -35,10 +35,19 @@
     <key>com.apple.security.network.server</key>
     <true/>
 
-    <!-- User-picked docs for indexing / RAG, and Downloads access. -->
+    <!--
+      User-picked documents for indexing / RAG, and the destination of every
+      "save a copy" the app offers (export conversation, download a document,
+      export a project). All of them go through NSSavePanel
+      (dialog.showSaveDialog in main.js), which extends the sandbox to whatever
+      the user picks, so this is the only file entitlement the app needs.
+
+      com.apple.security.files.downloads.read-write was removed: the save
+      panels merely DEFAULT to ~/Downloads (app.getPath('downloads') is just a
+      path string, which needs no entitlement) and the app never reads or
+      writes there without the user choosing the file.
+    -->
     <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
     <true/>
 
     <!--
