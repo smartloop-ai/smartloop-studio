@@ -82,6 +82,27 @@ function hexToRgb(hex: string): string {
   return r ? `${parseInt(r[1], 16)},${parseInt(r[2], 16)},${parseInt(r[3], 16)}` : '0,0,0';
 }
 
+/**
+ * A foreground that stays readable on a filled brand surface.
+ *
+ * Every theme picks its own accent, and they span light pastels (Catppuccin's
+ * mauve, our pink) to saturated mid-tones (Solarized blue). One fixed
+ * foreground cannot serve all of them — black vanishes on a dark accent and
+ * white vanishes on a light one — so it is derived per theme from the accent's
+ * relative luminance (WCAG's 0.179 crossover, the point where black and white
+ * contrast equally).
+ */
+function brandContrast(brandHex: string): string {
+  const hex = brandHex.replace('#', '');
+  if (hex.length < 6) return '#ffffff';
+  const channel = (i: number) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  return luminance > 0.179 ? '#000000' : '#ffffff';
+}
+
 export function applyThemeCssVars(theme: ThemeDefinition) {
   const s = document.documentElement.style;
   const { colors: c } = theme;
@@ -97,6 +118,11 @@ export function applyThemeCssVars(theme: ThemeDefinition) {
   s.setProperty('--sl-brand-hover', c.brand.hover);
   s.setProperty('--sl-brand-active', c.brand.active);
   s.setProperty('--sl-brand-light', c.brand.light);
+  // Derived, never authored: a theme only declares its accent, and anything
+  // drawn ON that accent (button labels, filled badges) needs a foreground that
+  // survives it. Without this the token fell back to the stylesheet's single
+  // value and went invisible on any theme with a dark accent.
+  s.setProperty('--sl-brand-contrast', brandContrast(c.brand.primary));
 
   // Body fill for the Smartloop logo mark — the theme's primary text in both
   // modes, so the mark is the app-icon white on a dark surface and near-black on
