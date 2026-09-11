@@ -1538,21 +1538,33 @@ description: A clear description of what this skill does and when to use it
   };
 
 
+  // Returned before the rest of the page is built, not layered over it.
+  //
+  // This used to be an overlay inside the main tree, which meant nothing
+  // painted until React had constructed the whole page — every tab, panel and
+  // dialog below — so arriving here from sign-in showed an empty window for
+  // that entire stretch. Every hook above still runs, so the work carries on
+  // underneath; only the markup waits.
+  if (isLoading) {
+    return (
+      <Box
+        sx={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          bgcolor: 'var(--sl-bg-base)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <CircularProgress size={20} sx={{ color: 'var(--sl-brand-primary)' }} />
+      </Box>
+    );
+  }
+
   return (
     <>
-      {isLoading && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 9999,
-            cursor: 'default',
-          }}
-        />
-      )}
       {user && (
         <>
           {/* File Upload Dialog */}

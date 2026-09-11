@@ -152,15 +152,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     return () => window.removeEventListener('loginState', onLoginState);
   }, []);
 
-  // Fire and forget: open the browser and let main.js do the waiting.
-  const handleLogin = async () => {
-    if (!isElectron || !window.electronAPI) return;
-    try {
-      const result = await window.electronAPI.oauthLogin() as any;
-      if (result?.status === 'error') console.error('Login error:', result.error);
-    } catch (error) {
-      console.error('Login error:', error);
-    }
+  // Sign-in is a page of the app now, not a browser handoff — App Review
+  // guideline 4.0. Everything it needs (Google, Apple, email) lives there.
+  const handleLogin = () => {
+    navigate('/login');
   };
 
   // Sign-in requested from elsewhere in the app (e.g. a model download refused
@@ -1902,4 +1897,3 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     </>
   );
 }
-

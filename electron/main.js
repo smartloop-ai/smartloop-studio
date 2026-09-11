@@ -6,14 +6,15 @@ const { setupTitlebarAndAttachToWindow } = require('custom-electron-titlebar/mai
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { isSandboxed, useBundledSlp } = require('./build-mode');
+const { isSandboxed, useBundledSlp, bundledModelFile, hasBundledModel } = require('./build-mode');
 const database = require('./database');
-const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress } = require('./tray');
+const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
 const healthMonitor = require('./health-monitor');
 const releaseChecker = require('./release-checker');
@@ -2057,6 +2058,300 @@ async function runBootstrap(baseUrl) {
 }
 
 /**
+ * Put the bundled bootstrap model where the workspace expects it, so first run
+ * has nothing to download.
+ *
+ * The model ships inside the app the same way the SLP framework does, but it
+ * cannot simply be run from there: SLP resolves weights under
+ * <workspace>/models/<model_id>/, and the workspace is a runtime directory named
+ * by a UUID that does not exist until the service has started. So this runs
+ * after the service is healthy and before bootstrap, and copies the file across.
+ *
+ * The copy is a COPYFILE_FICLONE, which on APFS is a clone — no second 770 MB
+ * on disk and effectively instant. On any other filesystem the flag degrades to
+ * a real copy rather than failing.
+ *
+ * Returns true when the model is in place, which is what lets bootstrap skip the
+ * download (its _gguf_exists check finds the file and marks it downloaded).
+ */
+// The bootstrap model, named three different ways.
+//
+// Locally SLP calls it `sl-mini`; the platform catalogue publishes it as
+// `slp-orchestra-mini` (SLP's constants note the short name "isn't published
+// upstream"); and MODEL_ID is the org-prefixed path the workspace lays weights
+// out under.
+const BOOTSTRAP_MODEL_NAME = 'sl-mini';
+const BOOTSTRAP_MODEL_PLATFORM_NAME = 'slp-orchestra-mini';
+const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
+
+/**
+ * Let SLP create the workspace, then put the model in it before bootstrap runs.
+ *
+ * The earlier version of this wrote config.json itself. That worked, but it
+ * meant hand-authoring SLP's private state — a schema this app does not own and
+ * cannot see change. This asks SLP to do it instead:
+ *
+ *   GET /v1/models/workspace  ->  _ensure_workspace()  ->  the workspace exists
+ *
+ * That route is a plain read. It builds the workspace when there isn't one
+ * (Workspace._create_new_workspace makes <home>/<uuid>/models) and downloads
+ * nothing, which the two routes that also build it — POST /v1/bootstrap and
+ * POST /v1/init — cannot claim.
+ *
+ * With the model then sitting in the workspace, bootstrap takes its other
+ * branch entirely:
+ *
+ *     for wm in workspace.models:
+ *         if md and _gguf_exists(md): existing_model_name = wm.model_name
+ *     ...
+ *     if existing_model_name: yield "model_ready"      # no download
+ *
+ * Returns true when the model is in place.
+ */
+async function ensureBootstrapModel(baseUrl, onProgress) {
+  if (!baseUrl) return false;
+
+  // Ask SLP for the workspace. The response is ignored — the point is the side
+  // effect, and a failure here is not fatal: bootstrap will build one itself
+  // and download, which is exactly the old behaviour.
+  try {
+    await fetch(`${baseUrl}/v1/models/workspace`);
+  } catch (error) {
+    console.warn('[Model] Could not ask SLP for a workspace:', error.message);
+  }
+
+  const workspaceDir = await findWorkspaceDir();
+  if (!workspaceDir) {
+    console.warn('[Model] No workspace directory appeared — bootstrap will handle the model');
+    return false;
+  }
+
+  const modelDir = path.join(workspaceDir, 'models', BOOTSTRAP_MODEL_ID);
+  try {
+    fs.mkdirSync(modelDir, { recursive: true });
+  } catch (error) {
+    console.warn('[Model] Could not prepare the model directory:', error.message);
+    return false;
+  }
+
+  return (await placeBundledModel(modelDir))
+    || (await downloadBootstrapModel(modelDir, onProgress));
+}
+
+/**
+ * The workspace directory SLP is using, once it exists.
+ *
+ * config.json is the reliable answer but is only written when the workspace is
+ * saved, which can lag its creation — so fall back to finding the directory
+ * itself. A workspace is a uuid-named directory with a models/ child, which
+ * nothing else in the SLP home looks like.
+ */
+async function findWorkspaceDir(waitMs = 15000) {
+  const slpDir = slpService.getSlpDir();
+  const deadline = Date.now() + waitMs;
+
+  while (Date.now() < deadline) {
+    try {
+      const config = JSON.parse(fs.readFileSync(path.join(slpDir, 'config.json'), 'utf-8'));
+      if (config?.workspace?.id) return path.join(slpDir, config.workspace.id);
+    } catch {
+      // Not written yet.
+    }
+
+    try {
+      const candidates = fs.readdirSync(slpDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && /^[0-9a-f-]{36}$/i.test(entry.name))
+        .filter((entry) => fs.existsSync(path.join(slpDir, entry.name, 'models')));
+      if (candidates.length === 1) return path.join(slpDir, candidates[0].name);
+    } catch {
+      // The home may not exist yet.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return null;
+}
+
+/** Clone the model that ships inside the app into `modelDir`. */
+async function placeBundledModel(modelDir) {
+  if (!hasBundledModel()) return false;
+  const bundled = bundledModelFile();
+  if (!bundled) return false;
+
+  try {
+    const destination = path.join(modelDir, path.basename(bundled.relative));
+    // COPYFILE_FICLONE is a clone on APFS — no second 770 MB, effectively
+    // instant — and degrades to a real copy elsewhere rather than failing.
+    fs.copyFileSync(bundled.path, `${destination}.seeding`, fs.constants.COPYFILE_FICLONE);
+    fs.renameSync(`${destination}.seeding`, destination);
+    console.log('[Model] Placed the bundled model');
+    return true;
+  } catch (error) {
+    console.warn('[Model] Could not place the bundled model:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Fetch the model straight from the platform API rather than letting SLP pull
+ * it during bootstrap.
+ *
+ * Owning the transfer here buys three things SLP's bootstrap stream did not:
+ * real byte progress (its SSE reports stages, not always bytes), a download
+ * that can be retried without re-running the whole bootstrap, and one place
+ * that decides where weights land — the same place the bundled-model seeding
+ * writes to.
+ *
+ * /v1/models/<name>/download answers with signed GCS URLs; FREE models need no
+ * account. Only the .gguf is taken: the OpenVINO variant in the same response
+ * is for a runtime this build does not use.
+ */
+async function downloadBootstrapModel(modelDir, onProgress) {
+  const manifestUrl = `${BASE_URL}/v1/models/${BOOTSTRAP_MODEL_PLATFORM_NAME}/download`;
+
+  let manifest;
+  try {
+    const res = await fetch(manifestUrl);
+    if (!res.ok) {
+      console.warn(`[Model] Download manifest refused (HTTP ${res.status})`);
+      return false;
+    }
+    manifest = await res.json();
+  } catch (error) {
+    console.warn('[Model] Could not reach the download manifest:', error.message);
+    return false;
+  }
+
+  const artifacts = manifest?.artifacts || {};
+  const ggufName = Object.keys(artifacts).find((name) => name.endsWith('.gguf'));
+  if (!ggufName) {
+    console.warn('[Model] Manifest carried no .gguf artifact');
+    return false;
+  }
+
+  const destination = path.join(modelDir, path.basename(ggufName));
+  if (fs.existsSync(destination) && fs.statSync(destination).size > 0) return true;
+
+  console.log(`[Model] Downloading ${ggufName} from the platform API`);
+  try {
+    const res = await fetch(artifacts[ggufName]);
+    if (!res.ok || !res.body) {
+      console.warn(`[Model] Artifact fetch failed (HTTP ${res.status})`);
+      return false;
+    }
+
+    const total = Number(res.headers.get('content-length') || 0);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    // Written under a temporary name and renamed on success: a partial .gguf at
+    // the real path reads as "downloaded" and would load as garbage.
+    const staging = `${destination}.downloading`;
+    const handle = fs.createWriteStream(staging);
+
+    let downloaded = 0;
+    let lastReport = 0;
+    for await (const chunk of res.body) {
+      handle.write(chunk);
+      downloaded += chunk.length;
+      // Throttled: the UI cannot use more than a few updates a second, and the
+      // splash bridge serialises every one of them.
+      if (onProgress && Date.now() - lastReport > 200) {
+        lastReport = Date.now();
+        onProgress({ status: 'downloading', downloaded, total });
+      }
+    }
+    await new Promise((resolve, reject) => handle.end((err) => (err ? reject(err) : resolve())));
+
+    if (total && fs.statSync(staging).size !== total) {
+      fs.unlinkSync(staging);
+      console.warn('[Model] Download was truncated — leaving it to bootstrap');
+      return false;
+    }
+
+    fs.renameSync(staging, destination);
+    if (onProgress) onProgress({ status: 'downloading', downloaded: total || downloaded, total: total || downloaded });
+    console.log('[Model] Bootstrap model downloaded');
+    return true;
+  } catch (error) {
+    console.warn('[Model] Model download failed — bootstrap will try:', error.message);
+    return false;
+  }
+}
+
+// Approximate size of the first-run download. Bootstrap fetches the default
+// model's weights; the service reports no size up front (every /v1/models entry
+// carries `size: null`), and the real figure only arrives on the first SSE
+// progress event — i.e. after the download has already started. So the number
+// disclosed before the user consents is this constant, and it must be kept in
+// step with whatever model bootstrap installs by default.
+//
+// App Review guideline 2.x: an app that downloads additional resources in order
+// to work has to state how big they are and let the user choose. Rejected once
+// for downloading the model unannounced behind the splash.
+const DEFAULT_MODEL_DOWNLOAD_MB = 800;
+
+/**
+ * A window to hang the sheet on, or null for a free-standing alert. Only the
+ * main window qualifies: the splash is a 400x340 frameless transparent panel,
+ * and a sheet dropped onto that reads as a dialog with no owner anyway — a
+ * centered app-modal alert is clearer during startup.
+ */
+function dialogParent() {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) return mainWindow;
+  return null;
+}
+
+/**
+ * Ask before fetching the model, disclosing the size. Answered once per attempt
+ * rather than remembered: declining leaves the app with nothing to chat with,
+ * so the next launch (and the tray entry) offers it again instead of silently
+ * staying broken.
+ */
+async function confirmModelDownload() {
+  // Nothing to disclose when the model ships inside the app and is already in
+  // the workspace — there is no download to consent to.
+  if (hasBundledModel()) {
+    console.log('[Model] Bootstrap model is bundled — no download to confirm');
+    return true;
+  }
+
+  const parent = dialogParent();
+  const options = {
+    type: 'question',
+    buttons: ['Download', 'Not Now'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Download Language Model',
+    message: 'Smartloop Studio needs to download a language model',
+    detail:
+      `Smartloop Studio answers you with a model that runs on this computer, so your chats and documents never leave it. `
+      + `Setting up downloads that model once — about ${DEFAULT_MODEL_DOWNLOAD_MB} MB — over your internet connection.\n\n`
+      + `Until it finishes there is nothing to chat with. You can start the download later from the Smartloop menu bar icon.`,
+  };
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  return response === 0;
+}
+
+/**
+ * Run the deferred first-run setup after the user declined it at launch. Fired
+ * from the tray. The main window is up by now, so bootstrapSlpService routes its
+ * SSE progress to the renderer (ModelStatusContext adopts it as a primary load)
+ * instead of to the splash.
+ */
+async function runDeferredSetup() {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'Local service is not running' };
+  if (!(await confirmModelDownload())) return { success: false, error: 'declined' };
+  setSetupHandler(null);
+  await runBootstrap(baseUrl);
+  return { success: true };
+}
+
+// IPC: start the deferred setup from the renderer (same gate as the tray entry).
+ipcMain.handle('slp-start-setup', async () => runDeferredSetup());
+
+/**
  * First run: SLP is installed and answering, but has no model and no project
  * yet, so there is nothing usable behind the main window. Keep the splash up
  * and let bootstrap (which downloads the default model, ~770 MB) stream its
@@ -2074,6 +2369,15 @@ async function runBootstrap(baseUrl) {
  */
 async function bootstrapOnSplash(baseUrl) {
   if (!splashWindow || splashWindow.isDestroyed()) createStartingSplash();
+
+  // Consent first, and before any splash copy that implies work is underway —
+  // nothing is fetched until the user has seen the size and said yes.
+  if (!(await confirmModelDownload())) {
+    console.log('[SLP] Model download declined — opening the app without a model');
+    setSetupHandler(runDeferredSetup);
+    return baseUrl;
+  }
+
   updateSplashProgress({ status: 'preparing', message: 'Setting up your workspace...' });
 
   await runBootstrap(baseUrl);
@@ -2736,6 +3040,9 @@ function waitForLogin() {
 
     if (status && status.success && status.has_access_token && status.user) {
       stopLoginWait();
+      // The provider view has done its job — take it down before the UI behind
+      // it changes, so the user isn't left staring at a signed-in page.
+      closeAuthView();
       // Merge the full profile before announcing so the UI never flashes a
       // half-populated user — is_paid in particular gates the model list.
       const profile = await fetchUserProfile();
@@ -3313,29 +3620,363 @@ function createWindow() {
   return mainWindow;
 }
 
-// Handle OAuth login - open in system browser with local service port
-ipcMain.handle('oauth-login', async (event) => {
-  console.log('[OAuth] oauth-login called');
+// ── In-app sign-in ──────────────────────────────────────────────────────────
+//
+// Sign-in happens INSIDE the app. App Review guideline 4.0 rejects handing the
+// user to Safari to sign in unless the handoff is an ASWebAuthenticationSession,
+// which Electron has no binding for.
+//
+// Email and password never leave the app at all: the renderer's login page
+// collects them and this process talks to the platform API directly, which also
+// keeps the credentials out of a web context and sidesteps CORS.
+//
+// Google and Apple can't work that way — only the provider may render its own
+// consent screen. That page loads in a WebContentsView layered over the login
+// page's content area, so it reads as a page of the app rather than a browser
+// the app threw the user into. The renderer owns the surrounding chrome (title,
+// Cancel) and reports where the view should sit.
+//
+// Either way the tokens end up in the same place: POSTed to the local service's
+// /v1/auth/callback, exactly as the browser flow delivered them.
 
+const { WebContentsView } = require('electron');
+
+/** The provider consent view layered over the login page, if one is up. */
+let authView = null;
+
+/** Cloud API URL for an auth/user path (e.g. '/auth/jwt/login'). */
+function platformUrl(path) {
+  return `${BASE_URL}/v1${path}`;
+}
+
+/**
+ * Hand a freshly issued token pair to the local service, which owns credential
+ * storage. Same endpoint and body the web login page POSTs, so there is one
+ * contract rather than one per sign-in route.
+ */
+async function deliverTokens(accessToken, refreshToken) {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'Local service is not running' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/auth/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken || '' }),
+    });
+    if (!res.ok) return { success: false, error: `Local service rejected the token (HTTP ${res.status})` };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Announce a completed sign-in the same way the OAuth wait does: merge the
+ * profile before broadcasting so the UI never paints a half-populated user.
+ */
+async function announceSignIn() {
+  const status = await readAuthStatus();
+  const profile = await fetchUserProfile();
+  const user = { ...(status?.user || {}), ...(profile || {}) };
+  sendLoginState({ state: 'success', user });
+  healthMonitor.poke();
+  return user;
+}
+
+/**
+ * Turn a platform API error body into something a person can act on.
+ * The API answers with machine codes in `detail.code`; anything it doesn't
+ * recognise falls through to the detail string, then to the status.
+ */
+function authErrorMessage(status, body) {
+  const detail = body?.detail;
+  const code = typeof detail === 'string' ? detail : detail?.code;
+
+  switch (code) {
+    case 'OTP_NO_ACCOUNT':
+      return 'No Smartloop account uses that email.';
+    case 'OTP_INVALID':
+      return 'That code is not right. Check the email and try again.';
+    case 'OTP_EXPIRED':
+      return 'That code has expired. Send a new one.';
+    case 'OTP_TOO_MANY_ATTEMPTS':
+      return 'Too many tries. Send a new code and start again.';
+    case 'OTP_RATE_LIMITED':
+      return 'Too many codes requested. Wait a minute and try again.';
+    default:
+      break;
+  }
+  if (typeof detail === 'string' && detail) return detail;
+  if (status === 422) return 'Check the email address and try again.';
+  return `Sign-in failed (HTTP ${status}).`;
+}
+
+/** POST to the platform API, returning { ok, status, body }. */
+async function platformPost(path, json) {
+  const res = await fetch(platformUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(json),
+  });
+  let body = null;
+  try { body = await res.json(); } catch { /* empty or non-JSON body */ }
+  return { ok: res.ok, status: res.status, body };
+}
+
+// IPC: ask the platform to email a sign-in code.
+//
+// There is no password anywhere in this flow and no way to create an account
+// from the app — signing up happens on the web. So the one failure worth
+// distinguishing is "that address has no account", which the renderer turns
+// into a link out rather than a retry.
+ipcMain.handle('auth-otp-request', async (event, email) => {
+  try {
+    const { ok, status, body } = await platformPost('/auth/otp/request', { email });
+    if (!ok) {
+      const detail = body?.detail;
+      const code = typeof detail === 'string' ? detail : detail?.code;
+      return {
+        success: false,
+        code: code === 'OTP_NO_ACCOUNT' ? 'no-account' : undefined,
+        error: authErrorMessage(status, body),
+      };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: exchange an emailed code for a session.
+ipcMain.handle('auth-otp-verify', async (event, email, code) => {
+  try {
+    const { ok, status, body } = await platformPost('/auth/otp/verify', { email, code });
+    if (!ok || !body?.access_token) {
+      return { success: false, error: authErrorMessage(status, body) };
+    }
+
+    const delivered = await deliverTokens(body.access_token, body.refresh_token);
+    if (!delivered.success) return delivered;
+
+    return { success: true, user: await announceSignIn() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// IPC: permanently delete the signed-in account (guideline 5.1.1(v)). Proxied by
+// the local service, which holds the access token that authorizes it.
+ipcMain.handle('auth-delete-account', async () => {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'Local service is not running' };
+  try {
+    const res = await fetch(`${baseUrl}/v1/users/me`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 204) {
+      let detail = '';
+      try { detail = (await res.json())?.detail || ''; } catch { /* no body */ }
+      return { success: false, error: detail || `Could not delete the account (HTTP ${res.status})` };
+    }
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+  sendLoginState({ state: 'signed-out' });
+  healthMonitor.poke();
+  return { success: true };
+});
+
+/**
+ * Chrome's UA with the app's own product tokens stripped. Identity providers
+ * refuse to render in anything that self-identifies as an embedded browser, and
+ * Electron appends "Smartloop Studio/<v> Electron/<v>" to the default UA.
+ */
+function authUserAgent() {
+  return app.userAgentFallback
+    .replace(/\s*(Smartloop Studio|Electron)\/[\d.]+/g, '')
+    .trim();
+}
+
+/** Clamp renderer-reported bounds to whole pixels inside the window. */
+function normalizeViewBounds(bounds) {
+  if (!mainWindow || mainWindow.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
+  const [width, height] = mainWindow.getContentSize();
+  const x = Math.max(0, Math.round(bounds?.x ?? 0));
+  const y = Math.max(0, Math.round(bounds?.y ?? 0));
+  return {
+    x,
+    y,
+    width: Math.max(0, Math.min(Math.round(bounds?.width ?? width), width - x)),
+    height: Math.max(0, Math.min(Math.round(bounds?.height ?? height), height - y)),
+  };
+}
+
+/**
+ * Layer the provider's consent page over the login page's content area.
+ * `provider` is 'google' or 'apple'; the API's desktop authorize route signs the
+ * local port into the OAuth state and redirects onward, so the port survives the
+ * round trip without a web origin to stash it in.
+ */
+function openAuthView(provider, bounds) {
   const port = slpService.getPort() || slpService.readLocalServicePort();
-  if (!port) {
-    console.error('[OAuth] No local service port available');
-    return { status: 'error', error: 'Local service not running' };
+  if (!port) return { success: false, error: 'Local service is not running' };
+  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'No window' };
+
+  closeAuthView();
+
+  authView = new WebContentsView({
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      // Its own session, so signing out of the app never depends on clearing
+      // the main window's storage and vice versa.
+      partition: 'persist:smartloop-auth',
+    },
+  });
+
+  // Links that aren't part of the flow (terms, privacy, a help page) belong in
+  // the real browser, not layered over the app.
+  authView.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // A page that finishes by redirecting to smartloop:// has no browser to hand
+  // the scheme to — route it through the app's own deep-link path instead.
+  authView.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith(`${PROTOCOL}://`)) {
+      event.preventDefault();
+      dispatchDeepLink(url);
+      closeAuthView();
+    }
+  });
+
+  // Google's redirect is caught here rather than served.
+  //
+  // Google only redirects to a URI registered on the OAuth client, and the only
+  // one registered is the web app's /oauth-callback page — the API is not and
+  // cannot be added without a console change. So the desktop flow asks for that
+  // registered URI and never lets it load: the authorization code is on the URL
+  // by the time this fires, so the navigation is cancelled and the code goes
+  // straight to the API to be exchanged.
+  const googleCallbackPrefix = `${APP_URL}/oauth-callback`;
+  const interceptGoogleCallback = (event, url) => {
+    if (!url.startsWith(googleCallbackPrefix)) return;
+    event.preventDefault();
+
+    let code, state, error;
+    try {
+      const params = new URL(url).searchParams;
+      code = params.get('code');
+      state = params.get('state');
+      error = params.get('error');
+    } catch {
+      error = 'malformed_callback';
+    }
+
+    completeGoogleSignIn({ code, state, error });
+  };
+  authView.webContents.on('will-redirect', interceptGoogleCallback);
+  authView.webContents.on('will-navigate', interceptGoogleCallback);
+
+  // A provider page that fails to load would otherwise sit blank over the login
+  // form with no way back. Drop the view and let the renderer say so.
+  authView.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return; // -3 is an aborted navigation (a redirect)
+    console.warn(`[OAuth] ${provider} sign-in failed to load: ${errorDescription}`);
+    closeAuthView();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auth-view-closed', { error: `Could not reach ${provider}. Check your connection.` });
+    }
+  });
+
+  mainWindow.contentView.addChildView(authView);
+  authView.setBounds(normalizeViewBounds(bounds));
+  authView.webContents.loadURL(
+    `${platformUrl(`/auth/${provider}/desktop/authorize`)}?port=${port}`,
+    { userAgent: authUserAgent() },
+  );
+
+  // The tokens land on the local service, not here, so the same watcher the
+  // browser flow used still decides when this is over.
+  waitForLogin();
+  return { success: true };
+}
+
+/**
+ * Finish a Google sign-in from an intercepted redirect: hand the code to the
+ * API, put the tokens on the local service, announce the user.
+ */
+async function completeGoogleSignIn({ code, state, error }) {
+  closeAuthView();
+
+  if (error || !code || !state) {
+    stopLoginWait();
+    const message = error === 'access_denied'
+      ? 'Google sign-in was cancelled.'
+      : 'Google sign-in did not complete. Please try again.';
+    console.warn('[OAuth] Google callback unusable:', error || 'missing code/state');
+    sendLoginState({ state: 'error', error: message });
+    return;
   }
 
-  const authUrl = `${APP_URL}/login/?mode=desktop&port=${port}`;
-  console.log('[OAuth] Opening URL:', authUrl);
+  try {
+    const { ok, status, body } = await platformPost('/auth/google/desktop/exchange', { code, state });
+    if (!ok || !body?.access_token) {
+      stopLoginWait();
+      sendLoginState({ state: 'error', error: authErrorMessage(status, body) });
+      return;
+    }
 
-  // Open in system's default browser
-  await shell.openExternal(authUrl);
-  console.log('[OAuth] Browser opened successfully');
+    const delivered = await deliverTokens(body.access_token, body.refresh_token);
+    if (!delivered.success) {
+      stopLoginWait();
+      sendLoginState({ state: 'error', error: delivered.error });
+      return;
+    }
 
-  // Watch for the tokens the webapp will POST directly to the local service.
-  // Returns immediately either way — the outcome arrives on 'login-state'.
-  waitForLogin();
+    // The tokens are already in place, so there is nothing left to wait for.
+    stopLoginWait();
+    sendLoginState({ state: 'success', user: await announceSignIn() });
+  } catch (err) {
+    stopLoginWait();
+    console.error('[OAuth] Google exchange failed:', err.message);
+    sendLoginState({ state: 'error', error: err.message });
+  }
+}
 
-  return { status: 'browser_opened', port };
+/** Take the provider view down, if one is up. */
+function closeAuthView() {
+  if (!authView) return;
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(authView);
+    authView.webContents.close();
+  } catch (err) {
+    console.warn('[OAuth] Could not tear down the sign-in view:', err.message);
+  }
+  authView = null;
+}
+
+// IPC: start a provider sign-in. `bounds` is the login page's content area, in
+// window coordinates.
+ipcMain.handle('auth-provider-start', async (event, provider, bounds) => {
+  if (provider !== 'google' && provider !== 'apple') {
+    return { success: false, error: `Unsupported provider: ${provider}` };
+  }
+  return openAuthView(provider, bounds);
 });
+
+// IPC: the login page resized or scrolled — follow it.
+ipcMain.handle('auth-provider-bounds', async (event, bounds) => {
+  if (authView) authView.setBounds(normalizeViewBounds(bounds));
+  return { success: true };
+});
+
+// IPC: the user backed out of the provider flow.
+ipcMain.handle('auth-provider-cancel', async () => {
+  stopLoginWait();
+  closeAuthView();
+  return { success: true };
+});
+
 
 
 
@@ -3465,6 +4106,10 @@ if (!gotTheLock) {
       let baseUrl = slpService.getLocalBaseUrl();
       refreshTray();
 
+      // Same as the install path: a healthy service can still have an empty
+      // workspace, and this is what keeps that from becoming a download.
+      await ensureBootstrapModel(baseUrl, (progress) => updateSplashProgress(progress));
+
       const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 
       // Download blank project template in the background
@@ -3565,6 +4210,10 @@ if (!gotTheLock) {
 
           let baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
+
+          // Get the model into the workspace before bootstrap looks for it, so
+          // bootstrap reports it ready instead of downloading 770 MB.
+          await ensureBootstrapModel(baseUrl, (progress) => updateSplashProgress(progress));
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
 

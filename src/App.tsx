@@ -7,6 +7,7 @@ import { ModelStatusProvider } from './app/contexts/ModelStatusContext';
 import AppLayout from './app/layouts/AppLayout';
 import Home from './app/pages/Home';
 import Settings from './app/pages/Settings';
+import Login from './app/pages/Login';
 
 function App() {
   const [user, setUser, _authReady] = useAuth();
@@ -19,6 +20,13 @@ function App() {
             <Routes>
               <Route path="/" element={<AppLayout><Home /></AppLayout>} />
               <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
+              {/* Sign-in is a page of the app, not a trip to the browser — see
+                  Login.tsx. Deliberately OUTSIDE AppLayout: it owns the whole
+                  window. The sidebar would otherwise sit beside a sign-in
+                  screen offering a way into things you can't reach yet, and the
+                  provider consent view — a native layer positioned over this
+                  page — needs the full content area to size itself against. */}
+              <Route path="/login" element={<Login />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ModelStatusProvider>

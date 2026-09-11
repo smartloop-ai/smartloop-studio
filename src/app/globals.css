@@ -135,6 +135,14 @@
     background-color: var(--sl-bg-base)
   }
 
+  /* The React mount point carries the background too. Between one route
+     unmounting and the next painting there is a frame with no markup at all,
+     and without this it shows whatever is behind the document. */
+  #root {
+    min-height: 100%;
+    background-color: var(--sl-bg-base)
+  }
+
   body,
   html {
     height: 100%;
