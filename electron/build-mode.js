@@ -62,6 +62,56 @@ function bundledSlpBinaryPath() {
   return path.join(bundledSlpDir(), name);
 }
 
+/**
+ * The bootstrap model shipped inside the app, mirroring the SLP framework.
+ *
+ * It is one file — smartloop-ai/slp-orchestra-mini/<name>.gguf, ~770 MB — laid
+ * out under the resources dir exactly as it sits in a workspace's models/
+ * directory, so seeding is a copy of a path rather than a transformation of one.
+ */
+function bundledModelsDir() {
+  const packaged = path.join(process.resourcesPath || '', 'models');
+  if (fs.existsSync(packaged)) return packaged;
+  // Dev: process.resourcesPath points at Electron's own Resources, which has no
+  // bundled model. Fall back to the repo's staged copy (see `make stage-model`).
+  return path.join(__dirname, '..', 'build', 'models');
+}
+
+/** The first .gguf under the bundled models dir, or null when none shipped. */
+function bundledModelFile() {
+  const root = bundledModelsDir();
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) stack.push(full);
+      else if (entry.name.endsWith('.gguf')) {
+        // Relative path is what makes the destination inside the workspace.
+        return { path: full, relative: path.relative(root, full) };
+      }
+    }
+  }
+  return null;
+}
+
+/** True when the bootstrap model actually ships inside this build. */
+function hasBundledModel() {
+  const found = bundledModelFile();
+  if (!found) return false;
+  try {
+    return fs.statSync(found.path).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** True when a bundled SLP binary is actually present on disk. */
 function hasBundledSlp() {
   try {
@@ -86,6 +136,9 @@ function useBundledSlp() {
 }
 
 module.exports = {
+  bundledModelsDir,
+  bundledModelFile,
+  hasBundledModel,
   isMasBuild,
   isSandboxed,
   bundledSlpDir,

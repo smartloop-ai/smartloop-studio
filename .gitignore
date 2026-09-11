@@ -131,6 +131,13 @@ dist
 .DS_Store
 dist-web/
 build/slp/
+# Staged bootstrap model (~770 MB of .gguf), cloned from a workspace by
+# `make stage-model` and shipped via extraResources. A build artifact, never a
+# tracked file.
+native/build/
+native/node_modules/
+build/models/
+*.gguf
 build/embedded.provisionprofile
 electron/data/slp/*/
 dist-devid/
