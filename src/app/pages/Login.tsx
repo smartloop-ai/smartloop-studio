@@ -124,6 +124,9 @@ export default function Login() {
   // Non-null while a provider's consent page is layered over the slot below.
   const [provider, setProvider] = useState<'google' | 'apple' | null>(null);
   const providerSlotRef = useRef<HTMLDivElement | null>(null);
+  // False until main has the provider's page painted and layered over the slot.
+  // Until then the slot is ours to draw in.
+  const [providerReady, setProviderReady] = useState(false);
   const codeInputs = useRef<Array<HTMLInputElement | null>>([]);
 
   const api = (window as any).electronAPI;
@@ -165,12 +168,18 @@ export default function Login() {
     };
   }, [provider, api, slotBounds]);
 
+  useEffect(() => {
+    if (!api?.onAuthViewReady) return;
+    return api.onAuthViewReady(() => setProviderReady(true));
+  }, [api]);
+
   // Main tears the view down on its own when a provider page fails to load;
   // without this the page would keep rendering an empty slot.
   useEffect(() => {
     if (!api?.onAuthViewClosed) return;
     return api.onAuthViewClosed((data: { error?: string }) => {
       setProvider(null);
+      setProviderReady(false);
       if (data?.error) setError(data.error);
     });
   }, [api]);
@@ -238,6 +247,7 @@ export default function Login() {
   const startProvider = (which: 'google' | 'apple') => {
     if (!api?.authProviderStart) { setError(STALE_BRIDGE_MESSAGE); return; }
     setError('');
+    setProviderReady(false);
     setProvider(which);
     setStarting(which);
   };
@@ -259,6 +269,7 @@ export default function Login() {
 
   const cancelProvider = async () => {
     setStarting(null);
+    setProviderReady(false);
     await api?.authProviderCancel?.();
     setProvider(null);
   };
@@ -464,9 +475,20 @@ export default function Login() {
             Continue with {provider === 'google' ? 'Google' : 'Apple'}
           </span>
         </Box>
-        {/* The WebContentsView is positioned over exactly this box. Empty in the
-            DOM on purpose — anything drawn here is hidden behind it. */}
-        <div ref={providerSlotRef} className="flex-1 min-h-0" />
+        {/* The WebContentsView is positioned over exactly this box once it has
+            a page to show. Until then it is not attached at all, so what is
+            drawn here is what the user sees — the alternative is a blank
+            native layer for the length of the redirect chain. */}
+        <div ref={providerSlotRef} className="flex-1 min-h-0 flex items-center justify-center">
+          {!providerReady && (
+            <Box className="flex items-center gap-2">
+              <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
+              <span className="text-[13px] text-sl-text-muted">
+                Opening {provider === 'google' ? 'Google' : 'Apple'}…
+              </span>
+            </Box>
+          )}
+        </div>
       </Box>
     );
   }
