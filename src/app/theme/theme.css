@@ -20,6 +20,13 @@
   --sl-brand-active: #ce2775;
   --sl-brand-light: #f089b9;
 
+  /* Body fill for the logo mark; the dot takes --sl-brand-primary. Set per
+     theme by applyThemeCssVars from that theme's primary text — but it needs a
+     value here too. Runtime tokens land as inline styles on the root element,
+     so anything painted before the first theme is applied falls back to this
+     stylesheet, and without it the mark has no fill at all. */
+  --sl-brand-mark: #f6f1f4;
+
   /* ── Text ──────────────────────────────────────────────── */
   --sl-text-primary: #f6f1f4;
   --sl-text-secondary: #e3dbe0;

@@ -1559,7 +1559,7 @@ description: A clear description of what this skill does and when to use it
           justifyContent: 'center',
         }}
       >
-        <LoadingState />
+        <LoadingState mark />
       </Box>
     );
   }
