@@ -446,7 +446,7 @@ export default function Login() {
   // Signed in, on the way to the main window. Checked before every other
   // branch so nothing else can render over it.
   if (redirecting) {
-    return page(<LoadingState label="Signing you in…" />, false);
+    return page(<LoadingState mark label="Signing you in…" />, false);
   }
 
   // A provider flow takes the window over: its consent screen is a native layer,
@@ -473,7 +473,7 @@ export default function Login() {
             native layer for the length of the redirect chain. */}
         <div ref={providerSlotRef} className="flex-1 min-h-0 flex items-center justify-center">
           {!providerReady && (
-            <LoadingState label={`Opening ${provider === 'google' ? 'Google' : 'Apple'}…`} />
+            <LoadingState mark label="Loading…" />
           )}
         </div>
       </Box>
