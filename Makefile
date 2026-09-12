@@ -75,7 +75,7 @@ help-electron:
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make prefetch-dev            - Pre-download the bootstrap model + template (skips the splash download)"
-	@echo "  make stage-model             - Clone the bootstrap model into build/models/ so it ships inside the app"
+	@echo "  make stage-model             - Clone the chat + embedding models into build/models/ so they ship inside the app"
 	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
 	@echo "  make logs-mac                - Tail the Electron main-process log (Mac App Store sandbox)"
 	@echo "  make logs-slp                - Tail the SLP backend service log (mac/win/linux)"
@@ -118,7 +118,7 @@ stop:
 	fi
 
 # Build Electron app for current platform
-build-electron: clean-electron stage-slp-latest require-staged-slp
+build-electron: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -127,7 +127,7 @@ build-electron: clean-electron stage-slp-latest require-staged-slp
 	npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron require-staged-slp
+build-electron-linux: clean-electron stage-model stage-template require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -137,7 +137,7 @@ build-electron-linux: clean-electron require-staged-slp
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron require-staged-slp
+build-electron-windows: clean-electron stage-model stage-template require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -189,17 +189,22 @@ stage-slp:
 # to clone the app simply downloads SLP on first launch, which is exactly what a
 # fresh machine does. Packaging is where a missing framework is fatal — that is
 # require-staged-slp's job, not this one.
-# Stage the bootstrap model into build/models/ so it ships inside the app and
-# first run downloads nothing. Cloned (cp -c) from a workspace that already has
-# it, so it costs no extra disk on APFS.
+# Stage the models into build/models/ so they ship inside the app and nothing a
+# first launch needs is a download. Cloned (cp -c) from a workspace that already
+# has them, so they cost no extra disk on APFS.
 #
 # The layout under build/models/ mirrors a workspace's models/ directory exactly
-# — <org>/<model>/<file>.gguf — because seedBundledModel copies the relative
-# path straight across.
+# — <org>/<model>/<file>.gguf for the chat model, embeddings/<file>.gguf for the
+# embedding model — because ensureBootstrapModel copies the relative path
+# straight across.
 #
-# Only the orchestrator (sl-mini) by default. The embeddings model is another
-# ~418 MB and is only needed once someone indexes a document, so it stays a
-# download; add it with `make stage-model BUNDLE_EMBEDDINGS=1`.
+# Both the orchestrator (sl-mini, ~770 MB) and the embedding model (bge-m3,
+# ~418 MB): document search needs the second one, and leaving it out puts a
+# download back in the way the first time someone indexes a document. Drop it
+# with `make stage-model SKIP_EMBEDDINGS=1`.
+stage-template:
+	@./scripts/stage-template.sh
+
 stage-model:
 	@./scripts/stage-model.sh
 
@@ -228,7 +233,7 @@ stage-slp-dev:
 		|| echo "⚠️  No framework staged — starting anyway; the app will download SLP on first launch."
 
 # Build Electron app for macOS (Developer ID: DMG, zip). SLP is bundled.
-build-electron-mac: clean-electron stage-slp-latest stage-model require-staged-slp rebuild-native
+build-electron-mac: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
 	npm install
 	@echo "🔨 Building Vite app..."
@@ -276,7 +281,7 @@ check-slp-symbols:
 # Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
 # Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
 # The store notarizes on ingestion, so no local notarization is done.
-build-electron-mas: clean-electron stage-slp-latest require-staged-slp
+build-electron-mas: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
 	@$(MAKE) check-slp-symbols
 	@echo "📦 Installing dependencies..."
 	npm install
@@ -309,7 +314,7 @@ ASC_PROVIDER ?= YXKDJK6637
 APPLE_ID     ?=
 ALTOOL       := DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool
 
-push-to-mas: stage-slp-latest
+push-to-mas: stage-slp-latest stage-model stage-template rebuild-native
 	@if [ -z "$(BUILD)" ]; then \
 		echo "❌ Set the build number: make push-to-mas BUILD=1.0.353"; \
 		echo "   (marketing version stays package.json's; CFBundleVersion must increase, ≤3 integers)"; exit 1; \
@@ -428,7 +433,7 @@ prefetch-dev:
 rebuild-native:
 	@./scripts/rebuild-native.sh
 
-run-electron-dev: stage-slp-dev stage-model-dev rebuild-native
+run-electron-dev: stage-slp-dev stage-model-dev stage-template rebuild-native
 	@echo "🚀 Starting Electron app in development mode..."
 ifdef MAS
 	@echo "🍎 MAS sandbox simulation (SMARTLOOP_FORCE_SANDBOX=1, run-in-place from build/slp/)"

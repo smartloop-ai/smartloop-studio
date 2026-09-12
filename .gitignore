@@ -136,6 +136,7 @@ build/slp/
 # tracked file.
 native/build/
 native/node_modules/
+electron/data/templates/
 build/models/
 *.gguf
 build/embedded.provisionprofile

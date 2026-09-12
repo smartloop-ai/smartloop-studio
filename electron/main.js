@@ -12,7 +12,7 @@ const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { isSandboxed, useBundledSlp, bundledModelFile, hasBundledModel } = require('./build-mode');
+const { isSandboxed, useBundledSlp, bundledModelFiles, hasBundledModel } = require('./build-mode');
 const database = require('./database');
 const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
@@ -946,13 +946,44 @@ const TEMPLATE_RELEASE_URL = `https://github.com/smartloop-ai/blank-project-temp
 const TEMPLATE_CACHE_DIR = path.join(slpService.getSlpDir(), 'templates');
 const TEMPLATE_CACHE_PATH = path.join(TEMPLATE_CACHE_DIR, 'project_1.zip');
 
+/**
+ * The template that ships inside the app, if this build has one.
+ *
+ * electron/data/ is copied to Resources/data/ at package time, so a packaged
+ * build carries it; a source checkout falls back to the repo copy, which
+ * `make stage-template` fills in.
+ */
+function bundledTemplatePath() {
+  const packaged = path.join(process.resourcesPath || '', 'data', 'templates', 'project_1.zip');
+  if (fs.existsSync(packaged)) return packaged;
+  const local = path.join(__dirname, 'data', 'templates', 'project_1.zip');
+  return fs.existsSync(local) ? local : null;
+}
+
 async function downloadBlankTemplate() {
   if (fs.existsSync(TEMPLATE_CACHE_PATH)) return TEMPLATE_CACHE_PATH;
 
-  console.log('[Template] Downloading blank project template...');
-  updateSplashProgress({ status: 'downloading', message: 'Downloading latest artifacts...', downloaded: 0, total: 0 });
-
   fs.mkdirSync(TEMPLATE_CACHE_DIR, { recursive: true });
+
+  // Ships in the installer, so the usual case is a copy rather than a fetch.
+  // It is 7 KB — the download only ever existed because nothing had put it in
+  // the bundle.
+  const bundled = bundledTemplatePath();
+  if (bundled) {
+    try {
+      fs.copyFileSync(bundled, `${TEMPLATE_CACHE_PATH}.seeding`);
+      fs.renameSync(`${TEMPLATE_CACHE_PATH}.seeding`, TEMPLATE_CACHE_PATH);
+      console.log('[Template] Copied the bundled project template');
+      return TEMPLATE_CACHE_PATH;
+    } catch (error) {
+      console.warn('[Template] Could not copy the bundled template:', error.message);
+    }
+  }
+
+  console.log('[Template] Downloading blank project template...');
+  // No byte counts: GitHub builds release zips on demand and answers
+  // content-length: 0, so a progress bar here can only ever sit at zero.
+  updateSplashProgress({ status: 'preparing', message: 'Preparing project template...' });
 
   const res = await fetch(TEMPLATE_RELEASE_URL);
   if (!res.ok) {
@@ -970,7 +1001,9 @@ async function downloadBlankTemplate() {
     if (done) break;
     chunks.push(value);
     downloaded += value.length;
-    updateSplashProgress({ status: 'downloading', message: 'Downloading latest artifacts...', downloaded, total: contentLength });
+    if (contentLength) {
+      updateSplashProgress({ status: 'downloading', message: 'Preparing project template...', downloaded, total: contentLength });
+    }
   }
 
   const buffer = Buffer.concat(chunks);
@@ -1835,7 +1868,7 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = bootstrapSplashEvent(JSON.parse(line.slice(6)));
               const progress = bootstrapProgress(data);
 
               if (progress.percent > 0) {
@@ -1982,7 +2015,32 @@ function updateSplashProgress(data) {
     `).catch(() => { });
     return;
   }
+
+  // Anything else is a bootstrap stage (SLP streams its own status names) —
+  // show it rather than sitting on the last message for the length of the run.
+  const stageMessage = BOOTSTRAP_SPLASH_COPY[data.status];
+  if (stageMessage) updateSplashProgress({ status: 'preparing', message: stageMessage });
 }
+
+/**
+ * Splash copy for the stages SLP's bootstrap streams.
+ *
+ * Its status names are its own vocabulary, and none of them are the splash's —
+ * without this map the text stops updating the moment bootstrap starts. They
+ * are also, on a bundled build, the whole of a first run: the model is already
+ * in the workspace, so `downloading` never arrives and nothing here mentions a
+ * download. The stage names come from smartloop/api/routers/init.py.
+ */
+const BOOTSTRAP_SPLASH_COPY = {
+  model_ready: 'Setting up your workspace…',
+  creating_project: 'Creating your first project…',
+  project_created: 'Creating your first project…',
+  loading: 'Starting the assistant…',
+  model_loaded: 'Starting the assistant…',
+  setup: 'Setting up your project…',
+  setup_complete: 'Almost ready…',
+  completed: 'Ready',
+};
 
 /**
  * First-launch step: show the "verifying system requirements" phase. Nothing is
@@ -2057,23 +2115,6 @@ async function runBootstrap(baseUrl) {
   });
 }
 
-/**
- * Put the bundled bootstrap model where the workspace expects it, so first run
- * has nothing to download.
- *
- * The model ships inside the app the same way the SLP framework does, but it
- * cannot simply be run from there: SLP resolves weights under
- * <workspace>/models/<model_id>/, and the workspace is a runtime directory named
- * by a UUID that does not exist until the service has started. So this runs
- * after the service is healthy and before bootstrap, and copies the file across.
- *
- * The copy is a COPYFILE_FICLONE, which on APFS is a clone — no second 770 MB
- * on disk and effectively instant. On any other filesystem the flag degrades to
- * a real copy rather than failing.
- *
- * Returns true when the model is in place, which is what lets bootstrap skip the
- * download (its _gguf_exists check finds the file and marks it downloaded).
- */
 // The bootstrap model, named three different ways.
 //
 // Locally SLP calls it `sl-mini`; the platform catalogue publishes it as
@@ -2085,11 +2126,18 @@ const BOOTSTRAP_MODEL_PLATFORM_NAME = 'slp-orchestra-mini';
 const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
 
 /**
- * Let SLP create the workspace, then put the model in it before bootstrap runs.
+ * Let SLP create the workspace, then put the bundled models in it before
+ * bootstrap runs.
  *
- * The earlier version of this wrote config.json itself. That worked, but it
- * meant hand-authoring SLP's private state — a schema this app does not own and
- * cannot see change. This asks SLP to do it instead:
+ * The models ship inside the app the same way the SLP framework does, but they
+ * cannot be used from there: SLP resolves the chat weights under
+ * <workspace>/models/<model_id>/ and the embedding GGUF under
+ * <workspace>/models/embeddings/, and a workspace is a runtime directory named
+ * by a UUID that does not exist until the service has started. So this runs
+ * after the service is healthy and before bootstrap, and copies them across —
+ * which keeps the whole arrangement on this side of the wire. SLP is asked for
+ * a workspace and handed files in the places it already looks; it needs no
+ * notion of an app bundle, and no change to resolve one.
  *
  *   GET /v1/models/workspace  ->  _ensure_workspace()  ->  the workspace exists
  *
@@ -2098,7 +2146,7 @@ const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
  * nothing, which the two routes that also build it — POST /v1/bootstrap and
  * POST /v1/init — cannot claim.
  *
- * With the model then sitting in the workspace, bootstrap takes its other
+ * With the chat model then sitting in the workspace, bootstrap takes its other
  * branch entirely:
  *
  *     for wm in workspace.models:
@@ -2106,7 +2154,11 @@ const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
  *     ...
  *     if existing_model_name: yield "model_ready"      # no download
  *
- * Returns true when the model is in place.
+ * The embedding model is not bootstrap's business at all — it is read straight
+ * off disk the first time something is indexed — so seeding it here is the only
+ * thing that keeps document search offline too.
+ *
+ * Returns true when the chat model is in place.
  */
 async function ensureBootstrapModel(baseUrl, onProgress) {
   if (!baseUrl) return false;
@@ -2126,16 +2178,18 @@ async function ensureBootstrapModel(baseUrl, onProgress) {
     return false;
   }
 
-  const modelDir = path.join(workspaceDir, 'models', BOOTSTRAP_MODEL_ID);
+  const modelsDir = path.join(workspaceDir, 'models');
   try {
-    fs.mkdirSync(modelDir, { recursive: true });
+    fs.mkdirSync(modelsDir, { recursive: true });
   } catch (error) {
-    console.warn('[Model] Could not prepare the model directory:', error.message);
+    console.warn('[Model] Could not prepare the models directory:', error.message);
     return false;
   }
 
-  return (await placeBundledModel(modelDir))
-    || (await downloadBootstrapModel(modelDir, onProgress));
+  seededModelDir = path.join(modelsDir, BOOTSTRAP_MODEL_ID);
+
+  if (await placeBundledModels(modelsDir, onProgress)) return true;
+  return downloadBootstrapModel(seededModelDir, onProgress);
 }
 
 /**
@@ -2172,29 +2226,130 @@ async function findWorkspaceDir(waitMs = 15000) {
   return null;
 }
 
-/** Clone the model that ships inside the app into `modelDir`. */
-async function placeBundledModel(modelDir) {
-  if (!hasBundledModel()) return false;
-  const bundled = bundledModelFile();
-  if (!bundled) return false;
-
-  try {
-    const destination = path.join(modelDir, path.basename(bundled.relative));
-    // COPYFILE_FICLONE is a clone on APFS — no second 770 MB, effectively
-    // instant — and degrades to a real copy elsewhere rather than failing.
-    fs.copyFileSync(bundled.path, `${destination}.seeding`, fs.constants.COPYFILE_FICLONE);
-    fs.renameSync(`${destination}.seeding`, destination);
-    console.log('[Model] Placed the bundled model');
-    return true;
-  } catch (error) {
-    console.warn('[Model] Could not place the bundled model:', error.message);
-    return false;
-  }
+/**
+ * Copy the models that ship inside the app into the workspace's models/ dir,
+ * each one keeping the relative path it has in the bundle.
+ *
+ * The copy is a COPYFILE_FICLONE, which on APFS is a clone — no second 1.2 GB
+ * on disk and effectively instant. On any other filesystem the flag degrades to
+ * a real copy rather than failing, which is why the splash says what it is
+ * doing: on Windows and Linux this is a real write of ~1.2 GB and takes long
+ * enough to look like a hang otherwise.
+ *
+ * Each file is written under a temporary name and renamed on success. A partial
+ * .gguf at the real path reads as "downloaded" to SLP and would load as garbage.
+ *
+ * Returns true when the chat model ends up in place; the embedding model is
+ * best-effort (without it SLP downloads it on first index, and falls back to
+ * TF-IDF retrieval until then).
+ */
+/**
+ * SLP's own test for "the weights are already here" (_gguf_exists in
+ * api/routers/init.py): any .gguf in the model directory, or in its bin/.
+ *
+ * Any .gguf, not one particular filename — which is the point. A workspace can
+ * hold a different quantisation of the same model than the one this build ships
+ * or the manifest offers, and SLP will happily load it. Matching on an exact
+ * name instead is what made the app announce "Downloading model..." over
+ * weights that were already sitting in the workspace.
+ */
+function hasGguf(dir) {
+  const gguf = (d) => {
+    try {
+      return fs.readdirSync(d).some((name) => name.endsWith('.gguf'));
+    } catch {
+      return false;
+    }
+  };
+  return gguf(dir) || gguf(path.join(dir, 'bin'));
 }
 
 /**
- * Fetch the model straight from the platform API rather than letting SLP pull
- * it during bootstrap.
+ * Where the chat weights live once this app has put them there — the evidence
+ * that lets the splash contradict bootstrap when the two disagree.
+ */
+let seededModelDir = null;
+
+/**
+ * What the splash should make of one bootstrap event.
+ *
+ * The app knows something bootstrap does not: it shipped the weights and put
+ * them in the workspace folder itself. So when a bootstrap event announces a
+ * download and the weights are sitting in that folder, the announcement is not
+ * relayed — whatever the framework is doing there, it is not fetching a model
+ * this build already has.
+ *
+ * This is deliberately a property of the app rather than of any framework
+ * version. A framework built before the workspace-record re-check announces
+ * the download step on a fresh workspace before it looks in the model
+ * directory: the record it has just added carries no `downloaded` flag, so it
+ * streams "Downloading model sl-mini..." and only then hands the artifact
+ * downloader a directory where every file is complete — which returns in a
+ * second having moved nothing. Every released framework does this, and the app
+ * has to run against all of them, so the check lives here and holds for all of
+ * them.
+ *
+ * Byte-bearing events are logged rather than shown. Nothing should be
+ * transferring for a model already on disk; if something is, that belongs in
+ * the log where a developer will find it, not on a splash screen promising a
+ * download that this build exists to avoid.
+ */
+function bootstrapSplashEvent(data) {
+  const announcesDownload = data.status === 'downloading' || data.status === 'download_complete';
+  if (!announcesDownload) return data;
+  if (!(seededModelDir && hasGguf(seededModelDir))) return data;
+
+  if (Number(data.total) > 0) {
+    console.warn('[SLP] Bootstrap reports a transfer for a model already in the workspace:',
+      `${Math.round(Number(data.downloaded || 0) / 1e6)} / ${Math.round(Number(data.total) / 1e6)} MB`);
+  }
+  return { status: 'preparing', message: 'Checking the model…' };
+}
+
+async function placeBundledModels(modelsDir, onProgress) {
+  const bundled = bundledModelFiles();
+  if (!bundled.length) return false;
+
+  let chatModelReady = false;
+
+  for (const file of bundled) {
+    const destination = path.join(modelsDir, file.relative);
+    const label = file.isEmbedding ? 'document search' : 'the assistant';
+
+    try {
+      // The chat weights are resolved by directory, the embedding GGUF by
+      // filename (AppSettings.embedding_gguf_file) — so what counts as "already
+      // there" differs, and copying over either is 400-800 MB of waste.
+      const alreadyThere = file.isEmbedding
+        ? fs.existsSync(destination) && fs.statSync(destination).size > 0
+        : hasGguf(path.dirname(destination));
+      if (alreadyThere) {
+        if (!file.isEmbedding) chatModelReady = true;
+        continue;
+      }
+
+      if (onProgress) {
+        onProgress({ status: 'installing', message: `Setting up ${label}…` });
+      }
+
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      const staging = `${destination}.seeding`;
+      await fs.promises.copyFile(file.path, staging, fs.constants.COPYFILE_FICLONE);
+      fs.renameSync(staging, destination);
+      console.log(`[Model] Placed ${file.relative}`);
+      if (!file.isEmbedding) chatModelReady = true;
+    } catch (error) {
+      console.warn(`[Model] Could not place ${file.relative}:`, error.message);
+      try { fs.unlinkSync(`${destination}.seeding`); } catch { /* nothing staged */ }
+    }
+  }
+
+  return chatModelReady;
+}
+
+/**
+ * Fetch the chat model straight from the platform API rather than letting SLP
+ * pull it during bootstrap. Only reached by a build that ships without it.
  *
  * Owning the transfer here buys three things SLP's bootstrap stream did not:
  * real byte progress (its SSE reports stages, not always bytes), a download
@@ -2207,6 +2362,14 @@ async function placeBundledModel(modelDir) {
  * is for a runtime this build does not use.
  */
 async function downloadBootstrapModel(modelDir, onProgress) {
+  // Checked before the manifest, not after resolving a filename from it: the
+  // workspace may already hold a differently-named quantisation, which SLP
+  // loads happily and which no download should replace.
+  if (hasGguf(modelDir)) {
+    console.log('[Model] The workspace already has weights — nothing to download');
+    return true;
+  }
+
   const manifestUrl = `${BASE_URL}/v1/models/${BOOTSTRAP_MODEL_PLATFORM_NAME}/download`;
 
   let manifest;
@@ -4234,8 +4397,9 @@ if (!gotTheLock) {
           let baseUrl = slpService.getLocalBaseUrl();
           refreshTray();
 
-          // Get the model into the workspace before bootstrap looks for it, so
-          // bootstrap reports it ready instead of downloading 770 MB.
+          // Get the models into the workspace before bootstrap looks for them,
+          // so bootstrap reports the model ready instead of downloading 770 MB
+          // and document search works offline from the first index.
           await ensureBootstrapModel(baseUrl, (progress) => updateSplashProgress(progress));
 
           const needsBootstrap = await checkNeedsBootstrap(baseUrl);
