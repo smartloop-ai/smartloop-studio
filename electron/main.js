@@ -4131,12 +4131,6 @@ function openAuthView(provider, bounds) {
     },
   });
 
-  // A WebContentsView paints white until its page has a background of its own,
-  // and the redirect chain to a provider is several navigations long. Start it
-  // in the app's base color so the slot it fills looks like part of the window
-  // rather than a white panel dropped into it.
-  authView.setBackgroundColor(getPersistedBaseColor());
-
   // Links that aren't part of the flow (terms, privacy, a help page) belong in
   // the real browser, not layered over the app.
   authView.webContents.setWindowOpenHandler(({ url }) => {
