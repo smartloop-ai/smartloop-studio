@@ -1804,29 +1804,24 @@ const { bootstrapProgress } = require('./bootstrap-progress.js');
  * projects yet or no model loaded. Returns true on any error (assume needed).
  */
 /** GET a JSON body from the local service, or null on any failure. */
-function getServiceJson(urlStr) {
-  return new Promise((resolve) => {
-    const http = require('http');
-    const u = new URL(urlStr);
-    http.get({ hostname: u.hostname, port: u.port, path: u.pathname }, (res) => {
-      let body = '';
-      res.on('data', (c) => { body += c; });
-      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
-    }).on('error', () => resolve(null));
-  });
-}
-
-/** Projects the service reports, or null when the call fails. */
+/**
+ * Projects the service reports, or null when we cannot tell. A shape we don't
+ * recognise counts as "cannot tell", not as an empty workspace — callers act on
+ * an empty list, so guessing wrong there is worse than admitting we don't know.
+ */
 async function getProjects(baseUrl) {
-  const data = await getServiceJson(`${baseUrl}/v1/projects`);
+  const data = await slpService.getJson(baseUrl, '/v1/projects');
   if (!data) return null;
-  return Array.isArray(data) ? data : (data.projects || []);
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.projects)) return data.projects;
+  console.warn('[SLP] /v1/projects returned an unrecognised shape:', Object.keys(data).join(', '));
+  return null;
 }
 
 async function checkNeedsBootstrap(baseUrl) {
   try {
     const projects = (await getProjects(baseUrl)) || [];
-    const health = (await getServiceJson(`${baseUrl}/health`)) || {};
+    const health = (await slpService.getJson(baseUrl, '/health')) || {};
 
     const hasProjects = projects.length > 0;
     const hasModel = health.status === 'healthy';
@@ -2094,23 +2089,32 @@ async function waitForServiceDown(timeoutMs = 10000) {
  * Run bootstrap to completion, guarded by a stall watchdog. Never rejects: a
  * failed or stalled bootstrap hands control back so the caller can carry on and
  * open the main window.
+ *
+ * Returns { ok } — false when bootstrap errored, or when the watchdog gave up
+ * on it and it is still running in the background. Callers that read the
+ * workspace afterwards need that: an empty workspace after a bootstrap that
+ * never finished says nothing about the workspace.
  */
 async function runBootstrap(baseUrl) {
-  await new Promise((resolve) => {
+  return new Promise((resolve) => {
     let stallTimer = null;
-    const done = () => { clearTimeout(stallTimer); resolve(); };
+    let outcome = { ok: true };
+    const done = () => { clearTimeout(stallTimer); resolve(outcome); };
     const bumpStall = () => {
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
         console.warn('[SLP] Bootstrap stalled — giving up on the splash while it continues');
-        resolve();
+        resolve({ ok: false, reason: 'stalled' });
       }, BOOTSTRAP_STALL_MS);
     };
 
     bumpStall();
     bootstrapSlpService(baseUrl, bumpStall)
       .then(() => { refreshTray(); })
-      .catch((error) => { console.error('[SLP] Bootstrap failed:', error.message); })
+      .catch((error) => {
+        console.error('[SLP] Bootstrap failed:', error.message);
+        outcome = { ok: false, reason: error.message };
+      })
       .finally(done);
   });
 }
@@ -2543,7 +2547,16 @@ async function bootstrapOnSplash(baseUrl) {
 
   updateSplashProgress({ status: 'preparing', message: 'Setting up your workspace...' });
 
-  await runBootstrap(baseUrl);
+  const bootstrapped = await runBootstrap(baseUrl);
+
+  // A bootstrap that errored or is still running past the watchdog leaves the
+  // workspace empty for a reason we already know, and the repair below would
+  // read that as corruption — and, on a stall, kill the download still in
+  // flight. Open the window and let the user retry from the tray instead.
+  if (!bootstrapped.ok) {
+    console.warn(`[SLP] Bootstrap did not complete (${bootstrapped.reason}) — skipping the workspace check`);
+    return baseUrl;
+  }
 
   // Bootstrap can report "completed" and still leave the workspace empty: a
   // service that kept running after its data dir was wiped (the agent outlives
