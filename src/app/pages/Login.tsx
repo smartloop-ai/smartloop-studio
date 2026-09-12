@@ -4,7 +4,6 @@ import { Box, CircularProgress } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { LogoMark } from '@/app/components/logo';
-import LoadingState from '@/app/components/loading-state';
 import { PRIVACY_URL, TERMS_URL } from '@/app/constants';
 
 /**
@@ -99,6 +98,29 @@ function BracketLink({ label, onClick }: { label: string; onClick: () => void })
   );
 }
 
+/**
+ * Warmth behind the card. A flat base makes a sign-in screen feel like an error
+ * state; two soft brand-tinted pools give it some depth without becoming
+ * decoration. Built from --sl-brand-primary rather than a fixed pink, so it
+ * re-tints with the theme, and kept at low alpha so it never competes with the
+ * card's own border. Shared by the form and the wait, which is half of what
+ * makes them read as one screen.
+ */
+function AmbientGlow() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0"
+      style={{
+        background: [
+          'radial-gradient(60% 45% at 50% 8%, color-mix(in srgb, var(--sl-brand-primary) 16%, transparent) 0%, transparent 70%)',
+          'radial-gradient(45% 40% at 85% 95%, color-mix(in srgb, var(--sl-brand-primary) 10%, transparent) 0%, transparent 70%)',
+        ].join(', '),
+      }}
+    />
+  );
+}
+
 /** Google's mark, inline so the page pulls in no remote asset. */
 function GoogleIcon() {
   return (
@@ -119,15 +141,15 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [resent, setResent] = useState(false);
-  // Set the moment sign-in succeeds and never cleared: this page is on its way
-  // out, and anything else it could render would only flash.
-  const [redirecting, setRedirecting] = useState(false);
   // Non-null while a provider's consent page is layered over the slot below.
   const [provider, setProvider] = useState<'google' | 'apple' | null>(null);
   const providerSlotRef = useRef<HTMLDivElement | null>(null);
   // False until main has the provider's page painted and layered over the slot.
   // Until then the slot is ours to draw in.
   const [providerReady, setProviderReady] = useState(false);
+  // True once the provider has handed back and main is finishing the sign-in.
+  // The native view is off the window again, so the slot is ours once more.
+  const [finishing, setFinishing] = useState(false);
   const codeInputs = useRef<Array<HTMLInputElement | null>>([]);
 
   const api = (window as any).electronAPI;
@@ -174,6 +196,17 @@ export default function Login() {
     return api.onAuthViewReady(() => setProviderReady(true));
   }, [api]);
 
+  // The provider is done; what follows is our own callback, which is plumbing
+  // and not a page anyone should be shown. Main hides it and the slot goes back
+  // to being ours — so say what is happening rather than leave a gap.
+  useEffect(() => {
+    if (!api?.onAuthViewFinishing) return;
+    return api.onAuthViewFinishing(() => {
+      setProviderReady(false);
+      setFinishing(true);
+    });
+  }, [api]);
+
   // Main tears the view down on its own when a provider page fails to load;
   // without this the page would keep rendering an empty slot.
   useEffect(() => {
@@ -181,6 +214,7 @@ export default function Login() {
     return api.onAuthViewClosed((data: { error?: string }) => {
       setProvider(null);
       setProviderReady(false);
+      setFinishing(false);
       if (data?.error) setError(data.error);
     });
   }, [api]);
@@ -194,6 +228,7 @@ export default function Login() {
       // just disappears and the card sits there looking untouched.
       if (detail.state === 'error') {
         setProvider(null);
+        setFinishing(false);
         setStarting(null);
         setBusy(false);
         setError(detail.error || 'Sign-in did not complete. Please try again.');
@@ -201,14 +236,12 @@ export default function Login() {
       }
       if (detail.state !== 'success') return;
 
-      // Say what is happening before handing over. Mounting the main window is
-      // not instant — the project list, the model status and the conversation
-      // list all resolve first — and without this the user watches an unpainted
-      // window for that whole stretch and cannot tell it apart from a hang.
-      setRedirecting(true);
+      // Straight to the app. A successful code is the end of signing in, and
+      // the button the user pressed has been showing the progress all along —
+      // an interstitial here would only put a screen between them and the
+      // window they asked for.
       window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: true, user: detail.user } }));
-      // A frame to paint the message before React starts tearing this page down.
-      requestAnimationFrame(() => navigate('/'));
+      navigate('/');
     };
     window.addEventListener('loginState', onLoginState);
     return () => window.removeEventListener('loginState', onLoginState);
@@ -249,6 +282,7 @@ export default function Login() {
     if (!api?.authProviderStart) { setError(STALE_BRIDGE_MESSAGE); return; }
     setError('');
     setProviderReady(false);
+    setFinishing(false);
     setProvider(which);
     setStarting(which);
   };
@@ -268,11 +302,16 @@ export default function Login() {
     return () => { cancelled = true; };
   }, [starting, api, slotBounds]);
 
-  const cancelProvider = async () => {
+  // Back is immediate. Waiting on the IPC before dropping the flow would leave
+  // the wait on screen for as long as main takes to answer — which is the one
+  // thing someone pressing Back has said they are done looking at.
+  const cancelProvider = () => {
     setStarting(null);
     setProviderReady(false);
-    await api?.authProviderCancel?.();
+    setFinishing(false);
     setProvider(null);
+    setError('');
+    void api?.authProviderCancel?.();
   };
 
   // ── Email code flow ───────────────────────────────────────────────────────
@@ -386,21 +425,7 @@ export default function Login() {
   // corrects h-screen for the title bar (`.cet-container .h-screen`).
   const page = (children: React.ReactNode, showBack = true) => (
     <Box className="relative h-screen w-full flex items-center justify-center bg-sl-bg-base overflow-y-auto px-6">
-      {/* Warmth behind the card. A flat base makes a sign-in screen feel like
-          an error state; two soft brand-tinted pools give it some depth without
-          becoming decoration. Built from --sl-brand-primary rather than a fixed
-          pink, so it re-tints with the theme, and kept at low alpha so it never
-          competes with the card's own border. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: [
-            'radial-gradient(60% 45% at 50% 8%, color-mix(in srgb, var(--sl-brand-primary) 16%, transparent) 0%, transparent 70%)',
-            'radial-gradient(45% 40% at 85% 95%, color-mix(in srgb, var(--sl-brand-primary) 10%, transparent) 0%, transparent 70%)',
-          ].join(', '),
-        }}
-      />
+      <AmbientGlow />
       {/* Leaving without signing in. A chevron in the corner rather than a link
           under the form: it is navigation, not one of the choices the card
           offers, and this is where a native app puts it. The macOS traffic
@@ -443,22 +468,24 @@ export default function Login() {
     </Box>
   );
 
-  // Signed in, on the way to the main window. Checked before every other
-  // branch so nothing else can render over it.
-  if (redirecting) {
-    return page(<LoadingState mark label="Signing you in…" />, false);
-  }
-
   // A provider flow takes the window over: its consent screen is a native layer,
   // so the card would only be chrome behind it.
   if (provider) {
     return (
-      <Box className="h-screen w-full flex flex-col bg-sl-bg-base">
-        <Box className="flex items-center gap-1.5 px-4 h-[44px] shrink-0 border-b border-sl-border-subtle">
+      <Box className="relative h-screen w-full flex flex-col bg-sl-bg-base">
+        <AmbientGlow />
+        {/* The same chrome throughout. Going to the provider and coming back
+            are two halves of one wait, so nothing about this screen is allowed
+            to change between them — a second layout, or a second wording, is
+            read as a second step even when it is the same screen. Back stops
+            working once the provider has handed back: the account is signed in
+            by then, and cancelling would only strand it. */}
+        <Box className="relative flex items-center gap-1.5 px-4 h-[44px] shrink-0 border-b border-sl-border-subtle">
           <button
             type="button"
             onClick={cancelProvider}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-sl-text-muted hover:text-sl-text-primary transition-colors"
+            disabled={finishing}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-sl-text-muted hover:text-sl-text-primary transition-colors disabled:opacity-40 disabled:hover:text-sl-text-muted"
           >
             <ArrowBackIosNewIcon sx={{ fontSize: 11 }} />
             Back
@@ -470,10 +497,36 @@ export default function Login() {
         {/* The WebContentsView is positioned over exactly this box once it has
             a page to show. Until then it is not attached at all, so what is
             drawn here is what the user sees — the alternative is a blank
-            native layer for the length of the redirect chain. */}
-        <div ref={providerSlotRef} className="flex-1 min-h-0 flex items-center justify-center">
+            native layer for the length of the redirect chain. It comes off
+            again the moment the provider is done, so this same wait also
+            covers the callback finishing in the background. */}
+        <div ref={providerSlotRef} className="relative flex-1 min-h-0 flex items-center justify-center px-6">
           {!providerReady && (
-            <LoadingState mark label="Loading…" />
+            /* Outlined and transparent, the shape "Tips to Get Started" uses in
+               chat — a filled card here reads as a thing sitting on the window,
+               and nothing is sitting: this is the window's own state while it
+               waits. The mark gets the same soft brand tile that box gives its
+               icon, so the two are recognisably the same furniture.
+
+               And it says something. A bare spinner is accurate and tells you
+               nothing, which is the wrong answer in the one stretch where the
+               user has handed their account somewhere and is waiting to hear
+               back. */
+            <Box className="w-full max-w-[380px] flex flex-col items-center text-center gap-4 rounded-2xl border border-sl-border-subtle px-8 py-9">
+              <Box className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-[var(--sl-brand-alpha-10)] border border-[var(--sl-brand-alpha-20)]">
+                <LogoMark className="h-5 w-5" />
+              </Box>
+              <Box className="flex flex-col gap-1.5">
+                <h2 className="text-sl-text-primary text-[15px] font-semibold tracking-[-0.01em]">
+                  Signing you in
+                </h2>
+                <p className="text-sl-text-tertiary text-[12.5px] leading-relaxed">
+                  {provider === 'google' ? 'Google' : 'Apple'} is confirming it&apos;s you.
+                  We&apos;ll finish up here as soon as it does — it only takes a moment.
+                </p>
+              </Box>
+              <CircularProgress size={15} sx={{ color: 'var(--sl-brand-primary)' }} />
+            </Box>
           )}
         </div>
       </Box>

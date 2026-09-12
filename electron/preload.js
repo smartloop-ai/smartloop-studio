@@ -50,6 +50,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('auth-view-ready', handler);
     return () => ipcRenderer.off('auth-view-ready', handler);
   },
+  // The provider is done and the app is finishing the sign-in with its own
+  // page hidden behind the spinner.
+  onAuthViewFinishing: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('auth-view-finishing', handler);
+    return () => ipcRenderer.off('auth-view-finishing', handler);
+  },
   onAuthViewClosed: (callback) => {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on('auth-view-closed', handler);

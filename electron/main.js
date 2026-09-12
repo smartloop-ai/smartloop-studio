@@ -3191,9 +3191,15 @@ function stopLoginWait() {
 
 function waitForLogin() {
   stopLoginWait();
-  const session = { timer: null };
+  const session = {
+    timer: null,
+    interval: LOGIN_WAIT_INTERVAL_MS,
+    tick: null,
+    deadline: Date.now() + LOGIN_WAIT_TIMEOUT_MS,
+    // True once the provider has handed control back — see accelerateLoginWait.
+    finishing: false,
+  };
   loginWait = session;
-  const deadline = Date.now() + LOGIN_WAIT_TIMEOUT_MS;
 
   // Self-rescheduling rather than setInterval, so a slow status call can't stack.
   const tick = async () => {
@@ -3215,19 +3221,49 @@ function waitForLogin() {
     }
 
     // Deadline is tested after the read, so the final tick doubles as a last
-    // re-check: a token landing inside the closing interval still wins. Giving
-    // up is silent: the button never entered a waiting state to come back from,
-    // and a token that lands later is still picked up by the focus check.
-    if (Date.now() >= deadline) {
+    // re-check: a token landing inside the closing interval still wins.
+    if (Date.now() >= session.deadline) {
+      const wasFinishing = session.finishing;
       stopLoginWait();
       console.log('[OAuth] Login wait timed out');
+      // Giving up is silent while the user is just sitting on the login card:
+      // the button never entered a waiting state to come back from, and a token
+      // that lands later is still picked up by the focus check. Once the
+      // provider has handed back, though, the app is showing a spinner in place
+      // of a page it hid — silence there is a permanent one.
+      if (wasFinishing) {
+        closeAuthView();
+        sendLoginState({ state: 'error', error: 'Sign-in did not complete. Please try again.' });
+      }
       return;
     }
 
-    session.timer = setTimeout(tick, LOGIN_WAIT_INTERVAL_MS);
+    session.timer = setTimeout(tick, session.interval);
   };
 
-  session.timer = setTimeout(tick, LOGIN_WAIT_INTERVAL_MS);
+  session.tick = tick;
+  session.timer = setTimeout(tick, session.interval);
+}
+
+/**
+ * The provider has handed control back, so the tokens are landing now rather
+ * than at some point in the next minute and a half. Poll hard until they do:
+ * the user is looking at a spinner for exactly this gap, and two seconds of it
+ * is the difference between "signed in" and "did that work?".
+ */
+const LOGIN_WAIT_FAST_INTERVAL_MS = 300;
+
+const LOGIN_WAIT_FINISH_TIMEOUT_MS = 15_000;
+
+function accelerateLoginWait() {
+  if (!loginWait || loginWait.finishing) return;
+  loginWait.finishing = true;
+  loginWait.interval = LOGIN_WAIT_FAST_INTERVAL_MS;
+  // A shorter leash too: the tokens are seconds away or they are not coming,
+  // and a spinner that runs for a minute and a half tells the user nothing.
+  loginWait.deadline = Date.now() + LOGIN_WAIT_FINISH_TIMEOUT_MS;
+  if (loginWait.timer) clearTimeout(loginWait.timer);
+  loginWait.timer = setTimeout(loginWait.tick, 0);
 }
 
 // IPC: Renderer requests settings update via PATCH /users/me
@@ -3807,6 +3843,9 @@ const { WebContentsView } = require('electron');
 /** The provider consent view layered over the login page, if one is up. */
 let authView = null;
 
+/** Whether that view is currently layered over the window (see attach()). */
+let authViewAttached = false;
+
 /** Cloud API URL for an auth/user path (e.g. '/auth/jwt/login'). */
 function platformUrl(path) {
   return `${BASE_URL}/v1${path}`;
@@ -3973,6 +4012,71 @@ function normalizeViewBounds(bounds) {
 }
 
 /**
+ * True once a navigation has left the provider and is heading back to one of
+ * our own origins — the API's callback, or the web app page that hands the
+ * tokens to the local service.
+ *
+ * Those pages are plumbing, not something to look at: they are the web app's
+ * chrome, and rendering them inside the window makes the last step of signing
+ * in look like a browser we dropped the user into. The app finishes the flow
+ * itself; the page stays loaded but hidden so whatever it does still happens.
+ */
+function isReturnToUs(url) {
+  return typeof url === 'string' && (url.startsWith(APP_URL) || url.startsWith(BASE_URL));
+}
+
+/**
+ * The message for a provider that refused or was dismissed, or null if the URL
+ * carries no complaint.
+ *
+ * A cancel is the one outcome that must not be waited on: nothing is coming, so
+ * polling for tokens would hold the user on a spinner for the whole timeout to
+ * tell them what they already did. OAuth reports it on the callback URL, in the
+ * vocabulary of whichever provider wrote it.
+ */
+function returnErrorMessage(url) {
+  let error = null;
+  try { error = new URL(url).searchParams.get('error'); } catch { return null; }
+  if (!error) return null;
+  if (error === 'access_denied' || error === 'user_cancelled_authorize' || error === 'user_cancelled') {
+    return 'Sign-in was cancelled.';
+  }
+  return 'Sign-in did not complete. Please try again.';
+}
+
+/** End a provider flow that cannot finish: stop waiting, take the view down, say so. */
+function failSignIn(message) {
+  stopLoginWait();
+  closeAuthView();
+  sendLoginState({ state: 'error', error: message });
+}
+
+/**
+ * Take the provider's page off the window without tearing it down.
+ *
+ * Not closeAuthView: the page may still have work to do (the web callback
+ * delivers the tokens to the local service from the browser, since a cloud
+ * server cannot reach localhost). Detaching it stops it being seen; the
+ * renderer puts its own "Signing you in…" in the hole it leaves.
+ */
+function hideAuthView() {
+  if (!authView) return;
+  if (authViewAttached) {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(authView);
+    } catch (err) {
+      console.warn('[OAuth] Could not detach the sign-in view:', err.message);
+    }
+    authViewAttached = false;
+  }
+  // Told either way: a flow that gets here before the view was ever attached
+  // still leaves the renderer drawing the wait, and it should say which wait.
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('auth-view-finishing');
+  }
+}
+
+/**
  * Layer the provider's consent page over the login page's content area.
  * `provider` is 'google' or 'apple'; the API's desktop authorize route signs the
  * local port into the OAuth state and redirects onward, so the port survives the
@@ -4024,6 +4128,12 @@ function openAuthView(provider, bounds) {
   const interceptGoogleCallback = (event, url) => {
     if (!url.startsWith(googleCallbackPrefix)) return;
     event.preventDefault();
+    // A prevented redirect never starts a navigation, so the hide-on-return
+    // rule below does not see this one. Hide here instead: the exchange that
+    // follows is a network round trip the user would otherwise spend looking at
+    // Google's consent screen, already dismissed.
+    handedBack = true;
+    hideAuthView();
 
     let code, state, error;
     try {
@@ -4039,6 +4149,51 @@ function openAuthView(provider, bounds) {
   };
   authView.webContents.on('will-redirect', interceptGoogleCallback);
   authView.webContents.on('will-navigate', interceptGoogleCallback);
+
+  // The moment the chain turns back towards us, the provider is done and the
+  // rest is ours to finish — so the view comes off the window before any of our
+  // own web pages can paint in it. Apple is why this is a navigation rule
+  // rather than one more interception: its callback runs on the API and then
+  // hands off through the web app, so there is no single URL to catch, only a
+  // point at which nothing further is the provider's to show.
+  // The flow starts on one of our own URLs (the authorize route, which 307s
+  // onward), so "back to us" only means anything once it has actually been away.
+  let reachedProvider = false;
+  // Set once the provider is done and the rest of the flow is the app's. From
+  // that point the view must never come (or come back) onto the window.
+  let handedBack = false;
+  const hideOnReturn = (details, legacyUrl, _isInPlace, legacyIsMainFrame) => {
+    const url = details?.url ?? legacyUrl;
+    const isMainFrame = details?.isMainFrame ?? legacyIsMainFrame ?? true;
+    if (!isMainFrame) return;
+    if (!isReturnToUs(url)) { reachedProvider = true; return; }
+    if (!reachedProvider) return;
+    let host = url;
+    try { host = new URL(url).host; } catch { /* keep the raw string */ }
+    console.log(`[OAuth] ${provider} returned control via ${host} — finishing in-app`);
+    handedBack = true;
+    hideAuthView();
+
+    const refusal = returnErrorMessage(url);
+    if (refusal) {
+      console.log(`[OAuth] ${provider} sign-in ended early: ${refusal}`);
+      failSignIn(refusal);
+      return;
+    }
+    accelerateLoginWait();
+  };
+  authView.webContents.on('did-start-navigation', hideOnReturn);
+  authView.webContents.on('did-redirect-navigation', hideOnReturn);
+
+  // Apple reports a cancel in the body of a form POST to the API, not on a URL,
+  // so the only thing this side sees of it is the API answering that POST with
+  // an error status. Landing on one means the flow is over — waiting out the
+  // poll would just be a spinner with nothing behind it.
+  authView.webContents.on('did-navigate', (_event, url, httpResponseCode) => {
+    if (!handedBack || !(httpResponseCode >= 400)) return;
+    console.log(`[OAuth] ${provider} callback answered HTTP ${httpResponseCode}`);
+    failSignIn(returnErrorMessage(url) || 'Sign-in did not complete. Please try again.');
+  });
 
   // A provider page that fails to load would otherwise sit blank over the login
   // form with no way back. Drop the view and let the renderer say so.
@@ -4062,9 +4217,10 @@ function openAuthView(provider, bounds) {
   const pendingView = authView;
   let attached = false;
   const attach = () => {
-    if (attached || pendingView !== authView) return;
+    if (attached || handedBack || pendingView !== authView) return;
     if (!mainWindow || mainWindow.isDestroyed() || pendingView.webContents.isDestroyed()) return;
     attached = true;
+    authViewAttached = true;
     mainWindow.contentView.addChildView(pendingView);
     pendingView.setBounds(normalizeViewBounds(bounds));
     if (!mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('auth-view-ready');
@@ -4132,6 +4288,7 @@ async function completeGoogleSignIn({ code, state, error }) {
 /** Take the provider view down, if one is up. */
 function closeAuthView() {
   if (!authView) return;
+  authViewAttached = false;
   try {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(authView);
     authView.webContents.close();
@@ -4152,7 +4309,7 @@ ipcMain.handle('auth-provider-start', async (event, provider, bounds) => {
 
 // IPC: the login page resized or scrolled — follow it.
 ipcMain.handle('auth-provider-bounds', async (event, bounds) => {
-  if (authView) authView.setBounds(normalizeViewBounds(bounds));
+  if (authView && authViewAttached) authView.setBounds(normalizeViewBounds(bounds));
   return { success: true };
 });
 
