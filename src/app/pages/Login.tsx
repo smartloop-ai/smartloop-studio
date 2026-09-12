@@ -4,6 +4,7 @@ import { Box, CircularProgress } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { LogoMark } from '@/app/components/logo';
+import LoadingState from '@/app/components/loading-state';
 import { PRIVACY_URL, TERMS_URL } from '@/app/constants';
 
 /**
@@ -445,16 +446,7 @@ export default function Login() {
   // Signed in, on the way to the main window. Checked before every other
   // branch so nothing else can render over it.
   if (redirecting) {
-    return page(
-      <Box className="flex flex-col items-center gap-4">
-        <LogoMark className="h-8 w-8" />
-        <Box className="flex items-center gap-2">
-          <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-          <span className="text-[13px] text-sl-text-secondary">Signing you in…</span>
-        </Box>
-      </Box>,
-      false,
-    );
+    return page(<LoadingState label="Signing you in…" />, false);
   }
 
   // A provider flow takes the window over: its consent screen is a native layer,
@@ -481,12 +473,7 @@ export default function Login() {
             native layer for the length of the redirect chain. */}
         <div ref={providerSlotRef} className="flex-1 min-h-0 flex items-center justify-center">
           {!providerReady && (
-            <Box className="flex items-center gap-2">
-              <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-              <span className="text-[13px] text-sl-text-muted">
-                Opening {provider === 'google' ? 'Google' : 'Apple'}…
-              </span>
-            </Box>
+            <LoadingState label={`Opening ${provider === 'google' ? 'Google' : 'Apple'}…`} />
           )}
         </div>
       </Box>
@@ -560,7 +547,7 @@ export default function Login() {
           className={primaryButtonClass}
           style={primaryButtonStyle(busy || code.length !== CODE_LENGTH)}
         >
-          {busy && <CircularProgress size={13} sx={{ color: 'inherit' }} />}
+          {busy && <CircularProgress size={14} sx={{ color: 'inherit' }} />}
           Verify
         </button>
       </Box>,
@@ -615,7 +602,7 @@ export default function Login() {
             className={primaryButtonClass}
             style={primaryButtonStyle(busy || !emailLooksValid)}
           >
-            {busy && <CircularProgress size={13} sx={{ color: 'inherit' }} />}
+            {busy && <CircularProgress size={14} sx={{ color: 'inherit' }} />}
             Continue with email
           </button>
         </form>
