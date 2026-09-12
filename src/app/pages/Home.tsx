@@ -24,6 +24,7 @@ import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
 import DocumentViewer from '@/app/components/document-viewer';
 import UpdatePill from '@/app/components/update-pill';
+import LoadingState from '@/app/components/loading-state';
 import KeybindsDialog from '@/app/components/keybinds-dialog';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
@@ -1558,7 +1559,7 @@ description: A clear description of what this skill does and when to use it
           justifyContent: 'center',
         }}
       >
-        <CircularProgress size={20} sx={{ color: 'var(--sl-brand-primary)' }} />
+        <LoadingState />
       </Box>
     );
   }
