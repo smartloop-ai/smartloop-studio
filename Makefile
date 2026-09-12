@@ -117,6 +117,19 @@ stop:
 		echo "⚠️  SLP binary not found at ~/.smartloop/$(SLP_VERSION)/slp"; \
 	fi
 
+# Where electron-builder stages the .deb payload.
+#
+# Building the .deb copies the entire unpacked app (~2.9 GB once the SLP
+# framework and the models are bundled) into a staging dir under os.tmpdir(),
+# then writes data.tar.xz beside it. On a desktop Linux box /tmp is a RAM-backed
+# tmpfs sized at half of RAM, and that payload exhausts it — tar dies partway
+# through with the bare "tar failed (exit code 2)" that electron-builder
+# reports, since it swallows tar's stderr. Node's os.tmpdir() honours TMPDIR, so
+# the build is pointed at a disk-backed directory instead. CI runners have a
+# disk-backed /tmp and are unaffected either way. Override with
+# BUILD_TMPDIR=/some/path if ~/.cache is on a small volume.
+BUILD_TMPDIR ?= $(HOME)/.cache/smartloop-build-tmp
+
 # Build Electron app for current platform
 build-electron: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
 	@echo "📦 Installing dependencies..."
@@ -124,7 +137,8 @@ build-electron: clean-electron stage-slp-latest stage-model stage-template requi
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "📱 Packaging Electron app..."
-	npm run electron-pack
+	@mkdir -p "$(BUILD_TMPDIR)"
+	TMPDIR="$(BUILD_TMPDIR)" npm run electron-pack
 
 # Build Electron app for Linux
 build-electron-linux: clean-electron stage-model stage-template require-staged-slp rebuild-native
@@ -133,7 +147,8 @@ build-electron-linux: clean-electron stage-model stage-template require-staged-s
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🐧 Packaging Electron app for Linux..."
-	npm run electron-pack-linux
+	@mkdir -p "$(BUILD_TMPDIR)"
+	TMPDIR="$(BUILD_TMPDIR)" npm run electron-pack-linux
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
