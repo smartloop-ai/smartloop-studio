@@ -110,21 +110,6 @@ function BracketLink({ label, onClick }: { label: string; onClick: () => void })
  * card's own border. Shared by the form and the wait, which is half of what
  * makes them read as one screen.
  */
-function AmbientGlow() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0"
-      style={{
-        background: [
-          'radial-gradient(60% 45% at 50% 8%, color-mix(in srgb, var(--sl-brand-primary) 16%, transparent) 0%, transparent 70%)',
-          'radial-gradient(45% 40% at 85% 95%, color-mix(in srgb, var(--sl-brand-primary) 10%, transparent) 0%, transparent 70%)',
-        ].join(', '),
-      }}
-    />
-  );
-}
-
 /** Google's mark, inline so the page pulls in no remote asset. */
 function GoogleIcon() {
   return (
@@ -435,7 +420,6 @@ export default function Login() {
   // corrects h-screen for the title bar (`.cet-container .h-screen`).
   const page = (children: React.ReactNode, showBack = true) => (
     <Box className="relative h-screen w-full flex items-center justify-center bg-sl-bg-base overflow-y-auto px-6">
-      <AmbientGlow />
       {/* Leaving without signing in. A chevron in the corner rather than a link
           under the form: it is navigation, not one of the choices the card
           offers, and this is where a native app puts it. The macOS traffic
@@ -473,7 +457,6 @@ export default function Login() {
   if (provider) {
     return (
       <Box className="relative h-screen w-full flex flex-col bg-sl-bg-base">
-        <AmbientGlow />
         {/* The same chrome throughout. Going to the provider and coming back
             are two halves of one wait, so nothing about this screen is allowed
             to change between them — a second layout, or a second wording, is

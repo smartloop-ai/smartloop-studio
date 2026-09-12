@@ -3,9 +3,65 @@ const { createTitlebarOnDOMContentLoaded, TitlebarColor } = require('custom-elec
 
 let titlebarInstance = null;
 
+// The last color the app asked for, kept whether or not the titlebar existed
+// yet to receive it. ThemeContext pushes the theme on mount and React usually
+// wins that race against createTitlebarOnDOMContentLoaded's promise — and the
+// old code dropped the color when it did, silently and for good: the effect
+// only re-runs when the theme id changes, so the strip kept its construction
+// color for the life of the window. That is the black bar.
+let requestedTitlebarColor = null;
+
+// The strip above the app is part of the app, so it starts in the app's color
+// rather than a literal. A hardcoded #000000 sat a shade blacker than the
+// themed window beneath it (#100c0e in the default theme) for every frame
+// before ThemeContext mounted and called setNativeTheme — long enough to read
+// as a black bar across the top, and permanently so on any screen that renders
+// before the theme is applied. Read synchronously: the titlebar is built during
+// this same tick, and a promise would put the wrong color on screen first.
+function initialTitlebarColor() {
+  try {
+    const color = ipcRenderer.sendSync('get-theme-base-color-sync');
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
+  } catch { /* main not ready — fall through */ }
+  return '#100c0e';
+}
+
+/**
+ * Publish the titlebar's real height as a CSS variable.
+ *
+ * Anything sized against the viewport has to subtract this strip, and the
+ * height is not ours to assume: custom-electron-titlebar sizes it per platform,
+ * and it moves again with display scaling. A hardcoded guess that runs short
+ * leaves the page taller than the window, which pushes the bottom of a
+ * full-height layout past the frame — and since the provider consent view is a
+ * native layer positioned from that layout's bounds, it gets clamped to the
+ * window and stops filling its slot. Measure it instead, and keep measuring.
+ */
+/** Paint the strip, now or as soon as there is a strip to paint. */
+function applyTitlebarColor(color) {
+  requestedTitlebarColor = color;
+  if (!titlebarInstance) return;
+  try {
+    titlebarInstance.updateBackground(TitlebarColor.fromHex(color));
+  } catch { /* a color the library won't parse — keep the one on screen */ }
+}
+
+function publishTitlebarHeight() {
+  const bar = document.querySelector('.cet-titlebar');
+  if (!bar) return;
+  const apply = () => {
+    const height = Math.round(bar.getBoundingClientRect().height);
+    if (height > 0) {
+      document.documentElement.style.setProperty('--cet-titlebar-height', `${height}px`);
+    }
+  };
+  apply();
+  new ResizeObserver(apply).observe(bar);
+}
+
 createTitlebarOnDOMContentLoaded({
   removeMenuBar: true,
-  backgroundColor: TitlebarColor.fromHex('#000000'),
+  backgroundColor: TitlebarColor.fromHex(initialTitlebarColor()),
 }).then((titlebar) => {
   titlebarInstance = titlebar;
   // On Linux and Windows, keep the left side of the titlebar blank instead of
@@ -13,6 +69,9 @@ createTitlebarOnDOMContentLoaded({
   if (process.platform === 'linux' || process.platform === 'win32') {
     document.querySelector('.cet-titlebar .cet-icon')?.remove();
   }
+  // Anything asked for while this was still resolving applies now.
+  if (requestedTitlebarColor) applyTitlebarColor(requestedTitlebarColor);
+  publishTitlebarHeight();
 });
 
 // Expose protected methods that allow the renderer process to use
@@ -91,11 +150,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native theme
   setNativeTheme: (mode, bgColor) => {
     ipcRenderer.invoke('set-native-theme', mode, bgColor);
-    if (titlebarInstance && bgColor) {
-      // Title bar uses the main content area color (theme bg.base) so the top
-      // band reads as one uniform strip with the base-colored logo header.
-      titlebarInstance.updateBackground(TitlebarColor.fromHex(bgColor));
-    }
+    // Title bar uses the main content area color (theme bg.base) so the top
+    // band reads as one uniform strip with the base-colored page under it.
+    if (bgColor) applyTitlebarColor(bgColor);
   },
   // Machine ID
   getMachineId: () => ipcRenderer.invoke('get-machine-id'),

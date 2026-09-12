@@ -247,6 +247,18 @@ ipcMain.handle('storage-get-all', () => {
   return store.store;
 });
 
+// The titlebar is built in the preload before React exists, so it cannot wait
+// on a promise for its color without painting a wrong one first. Sync by
+// design, and cheap: one already-loaded store read. Same source as the native
+// window's backgroundColor and the splash, so all three start in one color.
+ipcMain.on('get-theme-base-color-sync', (event) => {
+  try {
+    event.returnValue = getPersistedBaseColor();
+  } catch {
+    event.returnValue = null;
+  }
+});
+
 ipcMain.handle('set-native-theme', (event, mode, bgColor) => {
   nativeTheme.themeSource = mode === 'light' ? 'light' : 'dark';
   if (mainWindow && bgColor) {
@@ -4118,6 +4130,12 @@ function openAuthView(provider, bounds) {
       partition: 'persist:smartloop-auth',
     },
   });
+
+  // A WebContentsView paints white until its page has a background of its own,
+  // and the redirect chain to a provider is several navigations long. Start it
+  // in the app's base color so the slot it fills looks like part of the window
+  // rather than a white panel dropped into it.
+  authView.setBackgroundColor(getPersistedBaseColor());
 
   // Links that aren't part of the flow (terms, privacy, a help page) belong in
   // the real browser, not layered over the app.

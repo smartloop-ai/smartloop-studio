@@ -149,12 +149,17 @@
     min-width: 320px
   }
 
+  /* The titlebar's height is measured and published by the preload
+     (--cet-titlebar-height); 31px is only the fallback for the frames before
+     that lands. It is not a constant — custom-electron-titlebar sizes the strip
+     per platform and it moves again with display scaling, and guessing short
+     pushes the bottom of a full-height page past the window frame. */
   .cet-container .h-screen {
-    height: calc(100vh - 31px) !important;
+    height: calc(100vh - var(--cet-titlebar-height, 31px)) !important;
   }
 
   .cet-container .min-h-screen {
-    min-height: calc(100vh - 31px) !important;
+    min-height: calc(100vh - var(--cet-titlebar-height, 31px)) !important;
   }
 
 
