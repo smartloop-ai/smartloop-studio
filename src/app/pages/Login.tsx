@@ -4,7 +4,7 @@ import { Box, CircularProgress } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import { LogoMark } from '@/app/components/logo';
-import { PRIVACY_URL, TERMS_URL } from '@/app/constants';
+import { PRIVACY_URL, SIGNUP_URL, TERMS_URL } from '@/app/constants';
 
 /**
  * In-app sign-in.
@@ -31,32 +31,33 @@ type Step = 'identify' | 'code';
 
 const CODE_LENGTH = 6;
 
+/**
+ * The app's button, full width.
+ *
+ * px-4 py-2.5, rounded-lg, text-sm font-medium is what every action button in
+ * the app is — the dialog pairs in sidebar.tsx and document-upload-dialog.tsx
+ * among them. This screen had its own smaller version, which made the one
+ * control on it look like a lesser thing than the buttons behind it.
+ */
 const buttonBase =
-  'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg text-[13px] font-medium transition-colors';
+  'flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors';
 
 const providerButtonClass =
   `${buttonBase} text-sl-text-primary bg-sl-bg-surface-2 border border-sl-border hover:border-sl-border-hover`;
 
-const primaryButtonClass = `${buttonBase} disabled:cursor-not-allowed`;
-
 /**
- * Filled brand surface, or a plainly disabled one.
+ * The app's primary action, which is filled — and stays filled when disabled.
  *
- * Not `disabled:opacity-40`: fading a filled button drags its label down with
- * the fill, and accent-contrast text on a 40%-faded accent is unreadable — the
- * label disappeared entirely. A disabled control should look disabled, not
- * look like the enabled one behind frosted glass, so it gets its own surface
- * and its own foreground.
- *
- * The foreground is --sl-brand-contrast, derived per theme from the accent's
- * luminance (see brandContrast in theme/themes.ts).
+ * Brand fill at --sl-brand-hover, brightening to --sl-brand-primary on hover,
+ * with the disabled state a plain half-opacity of the same button: the shape
+ * every confirming action in the app has (see document-upload-dialog.tsx and
+ * the dialog pairs in sidebar.tsx). This screen used to swap to a grey surface
+ * when disabled, which read as a different control rather than the same one
+ * waiting on an email address.
  */
-function primaryButtonStyle(disabled: boolean): React.CSSProperties {
-  if (disabled) {
-    return { background: 'var(--sl-bg-surface-2)', color: 'var(--sl-text-disabled)' };
-  }
-  return { background: 'var(--sl-brand-primary)', color: 'var(--sl-brand-contrast, #ffffff)' };
-}
+const primaryButtonClass =
+  `${buttonBase} text-sl-text-primary bg-[var(--sl-brand-hover)] hover:bg-[var(--sl-brand-primary)] `
+  + 'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--sl-brand-hover)]';
 
 /**
  * Matches the field styling used by the app's dialogs, one surface up, with a
@@ -70,13 +71,16 @@ const inputClass =
   + 'focus:ring-2 focus:ring-[var(--sl-brand-alpha-30)] '
   + 'placeholder:text-sl-text-muted';
 
+/** Kept in step with the `copyright` field in electron-builder.yml. */
+const COPYRIGHT = '© 2026 Smartloop Inc.';
+
 /** 12px corner and a subtle border, the same shape dialogStyles.paper uses. */
 const cardClass =
   'relative w-full max-w-[360px] rounded-xl border border-sl-border-subtle '
   + 'bg-sl-bg-surface-1 shadow-[var(--sl-shadow-lg)] flex flex-col';
 
 /**
- * Bracketed monospace link, the same idiom as the [ESC] hint.
+ * Bracketed monospace link.
  *
  * The label takes the accent rather than near-white: against the muted
  * sentence around it that is what marks it as something to click, and the
@@ -141,6 +145,10 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [resent, setResent] = useState(false);
+  // The platform answers "no account" distinctly, and it is the one failure
+  // here that a retry cannot fix: accounts are made on the web, so the only
+  // useful response is a way out to it.
+  const [noAccount, setNoAccount] = useState(false);
   // Non-null while a provider's consent page is layered over the slot below.
   const [provider, setProvider] = useState<'google' | 'apple' | null>(null);
   const providerSlotRef = useRef<HTMLDivElement | null>(null);
@@ -323,9 +331,11 @@ export default function Login() {
     if (bridgeStale) { setError(STALE_BRIDGE_MESSAGE); return; }
     setBusy(true);
     setError('');
+    setNoAccount(false);
     try {
       const result = await api?.authOtpRequest?.(email.trim());
       if (!result?.success) {
+        setNoAccount(result?.code === 'no-account');
         setError(result?.error || (result ? 'Could not send the code. Please try again.' : STALE_BRIDGE_MESSAGE));
         return;
       }
@@ -443,28 +453,18 @@ export default function Login() {
             <ArrowBackIosNewIcon sx={{ fontSize: 13 }} />
           </button>
 
-          {/* Keyboard equivalent of the chevron. Along the bottom edge rather
-              than in a top corner: up there it sits level with the card's
-              heading and reads as part of the title bar, competing with the
-              chevron opposite it. Down here it is out of the way until looked
-              for, which is all a keyboard hint needs to be. Bracketed and
-              monospaced so it reads as a key, not a word. */}
-          <Box className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 select-none">
-            <kbd
-              className="px-1.5 py-[3px] rounded-[5px] font-mono text-[9.5px] font-semibold tracking-[0.08em] leading-none"
-              style={{
-                color: 'var(--sl-brand-primary)',
-                border: '1px solid var(--sl-brand-alpha-30)',
-                opacity: 0.85,
-              }}
-            >
-              [ESC]
-            </kbd>
-            <span className="text-[10.5px] text-sl-text-faint">to go back</span>
-          </Box>
         </>
       )}
       {children}
+      {/* What a sign-in screen puts along its bottom edge: who made the thing
+          you are signing in to. It belongs to the screen rather than to the
+          back affordance, so it stays on the code step too. The [ESC] hint that
+          used to sit here was teaching a shortcut at the one moment nobody is
+          looking for one — the chevron above says the same thing in the place a
+          native app puts it, and Escape still works unadvertised. */}
+      <Box className="absolute bottom-5 left-1/2 -translate-x-1/2 select-none">
+        <span className="text-[10.5px] text-sl-text-faint">{COPYRIGHT}</span>
+      </Box>
     </Box>
   );
 
@@ -598,9 +598,8 @@ export default function Login() {
           onClick={() => verifyCode(code)}
           disabled={busy || code.length !== CODE_LENGTH}
           className={primaryButtonClass}
-          style={primaryButtonStyle(busy || code.length !== CODE_LENGTH)}
         >
-          {busy && <CircularProgress size={14} sx={{ color: 'inherit' }} />}
+          {busy && <CircularProgress size={15} sx={{ color: 'inherit' }} />}
           Verify
         </button>
       </Box>,
@@ -623,7 +622,7 @@ export default function Login() {
 
         <Box className="flex flex-col gap-2">
           <button type="button" onClick={() => startProvider('apple')} className={providerButtonClass}>
-            <AppleIcon sx={{ fontSize: 16, mt: '-2px' }} />
+            <AppleIcon sx={{ fontSize: 17, mt: '-2px' }} />
             Continue with Apple
           </button>
           <button type="button" onClick={() => startProvider('google')} className={providerButtonClass}>
@@ -645,17 +644,28 @@ export default function Login() {
             autoComplete="email"
             autoFocus
             value={email}
-            onChange={(e) => { setEmail(e.target.value); setError(''); }}
+            onChange={(e) => { setEmail(e.target.value); setError(''); setNoAccount(false); }}
             className={inputClass}
           />
-          {error && <span className="text-[11.5px] text-sl-status-error leading-[1.45]">{error}</span>}
+          {error && (
+            <span className="text-[11.5px] text-sl-status-error leading-[1.45]">
+              {error}
+              {/* Nothing to retry — sign-up happens on the web, so the way
+                  forward is out of the app rather than back into the field. */}
+              {noAccount && (
+                <>
+                  {' '}
+                  <BracketLink label="Create an account" onClick={() => api?.openExternal?.(SIGNUP_URL)} />
+                </>
+              )}
+            </span>
+          )}
           <button
             type="submit"
             disabled={busy || !emailLooksValid}
             className={primaryButtonClass}
-            style={primaryButtonStyle(busy || !emailLooksValid)}
           >
-            {busy && <CircularProgress size={14} sx={{ color: 'inherit' }} />}
+            {busy && <CircularProgress size={15} sx={{ color: 'inherit' }} />}
             Continue with email
           </button>
         </form>
