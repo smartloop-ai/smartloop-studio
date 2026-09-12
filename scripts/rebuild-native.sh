@@ -14,10 +14,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [ "$(uname -s)" != "Darwin" ]; then
-  echo "ℹ️  Native auth is macOS-only — skipping rebuild on $(uname -s)."
-  exit 0
-fi
+# Built on every platform, not just macOS. The bindings themselves are
+# macOS-only — binding.gyp compiles src/unsupported.cc elsewhere — but the addon
+# is a plain dependency, so electron-builder packages it on every platform and
+# fails outright if the .node is not there. A stub that reports "unsupported" is
+# what index.js already expects to find.
 
 ELECTRON_VERSION="$(node -p "require('electron/package.json').version")"
 ARCH="${NATIVE_ARCH:-$(node -p "process.arch")}"

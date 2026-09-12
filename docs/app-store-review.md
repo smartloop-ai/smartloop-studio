@@ -1,4 +1,97 @@
-# App Store review notes
+# Reply to App Review
+
+Paste into the App Store Connect resolution centre. Everything below describes
+the submitted binary; nothing here is aspirational.
+
+---
+
+Thank you for the review. All three issues are addressed in this build.
+
+**1. Additional resources downloaded without disclosing the size (Guideline 2.x)**
+
+Resolved by removing the downloads entirely rather than by disclosing them.
+The previous build fetched three things on first launch: the local inference
+runtime, the language model weights, and a project template. All three now ship
+inside the application bundle:
+
+- the SLP runtime, in `Contents/Resources/slp`
+- the language model weights (~770 MB), in `Contents/Resources/models`
+- the embedding model used for document search (~418 MB), in the same place
+- the project template, in `Contents/Resources/data/templates`
+
+A first launch therefore performs no downloads at all and works with no network
+connection. On startup the app copies the bundled models into its container and
+starts the local runtime; nothing is fetched.
+
+We have additionally kept a safeguard: if a future build were ever to ship
+without the bundled model, the app presents a modal alert stating the download
+size before any transfer begins, with "Download" and "Not Now" options, and
+remains usable if the user declines.
+
+**2. com.apple.security.files.downloads.read-write**
+
+Removed from the submitted binary. It was requested but never used.
+
+Every file the app writes outside its container — exporting a conversation,
+saving a document, exporting a project — is written through `NSSavePanel`, which
+extends the sandbox to the location the user chooses. The app used
+`NSSearchPathForDirectoriesInDomains` only to set the panel's default folder,
+which returns a path string and requires no entitlement. The app never reads
+from or writes to the Downloads folder without the user selecting the file.
+
+The entitlements this build requests are:
+
+- `com.apple.security.app-sandbox`
+- `com.apple.security.network.client`
+- `com.apple.security.network.server`
+- `com.apple.security.files.user-selected.read-write`
+
+On `com.apple.security.network.server`, in case it is queried: all inference is
+performed locally. On launch the app starts the bundled runtime, which listens
+on `127.0.0.1` on an ephemeral port, and the app's interface communicates with
+it over that loopback socket. The App Sandbox denies `bind()`/`listen()` without
+this entitlement even on the loopback interface, so without it no chat or
+document processing functions. The socket is opened by the bundled child
+process rather than by the main executable, which is why a scan of the main
+binary may not show matching functionality.
+
+**3. Sign-in taking the user to the default web browser (Guideline 4.0)**
+
+Resolved. The user is no longer taken to a browser to sign in. Sign-in is a
+screen inside the application, offering three options:
+
+- **Email**: the user enters their address and receives a six-digit code, which
+  they enter on the following screen. This is handled entirely by the app — no
+  web view is involved at any point, and the app holds no password.
+- **Sign in with Apple** and **Google**: these render the provider's own
+  authorization page inside a window owned by the application. The user remains
+  in the app for the whole flow and is returned to the app when it completes.
+
+To be explicit rather than leave it to be inferred: this build does **not** use
+`ASWebAuthenticationSession`. The application is built on Electron, which
+provides no binding for that API. We understood the guidance to permit a browser
+handoff *only when* `ASWebAuthenticationSession` is used, and have therefore
+removed the handoff altogether — the user never leaves the application, which we
+believe addresses the underlying concern. `Sign in with Apple` likewise
+completes without leaving the app. We are happy to adjust further if a different
+implementation is required.
+
+The only links that still open the default browser are the Terms and Privacy
+Policy links beneath the sign-in form, which are informational.
+
+**Note on account deletion (Guideline 5.1.1(v))**
+
+The app does not offer account creation. Accounts are created on our website,
+and the app signs in to an existing account only.
+
+---
+
+*Regards,*
+*The Smartloop team*
+
+---
+
+# Engineering notes
 
 Reply text and rationale for the questions App Review asks about this build.
 Paste the entitlement section into **App Store Connect → App Review Information

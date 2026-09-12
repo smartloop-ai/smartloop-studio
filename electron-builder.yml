@@ -63,9 +63,10 @@ mac:
       to: slp/
       filter:
         - "**/*"
-    # The bootstrap model, shipped so a first launch downloads nothing. Seeded
-    # into the workspace by seedBundledModel() in main.js — SLP resolves weights
-    # under <workspace>/models/, which only exists at runtime.
+    # The chat model and the embedding model, shipped so a first launch — and a
+    # first document index — download nothing. Copied into the workspace by
+    # ensureBootstrapModel() in main.js: SLP reads them under <workspace>/models/,
+    # which only exists at runtime.
     - &res_models
       from: build/models/
       to: models/
