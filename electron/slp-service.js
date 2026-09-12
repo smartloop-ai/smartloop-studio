@@ -302,6 +302,26 @@ function isOwnedByApp() {
 }
 
 /**
+ * GET a JSON body from the running service, or null when it didn't answer with
+ * one. Non-2xx is null too: SLP answers an error with a JSON body of its own
+ * (`{"detail": ...}`), so parsing that as the result turns "the call failed"
+ * into "the service says there is nothing" — a distinction callers act on.
+ */
+async function getJson(baseUrl, path) {
+  try {
+    const res = await fetch(`${baseUrl}${path}`);
+    if (!res.ok) {
+      console.warn(`[SLP] GET ${path} answered ${res.status}`);
+      return null;
+    }
+    return await res.json();
+  } catch (error) {
+    console.warn(`[SLP] GET ${path} failed:`, error.message);
+    return null;
+  }
+}
+
+/**
  * Load model via API.
  */
 async function loadModel(baseUrl) {
@@ -354,6 +374,7 @@ module.exports = {
   getPort,
   getCwd,
   checkHealth,
+  getJson,
   startService,
   stopService,
   isOwnedByApp,
