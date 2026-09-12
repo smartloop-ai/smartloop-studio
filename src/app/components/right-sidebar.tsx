@@ -60,7 +60,6 @@ const SECTION_HOTKEYS: Record<string, RailSection> = {
 
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
 
-// Which section the sidebar was left showing, across launches.
 const SIDEBAR_STATE_KEY = 'right_sidebar_section';
 const SIDEBAR_CLOSED = 'closed';
 const RAIL_SECTIONS: RailSection[] = ['documents', 'skills', 'mcp', 'logs', 'settings'];
@@ -136,24 +135,18 @@ export default function RightSidebar({
   // clear the flag rather than leave the rest of the app believing it's open.
   useEffect(() => () => setRightOpen(false), [setRightOpen]);
 
-  // Restore whatever the user last left showing. `SIDEBAR_CLOSED` is stored
-  // rather than nothing, so "closed deliberately" and "never touched" stay
-  // distinguishable — both collapse today, but only the first should survive a
-  // future change of default.
+  // Panels start closed unless the user has already chosen a section.
   useEffect(() => {
     let cancelled = false;
     storageService.getItem(SIDEBAR_STATE_KEY).then((saved: any) => {
       if (cancelled || !saved || saved === SIDEBAR_CLOSED) return;
       if (!RAIL_SECTIONS.includes(saved)) return;
-      // Logs is never what a launch opens on, even when it's where you left off.
-      // It's a record of runs that have already happened — landing in it means
-      // the first thing a new session shows you is the last session's history.
-      // Everything else in the rail is something you act in, so it restores.
       if (saved === 'logs') return;
       setActiveSection(saved as RailSection);
     });
     return () => { cancelled = true; };
   }, []);
+
   // Combined capabilities of the currently ENABLED models. Documents need "dp"
   // (document processing) and Skills need "skills"; the matching rail section is
   // disabled when no enabled model provides it. The set is empty before the model
@@ -281,8 +274,6 @@ export default function RightSidebar({
       e.preventDefault();
       if (activeSection) {
         setActiveSection(null);
-        // Closing with the keyboard is a choice like clicking the rail, so it
-        // is remembered the same way.
         storageService.setItem(SIDEBAR_STATE_KEY, SIDEBAR_CLOSED);
         return;
       }
@@ -449,11 +440,11 @@ export default function RightSidebar({
               size="small"
             >
               {railIcon('documents') ?? (
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                <path d="M4 1.5h5L12.5 5v9.5H4V1.5z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                <path d="M9 1.5V5h3.5" stroke="currentColor" strokeWidth="0.5" fill="none" />
-                <path d="M6 8h4.5M6 10.5h4.5M6 5.5h2" stroke="currentColor" strokeWidth="0.5" strokeLinecap="round" />
-              </svg>
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                  <path d="M4 1.5h5L12.5 5v9.5H4V1.5z" stroke="currentColor" strokeWidth="0.75" fill="none" />
+                  <path d="M9 1.5V5h3.5" stroke="currentColor" strokeWidth="0.5" fill="none" />
+                  <path d="M6 8h4.5M6 10.5h4.5M6 5.5h2" stroke="currentColor" strokeWidth="0.5" strokeLinecap="round" />
+                </svg>
               )}
             </IconButton>
           </span>
@@ -480,10 +471,10 @@ export default function RightSidebar({
               size="small"
             >
               {railIcon('skills') ?? (
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
-                <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
-              </svg>
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                  <path d="M8 1.8l5 1.8v4.5c0 3.1-2.1 5.3-5 6.3-2.9-1-5-3.2-5-6.3V3.6l5-1.8z" stroke="currentColor" strokeWidth="0.75" fill="none" strokeLinejoin="round" />
+                  <path d="M8.9 4.2L5.8 8.7h2.1l-.8 3.1 3.1-4.6H8.1l.8-3z" fill="currentColor" stroke="currentColor" strokeWidth="0.4" strokeLinejoin="round" />
+                </svg>
               )}
             </IconButton>
           </span>
@@ -530,16 +521,16 @@ export default function RightSidebar({
               size="small"
             >
               {railIcon('logs') ?? (
-              /* Stamped entries: dots down a spine, each with its line. The
-                 orchestration glyph this replaces described the routing the
-                 panel shows, but the rail now says Logs, and an icon should
-                 agree with its label. */
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                <circle cx="3.4" cy="3.6" r="1.3" stroke="currentColor" strokeWidth="0.9" fill="none" />
-                <circle cx="3.4" cy="8" r="1.3" fill="currentColor" />
-                <circle cx="3.4" cy="12.4" r="1.3" stroke="currentColor" strokeWidth="0.9" fill="none" />
-                <path d="M6.6 3.6h6.2M6.6 8h6.2M6.6 12.4h3.6" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
-              </svg>
+                /* Stamped entries: dots down a spine, each with its line. The
+                   orchestration glyph this replaces described the routing the
+                   panel shows, but the rail now says Logs, and an icon should
+                   agree with its label. */
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+                  <circle cx="3.4" cy="3.6" r="1.3" stroke="currentColor" strokeWidth="0.9" fill="none" />
+                  <circle cx="3.4" cy="8" r="1.3" fill="currentColor" />
+                  <circle cx="3.4" cy="12.4" r="1.3" stroke="currentColor" strokeWidth="0.9" fill="none" />
+                  <path d="M6.6 3.6h6.2M6.6 8h6.2M6.6 12.4h3.6" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" />
+                </svg>
               )}
             </IconButton>
           </span>
