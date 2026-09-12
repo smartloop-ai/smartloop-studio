@@ -1,7 +1,7 @@
 # Reply to App Review
 
 Paste into the App Store Connect resolution centre. Everything below describes
-the submitted binary; nothing here is aspirational.
+the submitted binary (1.0.44); nothing here is aspirational.
 
 ---
 
@@ -19,9 +19,9 @@ inside the application bundle:
 - the embedding model used for document search (~418 MB), in the same place
 - the project template, in `Contents/Resources/data/templates`
 
-A first launch therefore performs no downloads at all and works with no network
-connection. On startup the app copies the bundled models into its container and
-starts the local runtime; nothing is fetched.
+A first launch therefore performs no downloads at all, and the app is fully
+functional with no network connection. On startup it copies the bundled models
+into its container and starts the local runtime; nothing is fetched.
 
 We have additionally kept a safeguard: if a future build were ever to ship
 without the bundled model, the app presents a modal alert stating the download
@@ -65,7 +65,10 @@ screen inside the application, offering three options:
   web view is involved at any point, and the app holds no password.
 - **Sign in with Apple** and **Google**: these render the provider's own
   authorization page inside a window owned by the application. The user remains
-  in the app for the whole flow and is returned to the app when it completes.
+  in the app for the whole flow. The only web page shown is the provider's own
+  consent screen; once the provider hands control back, the app takes that view
+  off the window and completes the sign-in itself, so no page of ours is ever
+  presented to the user.
 
 To be explicit rather than leave it to be inferred: this build does **not** use
 `ASWebAuthenticationSession`. The application is built on Electron, which
@@ -76,13 +79,15 @@ believe addresses the underlying concern. `Sign in with Apple` likewise
 completes without leaving the app. We are happy to adjust further if a different
 implementation is required.
 
-The only links that still open the default browser are the Terms and Privacy
-Policy links beneath the sign-in form, which are informational.
+The links that still open the default browser are Terms, Privacy Policy, and
+"Create an account" beneath the sign-in form. The app does not offer account
+creation itself (see the note below), so that link is informational.
 
-**Note on account deletion (Guideline 5.1.1(v))**
+**Note on account creation and deletion (Guideline 5.1.1(v))**
 
 The app does not offer account creation. Accounts are created on our website,
-and the app signs in to an existing account only.
+and the app signs in to an existing account only. No account can come into
+existence through this binary.
 
 ---
 
@@ -146,8 +151,9 @@ begun — so the disclosed figure has to be a maintained constant.
 
 Sign-in no longer leaves the app. `/login` is a full-window page of the app
 (`src/app/pages/Login.tsx`), reached from the sidebar's sign-in button, and it
-offers exactly three ways in. `shell.openExternal` is gone from the sign-in
-path entirely.
+offers exactly three ways in. No step of the sign-in itself leaves the app;
+`shell.openExternal` remains on that page only for the Terms, Privacy and
+"Create an account" links.
 
 **There is no password anywhere in the app, and no way to create an account
 from it.** Registration stays on the web.
@@ -210,12 +216,13 @@ itself to Apple, Google and email.
 
 ## Account deletion (guideline 5.1.1(v))
 
-The app no longer offers account creation, which weakens the requirement — but
-deletion is implemented anyway, since an account reached from the app is still
-an account the person should be able to end from it. **Delete account** in the
-sidebar's user menu, behind a typed confirmation, spelling out that cloud data
-goes and local data stays.
+The app offers no account creation, so the requirement does not attach to this
+build — **do not claim deletion in the reply.** The menu entry was removed in
+042fe64; the machinery below is implemented and reachable over IPC
+(`authDeleteAccount` in `preload.js`) but has no UI, so the reply says only that
+accounts cannot be created from the app.
 
+If review does require it, re-exposing the menu item is all that is missing.
 Three layers, because the token that authorizes the deletion is held by the
 local service, not the app:
 

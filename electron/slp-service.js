@@ -7,6 +7,15 @@ const { isSandboxed } = require('./build-mode');
 
 const DEFAULT_SLP_PORT = 38540;
 
+// Every /health call is bounded. A refused connection answers instantly, but a
+// socket that accepts and then says nothing — a half-dead service, or an
+// unrelated process squatting on the port — leaves a bare fetch hanging
+// forever, and startup waits on this before it can show anything.
+const HEALTH_TIMEOUT_MS = 1500;
+
+// How long a SIGTERM'd service gets to exit before it is killed outright.
+const STOP_GRACE_MS = 4000;
+
 let serviceHealthy = false;
 let serviceProcess = null;
 let logStream = null;
@@ -90,6 +99,11 @@ function getCwd() {
   return libraryCwd;
 }
 
+/** GET /health on a port, giving up rather than hanging. Throws like fetch. */
+function fetchHealth(port) {
+  return fetch(`http://localhost:${port}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+}
+
 /**
  * Check if the SLP service is running and healthy.
  * Marks the service ready if healthy.
@@ -97,7 +111,7 @@ function getCwd() {
  */
 async function checkHealth() {
   try {
-    const res = await fetch(`http://localhost:${DEFAULT_SLP_PORT}/health`);
+    const res = await fetchHealth(DEFAULT_SLP_PORT);
     if (res.ok) {
       serviceHealthy = true;
       try {
@@ -133,7 +147,7 @@ async function startService() {
 
   // Check if already running on the target port
   try {
-    const res = await fetch(`http://localhost:${targetPort}/health`);
+    const res = await fetchHealth(targetPort);
     if (res.ok) {
       console.log('[SLP] Service already running on port', targetPort);
       serviceHealthy = true;
@@ -216,7 +230,7 @@ async function startService() {
       }
 
       try {
-        const res = await fetch(`http://localhost:${targetPort}/health`);
+        const res = await fetchHealth(targetPort);
         if (res.ok) {
           clearInterval(pollInterval);
           serviceHealthy = true;
@@ -241,46 +255,93 @@ async function startService() {
   });
 }
 
+/** Resolve true when the process exits within ms, false when it outlasts it. */
+function waitForExit(proc, ms) {
+  if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      proc.off('exit', onExit);
+      resolve(false);
+    }, ms);
+    proc.once('exit', onExit);
+  });
+}
+
+/**
+ * Ask the SLP CLI to stop whatever is serving. This is the only way to reach a
+ * service this process did not start, and it is expensive: the CLI is a second
+ * copy of the whole framework, and booting it costs seconds (~6s on macOS,
+ * where it's a PyInstaller bundle) purely to deliver a signal. Reserved for the
+ * case where there is no child of ours to signal directly.
+ */
+async function stopViaCli() {
+  const slpBinary = getSlpBinaryPath();
+  if (!fs.existsSync(slpBinary)) return;
+  try {
+    await new Promise((resolve, reject) => {
+      execFile(slpBinary, ['agent', 'stop'], {
+        env: slpEnv(),
+        cwd: getSlpDir(),
+        timeout: 10000,
+        windowsHide: true,
+      }, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    console.log('[SLP] Service stopped via CLI');
+  } catch (error) {
+    console.warn('[SLP] Error stopping service via CLI:', error.message);
+  }
+}
+
 /**
  * Stop the SLP server.
- * Always uses the CLI `server stop` command to ensure the actual server
- * process exits cleanly, even if it was forked as a daemon.
- * Also kills the tracked child process if we still hold a reference.
+ *
+ * `agent start` does not daemonize — the child we spawned IS the server — so
+ * signalling it directly ends it in milliseconds. That matters most at quit:
+ * booting the CLI just to say "stop" took longer than the app had left to live,
+ * so Electron exited out from under it and the server survived as an orphan
+ * holding the port, which the next launch then adopted (blank screen while it
+ * waited on a workspace that orphan was never going to build).
+ *
+ * The CLI remains the fallback for a service we don't own, and the backstop if
+ * the port is still answering after our child is gone.
  */
 async function stopService() {
   console.log('[SLP] Stopping service...');
 
-  // Always use CLI command to stop the server — this ensures the actual
-  // daemon/server process is told to shut down properly.
-  const slpBinary = getSlpBinaryPath();
-  if (fs.existsSync(slpBinary)) {
-    try {
-      await new Promise((resolve, reject) => {
-        execFile(slpBinary, ['agent', 'stop'], {
-          env: slpEnv(),
-          cwd: getSlpDir(),
-          timeout: 10000,
-          windowsHide: true,
-        }, (error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-      console.log('[SLP] Service stopped via CLI');
-    } catch (error) {
-      console.warn('[SLP] Error stopping service via CLI:', error.message);
-    }
-  }
-
-  // Also kill the tracked child process if it's still alive
   if (serviceProcess && !serviceProcess.killed) {
-    try {
-      serviceProcess.kill('SIGTERM');
-      console.log('[SLP] Child process terminated');
-    } catch (error) {
-      console.warn('[SLP] Error killing child process:', error.message);
-    }
+    const proc = serviceProcess;
     serviceProcess = null;
+    try {
+      proc.kill('SIGTERM');
+      if (await waitForExit(proc, STOP_GRACE_MS)) {
+        console.log('[SLP] Service stopped');
+      } else {
+        console.warn(`[SLP] Service ignored SIGTERM for ${STOP_GRACE_MS}ms — killing it`);
+        proc.kill('SIGKILL');
+        await waitForExit(proc, 1000);
+      }
+    } catch (error) {
+      console.warn('[SLP] Error stopping the service process:', error.message);
+    }
+
+    // Our child is gone but something is still serving — a grandchild that
+    // outlived it, or a service that was already there. The CLI is the only
+    // thing that can reach it.
+    if (await checkHealth()) {
+      console.warn('[SLP] Port still answering after the process exited — falling back to the CLI');
+      await stopViaCli();
+    }
+  } else {
+    // Nothing of ours to signal: whatever holds the port was started elsewhere
+    // (or orphaned by an earlier session).
+    await stopViaCli();
   }
 
   // Close log stream

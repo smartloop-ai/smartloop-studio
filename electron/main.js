@@ -14,7 +14,7 @@ const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
 const { isSandboxed, useBundledSlp, bundledModelFiles, hasBundledModel } = require('./build-mode');
 const database = require('./database');
-const { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
+const { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
 const healthMonitor = require('./health-monitor');
 const releaseChecker = require('./release-checker');
@@ -3687,6 +3687,12 @@ function detectSystemCapability() {
 }
 
 function createSplashWindow() {
+  // Idempotent. Startup raises the splash before it knows which branch it will
+  // take, and every branch still asks for one; a second BrowserWindow here
+  // would reassign splashWindow and leave the first stranded on screen with
+  // nothing left holding a reference to close it.
+  if (splashWindow && !splashWindow.isDestroyed()) return splashWindow;
+
   splashWindow = new BrowserWindow({
     width: 400,
     height: 340,
@@ -3702,6 +3708,7 @@ function createSplashWindow() {
 
   splashWindow.loadFile(path.join(__dirname, 'splash-starting.html'));
   splashWindow.webContents.on('did-finish-load', applySplashTheme);
+  return splashWindow;
 }
 
 function createSplashScreen() {
@@ -4377,6 +4384,15 @@ if (!gotTheLock) {
     console.log('[OAuth] Command line args:', commandLine);
 
     // Someone tried to run a second instance (e.g. taskbar icon click while
+    // A relaunch during the shutdown wait lands here: this process still holds
+    // the single-instance lock, so the new one hands its arguments over and
+    // exits — into an app that is on its way out and will not come back. Say
+    // nothing and let the quit finish; the user's next launch gets a live app.
+    if (app.isQuitting) {
+      console.log('[App] Second instance arrived mid-quit — ignoring');
+      return;
+    }
+
     // the window is hidden to tray) — show and focus our window. focus()
     // alone does nothing on a hidden window.
     if (mainWindow && !(splashWindow && !splashWindow.isDestroyed())) {
@@ -4400,6 +4416,16 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     console.log('[App] App is ready');
     console.log('[App] Process args:', process.argv);
+
+    // The splash goes up FIRST, ahead of every piece of startup work below —
+    // opening the database, building the main window, and above all the health
+    // check and the branch it chooses. Each branch used to raise its own splash
+    // after making its decision, which left the screen empty for as long as the
+    // decision took: adopting an already-running service waits on
+    // ensureBootstrapModel, and that polls for a workspace for up to 15s. The
+    // window is cheap and its copy is generic ("Starting…"), so there is no
+    // reason to know the branch before showing it.
+    createStartingSplash();
 
     // Open SQLite database
     database.openDatabase();
@@ -4714,8 +4740,38 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+// Set once the quit is committed, so the shutdown below runs exactly once.
+let shuttingDown = false;
+
+// Longest the app will wait on SLP before quitting regardless.
+const QUIT_STOP_TIMEOUT_MS = 8000;
+
+app.on('before-quit', (event) => {
+  // Windows read this to decide whether close means hide-to-tray or really
+  // close, so it has to be true from the first pass.
   app.isQuitting = true;
+
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  // Hold the quit open until SLP is actually dead. Firing stopService() and
+  // letting Electron exit underneath it is how the server ended up outliving
+  // the app: the process is not ours to clean up once we're gone, so it kept
+  // serving on the port and the next launch adopted the orphan.
+  event.preventDefault();
+
+  // Nothing below draws, and the stop can take a moment — take every trace of
+  // the app off the screen now so quitting still *looks* immediate. The tray
+  // icon goes with the windows: it outlives them otherwise, and a menu-bar icon
+  // whose menu no longer does anything is the most visible way to look hung.
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.hide();
+  }
+  try {
+    destroyTray();
+  } catch (error) {
+    console.warn('[App] Error removing the tray icon:', error.message);
+  }
 
   healthMonitor.stop();
   releaseChecker.stop();
@@ -4726,8 +4782,26 @@ app.on('before-quit', () => {
     console.warn('[App] Error closing database:', error.message);
   }
 
-  slpService.stopService().catch((error) => {
+  const stopped = slpService.stopService().catch((error) => {
     console.warn('[App] Error stopping SLP service:', error.message);
+  });
+
+  // Quitting is now gated on that stop, so it gets a ceiling: a stop that hangs
+  // must not turn into an app that won't close. The stop keeps its own grace
+  // periods well inside this — reaching it means something is badly stuck, and
+  // leaving the process behind beats refusing to quit.
+  const capped = Promise.race([
+    stopped,
+    new Promise((resolve) => setTimeout(() => {
+      console.warn(`[App] SLP did not stop within ${QUIT_STOP_TIMEOUT_MS}ms — quitting anyway`);
+      resolve();
+    }, QUIT_STOP_TIMEOUT_MS)),
+  ]);
+
+  capped.finally(() => {
+    // exit() rather than quit(): the teardown this handler exists for is
+    // done, and quit() would only walk back through here.
+    app.exit(0);
   });
 });
 

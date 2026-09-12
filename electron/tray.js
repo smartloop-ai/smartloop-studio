@@ -264,4 +264,18 @@ function setTrayProgress(pct, status) {
   }
 }
 
-module.exports = { createTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler };
+/**
+ * Remove the tray icon.
+ *
+ * Called at the start of the quit, not left to process exit: quitting waits for
+ * the local service to stop, and until then the app is still alive with its
+ * windows already hidden. An icon sitting in the menu bar through that is the
+ * one piece of the app the user can still see, and clicking it does nothing.
+ */
+function destroyTray() {
+  if (!tray) return;
+  tray.destroy();
+  tray = null;
+}
+
+module.exports = { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler };
