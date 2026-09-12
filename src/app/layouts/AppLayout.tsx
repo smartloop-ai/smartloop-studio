@@ -31,12 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     storageService.getItem(COLLAPSED_KEY).then((saved: any) => {
-      // Only an explicit `true` collapses it: anything else — never set, or a
-      // stored `false` — leaves the first-launch default standing. Checked against
-      // `true` rather than for truthiness so that "collapsed on purpose" and "never
-      // touched" stay distinguishable, the same way the right sidebar stores its
-      // own closed state explicitly.
-      if (!cancelled && saved === true) setCollapsed(true);
+      if (!cancelled && typeof saved === 'boolean') setCollapsed(saved);
     });
     return () => { cancelled = true; };
   }, []);

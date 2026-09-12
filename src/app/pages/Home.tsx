@@ -24,7 +24,6 @@ import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
 import McpTab from '@/app/components/mcp-tab';
 import DocumentViewer from '@/app/components/document-viewer';
 import UpdatePill from '@/app/components/update-pill';
-import LoadingState from '@/app/components/loading-state';
 import KeybindsDialog from '@/app/components/keybinds-dialog';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 
@@ -1539,29 +1538,22 @@ description: A clear description of what this skill does and when to use it
   };
 
 
-  // Returned before the rest of the page is built, not layered over it.
+  // The content area before the rest of the page is built — empty, and
+  // deliberately so.
   //
-  // This used to be an overlay inside the main tree, which meant nothing
-  // painted until React had constructed the whole page — every tab, panel and
-  // dialog below — so arriving here from sign-in showed an empty window for
-  // that entire stretch. Every hook above still runs, so the work carries on
-  // underneath; only the markup waits.
+  // A desktop app opens into its window: the chrome is there, and what is not
+  // ready yet is simply not drawn. It does not put up a loading screen and ask
+  // you to wait for something that is already open. The sidebar, the title bar
+  // and the project list are all live by now; only the conversation is still
+  // resolving, and a few hundred milliseconds of empty canvas reads as a page
+  // that has not filled in yet rather than as an app that has not started.
+  //
+  // The early return itself stays: it used to be an overlay inside the main
+  // tree, which meant nothing painted until React had constructed the whole
+  // page — every tab, panel and dialog below. Every hook above still runs, so
+  // the work carries on underneath; only the markup waits.
   if (isLoading) {
-    return (
-      <Box
-        sx={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 9999,
-          bgcolor: 'var(--sl-bg-base)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <LoadingState mark />
-      </Box>
-    );
+    return <Box sx={{ height: '100vh', bgcolor: 'var(--sl-bg-base)' }} />;
   }
 
   return (
