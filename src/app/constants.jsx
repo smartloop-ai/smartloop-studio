@@ -15,6 +15,8 @@ export const CHANGELOG_URL = "https://smartloop.ai/docs/changelog";
 // terms live on the app, the privacy policy on the marketing site — so neither
 // is derived from the other's base URL.
 export const TERMS_URL = `${APP_URL}/terms`;
+// Accounts are created on the web; the app only signs an existing one in.
+export const SIGNUP_URL = `${APP_URL}/signup`;
 export const PRIVACY_URL = "https://smartloop.ai/privacy";
 
 // Local SLP service endpoint (cached)
