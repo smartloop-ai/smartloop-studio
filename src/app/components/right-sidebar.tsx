@@ -31,6 +31,8 @@ interface RightSidebarProps {
   onColorChange?: (color: string) => void;
   onRenameProject?: (name: string) => void;
   onInstructionsChange?: (instructions: string) => Promise<void> | void;
+  /** Flips the project's web search flag — owned by Home, surfaced in Project Settings. */
+  onWebSearchChange?: (enabled: boolean) => void;
   user: any;
   activeTab: string;
   onTabChange?: (tab: OpenTab) => void;
@@ -82,6 +84,7 @@ export default function RightSidebar({
   onColorChange,
   onRenameProject,
   onInstructionsChange,
+  onWebSearchChange,
   activeTab,
   onTabChange,
   projectSkills: _projectSkills = [],
@@ -393,6 +396,7 @@ export default function RightSidebar({
               onRenameProject={onRenameProject}
               onColorChange={onColorChange}
               onEditInstructions={() => setShowInstructionsDialog(true)}
+              onWebSearchChange={onWebSearchChange}
             />
           )}
 

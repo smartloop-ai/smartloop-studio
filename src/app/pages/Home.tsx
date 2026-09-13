@@ -1941,6 +1941,7 @@ description: A clear description of what this skill does and when to use it
                     onColorChange={handleColorChange}
                     onRenameProject={handleRenameProject}
                     onInstructionsChange={handleInstructionsChange}
+                    onWebSearchChange={handleWebSearchChange}
                     user={user}
                     activeTab={getActiveTab()?.type || 'conversation'}
                     onTabChange={handleOpenTab}
