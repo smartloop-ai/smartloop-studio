@@ -96,21 +96,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // OAuth methods
   // In-app sign-in. Email sign-in is a one-time code handled entirely in the
   // main process (no web context, no CORS, no password anywhere); Google and
-  // Apple need the provider's own consent page, which main layers over the
-  // login page as a WebContentsView.
+  // Apple need the provider's own consent page, which main opens in a window
+  // of its own.
   authOtpRequest: (email) => ipcRenderer.invoke('auth-otp-request', email),
   authOtpVerify: (email, code) => ipcRenderer.invoke('auth-otp-verify', email, code),
-  authProviderStart: (provider, bounds) => ipcRenderer.invoke('auth-provider-start', provider, bounds),
-  authProviderBounds: (bounds) => ipcRenderer.invoke('auth-provider-bounds', bounds),
+  authProviderStart: (provider) => ipcRenderer.invoke('auth-provider-start', provider),
   authProviderCancel: () => ipcRenderer.invoke('auth-provider-cancel'),
   authDeleteAccount: () => ipcRenderer.invoke('auth-delete-account'),
-  onAuthViewReady: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on('auth-view-ready', handler);
-    return () => ipcRenderer.off('auth-view-ready', handler);
-  },
-  // The provider is done and the app is finishing the sign-in with its own
-  // page hidden behind the spinner.
+  // The provider is done and the app is finishing the sign-in with its window
+  // already out of the way.
   onAuthViewFinishing: (callback) => {
     const handler = () => callback();
     ipcRenderer.on('auth-view-finishing', handler);
