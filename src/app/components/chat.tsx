@@ -265,7 +265,7 @@ const remarkLocalFileLinks = () => (tree: any) => {
 const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkPlugins)];
 
 
-// Hint for the status bar's web search toggle, in the same form the right rail
+// Hint for the status bar's web search button, in the same form the right rail
 // uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
 const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
 const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : 'Ctrl+Alt+S';
@@ -290,8 +290,9 @@ export default function Chat(props: {
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
   onCreateSkill?: (name: string) => void,
-  // Per-project web search flag, mirrored from the right rail's toggle so the
-  // status bar can flip it without opening the rail. Undefined reads as ON, the
+  // Per-project web search flag. The toggle it belongs to is in Project
+  // Settings (right-sidebar/project-settings-panel.tsx); the status bar mirrors
+  // it so it can be flipped without opening the rail. Undefined reads as ON, the
   // same default the backend applies to projects predating the flag.
   webSearchEnabled?: boolean,
   onWebSearchChange?: (enabled: boolean) => void,
@@ -306,8 +307,9 @@ export default function Chat(props: {
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
 
-  // Web search reads ON unless explicitly disabled — the same default the right
-  // rail applies, so a project whose config predates the flag shows as enabled.
+  // Web search reads ON unless explicitly disabled — the same default the
+  // Project Settings toggle applies, so a project whose config predates the flag
+  // shows as enabled in both places.
   const webSearchOn = props.webSearchEnabled !== false;
   const webSearchAvailable = props.webSearchAvailable !== false;
 
