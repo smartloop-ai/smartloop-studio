@@ -125,10 +125,19 @@ jobs:
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
-      # SLP is bundled inside the macOS .app (both dmg and MAS), so it must be
+      # SLP is bundled inside the macOS .app, so it must be
       # staged at build/slp/ before packaging or electron-builder fails.
       - name: Stage SLP framework
         uses: ./.github/actions/stage-slp
+
+      # Models and the project template, and a hard check that every
+      # extraResources source exists. electron-builder only WARNS on a missing
+      # source ("file source doesn't exist") and packages without it, which is
+      # how the Windows installer shipped with no models at all.
+      - name: Stage bundled resources
+        uses: ./.github/actions/stage-resources
+        with:
+          api-base-url: ${{ secrets.VITE_BASE_URL }}
 
       - name: Build for macOS
         run: make build-electron-mac
@@ -161,71 +170,6 @@ jobs:
             dist/latest-mac.yml
           retention-days: 1
 
-  # Mac App Store build — runs on every mac build alongside the Developer-ID
-  # dmg/zip job above. Guarded on MAS_CERTIFICATE_BASE64: when the MAS secrets
-  # are configured it produces the .pkg; when they are absent the steps skip so
-  # the pipeline never fails before signing is set up. Required repo secrets:
-  #   MAS_CERTIFICATE_BASE64 / MAS_CERTIFICATE_PASSWORD — a .p12 containing BOTH
-  #     the "Apple Distribution" and "Mac Installer Distribution" certificates.
-  #   MAS_PROVISIONING_PROFILE_BASE64 — base64 of the Mac App Store provisioning
-  #     profile for ai.smartloop.studio.
-  # The store notarizes on ingestion, so no notarization happens here. The .pkg
-  # is uploaded as an artifact; deliver it to App Store Connect via Transporter.
-  build-mas:
-    needs: [notify-start]
-    name: Build for Mac App Store
-    runs-on: macos-latest
-    env:
-      MAS_CERTIFICATE_BASE64: ${{ secrets.MAS_CERTIFICATE_BASE64 }}
-
-    steps:
-      - name: Checkout code
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Import Mac App Store signing certificates
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.MAS_CERTIFICATE_BASE64 }}
-          p12-password: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
-
-      - name: Write provisioning profile
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        run: |
-          echo "${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > build/embedded.provisionprofile
-          test -s build/embedded.provisionprofile
-
-      - name: Stage SLP framework
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        uses: ./.github/actions/stage-slp
-
-      - name: Build Mac App Store package
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        run: make build-electron-mas
-        env:
-          VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
-          VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Upload Mac App Store artifact
-        if: ${{ env.MAS_CERTIFICATE_BASE64 != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: mas-build
-          # electron-builder writes the MAS pkg to dist/mas-arm64/*.pkg, not
-          # dist/ root — glob recursively and fail if it's ever missing.
-          path: dist/**/*.pkg
-          if-no-files-found: error
-          retention-days: 1
-
   build-linux:
     needs: [notify-start]
     name: Build for Linux
@@ -251,6 +195,15 @@ jobs:
 
       - name: Stage SLP framework
         uses: ./.github/actions/stage-slp
+
+      # Models and the project template, and a hard check that every
+      # extraResources source exists. electron-builder only WARNS on a missing
+      # source ("file source doesn't exist") and packages without it, which is
+      # how the Windows installer shipped with no models at all.
+      - name: Stage bundled resources
+        uses: ./.github/actions/stage-resources
+        with:
+          api-base-url: ${{ secrets.VITE_BASE_URL }}
 
       - name: Build for Linux
         run: make build-electron-linux
@@ -361,6 +314,15 @@ jobs:
 
       - name: Stage SLP framework
         uses: ./.github/actions/stage-slp
+
+      # Models and the project template, and a hard check that every
+      # extraResources source exists. electron-builder only WARNS on a missing
+      # source ("file source doesn't exist") and packages without it, which is
+      # how the Windows installer shipped with no models at all.
+      - name: Stage bundled resources
+        uses: ./.github/actions/stage-resources
+        with:
+          api-base-url: ${{ secrets.VITE_BASE_URL }}
 
       - name: Build for Windows
         run: npm run electron-build-win
