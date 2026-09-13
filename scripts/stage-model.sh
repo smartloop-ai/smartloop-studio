@@ -82,18 +82,20 @@ stage_chat_model() {
     return 1
   }
 
+  # node, not python3: this runs on the Windows runner too, where Git Bash has
+  # no python3 on PATH but node is always set up (it builds the app).
   local NAME URL
   read -r NAME URL <<EOF
-$(printf '%s' "$manifest" | python3 -c '
-import json, sys
-m = json.load(sys.stdin)
-arts = m.get("artifacts") or {}
-# Only the .gguf. The OpenVINO files in the same manifest are for a runtime
-# these builds do not ship.
-gguf = next((n for n in arts if n.endswith(".gguf")), None)
-if not gguf:
-    sys.exit("no .gguf artifact in manifest")
-print(gguf.split("/")[-1], arts[gguf])
+$(printf '%s' "$manifest" | node -e '
+let s = "";
+process.stdin.on("data", d => (s += d)).on("end", () => {
+  const arts = (JSON.parse(s).artifacts) || {};
+  // Only the .gguf. The OpenVINO files in the same manifest are for a runtime
+  // these builds do not ship.
+  const gguf = Object.keys(arts).find(n => n.endsWith(".gguf"));
+  if (!gguf) { console.error("no .gguf artifact in manifest"); process.exit(1); }
+  console.log(gguf.split("/").pop(), arts[gguf]);
+});
 ')
 EOF
 

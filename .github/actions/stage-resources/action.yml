@@ -1,0 +1,86 @@
+name: Stage bundled resources
+description: >
+  Stage the models and the blank-project template into build/models/ and
+  electron/data/, then verify every extraResources source electron-builder
+  expects actually exists. Run it on every platform: electron-builder treats a
+  missing extraResources source as a WARNING and packages without it, so an
+  unstaged tree silently ships an installer that downloads on first launch
+  instead of failing the build.
+
+inputs:
+  api-base-url:
+    description: >
+      Platform API the chat model manifest is read from (VITE_BASE_URL). Blank
+      uses the script default, https://api.smartloop.ai.
+    required: false
+    default: ''
+  skip-embeddings:
+    description: >
+      Set to '1' to leave the ~432 MB embedding model out. SLP then downloads it
+      the first time a document is indexed, and the check below stops requiring
+      it.
+    required: false
+    default: '0'
+
+runs:
+  using: composite
+  steps:
+    - name: Stage models and template
+      shell: bash
+      env:
+        VITE_BASE_URL: ${{ inputs.api-base-url }}
+        SKIP_EMBEDDINGS: ${{ inputs.skip-embeddings }}
+      run: |
+        set -euo pipefail
+        # Both scripts are idempotent — they no-op when the file is already
+        # staged — so this is safe ahead of the make targets on mac/linux, which
+        # call the same two scripts.
+        ./scripts/stage-model.sh
+        ./scripts/stage-template.sh
+
+    - name: Verify bundled resources
+      shell: bash
+      env:
+        SKIP_EMBEDDINGS: ${{ inputs.skip-embeddings }}
+      run: |
+        set -euo pipefail
+
+        # Keep in step with electron-builder.yml: every platform block lists
+        # res_data (electron/data), res_slp (build/slp) and res_models
+        # (build/models).
+        MODEL_ID="${BOOTSTRAP_MODEL_ID:-smartloop-ai/slp-orchestra-mini}"
+        EMBEDDING_FILE="${EMBEDDING_GGUF_FILE:-bge-m3-Q4_K_M.gguf}"
+        case "${RUNNER_OS:-}" in
+          Windows) BIN=slp.exe ;;
+          *)       BIN=slp ;;
+        esac
+
+        missing=0
+        require_file() {
+          if [ -s "$1" ]; then
+            echo "  ✅ $2 — $(du -h "$1" | cut -f1)"
+          else
+            echo "::error::$2 missing at $1 — the installer would ship without it."
+            missing=1
+          fi
+        }
+
+        require_file "build/slp/$BIN" "SLP framework"
+        require_file "electron/data/templates/project_1.zip" "blank-project template"
+
+        chat="$(find "build/models/$MODEL_ID" -name '*.gguf' -type f 2>/dev/null | head -1 || true)"
+        if [ -n "$chat" ]; then
+          echo "  ✅ chat model — $(du -h "$chat" | cut -f1)"
+        else
+          echo "::error::No .gguf under build/models/$MODEL_ID — the installer would ship without the chat model and download it on first launch."
+          missing=1
+        fi
+
+        if [ "${SKIP_EMBEDDINGS:-0}" = "1" ]; then
+          echo "  ⏭️  embedding model skipped (SKIP_EMBEDDINGS=1)"
+        else
+          require_file "build/models/embeddings/$EMBEDDING_FILE" "embedding model"
+        fi
+
+        [ "$missing" -eq 0 ] || exit 1
+        echo "Bundled resources total $(du -sh build/models | cut -f1) of models plus $(du -sh build/slp | cut -f1) of framework."
