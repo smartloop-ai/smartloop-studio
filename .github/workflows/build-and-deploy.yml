@@ -136,8 +136,16 @@ jobs:
           VITE_BASE_URL: ${{ secrets.VITE_BASE_URL }}
           VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # No CSC_LINK/CSC_KEY_PASSWORD on purpose. With them set,
+          # electron-builder imports the .p12 into a temp keychain of its own and
+          # then runs `security set-key-partition-list -k <p12 password>` --- it
+          # passes the certificate password where the *keychain* password belongs
+          # (app-builder-lib/out/codeSign/macCodeSign.js, importCerts). The
+          # runner image now treats that mismatch as fatal:
+          # "SecKeychainUnlock: The user name or passphrase you entered is not
+          # correct". Left unset, electron-builder signs from the keychain search
+          # list --- the signing_temp keychain the import step above already set
+          # up --- which is exactly how the Mac App Store job below signs.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
