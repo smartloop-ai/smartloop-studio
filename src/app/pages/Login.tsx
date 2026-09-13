@@ -441,20 +441,32 @@ export default function Login() {
             <p className="text-sl-text-tertiary text-[12.5px] leading-relaxed">
               {finishing
                 ? 'Signing you in and taking you to the app.'
-                : `Continue in the ${providerName} window to authenticate.`}
+                : `Continue in your browser to authenticate with ${providerName}.`}
             </p>
           </Box>
           <CircularProgress size={15} sx={{ color: 'var(--sl-brand-primary)' }} />
-          {/* Closing that window denies the flow too; this is the same way out
-              for someone whose eyes are on this window rather than that one. It
-              stops working once the provider has handed back — the account is
-              signed in by then, and denying would only strand it.
+          {/* The browser tab is the user's to abandon, and abandoning it tells
+              this end nothing — so the way out has to live here. It stops
+              working once the provider has handed back: the account is signed
+              in by then, and denying would only strand it.
 
-              Bracketed rather than a button: this is the one thing on the card
-              that isn't the wait, and a full-width control would read as the
-              action to take rather than the way out of it. Same shape the Terms
-              and Privacy links on the login card use. */}
-          <BracketLink label="cancel" onClick={cancelProvider} disabled={finishing} />
+              A button under a rule, not a bracketed link under the spinner.
+              There it sat hard against the wait it was meant to interrupt and
+              read as a caption on it — a control in a place nobody looks for
+              one. The rule is what lets it be a button without becoming the
+              thing to press: above it is the app's state, below it is the one
+              thing the user can do about it. The shape is the Cancel every
+              dialog in the app already uses (document-upload-dialog.tsx). */}
+          <Box className="w-full pt-4 mt-1 border-t border-sl-border-subtle">
+            <button
+              type="button"
+              onClick={cancelProvider}
+              disabled={finishing}
+              className="w-full px-4 py-2.5 bg-sl-bg-surface-1 hover:bg-sl-bg-surface-2 text-sl-text-primary rounded-lg border border-sl-border-default transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-sl-bg-surface-1"
+            >
+              Cancel
+            </button>
+          </Box>
         </Box>
         <Box className="absolute bottom-5 left-1/2 -translate-x-1/2 select-none">
           <span className="text-[10.5px] text-sl-text-faint">{COPYRIGHT}</span>
