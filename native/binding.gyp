@@ -3,7 +3,12 @@
     {
       "target_name": "smartloop_auth",
       "defines": ["NAPI_DISABLE_CPP_EXCEPTIONS", "NODE_ADDON_API_DISABLE_DEPRECATED"],
-      "include_dirs": ["<!@(node -p \"require('node-addon-api').include_dir\")"],
+      # `include`, not `include_dir`: the former is an absolute, quoted path;
+      # the latter is relative to the cwd node-gyp happens to run in. gyp writes
+      # the MSVS project into native/build/, so a relative path lands one level
+      # too deep there and MSBuild reports "cannot open include file: napi.h" —
+      # which is exactly how the Windows CI build failed. Absolute can't slip.
+      "include_dirs": ["<!@(node -p \"require('node-addon-api').include\")"],
       "conditions": [
         ["OS=='mac'", {
           "sources": ["src/auth.mm"],

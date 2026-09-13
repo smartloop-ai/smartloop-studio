@@ -111,7 +111,16 @@ jobs:
           NEW=$(jq -r .version package.json)
           OLD=$(git show HEAD^:package.json 2>/dev/null | jq -r .version || echo "")
           echo "version=$NEW" >> $GITHUB_OUTPUT
-          if [ -n "$OLD" ] && [ "$NEW" != "$OLD" ]; then
+          # The tag is the release ledger: if v$NEW is already on origin, this
+          # version shipped and nothing here should run again. HEAD^ is only the
+          # FIRST parent, so a later "merge origin/main" push whose own side
+          # predates the release sees the version move a second time and would
+          # otherwise re-tag (rejected, run goes red) and re-build a release
+          # that already went out.
+          if git ls-remote --exit-code --tags origin "v$NEW" >/dev/null 2>&1; then
+            echo "v$NEW is already tagged on origin; already released."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          elif [ -n "$OLD" ] && [ "$NEW" != "$OLD" ]; then
             echo "Release detected: $OLD → $NEW"
             echo "changed=true" >> $GITHUB_OUTPUT
           else
@@ -122,10 +131,11 @@ jobs:
       - name: Tag release
         if: ${{ steps.check.outputs.changed == 'true' }}
         run: |
+          TAG="v${{ steps.check.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.check.outputs.version }}"
-          git push origin "v${{ steps.check.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
 
   # ── Step 2b: build & deploy (reuses build-and-deploy.yml) ──────────────────
   build-and-deploy:

@@ -131,9 +131,7 @@ stop:
 BUILD_TMPDIR ?= $(HOME)/.cache/smartloop-build-tmp
 
 # Build Electron app for current platform
-build-electron: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
-	@echo "📦 Installing dependencies..."
-	npm install
+build-electron: clean-electron stage-slp-latest stage-model stage-template require-staged-slp install-deps rebuild-native
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "📱 Packaging Electron app..."
@@ -141,9 +139,7 @@ build-electron: clean-electron stage-slp-latest stage-model stage-template requi
 	TMPDIR="$(BUILD_TMPDIR)" npm run electron-pack
 
 # Build Electron app for Linux
-build-electron-linux: clean-electron stage-model stage-template require-staged-slp rebuild-native
-	@echo "📦 Installing dependencies..."
-	npm install
+build-electron-linux: clean-electron stage-model stage-template require-staged-slp install-deps rebuild-native
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🐧 Packaging Electron app for Linux..."
@@ -152,9 +148,7 @@ build-electron-linux: clean-electron stage-model stage-template require-staged-s
 	@echo "✅ Done! Your app is in the dist/ folder"
 
 # Build Electron app for Windows
-build-electron-windows: clean-electron stage-model stage-template require-staged-slp rebuild-native
-	@echo "📦 Installing dependencies..."
-	npm install
+build-electron-windows: clean-electron stage-model stage-template require-staged-slp install-deps rebuild-native
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🪟 Packaging Electron app for Windows..."
@@ -248,9 +242,7 @@ stage-slp-dev:
 		|| echo "⚠️  No framework staged — starting anyway; the app will download SLP on first launch."
 
 # Build Electron app for macOS (Developer ID: DMG, zip). SLP is bundled.
-build-electron-mac: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
-	@echo "📦 Installing dependencies..."
-	npm install
+build-electron-mac: clean-electron stage-slp-latest stage-model stage-template require-staged-slp install-deps rebuild-native
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🍎 Packaging Electron app for macOS..."
@@ -296,10 +288,8 @@ check-slp-symbols:
 # Build Electron app for the Mac App Store (.pkg). Requires Apple Distribution +
 # Mac Installer Distribution certs in the keychain and build/embedded.provisionprofile.
 # The store notarizes on ingestion, so no local notarization is done.
-build-electron-mas: clean-electron stage-slp-latest stage-model stage-template require-staged-slp rebuild-native
+build-electron-mas: clean-electron stage-slp-latest stage-model stage-template require-staged-slp install-deps rebuild-native
 	@$(MAKE) check-slp-symbols
-	@echo "📦 Installing dependencies..."
-	npm install
 	@echo "🔨 Building Vite app..."
 	npm run build
 	@echo "🍎 Packaging Electron app for the Mac App Store..."
@@ -329,7 +319,7 @@ ASC_PROVIDER ?= YXKDJK6637
 APPLE_ID     ?=
 ALTOOL       := DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool
 
-push-to-mas: stage-slp-latest stage-model stage-template rebuild-native
+push-to-mas: stage-slp-latest stage-model stage-template install-deps rebuild-native
 	@if [ -z "$(BUILD)" ]; then \
 		echo "❌ Set the build number: make push-to-mas BUILD=1.0.353"; \
 		echo "   (marketing version stays package.json's; CFBundleVersion must increase, ≤3 integers)"; exit 1; \
@@ -441,6 +431,14 @@ clean-snap:
 # that ships without one. Run it by hand when you want it.
 prefetch-dev:
 	@SLP_VERSION=$(SLP_VERSION) ./scripts/prefetch-dev-assets.sh
+
+# npm install, as its own target. `rebuild-native` reads Electron's version out
+# of node_modules, so on a clean checkout (every CI runner) the install has to
+# happen BEFORE it — and a prerequisite always runs before the recipe that
+# would otherwise have done the install.
+install-deps:
+	@echo "📦 Installing dependencies..."
+	npm install
 
 # Build the macOS AuthenticationServices addon against Electron's headers.
 # Separate from `install-app-deps`, which walks past a file: dependency and
