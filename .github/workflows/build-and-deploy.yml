@@ -510,9 +510,11 @@ jobs:
             mv artifacts/windows/*.exe artifacts/windows/*.blockmap release/$VERSION/windows/ 2>/dev/null || true
           fi
 
-          # Create latest symlinks
-          mkdir -p release/latest
-          cp -r release/$VERSION/* release/latest/
+          # No local copy for latest/. Every platform bundles the SLP framework
+          # now, so release/$VERSION is ~8 GB; duplicating it filled the runner
+          # disk hard enough that the runner could not write its own logs
+          # ("No space left on device"). The upload step below pushes this one
+          # directory to both bucket prefixes instead.
 
       - name: Upload to GCP Bucket
         run: |
@@ -521,8 +523,9 @@ jobs:
           # Upload versioned files
           gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/$VERSION/
 
-          # Upload latest files
-          gsutil -m cp -r release/latest/* ${{ env.GCP_BUCKET }}/latest/
+          # Upload the same files again under latest/ — sourced from
+          # release/$VERSION, not a local duplicate of it.
+          gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/latest/
 
           # Make files publicly readable (optional)
           # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
