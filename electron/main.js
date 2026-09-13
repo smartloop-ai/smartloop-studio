@@ -3239,12 +3239,17 @@ function waitForLogin() {
 
     if (status && status.success && status.has_access_token && status.user) {
       stopLoginWait();
-      // The provider window has done its job — take it down before the UI
-      // behind it changes, so the user isn't left with a signed-in page open.
-      closeAuthWindow();
       // Merge the full profile before announcing so the UI never flashes a
       // half-populated user — is_paid in particular gates the model list.
       const profile = await fetchUserProfile();
+      // The user is in their browser, looking at the page that just finished.
+      // Nothing else brings the app forward, and the thing they signed in to
+      // should be what they are looking at when it is done.
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
       sendLoginState({ state: 'success', user: { ...status.user, ...(profile || {}) } });
       healthMonitor.poke();
       return;
@@ -3265,7 +3270,6 @@ function waitForLogin() {
       // provider has handed back, though, the app is showing a spinner in place
       // of a page it hid — silence there is a permanent one.
       if (wasFinishing) {
-        closeAuthWindow();
         sendLoginState({ state: 'error', error: 'Sign-in did not complete. Please try again.' });
       }
       return;
@@ -3289,6 +3293,15 @@ const LOGIN_WAIT_FAST_INTERVAL_MS = 300;
 const LOGIN_WAIT_FINISH_TIMEOUT_MS = 15_000;
 
 function accelerateLoginWait() {
+  // Same news for the renderer: the provider is done, and the card in front of
+  // the user should stop telling them to go to their browser. This is the only
+  // sender of that signal now the consent page is out of the app, and it is the
+  // right one — "the provider handed back" is exactly what the card's second
+  // half means.
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('auth-view-finishing');
+  }
+
   // A handback can arrive after the wait has already given up, and when it does
   // it is the one signal worth trusting: the provider is done, so the tokens
   // are landing now. Restart rather than ignore it — a lapsed wait meant the
@@ -3894,9 +3907,6 @@ function createWindow() {
 // Either way the tokens end up in the same place: POSTed to the local service's
 // /v1/auth/callback, exactly as the browser flow delivered them.
 
-/** The provider consent window, if one is open. */
-let authWindow = null;
-
 /** Cloud API URL for an auth/user path (e.g. '/auth/jwt/login'). */
 function platformUrl(path) {
   return `${BASE_URL}/v1${path}`;
@@ -4038,31 +4048,6 @@ ipcMain.handle('auth-delete-account', async () => {
 });
 
 /**
- * Chrome's UA with the app's own product tokens stripped. Identity providers
- * refuse to render in anything that self-identifies as an embedded browser, and
- * Electron appends "Smartloop Studio/<v> Electron/<v>" to the default UA.
- */
-function authUserAgent() {
-  return app.userAgentFallback
-    .replace(/\s*(Smartloop Studio|Electron)\/[\d.]+/g, '')
-    .trim();
-}
-
-/**
- * True once a navigation has left the provider and is heading back to one of
- * our own origins — the API's callback, or the web app page that hands the
- * tokens to the local service.
- *
- * Those pages are plumbing, not something to look at: they are the web app's
- * chrome, and rendering them inside the window makes the last step of signing
- * in look like a browser we dropped the user into. The app finishes the flow
- * itself; the page stays loaded but hidden so whatever it does still happens.
- */
-function isReturnToUs(url) {
-  return typeof url === 'string' && (url.startsWith(APP_URL) || url.startsWith(BASE_URL));
-}
-
-/**
  * The message for a provider that refused or was dismissed, or null if the URL
  * carries no complaint.
  *
@@ -4081,318 +4066,37 @@ function returnErrorMessage(url) {
   return 'Sign-in did not complete. Please try again.';
 }
 
-/** End a provider flow that cannot finish: stop waiting, close the window, say so. */
-function failSignIn(message) {
-  stopLoginWait();
-  closeAuthWindow();
-  sendLoginState({ state: 'error', error: message });
-}
-
 /**
- * Put the provider's window away without tearing it down.
+ * Send the user to the provider's consent page in their own browser.
  *
- * Not closeAuthWindow: the page may still have work to do (the web callback
- * delivers the tokens to the local service from the browser, since a cloud
- * server cannot reach localhost). Hiding it stops it being seen while it
- * finishes; the main window is already showing the wait behind it.
+ * Every platform the app ships on already has a browser, signed in and trusted,
+ * and the providers built these pages for it — Google refuses to render consent
+ * in an embedded browser at all, and reproducing the rest in-app means owning a
+ * window, its navigation interception, its user agent and its callback plumbing
+ * on three platforms. Leaving is the flow that is the same everywhere.
+ *
+ * Nothing has to be held open to make it work: the API's desktop authorize route
+ * signs the local service's port into the OAuth state, so the round trip finds
+ * its way back to this machine on its own. The page at the end POSTs the tokens
+ * to the local service, and waitForLogin sees them land.
  */
-function hideAuthWindow() {
-  if (authWindow && !authWindow.isDestroyed() && authWindow.isVisible()) authWindow.hide();
-  // Told either way: a flow that gets here before the window was ever shown
-  // still leaves the renderer drawing the wait, and it should say which wait.
-  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-    mainWindow.webContents.send('auth-view-finishing');
-  }
-}
-
-/**
- * Open the provider's consent page in a window of its own.
- * `provider` is 'google' or 'apple'; the API's desktop authorize route signs the
- * local port into the OAuth state and redirects onward, so the port survives the
- * round trip without a web origin to stash it in.
- */
-function openAuthWindow(provider) {
+async function openAuthInBrowser(provider) {
   const port = slpService.getPort() || slpService.readLocalServicePort();
   if (!port) return { success: false, error: 'Local service is not running' };
-  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'No window' };
 
-  closeAuthWindow();
+  const url = `${platformUrl(`/auth/${provider}/desktop/authorize`)}?port=${port}`;
+  try {
+    await shell.openExternal(url);
+  } catch (err) {
+    console.error('[OAuth] Could not open the browser:', err.message);
+    return { success: false, error: 'Could not open your browser. Please try again.' };
+  }
+  console.log(`[OAuth] ${provider} sign-in handed to the browser`);
 
-  const label = provider === 'google' ? 'Google' : 'Apple';
-
-  // The app window's own size and place, clamped to the display it is on.
-  //
-  // Two reasons, and the second is the one that matters. Unpositioned, the OS
-  // puts this where it likes — cascaded off a corner, reading as a window that
-  // got loose rather than the next step of a flow. And undersized, a consent
-  // page drops to the narrow layout it keeps for phones: Apple's at 520px wide
-  // is a cramped column, nothing like the page anyone has signed in to before.
-  // These pages are built for a desktop window, so give them the one the app is
-  // already using.
-  const parentBounds = mainWindow.getBounds();
-  const work = screen.getDisplayMatching(parentBounds).workArea;
-  const width = Math.min(parentBounds.width, work.width - 40);
-  const height = Math.min(parentBounds.height, work.height - 40);
-  const centre = (parentStart, parentSize, size, workStart, workSize) => Math.round(
-    Math.min(Math.max(parentStart + (parentSize - size) / 2, workStart), workStart + workSize - size),
-  );
-
-  authWindow = new BrowserWindow({
-    parent: mainWindow,
-    // See the note at the top of this section: a macOS modal is a frameless
-    // sheet, and the frame is what this window is for.
-    modal: process.platform !== 'darwin',
-    width,
-    height,
-    x: centre(parentBounds.x, parentBounds.width, width, work.x, work.width),
-    y: centre(parentBounds.y, parentBounds.height, height, work.y, work.height),
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    title: `Sign in with ${label}`,
-    // No backgroundColor. It was tried on the old consent view and reverted in
-    // 632b4e1 for a reason that applies just as much to a window: Apple's
-    // sign-in paints its header and footer but not the content between them, so
-    // whatever sits behind the page shows through that band. In the app's
-    // near-black it came out as one page in two themes — white at both ends,
-    // black through the middle, with the text on it unreadable. The default
-    // white is what these pages are built to sit on.
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      // Its own session, so signing out of the app never depends on clearing
-      // the main window's storage and vice versa.
-      partition: 'persist:smartloop-auth',
-      // The last thing this page does, it does hidden.
-      //
-      // hideAuthWindow() puts the window away the moment the provider hands
-      // back, and what runs after that is the callback page POSTing the tokens
-      // to the local service — a cloud server cannot reach 127.0.0.1, so the
-      // page has to do it from here. Chromium throttles timers in a hidden
-      // window and can freeze the renderer outright, which stalls exactly that
-      // delivery: the provider is done, the window is gone, and nothing ever
-      // arrives. The main window turns this off for the same class of reason
-      // (see createWindow).
-      backgroundThrottling: false,
-    },
-  });
-
-  // The close button in the frame is the way out of the flow, so treat it as
-  // one. closeAuthWindow() clears `authWindow` before destroying it, which is
-  // what tells this apart from a teardown the app itself asked for.
-  const thisWindow = authWindow;
-  thisWindow.on('closed', () => {
-    if (authWindow !== thisWindow) return;
-    authWindow = null;
-    console.log(`[OAuth] ${provider} sign-in window closed`);
-    stopLoginWait();
-    // No error: the user asked for this, so the login card comes back looking
-    // untouched rather than wearing a complaint.
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('auth-view-closed', {});
-    }
-  });
-
-  // Escape closes it too, the way it dismisses any dialog. The page is
-  // Google's, so there is nothing of ours running inside it to bind a key —
-  // before-input-event is the only place this can be caught.
-  thisWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.key !== 'Escape') return;
-    event.preventDefault();
-    thisWindow.close();
-  });
-
-  // Links that aren't part of the flow (terms, privacy, a help page) belong in
-  // the real browser, not in the sign-in window.
-  authWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http:') || url.startsWith('https:')) shell.openExternal(url);
-    return { action: 'deny' };
-  });
-
-  // A page that finishes by redirecting to smartloop:// has no browser to hand
-  // the scheme to — route it through the app's own deep-link path instead.
-  authWindow.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith(`${PROTOCOL}://`)) {
-      event.preventDefault();
-      dispatchDeepLink(url);
-      closeAuthWindow();
-    }
-  });
-
-  // Google's redirect is caught here rather than served.
-  //
-  // Google only redirects to a URI registered on the OAuth client, and the only
-  // one registered is the web app's /oauth-callback page — the API is not and
-  // cannot be added without a console change. So the desktop flow asks for that
-  // registered URI and never lets it load: the authorization code is on the URL
-  // by the time this fires, so the navigation is cancelled and the code goes
-  // straight to the API to be exchanged.
-  const googleCallbackPrefix = `${APP_URL}/oauth-callback`;
-  const interceptGoogleCallback = (event, url) => {
-    if (!url.startsWith(googleCallbackPrefix)) return;
-    event.preventDefault();
-    // A prevented redirect never starts a navigation, so the hide-on-return
-    // rule below does not see this one. Hide here instead: the exchange that
-    // follows is a network round trip the user would otherwise spend looking at
-    // Google's consent screen, already dismissed.
-    handedBack = true;
-    hideAuthWindow();
-
-    let code, state, error;
-    try {
-      const params = new URL(url).searchParams;
-      code = params.get('code');
-      state = params.get('state');
-      error = params.get('error');
-    } catch {
-      error = 'malformed_callback';
-    }
-
-    completeGoogleSignIn({ code, state, error });
-  };
-  authWindow.webContents.on('will-redirect', interceptGoogleCallback);
-  authWindow.webContents.on('will-navigate', interceptGoogleCallback);
-
-  // The moment the chain turns back towards us, the provider is done and the
-  // rest is ours to finish — so the window goes away before any of our own web
-  // pages can paint in it. Apple is why this is a navigation rule
-  // rather than one more interception: its callback runs on the API and then
-  // hands off through the web app, so there is no single URL to catch, only a
-  // point at which nothing further is the provider's to show.
-  // The flow starts on one of our own URLs (the authorize route, which 307s
-  // onward), so "back to us" only means anything once it has actually been away.
-  let reachedProvider = false;
-  // Set once the provider is done and the rest of the flow is the app's. From
-  // that point the window must never be shown again.
-  let handedBack = false;
-  const hideOnReturn = (details, legacyUrl, _isInPlace, legacyIsMainFrame) => {
-    const url = details?.url ?? legacyUrl;
-    const isMainFrame = details?.isMainFrame ?? legacyIsMainFrame ?? true;
-    if (!isMainFrame) return;
-    if (!isReturnToUs(url)) { reachedProvider = true; return; }
-    if (!reachedProvider) return;
-    let host = url;
-    try { host = new URL(url).host; } catch { /* keep the raw string */ }
-    console.log(`[OAuth] ${provider} returned control via ${host} — finishing in-app`);
-    handedBack = true;
-    hideAuthWindow();
-
-    const refusal = returnErrorMessage(url);
-    if (refusal) {
-      console.log(`[OAuth] ${provider} sign-in ended early: ${refusal}`);
-      failSignIn(refusal);
-      return;
-    }
-    accelerateLoginWait();
-  };
-  authWindow.webContents.on('did-start-navigation', hideOnReturn);
-  authWindow.webContents.on('did-redirect-navigation', hideOnReturn);
-
-  // Name the origin in the title bar.
-  //
-  // A consent page with no address bar gives the user nothing to check the site
-  // against, and this window has a real title bar going spare — so the OS draws
-  // the one piece of chrome that matters, and the app doesn't have to build it.
-  // Only a foreign host is worth naming: the flow opens and closes on our own
-  // URLs, which are plumbing rather than something anyone is typing into, so
-  // those stretches keep the provider's name instead.
-  authWindow.webContents.on('did-navigate', (_event, url) => {
-    if (handedBack || isReturnToUs(url) || !authWindow || authWindow.isDestroyed()) return;
-    try {
-      const { host } = new URL(url);
-      if (host) authWindow.setTitle(host);
-    } catch { /* not a URL we can name */ }
-  });
-
-  // Apple reports a cancel in the body of a form POST to the API, not on a URL,
-  // so the only thing this side sees of it is the API answering that POST with
-  // an error status. Landing on one means the flow is over — waiting out the
-  // poll would just be a spinner with nothing behind it.
-  authWindow.webContents.on('did-navigate', (_event, url, httpResponseCode) => {
-    if (!handedBack || !(httpResponseCode >= 400)) return;
-    console.log(`[OAuth] ${provider} callback answered HTTP ${httpResponseCode}`);
-    failSignIn(returnErrorMessage(url) || 'Sign-in did not complete. Please try again.');
-  });
-
-  // A provider page that fails to load would otherwise sit blank in a window
-  // with nothing in it. Drop the window and let the renderer say so.
-  authWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3) return; // -3 is an aborted navigation (a redirect)
-    console.warn(`[OAuth] ${provider} sign-in failed to load: ${errorDescription}`);
-    closeAuthWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('auth-view-closed', { error: `Could not reach ${provider}. Check your connection.` });
-    }
-  });
-
-  authWindow.webContents.loadURL(
-    `${platformUrl(`/auth/${provider}/desktop/authorize`)}?port=${port}`,
-    { userAgent: authUserAgent() },
-  );
-
-  // The tokens land on the local service, not here, so the same watcher the
-  // browser flow used still decides when this is over.
+  // The tokens land on the local service, not here, so the watcher decides when
+  // this is over — the same one the in-window flow used.
   waitForLogin();
   return { success: true };
-}
-
-/**
- * Finish a Google sign-in from an intercepted redirect: hand the code to the
- * API, put the tokens on the local service, announce the user.
- */
-async function completeGoogleSignIn({ code, state, error }) {
-  closeAuthWindow();
-
-  if (error || !code || !state) {
-    stopLoginWait();
-    const message = error === 'access_denied'
-      ? 'Google sign-in was cancelled.'
-      : 'Google sign-in did not complete. Please try again.';
-    console.warn('[OAuth] Google callback unusable:', error || 'missing code/state');
-    sendLoginState({ state: 'error', error: message });
-    return;
-  }
-
-  try {
-    const { ok, status, body } = await platformPost('/auth/google/desktop/exchange', { code, state });
-    if (!ok || !body?.access_token) {
-      stopLoginWait();
-      sendLoginState({ state: 'error', error: authErrorMessage(status, body) });
-      return;
-    }
-
-    const delivered = await deliverTokens(body.access_token, body.refresh_token);
-    if (!delivered.success) {
-      stopLoginWait();
-      sendLoginState({ state: 'error', error: delivered.error });
-      return;
-    }
-
-    // The tokens are already in place, so there is nothing left to wait for.
-    stopLoginWait();
-    sendLoginState({ state: 'success', user: await announceSignIn() });
-  } catch (err) {
-    stopLoginWait();
-    console.error('[OAuth] Google exchange failed:', err.message);
-    sendLoginState({ state: 'error', error: err.message });
-  }
-}
-
-/**
- * Take the provider window down, if one is open.
- *
- * `authWindow` is cleared before the window is destroyed, so the 'closed'
- * handler can tell this from the user closing it and stays quiet.
- */
-function closeAuthWindow() {
-  const win = authWindow;
-  if (!win) return;
-  authWindow = null;
-  try {
-    if (!win.isDestroyed()) win.destroy();
-  } catch (err) {
-    console.warn('[OAuth] Could not tear down the sign-in window:', err.message);
-  }
 }
 
 // IPC: start a provider sign-in.
@@ -4400,13 +4104,13 @@ ipcMain.handle('auth-provider-start', async (event, provider) => {
   if (provider !== 'google' && provider !== 'apple') {
     return { success: false, error: `Unsupported provider: ${provider}` };
   }
-  return openAuthWindow(provider);
+  return openAuthInBrowser(provider);
 });
 
-// IPC: the user backed out of the provider flow.
+// IPC: the user backed out of the provider flow. The browser tab they were
+// sent to is theirs to close; all this end owns is the watch.
 ipcMain.handle('auth-provider-cancel', async () => {
   stopLoginWait();
-  closeAuthWindow();
   return { success: true };
 });
 
@@ -4800,6 +4504,13 @@ function handleOAuthCallback(url) {
   // All other callbacks (including "oauth"): tokens are delivered via localhost
   // POST, never through the URL scheme, so there's nothing to parse — just
   // surface the window.
+  //
+  // Reaching here does say something, though: the provider is done with the
+  // user and has handed the browser back to us. With the consent page out in
+  // the browser this is the only handback the app gets, and it means the tokens
+  // are landing now rather than somewhere in the next five minutes — so stop
+  // waiting patiently and poll hard for the seconds it takes.
+  if (action === 'oauth') accelerateLoginWait();
   console.log('[Deep Link] Focusing window for:', action);
   focusMainWindow();
 }

@@ -441,14 +441,14 @@ export default function Login() {
             <p className="text-sl-text-tertiary text-[12.5px] leading-relaxed">
               {finishing
                 ? 'Signing you in and taking you to the app.'
-                : `Continue in the ${providerName} window to authenticate.`}
+                : `Continue in your browser to authenticate with ${providerName}.`}
             </p>
           </Box>
           <CircularProgress size={15} sx={{ color: 'var(--sl-brand-primary)' }} />
-          {/* Closing that window denies the flow too; this is the same way out
-              for someone whose eyes are on this window rather than that one. It
-              stops working once the provider has handed back — the account is
-              signed in by then, and denying would only strand it.
+          {/* The browser tab is the user's to abandon, and abandoning it tells
+              this end nothing — so the way out has to live here. It stops
+              working once the provider has handed back: the account is signed
+              in by then, and denying would only strand it.
 
               Bracketed rather than a button: this is the one thing on the card
               that isn't the wait, and a full-width control would read as the
