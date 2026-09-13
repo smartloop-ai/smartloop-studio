@@ -26,7 +26,7 @@ if [ "${SKIP_PREFETCH:-0}" = "1" ]; then
   exit 0
 fi
 
-SLP_VERSION="${SLP_VERSION:-1.2.4}"
+SLP_VERSION="${SLP_VERSION:-1.2.5}"
 SLP_HOME="${SMARTLOOP_HOME:-$HOME/.smartloop}"
 PORT_FILE="$SLP_HOME/server.port"
 TEMPLATE_VERSION="v1.0.0"
