@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import AppleIcon from '@mui/icons-material/Apple';
@@ -19,8 +19,9 @@ import { PRIVACY_URL, SIGNUP_URL, TERMS_URL } from '@/app/constants';
  *     One screen for the address, one for the code. Nothing to remember, nothing
  *     to reset, and no credential for this app to hold.
  *   - Google / Apple: only the provider may render its own consent screen, so
- *     main layers that page into `providerSlotRef` as a WebContentsView and this
- *     page keeps the chrome around it.
+ *     main opens that page in a window of its own. Its frame supplies the two
+ *     things the page can't — the close button that cancels, and a title bar
+ *     naming the origin — which leaves this page with only the wait to draw.
  *
  * Every route ends the same way: tokens land on the local service and arrive
  * back here as a `loginState` event.
@@ -88,12 +89,17 @@ const cardClass =
  * conspicuousness is the point of it. The brackets are dimmed so they read as
  * decoration around the word instead of competing with it.
  */
-function BracketLink({ label, onClick }: { label: string; onClick: () => void }) {
+function BracketLink({ label, onClick, disabled = false }: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="font-mono text-[10px] tracking-[0.02em] text-sl-brand-primary hover:text-sl-brand-light transition-colors"
+      disabled={disabled}
+      className="font-mono text-[10px] tracking-[0.02em] text-sl-brand-primary hover:text-sl-brand-light transition-colors disabled:opacity-40 disabled:hover:text-sl-brand-primary"
     >
       <span className="opacity-40">[</span>
       {label}
@@ -134,14 +140,10 @@ export default function Login() {
   // here that a retry cannot fix: accounts are made on the web, so the only
   // useful response is a way out to it.
   const [noAccount, setNoAccount] = useState(false);
-  // Non-null while a provider's consent page is layered over the slot below.
+  // Non-null while a provider's consent window is open.
   const [provider, setProvider] = useState<'google' | 'apple' | null>(null);
-  const providerSlotRef = useRef<HTMLDivElement | null>(null);
-  // False until main has the provider's page painted and layered over the slot.
-  // Until then the slot is ours to draw in.
-  const [providerReady, setProviderReady] = useState(false);
   // True once the provider has handed back and main is finishing the sign-in.
-  // The native view is off the window again, so the slot is ours once more.
+  // Its window is out of the way by then, so the wait here is the whole story.
   const [finishing, setFinishing] = useState(false);
   const codeInputs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -156,57 +158,21 @@ export default function Login() {
   const bridgeStale = !api?.authOtpRequest || !api?.authOtpVerify;
   const STALE_BRIDGE_MESSAGE = 'Restart Smartloop Studio to finish updating, then sign in.';
 
-  /**
-   * Where the provider's page should sit, in window coordinates. The view is a
-   * native layer with no idea what the DOM is doing, so its bounds have to be
-   * pushed to main whenever the slot moves — mount, resize, window resize.
-   */
-  const slotBounds = useCallback(() => {
-    const rect = providerSlotRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-  }, []);
-
-  // Keep the native view glued to the slot for as long as one is up.
-  useLayoutEffect(() => {
-    if (!provider || !api?.authProviderBounds) return;
-    const push = () => {
-      const bounds = slotBounds();
-      if (bounds) api.authProviderBounds(bounds);
-    };
-    push();
-    const observer = new ResizeObserver(push);
-    if (providerSlotRef.current) observer.observe(providerSlotRef.current);
-    window.addEventListener('resize', push);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', push);
-    };
-  }, [provider, api, slotBounds]);
-
-  useEffect(() => {
-    if (!api?.onAuthViewReady) return;
-    return api.onAuthViewReady(() => setProviderReady(true));
-  }, [api]);
-
   // The provider is done; what follows is our own callback, which is plumbing
-  // and not a page anyone should be shown. Main hides it and the slot goes back
-  // to being ours — so say what is happening rather than leave a gap.
+  // and not a page anyone should be shown. Main puts that window away — so say
+  // what is happening rather than leave the wait looking stuck.
   useEffect(() => {
     if (!api?.onAuthViewFinishing) return;
-    return api.onAuthViewFinishing(() => {
-      setProviderReady(false);
-      setFinishing(true);
-    });
+    return api.onAuthViewFinishing(() => setFinishing(true));
   }, [api]);
 
-  // Main tears the view down on its own when a provider page fails to load;
-  // without this the page would keep rendering an empty slot.
+  // The window is gone: the user closed it, or the provider page failed to
+  // load and main dropped it. Either way this screen has nothing left to wait
+  // for, so it goes back to the card.
   useEffect(() => {
     if (!api?.onAuthViewClosed) return;
     return api.onAuthViewClosed((data: { error?: string }) => {
       setProvider(null);
-      setProviderReady(false);
       setFinishing(false);
       if (data?.error) setError(data.error);
     });
@@ -222,7 +188,6 @@ export default function Login() {
       if (detail.state === 'error') {
         setProvider(null);
         setFinishing(false);
-        setStarting(null);
         setBusy(false);
         setError(detail.error || 'Sign-in did not complete. Please try again.');
         return;
@@ -240,22 +205,9 @@ export default function Login() {
     return () => window.removeEventListener('loginState', onLoginState);
   }, [navigate]);
 
-  // Leaving mid-flow must not strand a native view over whatever renders next.
+  // Leaving mid-flow must not leave a sign-in window open over an app the user
+  // has already moved on from.
   useEffect(() => () => { api?.authProviderCancel?.(); }, [api]);
-
-  // Escape dismisses the whole screen, the way it closes any modal surface in
-  // the app. It leaves outright rather than stepping back through the code
-  // screen: the chevron is the step-back, Escape is the way out.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      api?.authProviderCancel?.();
-      navigate('/');
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [api, navigate]);
 
   // Land the caret in the first empty box whenever the code screen appears.
   useEffect(() => {
@@ -265,47 +217,50 @@ export default function Login() {
   }, [step]);
 
   // ── Provider flow ─────────────────────────────────────────────────────────
-  // Starting is split across a render on purpose: main positions the view over
-  // `providerSlotRef`, and the slot only exists once `provider` has rendered.
-  // Measuring in the click handler would hand main the bounds of an element
-  // React has not committed yet.
-  const [starting, setStarting] = useState<'google' | 'apple' | null>(null);
-
-  const startProvider = (which: 'google' | 'apple') => {
+  // Nothing to measure and nothing to lay out: main opens a window, so this
+  // just says which provider and waits. (The old flow had to defer the start
+  // by a render so the native view had a committed element to sit over.)
+  const startProvider = async (which: 'google' | 'apple') => {
     if (!api?.authProviderStart) { setError(STALE_BRIDGE_MESSAGE); return; }
     setError('');
-    setProviderReady(false);
     setFinishing(false);
     setProvider(which);
-    setStarting(which);
+    const result = await api.authProviderStart(which);
+    if (!result?.success) {
+      setProvider(null);
+      setError(result?.error || `Could not start ${which} sign-in.`);
+    }
   };
 
-  useEffect(() => {
-    if (!starting) return;
-    let cancelled = false;
-    (async () => {
-      const result = await api?.authProviderStart?.(starting, slotBounds());
-      if (cancelled) return;
-      if (!result?.success) {
-        setProvider(null);
-        setError(result?.error || `Could not start ${starting} sign-in.`);
-      }
-      setStarting(null);
-    })();
-    return () => { cancelled = true; };
-  }, [starting, api, slotBounds]);
-
-  // Back is immediate. Waiting on the IPC before dropping the flow would leave
-  // the wait on screen for as long as main takes to answer — which is the one
-  // thing someone pressing Back has said they are done looking at.
-  const cancelProvider = () => {
-    setStarting(null);
-    setProviderReady(false);
+  // Cancelling is immediate. Waiting on the IPC before dropping the flow would
+  // leave the wait on screen for as long as main takes to answer — which is the
+  // one thing someone who just cancelled has said they are done looking at.
+  const cancelProvider = useCallback(() => {
     setFinishing(false);
     setProvider(null);
     setError('');
     void api?.authProviderCancel?.();
-  };
+  }, [api]);
+
+  // Escape closes the topmost surface. A provider's window is one, and while
+  // it is open Escape closes it — from this side by cancelling, and from inside
+  // the window by main.js, which binds the same key on its webContents because
+  // that page is Google's and never sends a key here. With no window open the
+  // topmost surface is this screen, so Escape leaves outright rather than
+  // stepping back through the code screen — the chevron is the step-back.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (provider) {
+        cancelProvider();
+        return;
+      }
+      navigate('/');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [navigate, provider, cancelProvider]);
 
   // ── Email code flow ───────────────────────────────────────────────────────
   const emailLooksValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()), [email]);
@@ -452,66 +407,58 @@ export default function Login() {
     </Box>
   );
 
-  // A provider flow takes the window over: its consent screen is a native layer,
-  // so the card would only be chrome behind it.
+  // A provider flow happens in a window of its own, so this screen is not the
+  // flow — it is the wait behind it. There is no chrome to draw: the consent
+  // page brought its own frame, with the close button and the origin in it.
   if (provider) {
+    const providerName = provider === 'google' ? 'Google' : 'Apple';
     return (
-      <Box className="relative h-screen w-full flex flex-col bg-sl-bg-base">
-        {/* The same chrome throughout. Going to the provider and coming back
-            are two halves of one wait, so nothing about this screen is allowed
-            to change between them — a second layout, or a second wording, is
-            read as a second step even when it is the same screen. Back stops
-            working once the provider has handed back: the account is signed in
-            by then, and cancelling would only strand it. */}
-        <Box className="relative flex items-center gap-1.5 px-4 h-[44px] shrink-0 border-b border-sl-border-subtle">
-          <button
-            type="button"
-            onClick={cancelProvider}
-            disabled={finishing}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[12px] text-sl-text-muted hover:text-sl-text-primary transition-colors disabled:opacity-40 disabled:hover:text-sl-text-muted"
-          >
-            <ArrowBackIosNewIcon sx={{ fontSize: 11 }} />
-            Back
-          </button>
-          <span className="text-[12px] font-medium text-sl-text-secondary">
-            Continue with {provider === 'google' ? 'Google' : 'Apple'}
-          </span>
-        </Box>
-        {/* The WebContentsView is positioned over exactly this box once it has
-            a page to show. Until then it is not attached at all, so what is
-            drawn here is what the user sees — the alternative is a blank
-            native layer for the length of the redirect chain. It comes off
-            again the moment the provider is done, so this same wait also
-            covers the callback finishing in the background. */}
-        <div ref={providerSlotRef} className="relative flex-1 min-h-0 flex items-center justify-center px-6">
-          {!providerReady && (
-            /* Outlined and transparent, the shape "Tips to Get Started" uses in
-               chat — a filled card here reads as a thing sitting on the window,
-               and nothing is sitting: this is the window's own state while it
-               waits. The mark gets the same soft brand tile that box gives its
-               icon, so the two are recognisably the same furniture.
+      <Box className="relative h-screen w-full flex items-center justify-center bg-sl-bg-base px-6">
+        {/* Outlined and transparent, the shape "Tips to Get Started" uses in
+            chat — a filled card here reads as a thing sitting on the window,
+            and nothing is sitting: this is the window's own state while it
+            waits. The mark gets the same soft brand tile that box gives its
+            icon, so the two are recognisably the same furniture.
 
-               And it says something. A bare spinner is accurate and tells you
-               nothing, which is the wrong answer in the one stretch where the
-               user has handed their account somewhere and is waiting to hear
-               back. */
-            <Box className="w-full max-w-[380px] flex flex-col items-center text-center gap-4 rounded-2xl border border-sl-border-subtle px-8 py-9">
-              <Box className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-[var(--sl-brand-alpha-10)] border border-[var(--sl-brand-alpha-20)]">
-                <LogoMark className="h-5 w-5" />
-              </Box>
-              <Box className="flex flex-col gap-1.5">
-                <h2 className="text-sl-text-primary text-[15px] font-semibold tracking-[-0.01em]">
-                  Signing you in
-                </h2>
-                <p className="text-sl-text-tertiary text-[12.5px] leading-relaxed">
-                  {provider === 'google' ? 'Google' : 'Apple'} is confirming it&apos;s you.
-                  We&apos;ll finish up here as soon as it does — it only takes a moment.
-                </p>
-              </Box>
-              <CircularProgress size={15} sx={{ color: 'var(--sl-brand-primary)' }} />
-            </Box>
-          )}
-        </div>
+            And it says something. A bare spinner is accurate and tells you
+            nothing, which is the wrong answer in the one stretch where the
+            user has handed their account somewhere and is waiting to hear
+            back. */}
+        <Box className="w-full max-w-[380px] flex flex-col items-center text-center gap-4 rounded-2xl border border-sl-border-subtle px-8 py-9">
+          <Box className="flex items-center justify-center w-10 h-10 rounded-[10px] bg-[var(--sl-brand-alpha-10)] border border-[var(--sl-brand-alpha-20)]">
+            <LogoMark className="h-5 w-5" />
+          </Box>
+          <Box className="flex flex-col gap-1.5">
+            {/* The wait has two halves and they are not the same wait: in one
+                the user's attention belongs in the other window, in the other
+                there is no other window left to look at. The words for them are
+                the ones every sign-in uses — authenticating while the provider
+                has it, redirecting once it hands back — rather than a phrasing
+                of our own that has to be read before it means anything. */}
+            <h2 className="text-sl-text-primary text-[15px] font-semibold tracking-[-0.01em]">
+              {finishing ? 'Redirecting' : 'Authenticating'}
+            </h2>
+            <p className="text-sl-text-tertiary text-[12.5px] leading-relaxed">
+              {finishing
+                ? 'Signing you in and taking you to the app.'
+                : `Continue in the ${providerName} window to authenticate.`}
+            </p>
+          </Box>
+          <CircularProgress size={15} sx={{ color: 'var(--sl-brand-primary)' }} />
+          {/* Closing that window denies the flow too; this is the same way out
+              for someone whose eyes are on this window rather than that one. It
+              stops working once the provider has handed back — the account is
+              signed in by then, and denying would only strand it.
+
+              Bracketed rather than a button: this is the one thing on the card
+              that isn't the wait, and a full-width control would read as the
+              action to take rather than the way out of it. Same shape the Terms
+              and Privacy links on the login card use. */}
+          <BracketLink label="cancel" onClick={cancelProvider} disabled={finishing} />
+        </Box>
+        <Box className="absolute bottom-5 left-1/2 -translate-x-1/2 select-none">
+          <span className="text-[10.5px] text-sl-text-faint">{COPYRIGHT}</span>
+        </Box>
       </Box>
     );
   }
