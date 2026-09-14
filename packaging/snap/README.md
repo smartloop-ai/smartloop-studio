@@ -20,25 +20,28 @@ packaging/snap/
 Driven from the repo-root `Makefile`, alongside the other release targets:
 
 ```bash
-make build-snap                       # build the Linux .deb (if needed) + pack the snap
+make build-snap                       # download the published Linux .deb + pack the snap
 make push-to-snap                     # ...and upload it to latest/stable
 make push-to-snap SNAP_CHANNEL=beta   # release to another channel
+make build-snap FORCE=1               # re-download even if the staged .deb matches
 make clean-snap                       # drop lifecycle dirs, staged .deb, packed .snap
 ```
 
 `make build-snap`:
 
-1. builds `dist/studio-<version>-amd64.deb` via `build-electron-linux` if it
-   isn't there already,
-2. copies it to `packaging/snap/studio-amd64.deb` (snapcraft only sees files
-   inside its own project dir, so `dist/` can't be referenced directly),
-3. syncs `version:` in `snapcraft.yaml` from `package.json`, and
-4. runs `snapcraft clean && snapcraft pack`.
+1. downloads `https://dl.smartloop.ai/<version>/linux/studio-<version>-amd64.deb`
+   — the .deb CI built for the version in `package.json` — to
+   `packaging/snap/studio-amd64.deb` (snapcraft only sees files inside its own
+   project dir), skipping the download when the staged .deb is already that
+   version,
+2. syncs `version:` in `snapcraft.yaml` from `package.json`, and
+3. runs `snapcraft clean && snapcraft pack`.
 
-The snap wraps the .deb **built from this repo**. It previously pulled the
-published .deb from `dl.smartloop.ai`, which meant the snap could only be cut
-after the CDN upload and could silently wrap a different build than the one in
-`dist/`.
+The snap wraps the **CI-published** .deb, so the store ships the same bytes as
+every other Linux download and no local Electron build is needed. The trade-off:
+the snap can only be cut once the release workflow has uploaded that version —
+if the download 404s, CI hasn't published it yet. Override the host with
+`DL_BASE_URL=...` to pull from somewhere else.
 
 Commit the `version:` bump in `snapcraft.yaml` — it records which build went to
 the store.
@@ -48,8 +51,8 @@ the store.
 - `snapcraft` with an initialized LXD build provider:
   `sudo snap install snapcraft --classic && lxd init && sudo usermod -aG lxd $USER`
 - `snapcraft login` for the upload
-- `build/slp/` staged with the **Linux** SLP framework — `build-electron-linux`
-  refuses to package without it (see `require-staged-slp`)
+- the version in `package.json` published under
+  `https://dl.smartloop.ai/<version>/linux/` by the release workflow
 - Several GB of free disk; packing takes a while and the result is ~800 MB
 
 ## Confinement

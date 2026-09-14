@@ -41,7 +41,7 @@ website: https://smartloop.ai
 contact: support@smartloop.ai
 
 # Kept in sync with package.json by `make build-snap` — don't hand-edit.
-version: 1.0.44
+version: 1.0.45
 base: core24
 grade: stable
 confinement: strict
@@ -92,16 +92,16 @@ plugs:
 parts:
   studio:
     plugin: dump
-    # The .deb this snap wraps is built from THIS repo (`make build-electron-linux`)
-    # and staged here by `make build-snap`, rather than downloaded from
-    # dl.smartloop.ai. Building locally means the snap ships exactly the tree that
-    # was just built, with no wait for the CDN publish and no chance of the snap
-    # and the .deb drifting apart.
+    # The .deb this snap wraps is the one CI published to
+    # dl.smartloop.ai/<version>/linux/, downloaded here by `make build-snap`, so
+    # the store ships the same bytes as every other Linux download and packing
+    # needs no local Electron build. Cut the snap only after that upload lands.
     #
     # The path is relative to the snapcraft PROJECT dir (packaging/snap/), not to
     # this file — craft-parts resolves local sources against the directory
     # snapcraft was invoked from. The filename is deliberately version-free so
-    # only `version:` above changes between releases.
+    # only `version:` above changes between releases; the Makefile builds the
+    # versioned download URL instead.
     source: studio-amd64.deb
     source-type: deb
     override-build: |

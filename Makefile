@@ -84,7 +84,7 @@ help-electron:
 	@echo ""
 	@echo "🐧 Snap Store:"
 	@echo ""
-	@echo "  make build-snap              - Build the Linux .deb (if needed) and pack the snap"
+	@echo "  make build-snap              - Download the published Linux .deb and pack the snap"
 	@echo "  make push-to-snap            - ...and upload it to the Snap Store (SNAP_CHANNEL=stable)"
 	@echo "  make clean-snap              - Clean snapcraft artifacts and the staged .deb"
 	@echo ""
@@ -342,20 +342,22 @@ push-to-mas: stage-slp-latest stage-model stage-template install-deps rebuild-na
 	@echo "✅ Uploaded. Processing takes a few minutes — then assign the build in App Store Connect / TestFlight."
 
 # ── Publish to the Snap Store ────────────────────────────────────────────────
-# The snap wraps this repo's Linux .deb. It used to pull the PUBLISHED .deb from
-# dl.smartloop.ai, which meant the snap could only be cut after the CDN upload
-# and could silently wrap a different build than the one sitting in dist/.
-# packaging/snap/ now takes the .deb straight out of dist/ instead:
+# The snap wraps the .deb CI already built and published to dl.smartloop.ai for
+# this version, rather than one built locally out of dist/. The store then ships
+# the same bytes every other Linux user downloads, and packing the snap needs no
+# local Electron build (no staged SLP framework, no 8 GB of dist/ artifacts).
+# Cut the snap *after* the release workflow has uploaded the version.
 #
-#   make build-snap                      # build the .deb (if needed) + pack the snap
+#   make build-snap                      # download the published .deb + pack the snap
 #   make push-to-snap                    # ...and upload it to latest/stable
 #   make push-to-snap SNAP_CHANNEL=beta  # release to another channel
+#   make build-snap FORCE=1              # re-download even if the staged .deb matches
 #
 # Prerequisites:
 #   • snapcraft with an initialized LXD build provider (sudo snap install
 #     snapcraft --classic; lxd init; usermod -aG lxd $USER)
 #   • `snapcraft login` for the upload
-#   • build/slp staged — build-electron-linux refuses to package without it
+#   • package.json's version published at $(DL_BASE_URL)/<version>/linux/
 # Packing takes a while and needs several GB of free disk.
 SNAP_DIR      = packaging/snap
 SNAP_NAME     = smartloop-studio
@@ -365,35 +367,61 @@ SNAP_YAML     = $(SNAP_DIR)/snap/snapcraft.yaml
 # package.json is the single source of truth for the marketing version;
 # stage-snap-deb writes it into snapcraft.yaml so the two cannot drift.
 APP_VERSION  := $(shell grep -m1 '"version"' package.json | sed 's/.*: *"\([^"]*\)".*/\1/')
-LINUX_DEB     = dist/studio-$(APP_VERSION)-$(SNAP_ARCH).deb
+# Where CI publishes the release artifacts — same layout the auto-updater uses:
+# <base>/<version>/linux/studio-<version>-<arch>.deb
+DL_BASE_URL  ?= https://dl.smartloop.ai
+SNAP_DEB_URL  = $(DL_BASE_URL)/$(APP_VERSION)/linux/studio-$(APP_VERSION)-$(SNAP_ARCH).deb
 # Staged under a version-free name so `version:` is the only line that changes
 # in snapcraft.yaml from one release to the next.
 SNAP_DEB      = $(SNAP_DIR)/studio-$(SNAP_ARCH).deb
 SNAP_FILE     = $(SNAP_DIR)/$(SNAP_NAME)_$(APP_VERSION)_$(SNAP_ARCH).snap
 
-# Put the Linux .deb where snapcraft can reach it and sync the version.
-# snapcraft only sees files inside its own project dir, so dist/ cannot be
-# referenced from snapcraft.yaml — the .deb has to be copied in.
+# Download the published .deb to where snapcraft can reach it and sync the
+# version. snapcraft only sees files inside its own project dir, so the .deb has
+# to land in packaging/snap/ rather than being referenced from elsewhere.
+# Re-downloading is skipped when the staged .deb is already this version; pass
+# FORCE=1 to fetch it again (e.g. after CI re-published the same version).
 stage-snap-deb:
-	@if [ ! -f "$(LINUX_DEB)" ]; then \
-		echo "📦 $(LINUX_DEB) not built yet — staging the Linux SLP framework, then building it..."; \
-		$(MAKE) stage-slp-latest SLP_PLATFORM=linux SLP_ARCH=amd64 || exit 1; \
-		$(MAKE) build-electron-linux || exit 1; \
+	@if [ -z "$(FORCE)" ] && [ -s "$(SNAP_DEB)" ] && \
+	    [ "$$(dpkg-deb -f '$(SNAP_DEB)' Version 2>/dev/null)" = "$(APP_VERSION)" ]; then \
+		echo "📦 $(SNAP_DEB) is already $(APP_VERSION) — skipping download (FORCE=1 to re-fetch)"; \
+	else \
+		echo "⬇️  Downloading $(SNAP_DEB_URL)"; \
+		curl -fL --retry 3 --retry-delay 2 --progress-bar \
+			-o "$(SNAP_DEB).part" "$(SNAP_DEB_URL)" || { \
+			rm -f "$(SNAP_DEB).part"; \
+			echo "❌ Download failed — has CI published $(APP_VERSION) to $(DL_BASE_URL) yet?"; \
+			exit 1; }; \
+		if command -v dpkg-deb >/dev/null 2>&1 && ! dpkg-deb -f "$(SNAP_DEB).part" Version >/dev/null 2>&1; then \
+			rm -f "$(SNAP_DEB).part"; \
+			echo "❌ $(SNAP_DEB_URL) is not a .deb — the CDN likely returned an error page"; \
+			exit 1; \
+		fi; \
+		mv -f "$(SNAP_DEB).part" "$(SNAP_DEB)"; \
+		echo "📦 Staged $(SNAP_DEB) ($$(du -h '$(SNAP_DEB)' | cut -f1))"; \
 	fi
-	@if [ ! -s "$(LINUX_DEB)" ]; then echo "❌ Expected $(LINUX_DEB), but it is missing or empty"; exit 1; fi
-	@echo "📋 Staging $(LINUX_DEB) → $(SNAP_DEB) ($$(du -h '$(LINUX_DEB)' | cut -f1))"
-	@cp -f "$(LINUX_DEB)" "$(SNAP_DEB)"
 	@sed -i -e "s|^version: .*|version: $(APP_VERSION)|" "$(SNAP_YAML)"
 	@grep -q "^version: $(APP_VERSION)$$" "$(SNAP_YAML)" || { echo "❌ Version bump to $(APP_VERSION) failed in $(SNAP_YAML)"; exit 1; }
 	@echo "🔖 $(SNAP_YAML) pinned to version $(APP_VERSION)"
 
 # Pack the snap from the staged .deb. `snapcraft clean` first: the dump part is
-# keyed on the source path, which no longer changes between versions, so a stale
-# pull would otherwise repackage the previous release's .deb.
+# keyed on the source path, which never changes between versions, so a stale pull
+# would otherwise repackage the previous release's .deb.
+#
+# The pack is retried once because craft-providers warms a cold LXD instance up
+# by running `snap unset system proxy.http` inside it under a hard 60s timeout,
+# and snapd here regularly takes longer than that to apply its first config
+# change — snapcraft then dies with `snapcraft internal error: TimeoutExpired`.
+# The change completes anyway, so a second pack against the now-warm instance
+# goes through. The retry deliberately does NOT clean again: the timeout happens
+# during warmup, before any source is pulled, so the clean above still holds.
 build-snap: stage-snap-deb
 	@command -v snapcraft >/dev/null || { echo "❌ snapcraft not installed — sudo snap install snapcraft --classic"; exit 1; }
 	@echo "🐧 Packing $(SNAP_NAME) $(APP_VERSION) — this takes a while..."
-	cd $(SNAP_DIR) && snapcraft clean && snapcraft pack
+	cd $(SNAP_DIR) && snapcraft clean
+	@cd $(SNAP_DIR) && snapcraft pack || { \
+		echo "⚠️  snapcraft failed (often the 60s LXD warm-up timeout) — retrying once..."; \
+		snapcraft pack; }
 	@if [ ! -s "$(SNAP_FILE)" ]; then echo "❌ snapcraft did not produce $(SNAP_FILE)"; exit 1; fi
 	@echo "✅ Built $$(du -h '$(SNAP_FILE)' | cut -f1) → $(SNAP_FILE)"
 
@@ -410,7 +438,7 @@ push-to-snap: build-snap
 clean-snap:
 	@echo "🧹 Cleaning snap build artifacts..."
 	@cd $(SNAP_DIR) && snapcraft clean >/dev/null 2>&1 || true
-	@rm -f $(SNAP_DIR)/*.snap "$(SNAP_DEB)"
+	@rm -f $(SNAP_DIR)/*.snap "$(SNAP_DEB)" "$(SNAP_DEB).part"
 	@echo "✅ Snap artifacts cleaned"
 
 # Run Electron app in development mode.
