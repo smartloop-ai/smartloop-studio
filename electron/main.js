@@ -2833,7 +2833,10 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
   // accurate account of the failure in a console log.
   emitModelDownloadProgress(
     modelName,
-    { percent: 0, status: error, downloading: false, error, detail: String(detail).slice(0, 200), requiresAuth },
+    {
+      percent: 0, status: error, downloading: false, error,
+      detail: String(detail).slice(0, 200), code: res.statusCode, requiresAuth,
+    },
     { kind },
   );
   clearActiveDownload(modelName);
@@ -2867,9 +2870,14 @@ function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', 
     const error = requiresAuth ? 'Sign in to download this model' : String(detail).slice(0, 200);
     failure = { ok: false, error, detail, code, requiresAuth };
     console.warn(`[Models] ${modelName} stream failed${code ? ` (${code})` : ''}: ${String(detail).slice(0, 200)}`);
+    // `code` rides along, like `detail` does. The renderer needs it to decide
+    // whether retrying is worth offering: SLP now distinguishes a transient
+    // failure (502 — the transfer died, the weights are still there to fetch)
+    // from one that will never resolve (500 — a corrupt file, a full disk), and
+    // `requiresAuth` cannot carry that because both are false for it.
     emitModelDownloadProgress(
       modelName,
-      { percent: 0, status: error, downloading: false, error, detail, requiresAuth },
+      { percent: 0, status: error, downloading: false, error, detail, code, requiresAuth },
       { kind },
     );
     clearActiveDownload(modelName);
