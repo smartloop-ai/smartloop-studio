@@ -29,12 +29,11 @@ const checkTokenExpiration = (response) => {
     redirectToLogin();
     return true;
   }
-  // Handle 403 Forbidden (valid token but insufficient permissions)
-  if (response.status === 403) {
-    console.log('Access forbidden (403), clearing session');
-    redirectToLogin();
-    return true;
-  }
+  // 403 is NOT a dead session. SLP answers it for a model or a feature the
+  // account's plan doesn't cover -- the token is fine and signing in again
+  // changes nothing, so clearing the session here logged people out over a
+  // plan limit. Every conversation and document call reaches this via
+  // makeAuthenticatedRequest, so it was reachable from most of the app.
   return false;
 }
 
