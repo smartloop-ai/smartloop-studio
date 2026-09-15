@@ -21,6 +21,7 @@ import {
     CAPABILITY_INFO,
     CAPABILITY_STYLE,
     TIER_INFO,
+    describeFailure,
     isLocked,
     matchTitle,
     memoryGb,
@@ -144,10 +145,6 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         return () => window.removeEventListener('activeModelChanged', onActive);
     }, [localModels]);
 
-    // Signed out is NOT a null user: useAuth hands back a guest placeholder
-    // ({ name: 'Local', guest: true }), so a plain truthiness test reads as
-    // signed in for exactly the person who needs the sign-in prompt.
-    const isSignedIn = !!user && !user.guest;
     const canContact = !!user?.email;
 
     // Everything except the orchestrator — it's represented by the Auto trigger.
@@ -322,9 +319,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const busy = isDownloading(name);
         const percent = downloads.get(name)?.percent ?? 0;
         const failure = downloadErrors.get(name);
-        // The refusal an account can actually clear by signing in. A signed-in
-        // user hitting the same gate needs a plan, not a login.
-        const needsSignIn = !!failure?.requiresAuth && !isSignedIn;
+        // What to say and what to offer, decided by the status SLP answered.
+        const copy = failure ? describeFailure(failure, canContact) : null;
         const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
@@ -451,7 +447,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     an action, the same shape as a connection card's auth state.
                     A rate limit (429) or a dead transfer (502) is neither, so it
                     keeps its retry button and shows the server's own words. */}
-                {!busy && failure && (
+                {!busy && copy && (
                     <div
                         className="mt-3 pt-3 flex items-start gap-2.5"
                         style={{ borderTop: '1px solid var(--sl-border-subtle)' }}
@@ -465,53 +461,41 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: failure.requiresAuth ? 'var(--sl-brand-primary)' : 'var(--sl-status-error)',
+                                color: copy.tone === 'auth' ? 'var(--sl-brand-primary)' : 'var(--sl-status-error)',
                                 backgroundColor: 'var(--sl-white-alpha-7)',
                                 border: '1px solid',
-                                borderColor: failure.requiresAuth ? 'var(--sl-brand-alpha-30)' : 'var(--sl-status-error)',
+                                borderColor: copy.tone === 'auth' ? 'var(--sl-brand-alpha-30)' : 'var(--sl-status-error)',
                             }}
                         >
-                            {failure.requiresAuth
+                            {copy.tone === 'auth'
                                 ? <LockOutlinedIcon sx={{ fontSize: 13 }} />
                                 : <ErrorOutlineIcon sx={{ fontSize: 13 }} />}
                         </Box>
 
                         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                             <span className="text-[12px] font-semibold text-sl-text-primary">
-                                {needsSignIn
-                                    ? 'Log in to download this model'
-                                    : failure.requiresAuth
-                                        ? 'Your plan doesn\u2019t include this model'
-                                        : 'Download failed'}
+                                {copy.headline}
                             </span>
                             <span className="text-[11px] leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                                {needsSignIn
-                                    ? "Model weights are tied to your account \u2014 logging in is free and takes a few seconds."
-                                    : failure.requiresAuth
-                                        // The server already said the useful thing ("Upgrade
-                                        // required to access this model"); fall back to the
-                                        // generic line only when it said nothing.
-                                        ? (failure.detail || 'Tell us which models you need and we\u2019ll sort out access.')
-                                        : failure.message}
+                                {copy.body}
                             </span>
                         </div>
 
-                        {/* No button for a plan refusal we can't act on: the contact
-                            dialog needs an email on the profile, and rendering
-                            "Contact us" without one gave a button that closed the
-                            picker and did nothing. */}
-                        {(needsSignIn || !failure.requiresAuth || canContact) && (
+                        {/* Nothing to offer for a model that no longer exists, or for
+                            a plan refusal we can't act on: the contact dialog needs an
+                            email on the profile, and rendering "Contact us" without one
+                            gave a button that closed the picker and did nothing. */}
+                        {copy.action && (
                             <button
                                 type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     clearDownloadError(name);
-                                    if (needsSignIn) {
-                                        // Straight into the OAuth flow the sidebar owns —
-                                        // it already runs the poll and broadcasts the result.
+                                    if (copy.action === 'login') {
+                                        // Straight into the sign-in flow the sidebar owns.
                                         setOpen(false);
                                         window.dispatchEvent(new CustomEvent('requestSignIn'));
-                                    } else if (failure.requiresAuth) {
+                                    } else if (copy.action === 'contact') {
                                         setOpen(false);
                                         setContactOpen(true);
                                     } else {
@@ -527,7 +511,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                     cursor: 'pointer',
                                 }}
                             >
-                                {needsSignIn ? 'Log in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
+                                {copy.action === 'login' ? 'Log in' : copy.action === 'contact' ? 'Contact us' : 'Try again'}
                             </button>
                         )}
                     </div>
