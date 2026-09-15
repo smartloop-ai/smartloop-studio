@@ -3277,6 +3277,9 @@ ipcMain.handle('slp-fetch-user', async () => {
 const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 const LOGIN_WAIT_INTERVAL_MS = 2_000;
 
+// Least often the window-focus profile refresh may hit the local service.
+const FOCUS_AUTH_INTERVAL_MS = 60_000;
+
 // The in-flight wait, if any. Its object identity doubles as the generation
 // token: a tick whose session is no longer the current one has been cancelled or
 // superseded, and drops its result.
@@ -3858,8 +3861,18 @@ function createWindow() {
     stopLoginWait();
   });
 
-  // On focus: check auth status and refresh user profile (throttled)
+  // On focus: refresh the user profile, at most once a minute.
+  //
+  // The throttle is not politeness. /v1/auth/status is a sync handler on SLP's
+  // side, so each call holds a threadpool slot for as long as the platform
+  // takes to answer -- up to about 70s against a degraded one, since the
+  // backend now refreshes and retries within the request. Alt-tabbing fans
+  // those out. Nothing is lost by skipping one: this is a profile refresh, not
+  // a session repair, and every authenticated call heals its own token now.
+  let lastFocusAuthCheck = 0;
   mainWindow.on('focus', async () => {
+    if (Date.now() - lastFocusAuthCheck < FOCUS_AUTH_INTERVAL_MS) return;
+    lastFocusAuthCheck = Date.now();
     const status = await readAuthStatus();
     if (status.success && status.has_access_token) {
       fetchUserProfile();
