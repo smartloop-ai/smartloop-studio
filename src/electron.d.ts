@@ -24,11 +24,15 @@ export interface ModelDownloadState {
 // SLP answers for weights the account isn't entitled to, which the UI turns into
 // a sign-in prompt instead of an error code. `detail` is the server's own words
 // for the failure, kept because "sign in" is wrong for a signed-in user whose
-// plan is the problem.
+// plan is the problem. `code` is the status SLP classified it as — 502 for a
+// transfer that died with the weights still there to fetch, 500 for a failure
+// retrying cannot fix — which is what decides whether to offer a retry, and
+// which `requiresAuth` cannot express because it is false for both.
 export interface ModelDownloadProgress extends Omit<ModelDownloadState, 'kind'> {
   kind?: 'primary' | 'aux';
   error?: string;
   detail?: string;
+  code?: number;
   requiresAuth?: boolean;
 }
 

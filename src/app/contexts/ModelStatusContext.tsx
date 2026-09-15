@@ -40,7 +40,13 @@ export interface ModelStatusValue {
   // Why a download stopped, keyed by model name. `requiresAuth` is the 401/403
   // SLP returns for weights the account isn't entitled to — the anonymous case —
   // which the picker shows as a sign-in prompt rather than a failure.
-  downloadErrors: Map<string, { message: string; detail?: string; requiresAuth: boolean }>;
+  // `code` separates the two non-auth failures, which look identical without it:
+  // 502 means the transfer died and the weights are still there to fetch, so a
+  // retry is worth offering; 500 means it will fail the same way again.
+  downloadErrors: Map<string, { message: string; detail?: string; code?: number; requiresAuth: boolean }>;
+  // Whether re-running the download could plausibly succeed. False for the
+  // entitlement refusals, which need a sign-in or an upgrade instead.
+  isRetryable: (name: string) => boolean;
   clearDownloadError: (name: string) => void;
   clearDownloadErrors: () => void;
   handleToggleModel: (name: string, workspaceName: string, enabled: boolean) => Promise<void>;
@@ -83,7 +89,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
   const [downloads, setDownloads] = useState<Map<string, { percent: number; status: string }>>(new Map());
-  const [downloadErrors, setDownloadErrors] = useState<Map<string, { message: string; detail?: string; requiresAuth: boolean }>>(new Map());
+  const [downloadErrors, setDownloadErrors] = useState<Map<string, { message: string; detail?: string; code?: number; requiresAuth: boolean }>>(new Map());
   const [primaryProgress, setPrimaryProgress] = useState<ModelDownloadProgress | null>(null);
   // Mirror of `downloads` for event handlers, which must not close over state.
   const downloadsRef = useRef(downloads);
@@ -144,13 +150,28 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
 
   const isDownloading = useCallback((name: string) => downloads.has(name), [downloads]);
 
-  const setDownloadError = useCallback((name: string, message: string, requiresAuth: boolean, detail?: string) => {
+  const setDownloadError = useCallback((name: string, message: string, requiresAuth: boolean, detail?: string, code?: number) => {
     // Second read of the same fact: main flags the entitlement statuses, but any
     // path that still reports a bare `HTTP 401/403` means the same thing, and
     // showing a status code to a user who just needs to sign in helps nobody.
     const auth = requiresAuth || AUTH_STATUS_MESSAGE.test(message);
-    setDownloadErrors(prev => new Map(prev).set(name, { message, detail, requiresAuth: auth }));
+    setDownloadErrors(prev => new Map(prev).set(name, { message, detail, code, requiresAuth: auth }));
   }, []);
+
+  // A retry is worth offering when the failure was transient. SLP classifies
+  // that for us: `status_for` answers 502 for a dropped transfer or an upstream
+  // blip and 500 for what a retry cannot fix, so this asks the server's verdict
+  // rather than re-deriving one from the message.
+  //
+  // Unknown is retryable on purpose. A failure that arrived without a code —
+  // an older service, a socket that died before any frame — is one we know
+  // nothing about, and offering a button the user can ignore is a smaller
+  // failure than hiding the only way out of a download that would have worked.
+  const isRetryable = useCallback((name: string) => {
+    const failure = downloadErrors.get(name);
+    if (!failure || failure.requiresAuth) return false;
+    return failure.code === undefined || failure.code >= 502;
+  }, [downloadErrors]);
 
   // Dismiss every recorded refusal at once — closing the picker, or an auth
   // change that makes all of them stale.
@@ -235,7 +256,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   // Shared by both primary-progress producers: `slp-load-model`/`slp-init-model`
   // on the model channel, and the first-launch bootstrap download on its own.
   const handlePrimaryProgress = useCallback((data: ModelDownloadProgress) => {
-    if (data.error) setDownloadError(data.model, data.error, !!data.requiresAuth, data.detail);
+    if (data.error) setDownloadError(data.model, data.error, !!data.requiresAuth, data.detail, data.code);
     if (isTerminal(data)) {
       settlePrimary();
       // A load can also have downloaded weights, so refresh the list.
@@ -267,7 +288,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
         // A failure is terminal, but unlike a completion it leaves something to
         // say. Recorded here so a download started elsewhere (or before this
         // mounted) still explains itself; the caller's own result records it too.
-        setDownloadError(data.model, data.error, !!data.requiresAuth, data.detail);
+        setDownloadError(data.model, data.error, !!data.requiresAuth, data.detail, data.code);
       }
       if (done) {
         // A live handleToggleModel owns the rest of this transition: it
@@ -360,7 +381,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       // enables anything, so drop the optimistic override with it — otherwise the
       // row reads as on until the next list refresh contradicts it.
       if (res && res.success === false) {
-        setDownloadError(name, res.error || 'Download failed', !!res.requiresAuth, res.detail);
+        setDownloadError(name, res.error || 'Download failed', !!res.requiresAuth, res.detail, res.code);
         setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
       }
       if (!stillDownloading) await fetchLocalModels();
@@ -403,6 +424,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     downloads,
     isDownloading,
     downloadErrors,
+    isRetryable,
     clearDownloadError,
     clearDownloadErrors,
     handleToggleModel,
@@ -412,8 +434,8 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     waitForPrimaryModel,
   }), [
     localModels, localModelsLoading, enabledModels, isEnabled, enabledCapabilities,
-    fetchLocalModels, downloads, isDownloading, downloadErrors, clearDownloadError,
-    clearDownloadErrors, handleToggleModel, handleCancelDownload,
+    fetchLocalModels, downloads, isDownloading, downloadErrors, isRetryable,
+    clearDownloadError, clearDownloadErrors, handleToggleModel, handleCancelDownload,
     primaryProgress, loadPrimaryModel, waitForPrimaryModel,
   ]);
 
