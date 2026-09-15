@@ -32,7 +32,7 @@ export interface ModelDownloadProgress extends Omit<ModelDownloadState, 'kind'> 
   kind?: 'primary' | 'aux';
   error?: string;
   detail?: string;
-  code?: number;
+  code?: number | null;
   requiresAuth?: boolean;
 }
 
@@ -43,7 +43,7 @@ export interface ModelActionResult {
   success: boolean;
   error?: string;
   detail?: string;
-  code?: number;
+  code?: number | null;
   requiresAuth?: boolean;
 }
 

@@ -37,13 +37,11 @@ export interface ModelStatusValue {
   // main's `activeModelDownloads` map, which can hold more than one.
   downloads: Map<string, { percent: number; status: string }>;
   isDownloading: (name: string) => boolean;
-  // Why a download stopped, keyed by model name. `requiresAuth` is the 401/403
-  // SLP returns for weights the account isn't entitled to — the anonymous case —
-  // which the picker shows as a sign-in prompt rather than a failure.
-  // `code` separates the two non-auth failures, which look identical without it:
-  // 502 means the transfer died and the weights are still there to fetch, so a
-  // retry is worth offering; 500 means it will fail the same way again.
-  downloadErrors: Map<string, { message: string; detail?: string; code?: number; requiresAuth: boolean }>;
+  // Why a download stopped, keyed by model name. `code` is the status SLP
+  // classified the failure as, and it is what decides everything the user is
+  // shown — see describeFailure in model-meta.ts. `requiresAuth` survives only
+  // as a hint for a failure that arrived without a code at all.
+  downloadErrors: Map<string, { message: string; detail?: string; code?: number | null; requiresAuth: boolean }>;
   clearDownloadError: (name: string) => void;
   clearDownloadErrors: () => void;
   handleToggleModel: (name: string, workspaceName: string, enabled: boolean) => Promise<void>;
@@ -86,7 +84,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
   const [downloads, setDownloads] = useState<Map<string, { percent: number; status: string }>>(new Map());
-  const [downloadErrors, setDownloadErrors] = useState<Map<string, { message: string; detail?: string; code?: number; requiresAuth: boolean }>>(new Map());
+  const [downloadErrors, setDownloadErrors] = useState<Map<string, { message: string; detail?: string; code?: number | null; requiresAuth: boolean }>>(new Map());
   const [primaryProgress, setPrimaryProgress] = useState<ModelDownloadProgress | null>(null);
   // Mirror of `downloads` for event handlers, which must not close over state.
   const downloadsRef = useRef(downloads);
@@ -147,7 +145,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
 
   const isDownloading = useCallback((name: string) => downloads.has(name), [downloads]);
 
-  const setDownloadError = useCallback((name: string, message: string, requiresAuth: boolean, detail?: string, code?: number) => {
+  const setDownloadError = useCallback((name: string, message: string, requiresAuth: boolean, detail?: string, code?: number | null) => {
     // Second read of the same fact: main flags the entitlement statuses, but any
     // path that still reports a bare `HTTP 401/403` means the same thing, and
     // showing a status code to a user who just needs to sign in helps nobody.
