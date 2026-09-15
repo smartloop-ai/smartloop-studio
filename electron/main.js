@@ -3116,21 +3116,21 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
     }
     // These PATCH routes do no entitlement check of their own — a gated model is
     // refused at the download above, not here. A 401/403 reaching this point is
-    // the local API rejecting the request, and it is still not retryable, so it
-    // is reported the same way. Broadcast it as well as returning it: a picker
+    // the local API rejecting the request, so it is reported the same way and
+    // `code` decides the copy. Broadcast it as well as returning it: a picker
     // that remounted mid-flight only learns about failures through the event.
     if (AUTH_REQUIRED_STATUSES.has(res.status)) {
       const error = 'Sign in to use this model';
       emitModelDownloadProgress(
         modelName,
-        { percent: 0, status: error, downloading: false, error, detail: text.slice(0, 200), requiresAuth: true },
+        { percent: 0, status: error, downloading: false, error, detail: text.slice(0, 200), code: res.status, requiresAuth: true },
       );
       return { success: false, error, detail: text.slice(0, 200), code: res.status, requiresAuth: true };
     }
     const error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
     emitModelDownloadProgress(
       modelName,
-      { percent: 0, status: error, downloading: false, error, requiresAuth: false },
+      { percent: 0, status: error, downloading: false, error, code: res.status, requiresAuth: false },
     );
     return { success: false, error, code: res.status };
   } catch (err) {
