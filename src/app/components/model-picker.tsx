@@ -21,6 +21,8 @@ import {
     CAPABILITY_INFO,
     CAPABILITY_STYLE,
     TIER_INFO,
+    describeFailure,
+    isLocked,
     matchTitle,
     memoryGb,
     memoryPressure,
@@ -143,15 +145,6 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         return () => window.removeEventListener('activeModelChanged', onActive);
     }, [localModels]);
 
-    // Admins and internal-eligible users can download plan-gated models. Internal
-    // models are only sent to eligible users, so their presence marks the account.
-    // Signed out is NOT a null user: useAuth hands back a guest placeholder
-    // ({ name: 'Local', guest: true }), so a plain truthiness test reads as
-    // signed in for exactly the person who needs the sign-in prompt.
-    const isSignedIn = !!user && !user.guest;
-    const isAdmin = !!user?.admin;
-    const hasInternalAccess = localModels.some((m: any) => m.access_level === 'internal');
-    const canDownloadGated = isAdmin || hasInternalAccess;
     const canContact = !!user?.email;
 
     // Everything except the orchestrator — it's represented by the Auto trigger.
@@ -172,7 +165,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         if (!totalRamGb) return null;
         const candidates = pickable
             .filter((m: any) => {
-                const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
+                const locked = isLocked(m);
                 return !locked && memoryGb(m) != null;
             })
             .map((m: any) => {
@@ -183,7 +176,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
         const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
         return pick ? pick.name : null;
-    }, [pickable, totalRamGb, canDownloadGated]);
+    }, [pickable, totalRamGb]);
 
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
@@ -212,12 +205,18 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         for (const m of pickable) {
             if (!matches(m)) continue;
             const name = m.name || m.id || m.model;
-            const locked = !canDownloadGated && m.is_accessible === false && !m.downloaded;
+            // A model the plan doesn't grant is listed, not hidden. The cloud
+            // returns it for exactly that reason — an anonymous caller gets the
+            // whole catalog with is_accessible false on the Pro tier "so the
+            // client can show pro models as signup incentive" — so dropping it
+            // here would discard the one thing it was sent for. It goes in the
+            // 'locked' bucket: greyed, lock icon, not clickable.
+            const locked = isLocked(m);
             const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
         return buckets.filter((b) => b.models.length > 0);
-    }, [pickable, query, canDownloadGated, isEnabled]);
+    }, [pickable, query, isEnabled]);
 
     const matchCount = groups.reduce((n, g) => n + g.models.length, 0);
 
@@ -254,7 +253,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model can be in, so there is exactly one place to look for "what is this
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
-    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; needsLogin: boolean; busy: boolean; isActive: boolean }) => {
+    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
         // Downloading. No cancel affordance: aborting the HTTP request left the
         // backend downloading anyway, so the X stopped the progress stream and
         // nothing else — a control that looked like it stopped the download and
@@ -265,7 +264,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title={st.needsLogin ? 'Log in to download this model' : 'Upgrade to a Pro plan to use this model'} arrow placement="top">
+                <Tooltip title="Upgrade to a Pro plan to use this model" arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -320,16 +319,9 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const busy = isDownloading(name);
         const percent = downloads.get(name)?.percent ?? 0;
         const failure = downloadErrors.get(name);
-        // The refusal an account can actually clear by signing in. A signed-in
-        // user hitting the same gate needs a plan, not a login.
-        const needsSignIn = !!failure?.requiresAuth && !isSignedIn;
-        // An already-downloaded model stays usable whatever the plan; the gate
-        // only applies to a first download.
-        const locked = !canDownloadGated && m.is_accessible === false && !downloaded;
-        const isGated = m.access_level === 'pro' || m.access_level === 'premium';
-        // A free model reported inaccessible only because the user is signed out
-        // is a login gate, not an upgrade prompt.
-        const needsLogin = locked && !isGated;
+        // What to say and what to offer, decided by the status SLP answered.
+        const copy = failure ? describeFailure(failure, canContact) : null;
+        const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
         const pressure = memoryPressure(m, totalRamGb);
@@ -388,7 +380,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </span>
 
                     <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                        {renderState({ name, on, downloaded, locked, needsLogin, busy, isActive })}
+                        {renderState({ name, on, downloaded, locked, busy, isActive })}
                     </div>
                 </div>
 
@@ -449,11 +441,13 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
                 {/* Why the download stopped. Set off from the card's own content
                     by a hairline rather than shouted in red: the entitlement case
-                    (SLP answers 400 anonymously, 403 for an account without the
-                    plan) is not a fault, it's a step the user hasn't taken yet —
-                    so it reads as a prompt with an action, the same shape as a
-                    connection card's auth state. */}
-                {!busy && failure && (
+                    (403 for anything the plan doesn't grant, signed in or not;
+                    401 only when the token itself is bad) is not a fault, it's a
+                    step the user hasn't taken yet — so it reads as a prompt with
+                    an action, the same shape as a connection card's auth state.
+                    A rate limit (429) or a dead transfer (502) is neither, so it
+                    keeps its retry button and shows the server's own words. */}
+                {!busy && copy && (
                     <div
                         className="mt-3 pt-3 flex items-start gap-2.5"
                         style={{ borderTop: '1px solid var(--sl-border-subtle)' }}
@@ -467,62 +461,59 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                color: failure.requiresAuth ? 'var(--sl-brand-primary)' : 'var(--sl-status-error)',
+                                color: copy.tone === 'auth' ? 'var(--sl-brand-primary)' : 'var(--sl-status-error)',
                                 backgroundColor: 'var(--sl-white-alpha-7)',
                                 border: '1px solid',
-                                borderColor: failure.requiresAuth ? 'var(--sl-brand-alpha-30)' : 'var(--sl-status-error)',
+                                borderColor: copy.tone === 'auth' ? 'var(--sl-brand-alpha-30)' : 'var(--sl-status-error)',
                             }}
                         >
-                            {failure.requiresAuth
+                            {copy.tone === 'auth'
                                 ? <LockOutlinedIcon sx={{ fontSize: 13 }} />
                                 : <ErrorOutlineIcon sx={{ fontSize: 13 }} />}
                         </Box>
 
                         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                             <span className="text-[12px] font-semibold text-sl-text-primary">
-                                {needsSignIn
-                                    ? 'Log in to download this model'
-                                    : failure.requiresAuth
-                                        ? 'Your plan doesn\u2019t include this model'
-                                        : 'Download failed'}
+                                {copy.headline}
                             </span>
                             <span className="text-[11px] leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                                {needsSignIn
-                                    ? "Model weights are tied to your account \u2014 logging in is free and takes a few seconds."
-                                    : failure.requiresAuth
-                                        ? 'Tell us which models you need and we\u2019ll sort out access.'
-                                        : failure.message}
+                                {copy.body}
                             </span>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                clearDownloadError(name);
-                                if (needsSignIn) {
-                                    // Straight into the OAuth flow the sidebar owns —
-                                    // it already runs the poll and broadcasts the result.
-                                    setOpen(false);
-                                    window.dispatchEvent(new CustomEvent('requestSignIn'));
-                                } else if (failure.requiresAuth) {
-                                    setOpen(false);
-                                    setContactOpen(true);
-                                } else {
-                                    toggle(m);
-                                }
-                            }}
-                            className="flex-shrink-0 px-2.5 rounded-md text-[11px] font-semibold border transition-colors"
-                            style={{
-                                height: '26px',
-                                color: 'var(--sl-brand-primary)',
-                                borderColor: 'var(--sl-brand-alpha-30)',
-                                backgroundColor: 'var(--sl-brand-alpha-10)',
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {needsSignIn ? 'Log in' : failure.requiresAuth ? 'Contact us' : 'Try again'}
-                        </button>
+                        {/* Nothing to offer for a model that no longer exists, or for
+                            a plan refusal we can't act on: the contact dialog needs an
+                            email on the profile, and rendering "Contact us" without one
+                            gave a button that closed the picker and did nothing. */}
+                        {copy.action && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearDownloadError(name);
+                                    if (copy.action === 'login') {
+                                        // Straight into the sign-in flow the sidebar owns.
+                                        setOpen(false);
+                                        window.dispatchEvent(new CustomEvent('requestSignIn'));
+                                    } else if (copy.action === 'contact') {
+                                        setOpen(false);
+                                        setContactOpen(true);
+                                    } else {
+                                        toggle(m);
+                                    }
+                                }}
+                                className="flex-shrink-0 px-2.5 rounded-md text-[11px] font-semibold border transition-colors"
+                                style={{
+                                    height: '26px',
+                                    color: 'var(--sl-brand-primary)',
+                                    borderColor: 'var(--sl-brand-alpha-30)',
+                                    backgroundColor: 'var(--sl-brand-alpha-10)',
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {copy.action === 'login' ? 'Log in' : copy.action === 'contact' ? 'Contact us' : 'Try again'}
+                            </button>
+                        )}
                     </div>
                 )}
             </Box>

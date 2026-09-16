@@ -1847,6 +1847,67 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
+// Line-buffered reader for SLP's SSE streams. Owns the framing — partial
+// chunks, the `event:` name that applies until the blank line closes a frame,
+// keepalive comments — and hands each frame to `onFrame(data, eventName)`
+// already parsed. A line that is not a parseable `data:` frame goes to `onRaw`
+// instead: /v1/models/load answers some requests with a plain JSON body rather
+// than a stream, and feeding that body to a progress parser invented a 0%
+// download for an already-resident model.
+//
+// Resolves when the response ends and rejects on a transport error; what a
+// half-finished stream means is the caller's to decide.
+function readSseStream(res, { onFrame, onRaw } = {}) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    let eventName = 'progress';
+
+    const handleLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) { eventName = 'progress'; return; }
+      if (trimmed.startsWith(':')) return;  // keepalive comment
+      if (trimmed.startsWith('event: ')) { eventName = trimmed.slice(7).trim(); return; }
+      if (!trimmed.startsWith('data: ')) { if (onRaw) onRaw(trimmed); return; }
+      let data;
+      try {
+        data = JSON.parse(trimmed.slice(6));
+      } catch {
+        // An error frame stays terminal even when its payload is malformed.
+        // Passing it to onRaw instead would report the failure as a success —
+        // the exact bug this framing exists to prevent.
+        if (eventName === 'error') { if (onFrame) onFrame({}, eventName); return; }
+        if (onRaw) onRaw(trimmed);
+        return;
+      }
+      if (onFrame) onFrame(data, eventName);
+    };
+
+    res.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+      for (const line of lines) handleLine(line);
+    });
+
+    res.on('end', () => {
+      // Flush a last line that arrived without its terminating newline. SLP's
+      // SSE frames always end in \n\n, but /v1/models/load's plain JSON body
+      // does not — and dropping it silently would also drop an unterminated
+      // final error frame.
+      if (buffer.trim()) handleLine(buffer);
+      resolve();
+    });
+    res.on('error', (err) => reject(err));
+  });
+}
+
+// A failure inside a stream that already returned 200. SLP settles entitlement
+// before opening the stream, so this is a mid-transfer fault — an expired
+// signed URL, a full disk, a dropped socket.
+function isErrorFrame(data, eventName) {
+  return eventName === 'error' || data.status === 'error';
+}
+
 async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -1865,45 +1926,52 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         return;
       }
 
-      let buffer = '';
+      // A failed bootstrap arrives as an `event: error` frame inside a response
+      // that already returned 200. Reading only `data:` lines made it
+      // indistinguishable from a success, and the end of the stream then
+      // declared it complete.
+      let streamError = null;
 
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete line
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = bootstrapSplashEvent(JSON.parse(line.slice(6)));
-              const progress = bootstrapProgress(data);
-
-              if (progress.percent > 0) {
-                if (progress.percent % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${progress.percent}%`);
-              } else {
-                console.log('[SLP] Bootstrap:', progress.status);
-              }
-
-              // Let the caller know the stream is alive (stall watchdog).
-              if (onProgress) onProgress(progress);
-
-              // Send to splash screen only when main window isn't visible yet
-              if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
-                updateSplashProgress(data);
-              }
-
-              // Send normalised progress to renderer so the chat UI can show it
-              if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-                mainWindow.webContents.send('bootstrap-progress', progress);
-              }
-            } catch {
-              // ignore unparseable SSE data
-            }
+      readSseStream(res, {
+        onFrame: (frame, eventName) => {
+          if (isErrorFrame(frame, eventName)) {
+            if (streamError) return;
+            streamError = new Error(frame.message || 'Bootstrap failed');
+            streamError.code = frame.code;
+            console.error('[SLP] Bootstrap failed:', streamError.message);
+            return;
           }
-        }
-      });
+          if (streamError) return;  // already terminal — ignore anything trailing
 
-      res.on('end', () => {
+          // Already-seeded weights report a transfer; show "Checking" instead.
+          const data = bootstrapSplashEvent(frame);
+
+          const progress = bootstrapProgress(data);
+
+          if (progress.percent > 0) {
+            if (progress.percent % 10 === 0) console.log(`[SLP] Bootstrap: downloading ${progress.percent}%`);
+          } else {
+            console.log('[SLP] Bootstrap:', progress.status);
+          }
+
+          // Let the caller know the stream is alive (stall watchdog).
+          if (onProgress) onProgress(progress);
+
+          // Send to splash screen only when main window isn't visible yet
+          if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) {
+            updateSplashProgress(data);
+          }
+
+          // Send normalised progress to renderer so the chat UI can show it
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+            mainWindow.webContents.send('bootstrap-progress', progress);
+          }
+        },
+      }).then(() => {
+        if (streamError) {
+          reject(streamError);
+          return;
+        }
         console.log('[SLP] Bootstrap completed');
 
         // Send a final completed event so the renderer clears the progress UI
@@ -1920,9 +1988,7 @@ async function bootstrapSlpService(baseUrl, onProgress) {
         }
 
         resolve(true);
-      });
-
-      res.on('error', (err) => {
+      }, (err) => {
         reject(new Error(`Bootstrap stream error: ${err.message}`));
       });
     });
@@ -2570,18 +2636,19 @@ async function bootstrapOnSplash(baseUrl) {
     return baseUrl;
   }
 
-  // Bootstrap can report "completed" and still leave the workspace empty: a
-  // service that kept running after its data dir was wiped (the agent outlives
-  // the app) answers /health with the old model still loaded, so bootstrap
-  // skips the work and returns a project it no longer has. The app then opened
-  // on an empty workspace — no projects, nothing to chat with. Restart the
-  // service so it re-reads what is actually on disk, then bootstrap for real.
+  // Bootstrap can leave the workspace empty two ways, and this repair covers
+  // both. A service that kept running after its data dir was wiped (the agent
+  // outlives the app) answers /health with the old model still loaded, so
+  // bootstrap skips the work and returns a project it no longer has. Or the
+  // download genuinely failed — runBootstrap logs that and resolves anyway, so
+  // we arrive here either way. Restart the service so it re-reads what is
+  // actually on disk, then bootstrap for real.
   //
   // Only an empty list counts as evidence — a failed call tells us nothing.
   const projects = await getProjects(baseUrl);
   if (projects === null || projects.length > 0) return baseUrl;
 
-  console.warn('[SLP] Bootstrap reported success but the workspace has no projects — restarting the service and retrying');
+  console.warn('[SLP] Bootstrap left the workspace with no projects — restarting the service and retrying');
   updateSplashProgress({ status: 'preparing', message: 'Repairing workspace...' });
 
   try {
@@ -2647,44 +2714,10 @@ ipcMain.handle('slp-init-model', async (event, modelName, projectId) => {
         return;
       }
 
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const progress = bootstrapProgress(data);
-              emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
-            } catch {
-              // ignore unparseable SSE data
-            }
-          }
-        }
-      });
-
-      res.on('end', async () => {
-        // Persist selected_model in the SLP user profile
-        try {
-          await fetch(`${baseUrl}/v1/users/me`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ selected_model: modelName }),
-          });
-        } catch (err) { console.warn('Failed to persist selected_model:', err.message); }
-
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
-        clearActiveDownload(modelName);
-        resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
+      consumeSseStream(res, modelName, { kind: 'primary' }).then((result) => {
+        resolve(result.ok
+          ? { success: true, model: modelName }
+          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
       });
     });
 
@@ -2756,11 +2789,16 @@ function clearActiveDownload(name) {
   modelDownloadState.delete(name);
 }
 
-// SLP answers a request for weights the account isn't entitled to with 400 or
-// 403 — anonymously, every gated model is a 400. There is nothing to retry until
-// the user signs in, so it's flagged separately from a transport failure and the
-// renderer turns it into a sign-in prompt rather than a bare "HTTP 400".
-const AUTH_REQUIRED_STATUSES = new Set([400, 401, 403]);
+// SLP answers a request for weights the account isn't entitled to with 401 or
+// 403: it resolves entitlement with the platform before opening its progress
+// stream, so the refusal arrives as a status rather than inside a 200. There is
+// nothing to retry until the user signs in or upgrades, so it's flagged apart
+// from a transport failure and the renderer turns it into a sign-in prompt.
+//
+// 400 is deliberately not in here. The only 400s on these routes are "Unknown
+// model" and "this model is always enabled" — neither is fixed by signing in,
+// and treating them as auth failures hid the real reason behind a login prompt.
+const AUTH_REQUIRED_STATUSES = new Set([401, 403]);
 
 function readResponseBody(res) {
   return new Promise((resolve) => {
@@ -2789,13 +2827,84 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
     ? 'Sign in to download this model'
     : `HTTP ${res.statusCode}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
   console.warn(`[Models] Download of ${modelName} failed: HTTP ${res.statusCode} ${String(detail).slice(0, 200)}`);
+  // `detail` rides along even on the auth branch. A signed-in user hitting a 403
+  // is not helped by "sign in", and the server already said the useful thing
+  // ("Upgrade required to access this model") — dropping it left the only
+  // accurate account of the failure in a console log.
   emitModelDownloadProgress(
     modelName,
-    { percent: 0, status: error, downloading: false, error, requiresAuth },
+    {
+      percent: 0, status: error, downloading: false, error,
+      detail: String(detail).slice(0, 200), code: res.statusCode, requiresAuth,
+    },
     { kind },
   );
   clearActiveDownload(modelName);
-  return { success: false, error, code: res.statusCode, requiresAuth };
+  return { success: false, error, detail: String(detail).slice(0, 200), code: res.statusCode, requiresAuth };
+}
+
+// Consume one of SLP's SSE progress streams, broadcasting each frame as model
+// download progress.
+//
+// Every reader of these streams needs the same two things, and none of them had
+// either while this logic was copy-pasted per handler:
+//
+// 1. An error frame is terminal. Reading only `data: ` lines fed it to
+//    bootstrapProgress, which has no error branch and normalised it to
+//    "0%, still downloading": a spinner that never resolves.
+// 2. The end of a failed stream is not a success. `res.on('end')` used to emit
+//    `{percent: 100, status: 'Ready'}` unconditionally, so a refused download
+//    reported completion — and in slp-set-model-enabled the caller went on to
+//    PATCH the model enabled with no weights on disk.
+//
+// Resolves `{ ok, error, detail, code, requiresAuth }`; never rejects, so
+// callers decide what a failure means to them.
+function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', logOther = false } = {}) {
+  let failure = null;
+
+  const fail = (data) => {
+    if (failure) return;
+    const code = typeof data.code === 'number' ? data.code : null;
+    const requiresAuth = AUTH_REQUIRED_STATUSES.has(code);
+    const detail = data.message || data.error || 'Download failed';
+    const error = requiresAuth ? 'Sign in to download this model' : String(detail).slice(0, 200);
+    failure = { ok: false, error, detail, code, requiresAuth };
+    console.warn(`[Models] ${modelName} stream failed${code ? ` (${code})` : ''}: ${String(detail).slice(0, 200)}`);
+    // `code` rides along, like `detail` does. The renderer needs it to decide
+    // whether retrying is worth offering: SLP now distinguishes a transient
+    // failure (502 — the transfer died, the weights are still there to fetch)
+    // from one that will never resolve (500 — a corrupt file, a full disk), and
+    // `requiresAuth` cannot carry that because both are false for it.
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 0, status: error, downloading: false, error, detail, code, requiresAuth },
+      { kind },
+    );
+    clearActiveDownload(modelName);
+  };
+
+  return readSseStream(res, {
+    onFrame: (data, eventName) => {
+      if (isErrorFrame(data, eventName)) { fail(data); return; }
+      if (failure) return;  // already terminal — ignore anything trailing
+      emitModelDownloadProgress(modelName, bootstrapProgress(data), { kind });
+    },
+    onRaw: (line) => { if (logOther) console.log(`[Models] ${modelName}:`, line); },
+  }).then(() => {
+    if (failure) return failure;
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 100, status: doneStatus, downloading: false },
+      { kind },
+    );
+    clearActiveDownload(modelName);
+    return { ok: true };
+  }, (err) => {
+    // A stream that dies mid-transfer has to go terminal too, or the renderer's
+    // ring sits at the percent it died on until the dialog is closed.
+    fail({ message: err.message });
+    return failure;
+  });
 }
 
 // IPC: snapshot of in-flight downloads so a freshly mounted renderer can rehydrate.
@@ -2853,42 +2962,10 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
         return;
       }
 
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          // Only `data: ` lines are progress. /v1/models/load answers with a
-          // plain JSON body, not SSE, so parsing bare lines turned that body
-          // into a bogus `status: "ok"` event at 0% — a progress bar for a
-          // model that was already resident.
-          if (!trimmed.startsWith('data: ')) {
-            console.log('[Models] Model load:', trimmed);
-            continue;
-          }
-          try {
-            const progress = bootstrapProgress(JSON.parse(trimmed.slice(6)));
-            emitModelDownloadProgress(modelName, progress, { kind: 'primary' });
-          } catch {
-            console.log('[Models] Model load:', trimmed);
-          }
-        }
-      });
-
-      res.on('end', () => {
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false }, { kind: 'primary' });
-        clearActiveDownload(modelName);
-        resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
+      consumeSseStream(res, modelName, { kind: 'primary', logOther: true }).then((result) => {
+        resolve(result.ok
+          ? { success: true, model: modelName }
+          : { success: false, error: result.error, code: result.code, requiresAuth: result.requiresAuth });
       });
     });
 
@@ -2981,28 +3058,13 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
             });
             return;
           }
-          let buffer = '';
-          res.on('data', (chunk) => {
-            buffer += chunk.toString();
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  const progress = bootstrapProgress(data);
-                  emitModelDownloadProgress(modelName, progress);
-                } catch {}
-              }
-            }
-          });
-          res.on('end', () => {
-            emitModelDownloadProgress(modelName, { percent: 100, status: 'Complete', downloading: false });
-            clearActiveDownload(modelName);
-            resolve(true);
-          });
-          res.on('error', (err) => {
-            clearActiveDownload(modelName);
+          consumeSseStream(res, modelName, { doneStatus: 'Complete' }).then((result) => {
+            if (result.ok) { resolve(true); return; }
+            // Reject rather than resolve: the PATCH below would otherwise mark a
+            // model enabled whose weights never arrived.
+            const err = new Error(result.error);
+            err.code = result.code;
+            err.requiresAuth = result.requiresAuth;
             reject(err);
           });
         });
@@ -3052,12 +3114,25 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
         return { success: true, downloading: alreadyDownloading };
       }
     }
-    // The enable itself is entitlement-checked too, so a gated model reached
-    // without an account fails here rather than at the download.
+    // These PATCH routes do no entitlement check of their own — a gated model is
+    // refused at the download above, not here. A 401/403 reaching this point is
+    // the local API rejecting the request, so it is reported the same way and
+    // `code` decides the copy. Broadcast it as well as returning it: a picker
+    // that remounted mid-flight only learns about failures through the event.
     if (AUTH_REQUIRED_STATUSES.has(res.status)) {
-      return { success: false, error: 'Sign in to use this model', code: res.status, requiresAuth: true };
+      const error = 'Sign in to use this model';
+      emitModelDownloadProgress(
+        modelName,
+        { percent: 0, status: error, downloading: false, error, detail: text.slice(0, 200), code: res.status, requiresAuth: true },
+      );
+      return { success: false, error, detail: text.slice(0, 200), code: res.status, requiresAuth: true };
     }
-    return { success: false, error: `HTTP ${res.status}: ${text}` };
+    const error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 0, status: error, downloading: false, error, code: res.status, requiresAuth: false },
+    );
+    return { success: false, error, code: res.status };
   } catch (err) {
     console.error('[Models] PATCH error:', err.message);
     return { success: false, error: err.message };
@@ -3149,7 +3224,6 @@ async function fetchUserProfile() {
         admin: result.is_superuser,
         is_paid: result.is_paid || false,
         premium: result.is_paid || false,
-        selected_model: result.selected_model || null,
         tokens: result.tokens,
         number_of_tokens_processed: result.number_of_tokens_processed || 0,
         // NOTE: `projects` is intentionally NOT copied from /users/me — that
@@ -3202,6 +3276,9 @@ ipcMain.handle('slp-fetch-user', async () => {
 // left nothing watching for the tokens.
 const LOGIN_WAIT_TIMEOUT_MS = 5 * 60_000;
 const LOGIN_WAIT_INTERVAL_MS = 2_000;
+
+// Least often the window-focus profile refresh may hit the local service.
+const FOCUS_AUTH_INTERVAL_MS = 60_000;
 
 // The in-flight wait, if any. Its object identity doubles as the generation
 // token: a tick whose session is no longer the current one has been cancelled or
@@ -3533,83 +3610,6 @@ ipcMain.handle('slp-list-models', async (event, projectId) => {
   return { success: true, models };
 });
 
-// IPC: Download a model via local SLP service (SSE streaming progress)
-ipcMain.handle('slp-download-model', async (event, modelName) => {
-  console.log(`[Models] Download requested: ${modelName}`);
-  const baseUrl = slpService.getLocalBaseUrl();
-  if (!baseUrl) return { success: false, error: 'No local service' };
-
-  // Already downloading — don't start a duplicate request.
-  if (activeModelDownloads.has(modelName)) {
-    console.log(`[Models] ${modelName} already downloading; ignoring duplicate request`);
-    return { success: false, error: 'already-downloading', downloading: true };
-  }
-
-  return new Promise((resolve) => {
-    const http = require('http');
-    const url = new URL(`${baseUrl}/v1/models/download`);
-
-    const postData = JSON.stringify({ model: modelName });
-
-    const req = http.request({
-      hostname: url.hostname,
-      port: url.port,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-      },
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        failModelDownload(modelName, res, { kind: 'aux' }).then(resolve);
-        return;
-      }
-
-      let buffer = '';
-
-      res.on('data', (chunk) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const progress = bootstrapProgress(data);
-              emitModelDownloadProgress(modelName, progress);
-            } catch {
-              // ignore unparseable SSE data
-            }
-          }
-        }
-      });
-
-      res.on('end', () => {
-        emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false });
-        clearActiveDownload(modelName);
-        resolve({ success: true, model: modelName });
-      });
-
-      res.on('error', (err) => {
-        clearActiveDownload(modelName);
-        resolve({ success: false, error: err.message });
-      });
-    });
-
-    beginModelDownload(modelName, req, { status: 'Starting download…' });
-
-    req.on('error', (err) => {
-      clearActiveDownload(modelName);
-      resolve({ success: false, error: err.message });
-    });
-
-    req.write(postData);
-    req.end();
-  });
-});
-
 // Register custom protocol for OAuth callback
 const PROTOCOL = 'smartloop';
 
@@ -3861,8 +3861,18 @@ function createWindow() {
     stopLoginWait();
   });
 
-  // On focus: check auth status and refresh user profile (throttled)
+  // On focus: refresh the user profile, at most once a minute.
+  //
+  // The throttle is not politeness. /v1/auth/status is a sync handler on SLP's
+  // side, so each call holds a threadpool slot for as long as the platform
+  // takes to answer -- up to about 70s against a degraded one, since the
+  // backend now refreshes and retries within the request. Alt-tabbing fans
+  // those out. Nothing is lost by skipping one: this is a profile refresh, not
+  // a session repair, and every authenticated call heals its own token now.
+  let lastFocusAuthCheck = 0;
   mainWindow.on('focus', async () => {
+    if (Date.now() - lastFocusAuthCheck < FOCUS_AUTH_INTERVAL_MS) return;
+    lastFocusAuthCheck = Date.now();
     const status = await readAuthStatus();
     if (status.success && status.has_access_token) {
       fetchUserProfile();

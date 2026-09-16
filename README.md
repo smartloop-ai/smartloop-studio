@@ -160,7 +160,7 @@ with no Node access; it reaches the main process only through
 | Prefix | Purpose | Examples |
 |---|---|---|
 | `db-*` | SQLite reads/writes | `db-create-conversation`, `db-add-messages`, `db-get-mcp-servers-by-project` |
-| `slp-*` | Local service + models | `slp-service-start`, `slp-list-models`, `slp-download-model`, `slp-add-document` |
+| `slp-*` | Local service + models | `slp-service-start`, `slp-list-models`, `slp-init-model`, `slp-add-document` |
 | `storage-*` | Encrypted key-value store | `storage-get`, `storage-set`, `storage-usage` |
 | `updater-*` / `release-*` | Auto-update | `updater-get-status`, `release-check-now` |
 | misc | OS integration | `oauth-login`, `select-folder`, `open-external`, `get-machine-id` |

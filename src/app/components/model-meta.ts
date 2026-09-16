@@ -156,15 +156,130 @@ export const CAPABILITY_STYLE: Record<string, { color: string; border: string }>
 // Short explanation for each plan/access tier tag, shown on hover.
 export const TIER_INFO: Record<string, string> = {
     Pro: 'Pro model — included with a Pro plan',
-    Premium: 'Premium model — requires an upgraded plan',
     Internal: 'Internal model — available to your account',
 };
 
-// Tier tag shown on gated models: pro uses the brand color, internal collapses
-// into a blue "Internal", other gated tiers into a gold "Premium".
+// Tier tag shown on gated models: pro uses the brand color, internal a blue
+// "Internal". Those are the only tiers the cloud publishes — its
+// ModelAccessLevel is FREE/PRO/INTERNAL — so a free model gets no tag.
 export function tierTag(m: any): { label: string; color: string; border: string } | null {
     if (m.access_level === 'pro') return { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' };
     if (m.access_level === 'internal') return { label: 'Internal', color: 'rgb(96,165,250)', border: 'rgba(96,165,250,0.3)' };
-    if (m.access_level === 'premium') return { label: 'Premium', color: 'rgb(251,191,36)', border: 'rgba(251,191,36,0.3)' };
     return null;
+}
+
+// The single gate on a model the user cannot download. `is_accessible` is
+// computed per-user by the cloud catalog (ModelAccessManager.can_access_model)
+// and already accounts for every tier: free is true for everyone, anonymous
+// callers included; pro is true for paid accounts and superusers; internal is
+// true for superusers and withheld from the catalog entirely for anyone else.
+// So there is nothing to combine it with — reading `access_level` alongside it
+// only ever risks disagreeing with the cloud.
+//
+// Weights already on disk stay usable whatever the plan says now, so a
+// downloaded model is never locked.
+export function isLocked(m: any): boolean {
+    return m.is_accessible === false && !m.downloaded;
+}
+
+// What to say, and what to offer, for a download that failed.
+//
+// SLP classifies the failure for us — `status_for` in the backend's
+// api/routers/_errors.py answers one status for both halves of /v1/init and for
+// /v1/models/load — so this reads the code and nothing else. It used to be
+// decided by a `requiresAuth` boolean that merged 401 and 403, plus a guess at
+// which of them it was from whether the app thought it was signed in. That told
+// a user whose session had died that their plan was insufficient.
+//
+// `message` is prose written for a person and gets reworded, so it is only ever
+// a last resort here.
+export type DownloadFailure = {
+    message: string;
+    detail?: string;
+    code?: number | null;
+    requiresAuth?: boolean;
+};
+
+export type FailureCopy = {
+    headline: string;
+    body: string;
+    // What the user can do about it. `null` means there is nothing to offer.
+    action: 'login' | 'contact' | 'retry' | null;
+    // Which failure this reads as: an entitlement gate (a lock, in brand colour)
+    // or something that went wrong (an error glyph, in red).
+    tone: 'auth' | 'error';
+};
+
+const SIGN_IN: FailureCopy = {
+    headline: 'Log in to download this model',
+    body: 'Model weights are tied to your account — logging in is free and takes a few seconds.',
+    action: 'login',
+    tone: 'auth',
+};
+
+export function describeFailure(failure: DownloadFailure, canContact: boolean): FailureCopy {
+    const { code, detail, message } = failure;
+
+    switch (code) {
+        // No credentials the platform will accept. The backend refreshes and
+        // retries before answering this, so it means sign in again — not "wait
+        // and see", and never an upgrade prompt.
+        case 401:
+            return SIGN_IN;
+
+        // Signed in, but the model isn't on this plan. The server says the useful
+        // thing ("Upgrade required to access this model"); fall back only when it
+        // said nothing. No button without an email to contact us from.
+        case 403:
+            return {
+                headline: 'Your plan doesn’t include this model',
+                body: detail || 'Tell us which models you need and we’ll sort out access.',
+                action: canContact ? 'contact' : null,
+                tone: 'auth',
+            };
+
+        // Gone from the catalog. Retrying fetches the same 404.
+        case 404:
+            return {
+                headline: 'This model is no longer available',
+                body: detail || 'It has been removed from the catalog.',
+                action: null,
+                tone: 'error',
+            };
+
+        case 429:
+            return {
+                headline: 'Too many downloads right now',
+                body: 'The service is rate-limiting downloads — try again in a moment.',
+                action: 'retry',
+                tone: 'error',
+            };
+
+        // Local disk: an unwritable models directory, a full disk, a checksum
+        // that didn't match. `detail` names which, and all three are things the
+        // user fixes outside the app and then retries.
+        case 500:
+            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+
+        // The transfer died; the weights are still there to fetch. /v1/init is a
+        // real repair action now — it no longer reports an interrupted download
+        // as ready — so the retry resumes rather than lying.
+        case 502:
+            return {
+                headline: 'Connection lost during download',
+                body: detail || 'The transfer was interrupted before it finished.',
+                action: 'retry',
+                tone: 'error',
+            };
+
+        default:
+            // No code: an older service, or a socket that died before any frame.
+            // `requiresAuth` may still have been recovered from the message text,
+            // and sign-in is the one remedy worth guessing at. Everything else
+            // gets the button, because a retry the user can ignore is a smaller
+            // failure than hiding the only way out of a download that would have
+            // worked.
+            if (failure.requiresAuth) return SIGN_IN;
+            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+    }
 }
