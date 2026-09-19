@@ -228,14 +228,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeHealthUpdateListener: () => {
     ipcRenderer.removeAllListeners('health-update');
   },
-  // Transient agent-restarting signal (e.g. during a Clean). Kept off the global
-  // health-update channel so it doesn't trigger project/UI reconciles.
-  onAgentRestarting: (callback) => {
-    ipcRenderer.on('agent-restarting', (event, data) => callback(data));
-  },
-  removeAgentRestartingListener: () => {
-    ipcRenderer.removeAllListeners('agent-restarting');
-  },
   // App release / update check
   getLatestRelease: () => ipcRenderer.invoke('release-get-latest'),
   onReleaseUpdate: (callback) => {

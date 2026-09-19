@@ -217,9 +217,6 @@ export interface ElectronAPI {
   onMcpCatalogUpdated: (callback: (data: { entries: any[] }) => void) => () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
-  // Transient agent-restarting signal (e.g. during a Clean)
-  onAgentRestarting: (callback: (data: { restarting: boolean }) => void) => void;
-  removeAgentRestartingListener: () => void;
   // App release / update check
   getLatestRelease: () => Promise<any>;
   onReleaseUpdate: (callback: (data: any) => void) => void;
