@@ -1,5 +1,4 @@
 const { app } = require('electron');
-const { autoUpdater, CancellationToken } = require('electron-updater');
 const slpService = require('./slp-service');
 const appVersion = require('../package.json').version;
 
@@ -14,15 +13,6 @@ let getWindow = null;
 let lastResult = null;
 let onStatusChange = null;
 
-// electron-updater state
-let updaterWired = false;
-let updateInFlight = null; // version currently downloading, to avoid re-triggering
-let updaterStatus = { state: 'idle' };
-let downloadToken = null;   // CancellationToken for the in-flight download (pause)
-let downloadPaused = false; // user paused — suppresses auto-restart from polls
-let stagedInfo = null;      // last update-available info, so resume can restart
-let installing = false;     // guards re-entry while quit+install is in progress
-
 function send(channel, data) {
   const win = getWindow?.();
   if (win && !win.isDestroyed()) {
@@ -34,16 +24,16 @@ function send(channel, data) {
  * Query the local SLP service for the latest release on the stable channel.
  * Returns the parsed response (also cached as `lastResult`) or null on failure.
  *
- * Pass `force = true` (manual "Check for Updates") to have the backend bypass
- * its ~1h release cache and re-poll the cloud immediately. The periodic poll
- * leaves it off so it serves from cache.
+ * Always served from SLP's ~1h release cache. There is no force variant because
+ * there is no longer anything to force: no build installs its own updates, so
+ * the worst a stale cache costs is hearing about a release up to an hour late.
  */
-async function fetchLatest(force = false) {
+async function fetchLatest() {
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return null;
 
   try {
-    const url = `${baseUrl}/v1/releases/latest?current_version=${encodeURIComponent(appVersion)}&channel=${CHANNEL}${force ? '&force=true' : ''}`;
+    const url = `${baseUrl}/v1/releases/latest?current_version=${encodeURIComponent(appVersion)}&channel=${CHANNEL}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     lastResult = await res.json();
@@ -58,7 +48,7 @@ async function pollOnce() {
   const result = await fetchLatest();
   if (result) {
     send('release-update', result);
-    maybeStartUpdate(result);
+    onStatusChange?.();
   }
 }
 
@@ -73,7 +63,7 @@ async function tick() {
 /**
  * Start the periodic release check. `windowGetter` returns the current
  * BrowserWindow to broadcast to (a getter so we always read the live reference).
- * `statusChangeCb` fires on every updater state change so callers can react
+ * `statusChangeCb` fires whenever the known release changes so callers can react
  * outside the renderer (main.js uses it to rebuild the tray menu).
  */
 function start(windowGetter, statusChangeCb) {
@@ -95,276 +85,50 @@ function stop() {
   }
 }
 
-/** Force an immediate check (manual "Check for Updates" button). Returns the result. */
-async function checkNow() {
-  const result = await fetchLatest(true);
-  if (result) {
-    send('release-update', result);
-    maybeStartUpdate(result);
-  }
-  return result ?? lastResult;
-}
-
 /** Last known release-check result, or null if none yet. */
 function getLast() {
   return lastResult;
 }
 
-// --- electron-updater (in-app download + install) --------------------------
-// The SLP /releases response stays the "should we update?" gate; electron-updater
-// only downloads + installs, seeded with the `feed_url` the backend returns.
-
 /**
  * How this build gets a new version.
  *
- *   'self'    electron-updater downloads it and installs it in place.
- *   'manual'  the app cannot install an update itself. It says one exists and
- *             points at the download; the user installs it.
+ *   'manual'  we say one exists and point at the download; the user installs it.
  *   'store'   someone else delivers it (the Mac App Store). Say nothing — an
  *             "update available" notice the app can't act on is a dead end.
- *   'none'    unpackaged dev build. No app-update.yml, nothing to check.
+ *   'none'    unpackaged dev build. No release feed, nothing to report.
  *
- * macOS is 'manual' and not 'self' on purpose. Squirrel.Mac — the installer
- * behind every in-place macOS update — reads the whole update zip into memory
- * before unpacking it: NSURLConnection accumulates the body into a
- * CFMutableData, which grows by doubling its capacity. A payload over 1 GiB
- * therefore asks for a single 2 GiB allocation, and Electron's PartitionAlloc
- * refuses one that large — it treats an over-cap allocation as a fatal OOM and
- * traps instead of returning NULL.
+ * There is deliberately no in-place option. The app used to download and
+ * install updates itself through electron-updater, and on macOS that went
+ * through Squirrel.Mac, which reads the whole update zip into memory before
+ * unpacking it: NSURLConnection accumulates the body into a CFMutableData,
+ * which grows by doubling its capacity. A payload over 1 GiB therefore asks for
+ * a single 2 GiB allocation, and Electron's PartitionAlloc refuses one that
+ * large — it treats an over-cap allocation as a fatal OOM and traps instead of
+ * returning NULL.
  *
  * Our zip is ~1.93 GiB with the models bundled, so 1.0.45 through 1.0.48
- * crash-looped every macOS client that took the update: dead about four seconds
- * after launch, on every launch, with no way back except a manual reinstall.
- * Nothing shipped in the app could fix it, because the client crashed before it
- * could install the fix.
+ * crash-looped every macOS client that took an update: dead about four seconds
+ * after launch, on every launch, recoverable only by reinstalling. Nothing
+ * shipped in the app could fix it, because the client crashed before it could
+ * install the fix.
  *
- * Staying under that ceiling would mean keeping the packaged app under ~1 GiB
- * forever, and the SLP framework alone is 1.1 GB. So macOS tells the user
- * instead of installing, and the whole failure mode goes away rather than
- * getting managed.
+ * Windows and Linux never had that ceiling, but keeping a second delivery path
+ * alive for them meant keeping the whole download/pause/resume/restart
+ * machinery — and an update flow only two of three platforms exercise is one
+ * only two of three platforms test. Every build now behaves the way the Mac App
+ * Store build always has: it reports what it knows and leaves installing to the
+ * user.
  */
-function updateDelivery() {
+function getDelivery() {
   if (!app.isPackaged) return 'none';
   if (process.mas === true) return 'store';
-  switch (process.platform) {
-    case 'darwin':
-      return 'manual';
-    case 'win32':
-      return 'self';
-    case 'linux':
-      // Only the AppImage self-updates (electron sets APPIMAGE when launched
-      // from one). The .deb is owned by the package manager.
-      return process.env.APPIMAGE ? 'self' : 'manual';
-    default:
-      return 'none';
-  }
-}
-
-/** Whether electron-updater may download+install on this build/platform. */
-function updaterSupported() {
-  return updateDelivery() === 'self';
-}
-
-/**
- * Record the current updater state, push it to the renderer, and notify the
- * status-change callback. `version`/`percent` carry over from the previous
- * status when the incoming event omits them (download-progress has no version,
- * update-downloaded has no percent) so a late reader sees a complete picture.
- */
-function setUpdaterStatus(next) {
-  updaterStatus = {
-    ...next,
-    version: 'version' in next ? next.version : updaterStatus.version,
-    percent: 'percent' in next ? next.percent : updaterStatus.percent,
-  };
-  send('updater-status', updaterStatus);
-  onStatusChange?.();
-}
-
-/** Register electron-updater listeners once; forward normalized status to the renderer. */
-function wireUpdater() {
-  if (updaterWired) return;
-  updaterWired = true;
-  // Route electron-updater's own diagnostics to the log file. This is what
-  // records the real reason an update download/install fails (e.g. a macOS
-  // signature rejection that otherwise fails silently) — see logger.js.
-  autoUpdater.logger = require('electron-log/main');
-  // We drive downloadUpdate() ourselves so we can hold a CancellationToken and
-  // pause the transfer — autoDownload would download without handing us one.
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on('checking-for-update', () => setUpdaterStatus({ state: 'checking' }));
-  autoUpdater.on('update-available', (info) => {
-    stagedInfo = info;
-    // Honour a user pause: don't auto-start the download we just staged.
-    if (downloadPaused) {
-      setUpdaterStatus({ state: 'paused', version: info?.version });
-      return;
-    }
-    setUpdaterStatus({ state: 'downloading', version: info?.version, percent: 0 });
-    startDownload();
-  });
-  autoUpdater.on('update-not-available', () => {
-    updateInFlight = null;
-    stagedInfo = null;
-    setUpdaterStatus({ state: 'idle', version: null, percent: 0 });
-  });
-  autoUpdater.on('download-progress', (p) =>
-    setUpdaterStatus({ state: 'downloading', percent: Math.round(p?.percent ?? 0) }));
-  autoUpdater.on('update-downloaded', (info) => {
-    downloadPaused = false;
-    setUpdaterStatus({ state: 'downloaded', version: info?.version, percent: 100 });
-  });
-  autoUpdater.on('error', (err) => {
-    // Pausing cancels the transfer, which surfaces here as an error — swallow it.
-    if (isCancellation(err)) return;
-    updateInFlight = null;
-    setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
-  });
-}
-
-/** A cancelled download rejects/errrors with a cancellation message, not a real failure. */
-function isCancellation(err) {
-  return String(err?.message || err || '').toLowerCase().includes('cancel');
-}
-
-/** Start (or restart) the staged download, holding a token so it can be paused. */
-function startDownload() {
-  downloadPaused = false;
-  downloadToken = new CancellationToken();
-  autoUpdater.downloadUpdate(downloadToken).catch((err) => {
-    if (downloadPaused || isCancellation(err)) return;
-    updateInFlight = null;
-    setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
-  });
-}
-
-/**
- * Pause the in-flight download. electron-updater can't resume from a byte
- * offset, so this cancels the transfer; resumeDownload() restarts it from the
- * top (partial data already on disk is reused where the provider allows).
- */
-function pauseDownload() {
-  if (updaterStatus.state !== 'downloading') return { success: false };
-  downloadPaused = true;
-  try { downloadToken?.cancel(); } catch { /* already settled */ }
-  downloadToken = null;
-  setUpdaterStatus({ state: 'paused' });
-  return { success: true };
-}
-
-/** Resume a paused download by restarting the transfer for the staged version. */
-function resumeDownload() {
-  if (!updaterSupported()) return { success: false };
-  downloadPaused = false;
-  if (stagedInfo) {
-    setUpdaterStatus({ state: 'downloading' });
-    startDownload();
-  } else {
-    // Nothing staged (e.g. app restarted) — a fresh check re-stages and starts.
-    autoUpdater.checkForUpdates();
-  }
-  return { success: true };
-}
-
-/**
- * If the SLP result reports an available update and we can self-update, point
- * electron-updater at the backend-provided feed and start a background download.
- * `feed_url` is the generic feed *directory* and already encodes the stable
- * track in its path, so we deliberately don't pass a `channel` — the metadata
- * files are named latest-*.yml (electron-builder defaults).
- */
-function maybeStartUpdate(result) {
-  if (!result?.update_available || !result.feed_url || !updaterSupported()) return;
-  const version = result?.release?.version ?? null;
-  if (updateInFlight === version) return; // already handling this version
-  updateInFlight = version;
-  wireUpdater();
-  try {
-    autoUpdater.setFeedURL({ provider: 'generic', url: result.feed_url });
-    autoUpdater.checkForUpdates();
-  } catch (err) {
-    updateInFlight = null;
-    setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
-  }
-}
-
-/**
- * Relaunch into the downloaded update. No-op if unsupported or nothing staged.
- * `isSilent = true` keeps Windows from showing the NSIS installer UI for what
- * the user asked to be a restart; both args are ignored on macOS.
- */
-async function quitAndInstall() {
-  if (!updaterSupported()) return { success: false };
-  // Re-entry guard: stopping SLP + scheduling the quit is async, so without this
-  // repeated clicks would re-run it and race concurrent quitAndInstall() calls.
-  if (installing) return { success: true };
-  installing = true;
-  // Reflect the pending install immediately so the button can show "Installing…"
-  // and disable — otherwise the UI looks unresponsive during the stop/quit gap.
-  setUpdaterStatus({ state: 'installing' });
-
-  // Stop SLP and wait for it to exit before relaunching. main.js's before-quit
-  // stops it too but doesn't await, so the old service can outlive the quit —
-  // then the new instance adopts it and skips installing the SLP bundled with
-  // this update. Awaiting here guarantees the port is free for a clean startup.
-  try {
-    await slpService.stopService();
-  } catch (err) {
-    console.warn('[Updater] Error stopping SLP before install:', err?.message || err);
-  }
-
-  setImmediate(() => {
-    // The main window's close handler hides to tray unless this is set.
-    let quitStarted = false;
-    app.once('before-quit', () => { quitStarted = true; });
-    app.isQuitting = true;
-    try {
-      autoUpdater.quitAndInstall(true, true);
-    } catch (err) {
-      app.isQuitting = false;
-      installing = false;
-      setUpdaterStatus({ state: 'error', error: String(err?.message || err) });
-      return;
-    }
-    // electron-updater no-ops silently when the staged build turns out to be
-    // missing or unusable — it neither throws nor emits 'error'. Not quitting
-    // is the only signal, and leaving isQuitting set would stop the app hiding
-    // to tray for the rest of the session.
-    setTimeout(() => {
-      if (quitStarted) return;
-      app.isQuitting = false;
-      installing = false;
-      setUpdaterStatus({ state: 'error', error: 'Update could not be installed. Try downloading it again.' });
-    }, 5000);
-  });
-  return { success: true };
-}
-
-function isUpdaterSupported() {
-  return updaterSupported();
-}
-
-/** How this build gets a new version — see updateDelivery(). */
-function getDelivery() {
-  return updateDelivery();
-}
-
-/** Current electron-updater state, for renderers that mount after a push. */
-function getUpdaterStatus() {
-  return updaterStatus;
+  return 'manual';
 }
 
 module.exports = {
   start,
   stop,
-  checkNow,
   getLast,
-  quitAndInstall,
-  pauseDownload,
-  resumeDownload,
-  isUpdaterSupported,
   getDelivery,
-  getUpdaterStatus,
 };

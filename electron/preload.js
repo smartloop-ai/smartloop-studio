@@ -237,7 +237,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('agent-restarting');
   },
   // App release / update check
-  checkForUpdates: () => ipcRenderer.invoke('release-check-now'),
   getLatestRelease: () => ipcRenderer.invoke('release-get-latest'),
   onReleaseUpdate: (callback) => {
     ipcRenderer.on('release-update', (event, data) => callback(data));
@@ -245,19 +244,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeReleaseUpdateListener: () => {
     ipcRenderer.removeAllListeners('release-update');
   },
-  // In-app updater (electron-updater)
-  isUpdaterSupported: () => ipcRenderer.invoke('updater-supported'),
+  // Whether this build has anything to say about updates. No build installs one
+  // itself — see release-checker.js getDelivery().
   getUpdateDelivery: () => ipcRenderer.invoke('updater-delivery'),
-  quitAndInstallUpdate: () => ipcRenderer.invoke('updater-quit-and-install'),
-  pauseUpdate: () => ipcRenderer.invoke('updater-pause'),
-  resumeUpdate: () => ipcRenderer.invoke('updater-resume'),
-  onUpdaterStatus: (callback) => {
-    ipcRenderer.on('updater-status', (event, data) => callback(data));
-  },
-  removeUpdaterStatusListener: () => {
-    ipcRenderer.removeAllListeners('updater-status');
-  },
-  getUpdaterStatus: () => ipcRenderer.invoke('updater-get-status'),
   onNavigateToProject: (callback) => {
     ipcRenderer.on('navigate-to-project', (event, projectId) => callback(projectId));
   },

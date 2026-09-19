@@ -20,17 +20,16 @@ protocols:
   name: smartloop
   schemes:
     - smartloop
-# electron-updater feed configuration. This exists for two reasons — NOT to
-# publish from CI (CI copies artifacts to the CDN via gsutil itself):
-#   1. Build-time: electron-builder only writes the latest*.yml update-metadata
-#      files that scripts/build-release-json.py parses (sha512/size) when a
-#      publish provider is set. `generic` forces that generation, and its upload
-#      path is a no-op, so nothing is ever pushed to a provider.
-#   2. Runtime placeholder: the url below is baked into app-update.yml, but the
-#      app does NOT update from it directly. It reads the live `feed_url` from
-#      the SLP /v1/releases/latest response and calls autoUpdater.setFeedURL()
-#      (release-checker.js, stage 2). The API serves latest-mac.yml / latest.yml
-#      on the fly from Mongo with absolute dl.smartloop.ai artifact URLs.
+# Build-time only — nothing publishes from here and nothing updates from here.
+# electron-builder writes the latest*.yml update-metadata files that
+# scripts/build-release-json.py parses (sha512/size) ONLY when a publish
+# provider is set, and those files are how each platform's artifact reaches the
+# releases API. `generic` forces that generation; its upload path is a no-op, so
+# nothing is ever pushed to a provider (CI copies artifacts to the CDN itself).
+#
+# The url below is also baked into app-update.yml, which no longer has a reader:
+# no build installs its own updates, so nothing consults a feed. It stays
+# because the provider has to be *something* for the metadata to be written.
 publish:
   provider: generic
   url: https://api.smartloop.ai/v1/releases/feed/stable

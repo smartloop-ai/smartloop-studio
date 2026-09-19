@@ -1,10 +1,3 @@
-export interface UpdaterStatus {
-  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error';
-  percent?: number;
-  version?: string | null;
-  error?: string;
-}
-
 // A model download/load tracked by the main process. `kind` separates the
 // project's primary orchestrator load from an auxiliary model download; both
 // share one map, so consumers must filter on it.
@@ -157,19 +150,12 @@ export interface ElectronAPI {
   onAgentRestarting: (callback: (data: { restarting: boolean }) => void) => void;
   removeAgentRestartingListener: () => void;
   // App release / update check
-  checkForUpdates: () => Promise<any>;
   getLatestRelease: () => Promise<any>;
   onReleaseUpdate: (callback: (data: any) => void) => void;
   removeReleaseUpdateListener: () => void;
-  // In-app updater (electron-updater)
-  isUpdaterSupported: () => Promise<boolean>;
-  getUpdateDelivery: () => Promise<'self' | 'manual' | 'store' | 'none'>;
-  quitAndInstallUpdate: () => Promise<{ success: boolean }>;
-  pauseUpdate: () => Promise<{ success: boolean }>;
-  resumeUpdate: () => Promise<{ success: boolean }>;
-  onUpdaterStatus: (callback: (data: UpdaterStatus) => void) => void;
-  removeUpdaterStatusListener: () => void;
-  getUpdaterStatus: () => Promise<UpdaterStatus>;
+  // Whether this build has anything to say about updates. No build installs one
+  // itself — see release-checker.js getDelivery().
+  getUpdateDelivery: () => Promise<'manual' | 'store' | 'none'>;
   // System hardware info
   getFrameworkVersion: () => Promise<string>;
   getCommandLineStatus: () => Promise<{ supported: boolean; installed: boolean; linkPath: string | null }>;

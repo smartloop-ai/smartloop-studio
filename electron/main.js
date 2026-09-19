@@ -1788,29 +1788,13 @@ ipcMain.handle('slp-switch-version', async (event, version) => {
   }
 });
 
-// IPC: force an immediate release check (manual "Check for Updates")
-ipcMain.handle('release-check-now', () => releaseChecker.checkNow());
-
 // IPC: last known release-check result (or null)
 ipcMain.handle('release-get-latest', () => releaseChecker.getLast());
 
-// IPC: whether electron-updater can self-install on this build/platform
-ipcMain.handle('updater-supported', () => releaseChecker.isUpdaterSupported());
-
-// IPC: how this build gets a new version — 'self' | 'manual' | 'store' | 'none'.
-// The renderer needs the distinction updater-supported flattens away: a build
-// that can't self-install still has something to say when it's 'manual'.
+// IPC: how this build gets a new version — 'manual' | 'store' | 'none'. No
+// build installs one itself, so this only decides whether there is anything to
+// report: 'store' and 'none' have nothing to say.
 ipcMain.handle('updater-delivery', () => releaseChecker.getDelivery());
-
-// IPC: relaunch into the downloaded update
-ipcMain.handle('updater-quit-and-install', () => releaseChecker.quitAndInstall());
-
-// IPC: pause / resume the in-flight download
-ipcMain.handle('updater-pause', () => releaseChecker.pauseDownload());
-ipcMain.handle('updater-resume', () => releaseChecker.resumeDownload());
-
-// IPC: current updater state, for renderers that mount after the last push
-ipcMain.handle('updater-get-status', () => releaseChecker.getUpdaterStatus());
 
 // Bootstrap the SLP service via SSE endpoint
 // Handles workspace creation, model download, project creation, and model loading
