@@ -247,6 +247,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // In-app updater (electron-updater)
   isUpdaterSupported: () => ipcRenderer.invoke('updater-supported'),
+  getUpdateDelivery: () => ipcRenderer.invoke('updater-delivery'),
   quitAndInstallUpdate: () => ipcRenderer.invoke('updater-quit-and-install'),
   pauseUpdate: () => ipcRenderer.invoke('updater-pause'),
   resumeUpdate: () => ipcRenderer.invoke('updater-resume'),

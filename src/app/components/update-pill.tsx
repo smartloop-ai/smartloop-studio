@@ -10,10 +10,13 @@ export default function UpdatePill() {
     const { appUpdate } = useAppStatus();
     const navigate = useNavigate();
 
-    // Only when the app can actually self-update. In store-managed (Mac App
-    // Store) and unpackaged builds updaterSupported is false — updates come from
-    // the store, so a "update available" pill would be a dead end. Hide it.
-    const hasUpdate = appUpdate.updaterSupported && (appUpdate.updateAvailable || appUpdate.state === 'downloaded');
+    // Only when there is something the user can do about it. Store-managed (Mac
+    // App Store) and unpackaged builds deliver updates elsewhere, so a pill
+    // there would be a dead end. 'manual' builds — macOS and the Linux .deb —
+    // can't install in place but Settings shows them a Download button, so the
+    // pill still earns its place by pointing there.
+    const canAct = appUpdate.delivery === 'self' || appUpdate.delivery === 'manual';
+    const hasUpdate = canAct && (appUpdate.updateAvailable || appUpdate.state === 'downloaded');
     if (!hasUpdate) return null;
 
     return (

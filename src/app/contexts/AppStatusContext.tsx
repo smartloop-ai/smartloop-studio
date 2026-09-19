@@ -24,9 +24,15 @@ export interface AppUpdate {
   // latestVersion because the feed can stop reporting an update (cache flap,
   // pulled release) while the staged build is still sitting there installable.
   stagedVersion: string | null;
-  // Whether electron-updater can download+install on this build/platform
-  // (false in dev and for the Linux .deb).
+  // Whether electron-updater can download+install on this build/platform.
+  // Equivalent to delivery === 'self'; kept as its own field because most
+  // consumers only care whether the in-app download flow applies.
   updaterSupported: boolean;
+  // How this build gets a new version. 'manual' is the one updaterSupported
+  // can't express: no in-app install, but there IS something to tell the user —
+  // macOS and the Linux .deb. 'store' stays silent (the Mac App Store delivers
+  // it), and so does 'none' (unpackaged dev build).
+  delivery: 'self' | 'manual' | 'store' | 'none';
   // electron-updater's progress through that download.
   state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error' | 'installing';
   percent: number;
@@ -84,6 +90,7 @@ const DEFAULT_APP_UPDATE: AppUpdate = {
   latestVersion: null,
   stagedVersion: null,
   updaterSupported: false,
+  delivery: 'none',
   state: 'idle',
   percent: 0,
   checking: false,
@@ -265,6 +272,10 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     api.isUpdaterSupported?.().then((supported: boolean) => {
       if (cancelled) return;
       setAppUpdate(prev => ({ ...prev, updaterSupported: !!supported }));
+    }).catch(() => {});
+    api.getUpdateDelivery?.().then((delivery: AppUpdate['delivery']) => {
+      if (cancelled || !delivery) return;
+      setAppUpdate(prev => ({ ...prev, delivery }));
     }).catch(() => {});
 
     api.onReleaseUpdate?.(applyRelease);

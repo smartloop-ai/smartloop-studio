@@ -163,6 +163,7 @@ export interface ElectronAPI {
   removeReleaseUpdateListener: () => void;
   // In-app updater (electron-updater)
   isUpdaterSupported: () => Promise<boolean>;
+  getUpdateDelivery: () => Promise<'self' | 'manual' | 'store' | 'none'>;
   quitAndInstallUpdate: () => Promise<{ success: boolean }>;
   pauseUpdate: () => Promise<{ success: boolean }>;
   resumeUpdate: () => Promise<{ success: boolean }>;
