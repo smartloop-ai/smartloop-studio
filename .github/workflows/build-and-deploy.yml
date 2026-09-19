@@ -165,7 +165,6 @@ jobs:
           name: macos-build
           path: |
             dist/*.dmg
-            dist/*.zip
             dist/*.blockmap
             dist/latest-mac.yml
           retention-days: 1
@@ -461,7 +460,7 @@ jobs:
           mkdir -p release/$VERSION/windows
 
           if [ -d "artifacts/macos" ]; then
-            mv artifacts/macos/*.dmg artifacts/macos/*.zip artifacts/macos/*.blockmap release/$VERSION/macos/ 2>/dev/null || true
+            mv artifacts/macos/*.dmg artifacts/macos/*.blockmap release/$VERSION/macos/ 2>/dev/null || true
           fi
 
           if [ -d "artifacts/linux" ]; then
