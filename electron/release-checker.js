@@ -115,24 +115,54 @@ function getLast() {
 // only downloads + installs, seeded with the `feed_url` the backend returns.
 
 /**
- * Whether electron-updater can actually download+install on this build/platform.
- * False in dev (no packaged app-update.yml) and for Linux .deb — only the
- * AppImage self-updates (electron sets APPIMAGE when launched from one).
+ * How this build gets a new version.
+ *
+ *   'self'    electron-updater downloads it and installs it in place.
+ *   'manual'  the app cannot install an update itself. It says one exists and
+ *             points at the download; the user installs it.
+ *   'store'   someone else delivers it (the Mac App Store). Say nothing — an
+ *             "update available" notice the app can't act on is a dead end.
+ *   'none'    unpackaged dev build. No app-update.yml, nothing to check.
+ *
+ * macOS is 'manual' and not 'self' on purpose. Squirrel.Mac — the installer
+ * behind every in-place macOS update — reads the whole update zip into memory
+ * before unpacking it: NSURLConnection accumulates the body into a
+ * CFMutableData, which grows by doubling its capacity. A payload over 1 GiB
+ * therefore asks for a single 2 GiB allocation, and Electron's PartitionAlloc
+ * refuses one that large — it treats an over-cap allocation as a fatal OOM and
+ * traps instead of returning NULL.
+ *
+ * Our zip is ~1.93 GiB with the models bundled, so 1.0.45 through 1.0.48
+ * crash-looped every macOS client that took the update: dead about four seconds
+ * after launch, on every launch, with no way back except a manual reinstall.
+ * Nothing shipped in the app could fix it, because the client crashed before it
+ * could install the fix.
+ *
+ * Staying under that ceiling would mean keeping the packaged app under ~1 GiB
+ * forever, and the SLP framework alone is 1.1 GB. So macOS tells the user
+ * instead of installing, and the whole failure mode goes away rather than
+ * getting managed.
  */
-function updaterSupported() {
-  if (!app.isPackaged) return false;
-  // Mac App Store build: updates are delivered by the store, and electron-updater
-  // cannot self-install inside the sandbox. Never self-update here.
-  if (process.mas === true) return false;
+function updateDelivery() {
+  if (!app.isPackaged) return 'none';
+  if (process.mas === true) return 'store';
   switch (process.platform) {
     case 'darwin':
+      return 'manual';
     case 'win32':
-      return true;
+      return 'self';
     case 'linux':
-      return !!process.env.APPIMAGE;
+      // Only the AppImage self-updates (electron sets APPIMAGE when launched
+      // from one). The .deb is owned by the package manager.
+      return process.env.APPIMAGE ? 'self' : 'manual';
     default:
-      return false;
+      return 'none';
   }
+}
+
+/** Whether electron-updater may download+install on this build/platform. */
+function updaterSupported() {
+  return updateDelivery() === 'self';
 }
 
 /**
@@ -316,6 +346,11 @@ function isUpdaterSupported() {
   return updaterSupported();
 }
 
+/** How this build gets a new version — see updateDelivery(). */
+function getDelivery() {
+  return updateDelivery();
+}
+
 /** Current electron-updater state, for renderers that mount after a push. */
 function getUpdaterStatus() {
   return updaterStatus;
@@ -330,5 +365,6 @@ module.exports = {
   pauseDownload,
   resumeDownload,
   isUpdaterSupported,
+  getDelivery,
   getUpdaterStatus,
 };

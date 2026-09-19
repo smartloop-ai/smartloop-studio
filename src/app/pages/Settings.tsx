@@ -289,7 +289,7 @@ export default function SettingsPage() {
 
     const DOWNLOAD_URL = 'https://smartloop.ai/download/';
 
-    const { updateAvailable, latestVersion, stagedVersion, updaterSupported, state: updaterState, percent: downloadPercent, checking: checkingUpdate, error: updaterError } = appUpdate;
+    const { updateAvailable, latestVersion, stagedVersion, updaterSupported, delivery, state: updaterState, percent: downloadPercent, checking: checkingUpdate, error: updaterError } = appUpdate;
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -425,10 +425,15 @@ export default function SettingsPage() {
                     {/* 0. App version / updates */}
                     <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
-                            // Store-managed (Mac App Store) and unpackaged builds can't self-update
-                            // (updaterSupported === false). Show a clean identity card only: the
-                            // product name on the left and a large version pill on the right.
-                            if (!updaterSupported) {
+                            // Store-managed (Mac App Store) and unpackaged builds have nothing to
+                            // say about updates: the store delivers them, or there is no feed at
+                            // all. Show a clean identity card only — the product name on the left
+                            // and a large version pill on the right.
+                            //
+                            // Not keyed on updaterSupported, which is false for 'manual' builds
+                            // too (macOS, the Linux .deb). Those fall through to the branches
+                            // below, where "Version X available" + Download is exactly right.
+                            if (delivery === 'store' || delivery === 'none') {
                                 return (
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="flex items-center gap-2.5 min-w-0">
@@ -606,8 +611,9 @@ export default function SettingsPage() {
                                 // Disabled Pause holds the slot until the download starts.
                                 actions = pauseButton(true);
                             }
-                            // Platforms electron-updater can't install for us — the Linux .deb,
-                            // and unpackaged dev builds. Downloading by hand is the normal path.
+                            // 'manual' builds — macOS and the Linux .deb. electron-updater never
+                            // downloads anything here, so there is no progress to show: just the
+                            // version and a button out to the download page.
                             else if (updateAvailable) {
                                 status = <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>Version {latestVersion} available</span>;
                                 actions = downloadButton;

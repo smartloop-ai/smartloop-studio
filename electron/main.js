@@ -1797,6 +1797,11 @@ ipcMain.handle('release-get-latest', () => releaseChecker.getLast());
 // IPC: whether electron-updater can self-install on this build/platform
 ipcMain.handle('updater-supported', () => releaseChecker.isUpdaterSupported());
 
+// IPC: how this build gets a new version — 'self' | 'manual' | 'store' | 'none'.
+// The renderer needs the distinction updater-supported flattens away: a build
+// that can't self-install still has something to say when it's 'manual'.
+ipcMain.handle('updater-delivery', () => releaseChecker.getDelivery());
+
 // IPC: relaunch into the downloaded update
 ipcMain.handle('updater-quit-and-install', () => releaseChecker.quitAndInstall());
 
