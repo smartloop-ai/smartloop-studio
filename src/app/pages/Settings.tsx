@@ -425,15 +425,23 @@ export default function SettingsPage() {
                     {/* 0. App version / updates */}
                     <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
-                            // Store-managed (Mac App Store) and unpackaged builds have nothing to
-                            // say about updates: the store delivers them, or there is no feed at
-                            // all. Show a clean identity card only — the product name on the left
-                            // and a large version pill on the right.
+                            // Nothing to say about updates — show a clean identity card only:
+                            // the product name on the left and a large version pill on the right.
                             //
-                            // Not keyed on updaterSupported, which is false for 'manual' builds
-                            // too (macOS, the Linux .deb). Those fall through to the branches
-                            // below, where "Version X available" + Download is exactly right.
-                            if (delivery === 'store' || delivery === 'none') {
+                            // Three cases reach it. Store-managed (Mac App Store) and unpackaged
+                            // builds never have anything to say. A 'manual' build — macOS, the
+                            // Linux .deb — has something to say only when there IS an update, so
+                            // until then it reads the same way: the version, and no invitation to
+                            // act. It cannot install one anyway, so "You're up to date" beside a
+                            // Check for Updates button was offering a control whose only outcome
+                            // is the sentence already on screen.
+                            //
+                            // The moment an update exists, 'manual' falls through to the branches
+                            // below and the card becomes "Version X available" + Download. That is
+                            // the only state change these builds have — electron-updater is never
+                            // wired for them, so updaterState never leaves 'idle'.
+                            if (delivery === 'store' || delivery === 'none'
+                                || (delivery === 'manual' && !updateAvailable)) {
                                 return (
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="flex items-center gap-2.5 min-w-0">
