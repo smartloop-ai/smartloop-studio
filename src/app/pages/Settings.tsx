@@ -251,15 +251,6 @@ export default function SettingsPage() {
     const [cleanupSel, setCleanupSel] = useState<Set<string>>(new Set(CLEANABLE.map((c) => c.key)));
     const [isCleaning, setIsCleaning] = useState(false);
     const [cleanupError, setCleanupError] = useState('');
-    // Transient restart indicator for the Agent panel (driven by a dedicated IPC
-    // channel so it doesn't disturb global health/project state).
-    const [agentRestarting, setAgentRestarting] = useState(false);
-    useEffect(() => {
-        const api = window.electronAPI;
-        if (!api?.onAgentRestarting) return;
-        api.onAgentRestarting(({ restarting }) => setAgentRestarting(restarting));
-        return () => api.removeAgentRestartingListener?.();
-    }, []);
 
     const loadStorage = async () => {
         const res = await window.electronAPI?.getStorageUsage?.();
@@ -689,11 +680,11 @@ export default function SettingsPage() {
                                         </Box>
                                         <Box component="td">
                                             <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase" style={{
-                                                border: agentRestarting ? '1px solid var(--sl-status-warning)' : serverHealth?.status === 'running' ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
-                                                color: agentRestarting ? 'var(--sl-status-warning)' : serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
+                                                border: serverHealth?.status === 'running' ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-default)',
+                                                color: serverHealth?.status === 'running' ? 'var(--sl-brand-primary)' : serverHealth?.status === 'error' ? 'var(--sl-status-error)' : 'var(--sl-text-disabled)',
                                                 opacity: 0.7,
                                             }}>
-                                                {agentRestarting ? 'RESTARTING' : serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
+                                                {serverHealth?.status === 'running' ? 'HEALTHY' : serverHealth?.status === 'error' ? 'ERROR' : serverHealth?.status === 'unreachable' ? 'UNREACHABLE' : 'UNKNOWN'}
                                             </span>
                                         </Box>
                                     </tr>
