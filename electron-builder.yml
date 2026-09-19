@@ -72,11 +72,19 @@ mac:
       to: models/
       filter:
         - "**/*"
+  # dmg only. The zip existed for Squirrel.Mac, and macOS no longer self-updates
+  # (release-checker.js: delivery is 'manual' there) — so nothing installs it and
+  # nothing reads the feed it fed. Building it cost ~2 GB of CDN per release plus
+  # its own sign+notarize pass, for an artifact no client would ever fetch.
+  #
+  # latest-mac.yml is still written: the dmg target sets isWriteUpdateInfo when it
+  # writes its blockmap (dmg-builder/out/dmg.js), which is the flag PublishManager
+  # keys the metadata task on. So build-release-json.py still finds the dmg and the
+  # release payload still carries macOS. The API's mac feed keeps 404ing, now as
+  # "No zip artifact" rather than "over the limit" — same outcome for the same
+  # reason: there is no in-place macOS update to advertise.
   target:
     - target: dmg
-      arch:
-        - arm64
-    - target: zip
       arch:
         - arm64
 # Mac App Store build. NOT part of mac.target above, so normal `--mac` builds
