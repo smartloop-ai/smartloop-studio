@@ -418,117 +418,66 @@ export default function SettingsPage() {
                         own name inside itself — you got here from the gear, and
                         the section headings below say what everything is. */}
 
-                    {/* 0. App version / updates */}
-                    <Box className={`mb-6 md:mb-8 p-4 ${updateAvailable && delivery === 'manual' ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                    {/* 0. App version / updates.
+
+                        One layout, two states. The card reads the same either way —
+                        mark, name, version pill — and an available update only adds a
+                        line under the name and a button beside the pill. It used to be
+                        two separate cards with different icons, different version
+                        treatments and different padding, so an update made the whole
+                        block jump. Padding now matches every other card on this page. */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
-                            // Nothing to say about updates — show a clean identity card only:
-                            // the product name on the left and a large version pill on the right.
-                            //
-                            // Three cases reach it. Store-managed (Mac App Store) and unpackaged
-                            // builds never have anything to say. A 'manual' build — every other
-                            // build — has something to say only when there IS an update, so until
-                            // then it reads the same way: the version, and no invitation to act.
-                            // It cannot install one anyway, so "You're up to date" beside a Check
-                            // for Updates button was offering a control whose only outcome is the
-                            // sentence already on screen.
-                            //
-                            // The moment an update exists, 'manual' falls through to the one
-                            // branch below: "Version X available" + Download. Those two are the
-                            // whole state space — nothing downloads, so there is no progress,
-                            // pause, restart or failure to render.
-                            if (delivery === 'store' || delivery === 'none'
-                                || (delivery === 'manual' && !updateAvailable)) {
-                                return (
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
-                                                so it reads cleanly on the dark surface — unlike the PNG
-                                                app-icon tile, which carries its own black background. */}
-                                            <div
-                                                className="flex items-center justify-center shrink-0 rounded-lg p-1"
-                                                style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
-                                            >
-                                                <LogoMark className="w-5 h-5" />
-                                            </div>
-                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                            // The only variable. 'store' (Mac App Store) and 'none' (unpackaged
+                            // dev build) never report an update, so they show the plain card;
+                            // 'manual' — every shipped build — shows it too until the feed says
+                            // there is something newer. Nothing downloads in any state, so there
+                            // is no progress, pause, restart or failure to render here.
+                            const showUpdate = delivery === 'manual' && updateAvailable;
+
+                            return (
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
+                                            so it reads cleanly on the dark surface — unlike the PNG
+                                            app-icon tile, which carries its own black background. */}
+                                        <div
+                                            className="flex items-center justify-center shrink-0 rounded-lg p-1"
+                                            style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
+                                        >
+                                            <LogoMark className="w-5 h-5" />
                                         </div>
+                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
+                                            {showUpdate && (
+                                                <span className="text-sm truncate" style={{ color: 'var(--sl-text-secondary)' }}>
+                                                    Version {latestVersion} available
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* The running version stays put in both states — it answers
+                                        "what am I on?", which an available update does not change.
+                                        Download joins it rather than replacing it. */}
+                                    <div className="flex items-center gap-2 shrink-0">
                                         <span
-                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg shrink-0"
+                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
                                         >
                                             v{appVersion}
                                         </span>
-                                    </div>
-                                );
-                            }
-
-                            // Only one state reaches here — everything else returned the
-                            // identity card above. A build that has something to say has exactly
-                            // one thing to say: which version, and where to get it. There is no
-                            // progress, pause or restart, because nothing downloads.
-                            const status = (
-                                <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
-                                    Version {latestVersion} available
-                                </span>
-                            );
-                            const actions = (
-                                <button
-                                    onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
-                                    Download
-                                </button>
-                            );
-
-                            return (
-                                <div className="flex items-center justify-between gap-4">
-                                    {/* Left columns: package icon + identity/status stack */}
-                                    <div className="flex items-center gap-3 min-w-0">
-                                        <div
-                                            className="flex items-center justify-center rounded-xl shrink-0"
-                                            style={{ width: 48, height: 48, backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-default)' }}
-                                        >
-                                            <svg
-                                                width="24"
-                                                height="24"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="var(--sl-brand-primary)"
-                                                strokeWidth="1.75"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
+                                        {showUpdate && (
+                                            <button
+                                                onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                             >
-                                                <path d="m7.5 4.27 9 5.15" />
-                                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                                                <path d="M3.3 7 12 12l8.7-5" />
-                                                <path d="M12 22V12" />
-                                            </svg>
-                                        </div>
-                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                            <div className="flex items-center gap-1.5">
-                                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                                                <span
-                                                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
-                                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
-                                                >
-                                                    v{appVersion}
-                                                </span>
-                                                {/* Changelog link hidden until the docs page ships —
-                                                    restore with CHANGELOG_URL from @/app/constants. */}
-                                            </div>
-                                            {status}
-                                        </div>
+                                                <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
+                                                Download
+                                            </button>
+                                        )}
                                     </div>
-
-                                    {/* Right: single primary action, vertically centered against
-                                        the block. Absent while an update downloads on its own. */}
-                                    {actions && (
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {actions}
-                                        </div>
-                                    )}
                                 </div>
                             );
                         })()}
