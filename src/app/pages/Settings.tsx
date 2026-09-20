@@ -449,23 +449,30 @@ export default function SettingsPage() {
                                         </div>
                                         <div className="flex flex-col gap-0.5 min-w-0">
                                             <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                                            {showUpdate && (
-                                                <span className="text-sm truncate" style={{ color: 'var(--sl-text-secondary)' }}>
-                                                    Version {latestVersion} available
+                                            {/* Both versions, because the pill has given up saying
+                                                which one is running in order to say that a newer one
+                                                exists. Guarded on latestVersion: "v1.0.46 → vnull"
+                                                would be worse than no line at all. */}
+                                            {showUpdate && latestVersion && (
+                                                <span className="text-sm font-mono truncate" style={{ color: 'var(--sl-text-muted)' }}>
+                                                    v{appVersion} → v{latestVersion}
                                                 </span>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* The running version stays put in both states — it answers
-                                        "what am I on?", which an available update does not change.
-                                        Download joins it rather than replacing it. */}
+                                    {/* One pill, holding whichever fact matters. With nothing newer
+                                        published that is the running version; once there is, the
+                                        state is the more useful thing to read at a glance and the
+                                        versions move to the line under the name. Same geometry
+                                        either way, so only the text changes. Mono for a version
+                                        number, proportional for a sentence. */}
                                     <div className="flex items-center gap-2 shrink-0">
                                         <span
-                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg"
+                                            className={`text-sm md:text-base font-semibold px-3.5 py-1.5 rounded-lg whitespace-nowrap ${showUpdate ? '' : 'font-mono'}`}
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
                                         >
-                                            v{appVersion}
+                                            {showUpdate ? 'Update available' : `v${appVersion}`}
                                         </span>
                                         {showUpdate && (
                                             <button
