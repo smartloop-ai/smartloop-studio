@@ -450,30 +450,37 @@ export default function SettingsPage() {
                                         <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                                     </div>
 
-                                    {/* The pill only ever reports the running version — one job,
-                                        one meaning, never moves. An update adds a button beside it
-                                        that names the version it would take you to, and nothing
-                                        else about the card changes. */}
+                                    {/* One element, either way. With nothing newer published it is
+                                        the running version; once there is, the version steps aside
+                                        for the thing you'd actually want to do about it. Nothing
+                                        moves, nothing is added — the same slot says a different
+                                        thing, so the card is one line high in both states.
+
+                                        The running version isn't lost, just not shouted: it moves
+                                        to the button's tooltip, which is where "and what am I on?"
+                                        is worth answering but not worth spending the card on. */}
                                     <div className="flex items-center gap-2 shrink-0">
-                                        <span
-                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg whitespace-nowrap"
-                                            style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
-                                        >
-                                            v{appVersion}
-                                        </span>
-                                        {showUpdate && (
+                                        {showUpdate ? (
                                             <button
                                                 onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
-                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                                                title={`You're on v${appVersion}`}
+                                                className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm md:text-base font-semibold transition-colors whitespace-nowrap"
                                                 style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                             >
-                                                <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
-                                                {/* Opens smartloop.ai/download/ in the browser —
-                                                    the app installs nothing itself. Falls back to
-                                                    "Download" if the feed reported an update
+                                                <SystemUpdateAltIcon sx={{ fontSize: 18 }} />
+                                                {/* Opens smartloop.ai/download/ in the browser — the
+                                                    app installs nothing itself. Falls back to
+                                                    "Download" if the feed ever reports an update
                                                     without naming its version. */}
                                                 {latestVersion ? `Update to v${latestVersion}` : 'Download'}
                                             </button>
+                                        ) : (
+                                            <span
+                                                className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg whitespace-nowrap"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
+                                            >
+                                                v{appVersion}
+                                            </span>
                                         )}
                                     </div>
                                 </div>
