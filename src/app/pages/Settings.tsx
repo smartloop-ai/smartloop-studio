@@ -447,32 +447,19 @@ export default function SettingsPage() {
                                         >
                                             <LogoMark className="w-5 h-5" />
                                         </div>
-                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                                            {/* Both versions, because the pill has given up saying
-                                                which one is running in order to say that a newer one
-                                                exists. Guarded on latestVersion: "v1.0.46 → vnull"
-                                                would be worse than no line at all. */}
-                                            {showUpdate && latestVersion && (
-                                                <span className="text-sm font-mono truncate" style={{ color: 'var(--sl-text-muted)' }}>
-                                                    v{appVersion} → v{latestVersion}
-                                                </span>
-                                            )}
-                                        </div>
+                                        <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                                     </div>
 
-                                    {/* One pill, holding whichever fact matters. With nothing newer
-                                        published that is the running version; once there is, the
-                                        state is the more useful thing to read at a glance and the
-                                        versions move to the line under the name. Same geometry
-                                        either way, so only the text changes. Mono for a version
-                                        number, proportional for a sentence. */}
+                                    {/* The pill only ever reports the running version — one job,
+                                        one meaning, never moves. An update adds a button beside it
+                                        that names the version it would take you to, and nothing
+                                        else about the card changes. */}
                                     <div className="flex items-center gap-2 shrink-0">
                                         <span
-                                            className={`text-sm md:text-base font-semibold px-3.5 py-1.5 rounded-lg whitespace-nowrap ${showUpdate ? '' : 'font-mono'}`}
+                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg whitespace-nowrap"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
                                         >
-                                            {showUpdate ? 'Update available' : `v${appVersion}`}
+                                            v{appVersion}
                                         </span>
                                         {showUpdate && (
                                             <button
@@ -481,7 +468,11 @@ export default function SettingsPage() {
                                                 style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                             >
                                                 <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
-                                                Download
+                                                {/* Opens smartloop.ai/download/ in the browser —
+                                                    the app installs nothing itself. Falls back to
+                                                    "Download" if the feed reported an update
+                                                    without naming its version. */}
+                                                {latestVersion ? `Update to v${latestVersion}` : 'Download'}
                                             </button>
                                         )}
                                     </div>
