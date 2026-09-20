@@ -121,7 +121,17 @@ function getLast() {
  * user.
  */
 function getDelivery() {
-  if (!app.isPackaged) return 'none';
+  if (!app.isPackaged) {
+    // A dev build has no installed version to be behind, so by default it says
+    // nothing. SL_UPDATE_UI=1 opts in to the packaged behaviour so both update
+    // states can be exercised with `make electron-dev`: set package.json's
+    // version below the published one to see "Version X available", at or above
+    // it to see the plain identity card.
+    //
+    // Unreachable in a packaged build — the guard above returns first — so this
+    // cannot be switched on by anything a user runs.
+    return process.env.SL_UPDATE_UI === '1' ? 'manual' : 'none';
+  }
   if (process.mas === true) return 'store';
   return 'manual';
 }
