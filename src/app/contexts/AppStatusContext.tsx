@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { storageService } from '@/app/services/storage.service';
-import type { UpdaterStatus } from '@/electron';
 
 export interface IndexingProgress {
   total: number;
@@ -20,25 +19,11 @@ export interface AppUpdate {
   // From the SLP /releases check — is a newer release published?
   updateAvailable: boolean;
   latestVersion: string | null;
-  // Version electron-updater actually has on disk. Tracked separately from
-  // latestVersion because the feed can stop reporting an update (cache flap,
-  // pulled release) while the staged build is still sitting there installable.
-  stagedVersion: string | null;
-  // Whether electron-updater can download+install on this build/platform.
-  // Equivalent to delivery === 'self'; kept as its own field because most
-  // consumers only care whether the in-app download flow applies.
-  updaterSupported: boolean;
-  // How this build gets a new version. 'manual' is the one updaterSupported
-  // can't express: no in-app install, but there IS something to tell the user —
-  // macOS and the Linux .deb. 'store' stays silent (the Mac App Store delivers
-  // it), and so does 'none' (unpackaged dev build).
-  delivery: 'self' | 'manual' | 'store' | 'none';
-  // electron-updater's progress through that download.
-  state: 'idle' | 'checking' | 'downloading' | 'paused' | 'downloaded' | 'error' | 'installing';
-  percent: number;
-  error?: string;
-  // A manual force-check is in flight.
-  checking: boolean;
+  // Whether this build has anything to say about updates. No build installs one
+  // itself, so this only decides whether to speak: 'manual' reports what it
+  // knows and points at the download, 'store' leaves it to the Mac App Store,
+  // 'none' is an unpackaged dev build with no feed. See release-checker.js.
+  delivery: 'manual' | 'store' | 'none';
 }
 
 export interface AppStatus {
@@ -60,17 +45,9 @@ export interface AppStatus {
   // doc no longer exists in the API).
   removeProcessed: (docId: string) => void;
   // App update state, driven by the main-process release-checker. This is the
-  // only subscriber to `updater-status` — preload's removeAllListeners means a
+  // only subscriber to `release-update` — preload's removeAllListeners means a
   // second one would clobber it.
   appUpdate: AppUpdate;
-  // Force an immediate check (bypasses the backend's release cache).
-  checkForUpdates: () => Promise<void>;
-  // Relaunch into a downloaded update.
-  installUpdate: () => void;
-  // Pause / resume the in-flight download. electron-updater can't resume from a
-  // byte offset, so resume restarts the transfer.
-  pauseUpdate: () => void;
-  resumeUpdate: () => void;
 }
 
 interface HealthDetails {
@@ -88,12 +65,7 @@ interface HealthPayload extends ServerHealth {
 const DEFAULT_APP_UPDATE: AppUpdate = {
   updateAvailable: false,
   latestVersion: null,
-  stagedVersion: null,
-  updaterSupported: false,
   delivery: 'none',
-  state: 'idle',
-  percent: 0,
-  checking: false,
 };
 
 const DEFAULT_STATUS: AppStatus = {
@@ -105,10 +77,6 @@ const DEFAULT_STATUS: AppStatus = {
   setDocumentStatus: () => {},
   removeProcessed: () => {},
   appUpdate: DEFAULT_APP_UPDATE,
-  checkForUpdates: async () => {},
-  installUpdate: () => {},
-  pauseUpdate: () => {},
-  resumeUpdate: () => {},
 };
 
 const AppStatusContext = createContext<AppStatus>(DEFAULT_STATUS);
@@ -235,11 +203,10 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // App updates. Seeded from the main process (including the current updater
-  // state, so a download that finished while this provider was mounting still
-  // paints) and then kept live by the two pushes. Not persisted to SQLite:
-  // autoInstallOnAppQuit means a staged update is already applied next launch,
-  // so a cached "restart to update" would be a lie.
+  // App updates. Seeded from the main process so a check that landed while this
+  // provider was mounting still paints, then kept live by the release-update
+  // push. Not persisted: what matters is what the feed says right now, and the
+  // main process re-checks at launch anyway.
   useEffect(() => {
     const api = (window as any).electronAPI;
     if (!api) return;
@@ -254,66 +221,17 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
       }));
     };
 
-    const applyStatus = (status: UpdaterStatus) => {
-      if (cancelled || !status) return;
-      setAppUpdate(prev => ({
-        ...prev,
-        state: status.state,
-        percent: status.percent ?? prev.percent,
-        // null clears it (update-not-available); undefined just means this
-        // event didn't carry one (download-progress), so keep what we had.
-        stagedVersion: status.version === undefined ? prev.stagedVersion : status.version,
-        error: status.error,
-      }));
-    };
-
     api.getLatestRelease?.().then(applyRelease).catch(() => {});
-    api.getUpdaterStatus?.().then(applyStatus).catch(() => {});
-    api.isUpdaterSupported?.().then((supported: boolean) => {
-      if (cancelled) return;
-      setAppUpdate(prev => ({ ...prev, updaterSupported: !!supported }));
-    }).catch(() => {});
     api.getUpdateDelivery?.().then((delivery: AppUpdate['delivery']) => {
       if (cancelled || !delivery) return;
       setAppUpdate(prev => ({ ...prev, delivery }));
     }).catch(() => {});
 
     api.onReleaseUpdate?.(applyRelease);
-    api.onUpdaterStatus?.(applyStatus);
     return () => {
       cancelled = true;
       api.removeReleaseUpdateListener?.();
-      api.removeUpdaterStatusListener?.();
     };
-  }, []);
-
-  const checkForUpdates = useCallback(async () => {
-    setAppUpdate(prev => ({ ...prev, checking: true }));
-    try {
-      const result = await (window as any).electronAPI?.checkForUpdates?.();
-      if (result) {
-        setAppUpdate(prev => ({
-          ...prev,
-          updateAvailable: result.update_available === true,
-          latestVersion: result.release?.version ?? null,
-        }));
-      }
-    } catch {
-      // Leave the last known result in place.
-    }
-    setAppUpdate(prev => ({ ...prev, checking: false }));
-  }, []);
-
-  const installUpdate = useCallback(() => {
-    (window as any).electronAPI?.quitAndInstallUpdate?.();
-  }, []);
-
-  const pauseUpdate = useCallback(() => {
-    (window as any).electronAPI?.pauseUpdate?.();
-  }, []);
-
-  const resumeUpdate = useCallback(() => {
-    (window as any).electronAPI?.resumeUpdate?.();
   }, []);
 
 
@@ -360,10 +278,6 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     setDocumentStatus,
     removeProcessed,
     appUpdate,
-    checkForUpdates,
-    installUpdate,
-    pauseUpdate,
-    resumeUpdate,
   };
 
   return (

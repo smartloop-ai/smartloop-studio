@@ -14,10 +14,6 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import PauseIcon from '@mui/icons-material/Pause';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { LogoMark } from '@/app/components/logo';
@@ -214,7 +210,7 @@ export default function SettingsPage() {
     };
     // Local SLP health and app-update state both come from AppStatusContext —
     // the page never fetches /health or subscribes to updater events itself.
-    const { serverHealth, appUpdate, checkForUpdates, installUpdate, pauseUpdate, resumeUpdate } = useAppStatus();
+    const { serverHealth, appUpdate } = useAppStatus();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -289,7 +285,7 @@ export default function SettingsPage() {
 
     const DOWNLOAD_URL = 'https://smartloop.ai/download/';
 
-    const { updateAvailable, latestVersion, stagedVersion, updaterSupported, delivery, state: updaterState, percent: downloadPercent, checking: checkingUpdate, error: updaterError } = appUpdate;
+    const { updateAvailable, latestVersion, delivery } = appUpdate;
 
     // Load persisted tok/s history from DB on mount
     useEffect(() => {
@@ -422,257 +418,71 @@ export default function SettingsPage() {
                         own name inside itself — you got here from the gear, and
                         the section headings below say what everything is. */}
 
-                    {/* 0. App version / updates */}
-                    <Box className={`mb-6 md:mb-8 p-4 ${updaterSupported ? 'md:p-6' : ''} rounded-xl`} sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                    {/* 0. App version / updates.
+
+                        One layout, two states. The card reads the same either way —
+                        mark, name, version pill — and an available update only adds a
+                        line under the name and a button beside the pill. It used to be
+                        two separate cards with different icons, different version
+                        treatments and different padding, so an update made the whole
+                        block jump. Padding now matches every other card on this page. */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
                         {(() => {
-                            // Store-managed (Mac App Store) and unpackaged builds have nothing to
-                            // say about updates: the store delivers them, or there is no feed at
-                            // all. Show a clean identity card only — the product name on the left
-                            // and a large version pill on the right.
-                            //
-                            // Not keyed on updaterSupported, which is false for 'manual' builds
-                            // too (macOS, the Linux .deb). Those fall through to the branches
-                            // below, where "Version X available" + Download is exactly right.
-                            if (delivery === 'store' || delivery === 'none') {
-                                return (
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
-                                                so it reads cleanly on the dark surface — unlike the PNG
-                                                app-icon tile, which carries its own black background. */}
-                                            <div
-                                                className="flex items-center justify-center shrink-0 rounded-lg p-1"
-                                                style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
-                                            >
-                                                <LogoMark className="w-5 h-5" />
-                                            </div>
-                                            <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                                        </div>
-                                        <span
-                                            className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg shrink-0"
-                                            style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
-                                        >
-                                            v{appVersion}
-                                        </span>
-                                    </div>
-                                );
-                            }
-
-                            const checkButton = (
-                                <button
-                                    onClick={checkForUpdates}
-                                    disabled={checkingUpdate}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    {checkingUpdate && <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />}
-                                    {checkingUpdate ? 'Checking…' : 'Check for Updates'}
-                                </button>
-                            );
-
-                            // Escape hatch to the website build. Needed wherever
-                            // electron-updater can't install for us.
-                            const downloadButton = (
-                                <button
-                                    onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    <SystemUpdateAltIcon sx={{ fontSize: 16 }} />
-                                    Download
-                                </button>
-                            );
-
-                            // Pause control. Rendered disabled during "Preparing" so the button's
-                            // slot stays put through the sub-second hand-off into the live
-                            // download, then enables once there's a transfer to actually pause.
-                            const pauseButton = (disabled: boolean) => (
-                                <button
-                                    onClick={disabled ? undefined : pauseUpdate}
-                                    disabled={disabled}
-                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-                                    style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                >
-                                    <PauseIcon sx={{ fontSize: 16 }} />
-                                    Pause
-                                </button>
-                            );
-
-                            // Each state resolves to the status text (left column) and a single
-                            // primary action (right column). Updates download in the background
-                            // automatically, so most states need no button at all. "Check for
-                            // Updates" only appears in the idle state — the one place a force-check
-                            // is meaningful (and where support can pull a just-published build);
-                            // every other state already knows about the update and offers the one
-                            // action that moves it forward.
-                            let status: React.ReactNode;
-                            let actions: React.ReactNode = null;
-
-                            // Install in progress — restarting/relaunching. Checked first so the
-                            // button shows a disabled "Installing…" and repeated clicks are impossible.
-                            if (updaterState === 'installing') {
-                                status = (
-                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        Installing update…
-                                    </span>
-                                );
-                                actions = (
-                                    <button
-                                        disabled
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-                                        style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                    >
-                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        Installing…
-                                    </button>
-                                );
-                            }
-                            // A build already on disk is the authoritative signal, so this is
-                            // checked before updateAvailable: the feed can stop reporting the
-                            // update while the staged build is still installable, and dropping
-                            // the button then would strand the user on the old version.
-                            else if (updaterSupported && updaterState === 'downloaded') {
-                                const readyVersion = stagedVersion ?? latestVersion;
-                                status = (
-                                    <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>
-                                        Update{readyVersion ? ` v${readyVersion}` : ''} ready to install
-                                    </span>
-                                );
-                                actions = (
-                                    <button
-                                        onClick={installUpdate}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                        style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                    >
-                                        <RefreshIcon sx={{ fontSize: 16 }} />
-                                        Restart & Install
-                                    </button>
-                                );
-                            }
-                            // Self-update broke. Kept separate from the .deb case below because the
-                            // wording is the only thing telling the user something went wrong —
-                            // otherwise a failed auto-update looks exactly like a .deb install,
-                            // where downloading by hand is simply how it works.
-                            else if (updaterState === 'error') {
-                                status = (
-                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-secondary)' }} title={updaterError}>
-                                        <ErrorOutlineIcon sx={{ fontSize: 16, color: 'var(--sl-status-error)' }} />
-                                        Couldn't install the update automatically
-                                    </span>
-                                );
-                                // Auto-install failed: Download is both the fix and the retry.
-                                // Fall back to a re-check only if there's nothing to download.
-                                actions = updateAvailable ? downloadButton : checkButton;
-                            }
-                            // A download in flight is local reality and outranks the feed, which
-                            // a force-check mid-download can flip to "no update" (the backend
-                            // compares against the running version, not the one being fetched).
-                            // Gating this on updateAvailable would blank the progress out from
-                            // under a download that is still very much running.
-                            else if (updaterSupported && updaterState === 'downloading') {
-                                status = (
-                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        Downloading update v{stagedVersion ?? latestVersion}… {downloadPercent}%
-                                    </span>
-                                );
-                                actions = pauseButton(false);
-                            }
-                            // Paused mid-download. electron-updater can't resume from a byte
-                            // offset, so Resume restarts the transfer — the progress the user
-                            // last saw is kept so the pause reads as a pause, not a reset.
-                            else if (updaterSupported && updaterState === 'paused') {
-                                status = (
-                                    <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                        Update v{stagedVersion ?? latestVersion} paused{typeof downloadPercent === 'number' ? ` at ${downloadPercent}%` : ''}
-                                    </span>
-                                );
-                                actions = (
-                                    <button
-                                        onClick={resumeUpdate}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                                        style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
-                                    >
-                                        <PlayArrowIcon sx={{ fontSize: 16 }} />
-                                        Resume
-                                    </button>
-                                );
-                            }
-                            // Feed says there's an update and we can self-install, but
-                            // electron-updater hasn't reported progress yet.
-                            else if (updateAvailable && updaterSupported) {
-                                status = (
-                                    <span className="flex items-center gap-2 text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                        <CircularProgress size={14} sx={{ color: 'var(--sl-brand-primary)' }} />
-                                        Preparing update v{latestVersion}…
-                                    </span>
-                                );
-                                // Disabled Pause holds the slot until the download starts.
-                                actions = pauseButton(true);
-                            }
-                            // 'manual' builds — macOS and the Linux .deb. electron-updater never
-                            // downloads anything here, so there is no progress to show: just the
-                            // version and a button out to the download page.
-                            else if (updateAvailable) {
-                                status = <span className="text-sm" style={{ color: 'var(--sl-text-secondary)' }}>Version {latestVersion} available</span>;
-                                actions = downloadButton;
-                            } else {
-                                status = (
-                                    <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                        {latestVersion ? "You're up to date" : 'Checking for updates…'}
-                                    </span>
-                                );
-                                actions = checkButton;
-                            }
+                            // The only variable. 'store' (Mac App Store) and 'none' (unpackaged
+                            // dev build) never report an update, so they show the plain card;
+                            // 'manual' — every shipped build — shows it too until the feed says
+                            // there is something newer. Nothing downloads in any state, so there
+                            // is no progress, pause, restart or failure to render here.
+                            const showUpdate = delivery === 'manual' && updateAvailable;
 
                             return (
                                 <div className="flex items-center justify-between gap-4">
-                                    {/* Left columns: package icon + identity/status stack */}
-                                    <div className="flex items-center gap-3 min-w-0">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        {/* Smartloop mark as inline SVG (transparent bg, theme-colored)
+                                            so it reads cleanly on the dark surface — unlike the PNG
+                                            app-icon tile, which carries its own black background. */}
                                         <div
-                                            className="flex items-center justify-center rounded-xl shrink-0"
-                                            style={{ width: 48, height: 48, backgroundColor: 'var(--sl-white-alpha-5)', border: '1px solid var(--sl-border-default)' }}
+                                            className="flex items-center justify-center shrink-0 rounded-lg p-1"
+                                            style={{ border: '1px solid var(--sl-brand-alpha-30)' }}
                                         >
-                                            <svg
-                                                width="24"
-                                                height="24"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="var(--sl-brand-primary)"
-                                                strokeWidth="1.75"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
-                                                <path d="m7.5 4.27 9 5.15" />
-                                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                                                <path d="M3.3 7 12 12l8.7-5" />
-                                                <path d="M12 22V12" />
-                                            </svg>
+                                            <LogoMark className="w-5 h-5" />
                                         </div>
-                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                            <div className="flex items-center gap-1.5">
-                                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
-                                                <span
-                                                    className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase"
-                                                    style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
-                                                >
-                                                    v{appVersion}
-                                                </span>
-                                                {/* Changelog link hidden until the docs page ships —
-                                                    restore with CHANGELOG_URL from @/app/constants. */}
-                                            </div>
-                                            {status}
-                                        </div>
+                                        <h2 className="text-lg md:text-xl font-semibold truncate" style={{ color: 'var(--sl-text-primary)' }}>Smartloop Studio</h2>
                                     </div>
 
-                                    {/* Right: single primary action, vertically centered against
-                                        the block. Absent while an update downloads on its own. */}
-                                    {actions && (
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {actions}
-                                        </div>
-                                    )}
+                                    {/* One element, either way. With nothing newer published it is
+                                        the running version; once there is, the version steps aside
+                                        for the thing you'd actually want to do about it. Nothing
+                                        moves, nothing is added — the same slot says a different
+                                        thing, so the card is one line high in both states.
+
+                                        The running version isn't lost, just not shouted: it moves
+                                        to the button's tooltip, which is where "and what am I on?"
+                                        is worth answering but not worth spending the card on. */}
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {showUpdate ? (
+                                            <button
+                                                onClick={() => window.electronAPI?.openExternal?.(DOWNLOAD_URL)}
+                                                title={`You're on v${appVersion}`}
+                                                className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm md:text-base font-semibold transition-colors whitespace-nowrap"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
+                                            >
+                                                <SystemUpdateAltIcon sx={{ fontSize: 18 }} />
+                                                {/* Opens smartloop.ai/download/ in the browser — the
+                                                    app installs nothing itself. Falls back to
+                                                    "Download" if the feed ever reports an update
+                                                    without naming its version. */}
+                                                {latestVersion ? `Update to v${latestVersion}` : 'Download'}
+                                            </button>
+                                        ) : (
+                                            <span
+                                                className="text-sm md:text-base font-semibold font-mono px-3.5 py-1.5 rounded-lg whitespace-nowrap"
+                                                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.8 }}
+                                            >
+                                                v{appVersion}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })()}

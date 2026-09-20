@@ -6,9 +6,8 @@
 //   Windows %USERPROFILE%\AppData\Roaming\smartloop-studio\logs\main.log
 //   Linux   ~/.config/smartloop-studio/logs/main.log
 //
-// Required at the very top of main.js so failures during early startup — and
-// electron-updater errors (autoUpdater.logger = this) — land on disk instead of
-// a stdout that packaged builds discard.
+// Required at the very top of main.js so failures during early startup land on
+// disk instead of a stdout that packaged builds discard.
 const log = require('electron-log/main');
 
 // Wire the renderer transport (electron-log/renderer) and console spying.

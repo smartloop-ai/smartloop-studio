@@ -14,7 +14,7 @@
  *   - Sandboxed apps may only write inside their container, so SLP state
  *     (server.port, server.log, config, models, studio.db, assets) must live
  *     under app.getPath('userData'), not ~/.smartloop.
- *   - The store delivers updates, so electron-updater is disabled.
+ *   - The store delivers updates, so the app reports none of its own.
  *   - The sandbox cannot write to ~/.local/bin, so the `slp` CLI symlink is
  *     unavailable.
  *
