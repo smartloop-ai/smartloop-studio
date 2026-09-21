@@ -37,15 +37,14 @@ export default function McpServerItem({
 }: McpServerItemProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
-  const isLocal = server.server_type === 'local';
   const serverInfo = server.server_info;
+  const serverUrl = getMcpServerUrl(server);
 
-  // Remote servers show their endpoint; local ones have no URL — the package
-  // name is already the title, so showing it again as a "URL" pill just
-  // duplicates it. Local servers get a "Local" tag instead (below).
-  const displayUrl = isLocal
-    ? ''
-    : serverInfo?.website_url || serverInfo?.websiteUrl || getMcpServerUrl(server);
+  // Where the server runs is the one thing worth saying here, and the URL
+  // already answers it: a connection with an endpoint is remote, one without
+  // is a package run on this machine. The endpoint itself is noise on the
+  // card — it's long, it truncates, and it repeats what the tag says.
+  const isLocal = server.server_type === 'local' || !serverUrl;
 
   const getHostnameFromUrl = (url: string): string => {
     try {
@@ -55,7 +54,8 @@ export default function McpServerItem({
     }
   };
 
-  const displayName = serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(displayUrl) || 'MCP Server';
+  const displayName =
+    serverInfo?.title || serverInfo?.name || server.name || getHostnameFromUrl(serverUrl) || 'MCP Server';
 
   const allTools = getMcpServerTools(server);
 
@@ -149,7 +149,7 @@ export default function McpServerItem({
           </p>
         )}
 
-        {/* Metadata row: Custom + Local/URL + tool count */}
+        {/* Metadata row: Custom + Local/Remote + tool count */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap', mt: '8px' }}>
             {isCustom && (
               <span
@@ -159,14 +159,13 @@ export default function McpServerItem({
                 Custom
               </span>
             )}
-            {isLocal && (
-              <span
-                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-                style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' }}
-              >
-                Local
-              </span>
-            )}
+            <span
+              className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
+              style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', opacity: 0.7 }}
+              title={isLocal ? 'Runs as a package on this machine' : serverUrl}
+            >
+              {isLocal ? 'Local' : 'Remote'}
+            </span>
             {(server.tags || []).map((tag) => {
               const c = tagColorFrom(tagColors ?? new Map(), tag);
               return (
@@ -193,15 +192,6 @@ export default function McpServerItem({
                 title={`Linked as ${server.account}`}
               >
                 {server.account}
-              </span>
-            )}
-            {displayUrl && (
-              <span
-                className="px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-wide"
-                style={{ border: '1px solid var(--sl-border-default)', color: 'var(--sl-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}
-                title={displayUrl}
-              >
-                {displayUrl}
               </span>
             )}
             {discovering ? (
