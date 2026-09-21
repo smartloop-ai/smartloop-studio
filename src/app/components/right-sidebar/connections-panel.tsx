@@ -105,9 +105,16 @@ export default function ConnectionsPanel({ mcp, projectId }: { mcp: McpSectionSt
           server what it can do once it’s added.
         </p>
 
-        {/* One box and a button: a remote server is its URL, and the name
-            the connection is filed under comes off that URL. Enter submits —
-            reaching for the mouse to finish a one-field form is a nuisance. */}
+        {/* One box and a button: a remote server is its URL, and the name the
+            connection is filed under comes off that URL. Enter submits —
+            reaching for the mouse to finish a one-field form is a nuisance.
+
+            The field's fill is an overlay, not --sl-bg-input: that token is
+            for a field on the base background, and six of the seven themes
+            set it to the same colour as surface-1 — which is this card. An
+            overlay is a step away from whatever is under it, so the field
+            reads as a field on every theme: darker on the light ones,
+            lighter on the dark. */}
         <div className="flex items-center gap-2">
           <input
             type="url"
@@ -118,13 +125,13 @@ export default function ConnectionsPanel({ mcp, projectId }: { mcp: McpSectionSt
             onChange={(e) => mcp.setMcpUrlInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') mcp.handleAddMcpUrl(); }}
             disabled={mcp.isAddingMcp}
-            className="flex-1 min-w-0 rounded-lg px-2.5 py-2 text-[12px] font-mono bg-sl-bg-input border border-sl-border-default text-sl-text-primary outline-none transition-colors placeholder:text-sl-text-faint focus:border-sl-brand-primary disabled:opacity-50"
+            className="flex-1 min-w-0 rounded-lg px-2.5 py-2 text-[12px] font-mono bg-[var(--sl-white-alpha-7)] border border-sl-border-default text-sl-text-primary outline-none transition-colors placeholder:text-sl-text-faint focus:border-sl-brand-primary disabled:opacity-50"
           />
           <button
             type="button"
             onClick={mcp.handleAddMcpUrl}
             disabled={mcp.isAddingMcp || !mcp.mcpUrlInput.trim()}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-white bg-sl-brand-primary transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-[var(--sl-brand-contrast)] bg-sl-brand-primary transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {mcp.isAddingMcp && <CircularProgress size={10} sx={{ color: 'inherit' }} />}
             {mcp.isAddingMcp ? 'Adding…' : 'Add'}
