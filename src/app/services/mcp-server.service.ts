@@ -189,6 +189,63 @@ export const normalizeMcpUrl = (url?: string): string =>
     .replace(/\/(mcp|sse)$/, '');
 
 /**
+ * A name for a connection the user only gave a URL for.
+ *
+ * It barely shows: once discovery runs, the card prefers the title the server
+ * reports about itself. So this only has to be a stable, recognizable
+ * identifier — the last path segment that isn't transport boilerplate, else
+ * the domain. A host that is an IP or localhost says nothing about what the
+ * server is, and two of them differ only by port, so the port is the name.
+ */
+const GENERIC_URL_SEGMENTS = new Set(['v1', 'v2', 'api', 'mcp', 'sse', 'http', 'stream', 'server', 'servers']);
+
+export const mcpNameFromUrl = (raw: string): string => {
+  let parsed: URL;
+  try {
+    parsed = new URL((raw || '').trim());
+  } catch {
+    return '';
+  }
+
+  const segment = parsed.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((s) => s.toLowerCase())
+    .filter((s) => !GENERIC_URL_SEGMENTS.has(s))
+    .pop();
+
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const hostIsAddress = /^(localhost|\[.*\]|\d{1,3}(\.\d{1,3}){3})$/.test(host);
+  // The domain that names the company, skipping the TLD and a ccTLD's
+  // second level (`example.co.uk` is example, not co).
+  const labels = host.split('.').filter((l) => !GENERIC_URL_SEGMENTS.has(l));
+  const domain = labels.slice(0, -1).reverse().find((l) => l.length > 2);
+  const fromHost = hostIsAddress
+    ? `local-${parsed.port || (parsed.protocol === 'https:' ? '443' : '80')}`
+    : domain || labels[0] || host;
+
+  return (segment || fromHost).replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+};
+
+/**
+ * The connection file for a server given as a URL.
+ *
+ * Typing a URL and dropping a file are not two install paths: this writes the
+ * same `[[mcp]]` block the file would have carried and posts it to the same
+ * definition endpoint, so the backend sees one shape and the result is a
+ * connection the user could equally have written by hand.
+ */
+export const buildMcpDefinition = (name: string, url: string): string =>
+  [
+    '# Written by Smartloop Studio from a server URL.',
+    '',
+    '[[mcp]]',
+    `name = ${JSON.stringify(name)}`,
+    `url = ${JSON.stringify(url)}`,
+    '',
+  ].join('\n');
+
+/**
  * The remote URL an installed server was registered with, if any. The list
  * endpoint flattens it to a top-level `server_url`; other shapes nest it.
  */

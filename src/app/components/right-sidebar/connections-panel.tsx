@@ -1,5 +1,4 @@
 import { Box, CircularProgress } from '@mui/material';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { normalizeMcpUrl } from '@/app/services/mcp-server.service';
 import McpServerItem from '../mcp-server-item';
 import McpCatalogItem from '../mcp-catalog-item';
@@ -7,7 +6,7 @@ import { McpSectionState } from './use-mcp-servers';
 
 /**
  * Connections — curated catalog entries first, then servers added by hand, then
- * the drop target for a connection file.
+ * the box for adding one by URL.
  *
  * Pure view: every piece of state and every action comes from `useMcpServers`,
  * which the sidebar owns so that OAuth callbacks, tool-discovery polling and the
@@ -99,75 +98,52 @@ export default function ConnectionsPanel({ mcp, projectId }: { mcp: McpSectionSt
 
       {/* Add-your-own — always pinned to the bottom, styled like the
           Models panel's "Need more power?" card to set it apart. */}
-      <div
-        className="rounded-xl"
-        onDragOver={(e) => { e.preventDefault(); if (!mcp.mcpDropActive) mcp.setMcpDropActive(true); }}
-        onDragLeave={(e) => {
-          // Only when the pointer actually leaves the card — dragging over
-          // a child fires dragleave for the parent too.
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) mcp.setMcpDropActive(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          mcp.setMcpDropActive(false);
-          const file = e.dataTransfer?.files?.[0];
-          if (file) mcp.handleMcpFileDrop(file);
-        }}
-        style={{
-          marginTop: '16px',
-          padding: '16px',
-          backgroundColor: mcp.mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'var(--sl-bg-surface-1)',
-          border: mcp.mcpDropActive ? '1px dashed var(--sl-brand-primary)' : '1px solid var(--sl-border-subtle)',
-          transition: 'background 0.15s ease, border-color 0.15s ease',
-        }}
-      >
+      <div className="rounded-xl mt-4 p-4 bg-sl-bg-surface-1 border border-sl-border-subtle">
         <h4 className="text-[14px] font-bold text-sl-text-primary m-0 mb-1">Add your own</h4>
-        <p className="text-[12px] leading-relaxed m-0 mb-3" style={{ color: 'var(--sl-text-muted)' }}>
-          Drop a connection file to add any MCP server. It describes the
-          server and, optionally, how to index its content.
+        <p className="text-[12px] leading-relaxed m-0 mb-3 text-sl-text-muted">
+          Paste the address of an MCP server to connect it. We’ll ask the
+          server what it can do once it’s added.
         </p>
-        {/* Drop zone. Visible at rest, not only mid-drag: a target that
-            appears once you are already dragging is only findable by
-            someone who guessed it was there. Clicking opens the file
-            picker, so it works without a drag at all. */}
-        <input
-          ref={mcp.mcpTomlInputRef}
-          type="file"
-          accept=".toml"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) mcp.handleMcpFileDrop(file);
-            e.target.value = '';
-          }}
-        />
-        <div
-          role="button"
-          onClick={() => !mcp.isAddingMcp && mcp.mcpTomlInputRef.current?.click()}
-          className="rounded-lg mt-2 flex items-center justify-center gap-1.5 cursor-pointer"
-          style={{
-            padding: '10px',
-            border: `1px dashed ${mcp.mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-border-default)'}`,
-            backgroundColor: mcp.mcpDropActive ? 'var(--sl-brand-alpha-10)' : 'transparent',
-            transition: 'background 0.15s ease, border-color 0.15s ease',
-          }}
-        >
-          <UploadFileIcon sx={{ fontSize: 13, color: mcp.mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }} />
-          <span className="text-[10px]" style={{ color: mcp.mcpDropActive ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)' }}>
-            {mcp.mcpDropActive ? 'Drop to add this connection' : 'Drop a .toml file or click to browse'}
-          </span>
+
+        {/* One box and a button: a remote server is its URL, and the name
+            the connection is filed under comes off that URL. Enter submits —
+            reaching for the mouse to finish a one-field form is a nuisance. */}
+        <div className="flex items-center gap-2">
+          <input
+            type="url"
+            inputMode="url"
+            spellCheck={false}
+            placeholder="https://example.com/mcp"
+            value={mcp.mcpUrlInput}
+            onChange={(e) => mcp.setMcpUrlInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') mcp.handleAddMcpUrl(); }}
+            disabled={mcp.isAddingMcp}
+            className="flex-1 min-w-0 rounded-lg px-2.5 py-2 text-[12px] font-mono bg-sl-bg-input border border-sl-border-default text-sl-text-primary outline-none transition-colors placeholder:text-sl-text-faint focus:border-sl-brand-primary disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={mcp.handleAddMcpUrl}
+            disabled={mcp.isAddingMcp || !mcp.mcpUrlInput.trim()}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-white bg-sl-brand-primary transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {mcp.isAddingMcp && <CircularProgress size={10} sx={{ color: 'inherit' }} />}
+            {mcp.isAddingMcp ? 'Adding…' : 'Add'}
+          </button>
         </div>
 
         {/* Hint and error share one grid cell, so the slot is always as tall
             as the taller of the two and swapping them never shifts the UI. */}
         <Box className="grid text-[10px] mt-2.5 px-1">
           <div className={`col-start-1 row-start-1 text-sl-text-disabled leading-snug ${mcp.mcpError ? 'invisible' : ''}`}>
-            A connection file names the server and how to reach it — a
-            <code className="font-mono text-sl-text-muted"> url </code>
-            for a remote one, or a
-            <code className="font-mono text-sl-text-muted"> package </code>
-            to run locally.
-            <div className="mt-2.5 italic">Local servers require <code className="font-mono not-italic font-bold text-sl-text-muted">uv</code> to be installed on your machine.</div>
+            The URL is the server’s MCP endpoint — the one ending in
+            <code className="font-mono text-sl-text-muted"> /mcp </code>
+            or
+            <code className="font-mono text-sl-text-muted"> /sse </code>.
+            If it needs authorizing, a browser window will open.
+            <div className="mt-2.5 italic">
+              A server that runs on this machine instead of over HTTP is added by
+              putting its <code className="font-mono not-italic font-bold text-sl-text-muted">.toml</code> in <code className="font-mono not-italic font-bold text-sl-text-muted">~/.smartloop/mcp.d/</code>.
+            </div>
           </div>
           {mcp.mcpError && (
             <span className="col-start-1 row-start-1 text-red-400 whitespace-pre-line break-words">{mcp.mcpError}</span>
