@@ -25,7 +25,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import ConstructionIcon from '@mui/icons-material/Construction';
 import MessageInput from './message-input';
 import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
@@ -1738,25 +1737,35 @@ export default function Chat(props: {
                     <h2 className="text-lg md:text-xl font-semibold text-sl-text-primary">Tips to Get Started</h2>
                   </div>
 
+                  {/* Each tip names a panel by its label, never by its icon.
+                      The tip this replaces said to click a wrench in the right
+                      panel: the rail's skills glyph was never that wrench, and
+                      a theme can replace the glyph outright, so the sentence
+                      was wrong twice over and had no way of staying right.
+                      Labels are the part that holds still. */}
                   <div className="space-y-4">
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Be clear and concise:</span> Be detailed and clear. Request summaries, comparisons, or tables. The AI remembers context, so feel free to ask follow-up questions
+                        <span className="font-semibold text-sl-text-primary">Let Auto pick the model:</span> Turn on as many models as you like in the composer’s picker. Auto reads each request and routes it to whichever one has the capability it needs, so you never switch by hand
                       </p>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Customize with skills:</span> Click the <span className="px-2 py-0.5 bg-sl-bg-surface-3 text-sl-text-primary rounded font-medium"><ConstructionIcon sx={{ fontSize: 12 }}/></span> icon in the right panel to define project-wide skills that refine how the AI will respond to your specific needs
+                        <span className="font-semibold text-sl-text-primary">Ask across your documents:</span> Upload files to the project and every question is answered from all of them at once, with references back to the ones it used
                       </p>
                     </div>
-
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Work across documents:</span> The AI analyzes all uploaded documents together. Ask comprehensive questions to get insights from multiple documents within the same project
+                        <span className="font-semibold text-sl-text-primary">Teach it with skills:</span> Type <span className="font-mono text-sl-brand-primary">/skill-name</span> in the chat box to run a skill. Write and edit them in the Skills panel, and they apply to the whole project
+                      </p>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
+                      <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
+                        <span className="font-semibold text-sl-text-primary">Connect your tools:</span> Paste an MCP server’s URL into the Connections panel. Its tools are picked up once, then called whenever a question needs them
                       </p>
                     </div>
                   </div>
