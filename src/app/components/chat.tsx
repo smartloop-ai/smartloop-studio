@@ -1765,7 +1765,7 @@ export default function Chat(props: {
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Connect your tools:</span> Paste an MCP server’s URL into the Connections panel. Its tools are picked up once, then called whenever a question needs them
+                        <span className="font-semibold text-sl-text-primary">Connect your tools:</span> Pick one from the Connections panel and click to connect, or paste any MCP server’s URL to add your own. Its tools are then called whenever a question needs them
                       </p>
                     </div>
                   </div>
