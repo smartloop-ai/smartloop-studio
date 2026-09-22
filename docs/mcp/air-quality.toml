@@ -1,8 +1,9 @@
 # Air quality, as a connection.
 #
-# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to
-# install the connection. The file is the whole of what the app needs: what the
-# server is called, and how to start it.
+# Put this in ~/.smartloop/mcp.d/ to install the connection. (The "Add your
+# own" card takes a URL; this server runs locally, so it has none.) The file
+# is the whole of what the app needs: what the server is called, and how to
+# start it.
 #
 # Verified against the published package: `uvx air-quality-mcp` starts, and the
 # server reports one tool — get_air_quality(city).

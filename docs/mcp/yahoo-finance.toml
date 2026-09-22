@@ -1,7 +1,7 @@
 # Yahoo Finance — company and market data.
 #
-# Drop this onto the "Add your own" card (or into ~/.smartloop/mcp.d/) to
-# install the connection.
+# Put this in ~/.smartloop/mcp.d/ to install the connection. (The "Add your
+# own" card takes a URL; this server runs locally, so it has none.)
 #
 # Verified against the published package: the server reports get_stock_info,
 # get_yahoo_finance_news, get_recommendations, get_stock_actions and

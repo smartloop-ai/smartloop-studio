@@ -38,10 +38,6 @@ const mapSkills = (list: any[]) =>
 
 export default function Home() {
   const [user, setUser] = useAuthContext();
-  // Signed out is NOT a null user: useAuth stands in a guest placeholder
-  // ({ name: 'Local', guest: true }), so a truthiness test on `user` reads as
-  // signed in for everybody. Same check as model-picker.tsx.
-  const isSignedIn = !!user && !user.guest;
   const {
     projects: projectsList,
     selectedProject,
@@ -815,14 +811,14 @@ export default function Home() {
     }
   };
 
-  // Flip web search for the current project. Backs both the Cmd/Ctrl+Shift+S
-  // shortcut and the status bar toggle in chat.tsx; undefined counts as ON, so
-  // the first press on a pre-flag project turns it off rather than re-enabling.
+  // Flip web search for the current project. Backs the Cmd/Ctrl+Alt+S shortcut
+  // and the Project Settings toggle; undefined counts as ON, so the first press
+  // on a pre-flag project turns it off rather than re-enabling.
   const toggleWebSearch = () => {
     if (!selectedProject?.id) return;
-    // Signed out there is no token for the hosted search endpoint, so the
-    // hotkey stays inert alongside the disabled status-bar toggle.
-    if (!isSignedIn) return;
+    // No plan or credential check here: whether a search runs is enforced in the
+    // backend, so the hotkey saves the project's intent either way — the same
+    // thing the Project Settings toggle does.
     handleWebSearchChange(currentProjectData?.web_search_enabled === false);
   };
 
@@ -1922,9 +1918,6 @@ description: A clear description of what this skill does and when to use it
                           onConversationUpdate={handleConversationUpdate}
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
-                          webSearchEnabled={currentProjectData?.web_search_enabled}
-                          webSearchAvailable={isSignedIn}
-                          onWebSearchChange={handleWebSearchChange}
                           focusComposerTrigger={composerFocus}
                         />
                       );

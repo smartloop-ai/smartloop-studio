@@ -7,6 +7,8 @@ import {
   getMcpServerUrl,
   getMcpServerTools,
   buildTagColorMap,
+  mcpNameFromUrl,
+  buildMcpDefinition,
 } from '@/app/services/mcp-server.service';
 
 /**
@@ -114,6 +116,7 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     // Transient form state belongs to the project you were just in.
     setIsAddingMcp(false);
     setMcpError('');
+    setMcpUrlInput('');
   }, [projectId]);
 
   // System servers appear only in the projects-list payload, never from the /mcp
@@ -338,10 +341,6 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
 
 
 
-  // Fast client-side dedupe so re-adding the same server shows an inline notice
-  // instead of silently creating a second entry. The backend is authoritative
-  // (it 409s on a real conflict); this just spares an obvious round trip. Remote
-
   // Persist a registered MCP server to SQLite (best-effort — registration with
   // the service is the source of truth, this keeps a local record).
   const persistMcpServerToDb = async (server: {
@@ -358,55 +357,67 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     }
   };
 
-  // Dropping a .toml onto the Add-your-own card. The file describes the whole
-  // connection — name, local command or remote url, and optionally how to index
-  // it — so this is the same install as typing a URL, just with the crawl plan
-  // arriving alongside instead of being derived.
-  const [mcpDropActive, setMcpDropActive] = useState(false);
-  const mcpTomlInputRef = useRef<HTMLInputElement>(null);
+  // Adding a connection by URL.
+  //
+  // A remote server is entirely described by where it is, so that is all the
+  // card asks for. The name comes off the URL — and barely matters, since the
+  // card shows whatever title the server reports about itself once discovery
+  // runs. The two together become the connection file the user would
+  // otherwise have had to write, installed through the same definition
+  // endpoint a file on disk goes through: one install path, and a connection
+  // that looks identical either way.
+  const [mcpUrlInput, setMcpUrlInput] = useState('');
 
-  const handleMcpFileDrop = async (file: File) => {
-    if (!projectId) return;
-    if (!/\.toml$/i.test(file.name)) {
-      setMcpError('Drop a .toml connection file.');
+  const handleAddMcpUrl = async () => {
+    if (!projectId || isAddingMcp) return;
+
+    const url = mcpUrlInput.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setMcpError('Enter the full URL, starting with http:// or https://');
+      return;
+    }
+    const name = mcpNameFromUrl(url);
+    if (!name) {
+      setMcpError('That doesn’t look like a server URL.');
+      return;
+    }
+    if (connectedByUrl.has(normalizeMcpUrl(url))) {
+      setMcpError('That server is already connected.');
       return;
     }
 
     setIsAddingMcp(true);
     setMcpError('');
     try {
-      const text = await file.text();
       const result = await mcpServerService.registerMcpFromDefinition(
-        projectId, text, file.name,
+        projectId, buildMcpDefinition(name, url), `${name}.toml`,
       );
       if (!result.success || !result.data) {
         // Already condensed to one line by the service, which logged the full
         // backend error to the console.
-        setMcpError(result.error || 'Invalid Connection Definition, use a valid .toml file');
+        setMcpError(result.error || "Couldn't add that server.");
         return;
       }
 
       const data = result.data as Record<string, any>;
       if (data.auth_type === 'oauth' && data.auth_url) {
-        // A remote server in the file may still need authorizing, exactly as a
-        // typed-in URL would.
+        // The server wants authorizing before it will say what it can do —
+        // same browser round trip a catalog entry takes.
         mcpServerCountRef.current = apiMcpServers.length;
         setMcpPolling(true);
         const electronWindow = window as any;
-        if (electronWindow.electronAPI?.openExternal) {
-          electronWindow.electronAPI.openExternal(data.auth_url);
-        } else {
-          window.open(data.auth_url, '_blank');
-        }
-        return;
+        electronWindow.electronAPI?.openExternal?.(data.auth_url);
+      } else {
+        await loadMcpServers();
+        const serverId = data.id || data.server_id;
+        if (serverId) setDiscoveringServerId(serverId);
       }
 
-      await loadMcpServers();
-      const serverId = data.id || data.server_id;
-      if (serverId) setDiscoveringServerId(serverId);
+      setMcpUrlInput('');
     } catch (error: any) {
-      console.error('[MCP] Failed to install connection file:', error);
-      setMcpError('Invalid Connection Definition, use a valid .toml file');
+      console.error('[MCP] Failed to add connection:', error);
+      setMcpError('Couldn’t add that server.');
     } finally {
       setIsAddingMcp(false);
     }
@@ -574,16 +585,16 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     connectingSlug,
     awaitingAuthSlug,
     catalogLoading,
-    mcpDropActive,
-    setMcpDropActive,
-    mcpTomlInputRef,
+    // Add-by-URL form
+    mcpUrlInput,
+    setMcpUrlInput,
     // Errors
     mcpError,
     mcpDeleteError,
     catalogError,
     catalogItemError,
     // Actions
-    handleMcpFileDrop,
+    handleAddMcpUrl,
     handleConnectCatalogEntry,
     handleDeleteMcpServer,
     handleCancelCatalogAuth,

@@ -26,8 +26,9 @@ const GROUPS: { title: string; items: { keys: string; label: string }[] }[] = [
     ],
   },
   {
-    // Controls that live in the composer, not in a panel — the model dialog and
-    // the web-search toggle both open from the row under the prompt.
+    // Controls that live in the composer, not in a panel — the model dialog
+    // opens from the row under the prompt, and web search is the flag the
+    // agent answers under.
     title: 'Composer',
     items: [
       { keys: `${MOD}+${SHIFT}+M`, label: 'Models' },
