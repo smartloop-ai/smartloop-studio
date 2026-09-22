@@ -265,10 +265,6 @@ const remarkLocalFileLinks = () => (tree: any) => {
 const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkPlugins)];
 
 
-// Hint for the status bar's web search button, in the same form the right rail
-// uses for its own hotkeys (right-sidebar.tsx). The handler lives in Home.tsx.
-const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
-const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : 'Ctrl+Alt+S';
 // The status bar has room for two hints, so instead of listing bindings it
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
@@ -290,28 +286,11 @@ export default function Chat(props: {
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
   onCreateSkill?: (name: string) => void,
-  // Per-project web search flag. The toggle it belongs to is in Project
-  // Settings (right-sidebar/project-settings-panel.tsx); the status bar mirrors
-  // it so it can be flipped without opening the rail. Undefined reads as ON, the
-  // same default the backend applies to projects predating the flag.
-  webSearchEnabled?: boolean,
-  onWebSearchChange?: (enabled: boolean) => void,
-  // False when nobody is signed in. Web search runs through the hosted
-  // endpoint, which needs a Smartloop token — without one the backend skips
-  // the search silently (web_search_agent: "no credentials available"), so the
-  // toggle is disabled rather than left to flip a flag that does nothing.
-  webSearchAvailable?: boolean,
   // Bumped by the parent to pull focus into the composer — set after a project
   // is created, so the new project opens ready to type into.
   focusComposerTrigger?: number
 }) {
   const messagesEndRef = useRef<null | HTMLDivElement>(null)
-
-  // Web search reads ON unless explicitly disabled — the same default the
-  // Project Settings toggle applies, so a project whose config predates the flag
-  // shows as enabled in both places.
-  const webSearchOn = props.webSearchEnabled !== false;
-  const webSearchAvailable = props.webSearchAvailable !== false;
 
   const [formData, setFormData] = useState({
     message: "",
@@ -1596,71 +1575,14 @@ export default function Chat(props: {
                 ))}
               </span>
             )}
-            {/* The orchestrator itself — the model that receives every
-                      request and routes it. The composer's pill can't stand in for
-                      this: it names Auto, or whichever auxiliary model is answering
-                      right now, and never the router behind them. */}
-            {model && (
-              <Tooltip title={`Base model — every request is routed through it (${model})`} placement="top" arrow>
-                {/* Named, not just drawn: a bare cube says nothing about which
-                    model is routing, and the hover was the only way to find out.
-                    Color lives on the glyph alone — a whole word in brand color
-                    pulls the eye off the conversation, and this is a readout, not
-                    a control. (The tint used to be conditional on the name
-                    containing "orchestra-mini", which never matched: the name is
-                    "sl-mini" and only the model_id carries "slp-orchestra-mini".) */}
-                <span
-                  className="inline-flex items-center gap-1 h-[18px] px-1 rounded transition-colors hover:bg-sl-bg-surface-2 cursor-default max-w-[140px]"
-                  style={{ color: 'var(--sl-text-faint)' }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0" style={{ color: 'var(--sl-brand-light)' }}>
-                    <path d="M2 4l6-2.5L14 4v8l-6 2.5L2 12V4z" stroke="currentColor" strokeWidth="0.75" fill="none" />
-                    <path d="M8 6.5v8" stroke="currentColor" strokeWidth="0.5" />
-                    <path d="M2 4l6 2.5L14 4" stroke="currentColor" strokeWidth="0.5" fill="none" />
-                  </svg>
-                  <span className="truncate">{model}</span>
-                </span>
-              </Tooltip>
-            )}
-            {props.onWebSearchChange && (
-              <Tooltip
-                title={webSearchAvailable
-                  ? `${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})`
-                  : 'Log in to use web search'}
-                placement="top"
-                arrow
-              >
-                {/* A disabled button fires no events, so the tooltip hangs off
-                    this wrapper — otherwise the signed-out state has no way to
-                    say why the icon is dimmed. */}
-                <span className="inline-flex">
-                  <button
-                    type="button"
-                    aria-pressed={webSearchAvailable && webSearchOn}
-                    disabled={!webSearchAvailable}
-                    onClick={() => props.onWebSearchChange?.(!webSearchOn)}
-                    className="inline-flex items-center gap-1 h-[18px] px-1 rounded transition-colors disabled:cursor-not-allowed disabled:opacity-30 hover:bg-sl-bg-surface-2"
-                    style={{ color: 'var(--sl-text-faint)' }}
-                  >
-                    {/* On/off shows in the glyph, not the label — see the base
-                        model chip above. */}
-                    {/* A globe, not a magnifier: the label already says "search",
-                        and a lone magnifier in a chat footer reads as "find text
-                        in this conversation". The glyph carries the scope — the
-                        web — and lighting it says that scope is switched on. */}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"
-                      style={{ color: webSearchAvailable && webSearchOn ? 'var(--sl-brand-light)' : 'var(--sl-text-faint)' }}>
-                      <circle cx="12" cy="12" r="9.5" />
-                      <line x1="2.5" y1="12" x2="21.5" y2="12" />
-                      <path d="M12 2.5a14.5 14.5 0 0 1 3.8 9.5 14.5 14.5 0 0 1-3.8 9.5 14.5 14.5 0 0 1-3.8-9.5A14.5 14.5 0 0 1 12 2.5z" />
-                    </svg>
-                    {/* The magnifier alone reads as "search this chat". The word
-                        says which search it is, the color says on or off. */}
-                    <span>web search</span>
-                  </button>
-                </span>
-              </Tooltip>
-            )}
+            {/* No base model here. The picker directly above is handed the
+                same value and already names it — it *is* the "Auto" on its
+                trigger — so a second rendering of it, in a different
+                vocabulary, only raised the question of which of the two was
+                answering. It is also a constant: the same name on every
+                install and every turn, in the one slot of this strip that
+                reads first, while everything else here earns its place by
+                changing (status, indexing, the interrupt hint). */}
             <span className="flex items-center gap-1.5 ml-auto">
               <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
               <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
