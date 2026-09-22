@@ -27,9 +27,9 @@ interface ProjectSettingsPanelProps {
   onColorChange?: (color: string) => void;
   onEditInstructions: () => void;
   /**
-   * Flips the project's `web_search_enabled` flag. This panel is where the
-   * setting lives; the chat status bar only mirrors it, so an absent handler
-   * means the toggle renders read-only rather than pretending to save.
+   * Flips the project's `web_search_enabled` flag. This panel is the only place
+   * the setting lives, so an absent handler means the toggle renders read-only
+   * rather than pretending to save.
    */
   onWebSearchChange?: (enabled: boolean) => void;
 }
@@ -49,9 +49,9 @@ export default function ProjectSettingsPanel({
   const [localProjectName, setLocalProjectName] = useState(project?.name || '');
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(false);
-  // Export is account-gated, the same way the chat status bar gates web search.
-  // Signed out is NOT a null user: useAuth stands in a guest placeholder
-  // ({ name: 'Local', guest: true }), so the guest flag is what decides.
+  // Export is account-gated. Signed out is NOT a null user: useAuth stands in a
+  // guest placeholder ({ name: 'Local', guest: true }), so the guest flag is
+  // what decides.
   const [user] = useAuthContext();
   const isSignedIn = !!user && !user.guest;
   const canExport = isSignedIn;
@@ -60,10 +60,10 @@ export default function ProjectSettingsPanel({
   // Web search is a backend project flag. Undefined reads as ON — projects
   // created before the flag existed behave as the backend does for them.
   const webSearchOn = projectData?.web_search_enabled !== false;
-  // The hosted search endpoint needs a Smartloop token; signed out the backend
-  // skips the search silently, so the toggle is disabled rather than left to
-  // save a flag that changes nothing.
-  const webSearchBlocked = !isSignedIn || !onWebSearchChange;
+  // Shown to every account, on any plan. Whether a search actually runs is the
+  // backend's call — it guards the hosted endpoint by plan and credentials — so
+  // the switch saves the project's intent and doesn't try to predict the answer.
+  const webSearchBlocked = !onWebSearchChange;
 
   // Follow the selected project, so the field never shows the last one's name.
   useEffect(() => {
@@ -208,11 +208,9 @@ export default function ProjectSettingsPanel({
 
     {/* Web search — one boolean, so it gets one row and no section header: a
         header plus a label plus a caption is three pieces of text explaining a
-        switch. The caption appears only when it has something to say, i.e. when
-        signed out and the control is dead. Mirrored by the globe button in the
-        chat status bar, and worded the same so they read as one setting. */}
+        switch. This row and the Cmd/Ctrl+Alt+S hotkey (Home.tsx) are the only
+        two ways to flip it. */}
     <div>
-      <Tooltip title={isSignedIn ? '' : 'Log in to use web search'} placement="top" arrow>
       <Box
         className="flex items-center justify-between gap-2"
         sx={{
@@ -224,8 +222,6 @@ export default function ProjectSettingsPanel({
         }}
       >
         <Box className="flex items-center gap-2 min-w-0">
-          {/* Same globe as the status bar button, so the two controls read as
-              one setting in two places. */}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"
             style={{ color: !webSearchBlocked && webSearchOn ? 'var(--sl-brand-primary)' : 'var(--sl-text-muted)' }}>
             <circle cx="12" cy="12" r="9.5" />
@@ -245,12 +241,6 @@ export default function ProjectSettingsPanel({
           }}
         />
       </Box>
-      </Tooltip>
-      {!isSignedIn && (
-        <p className="text-sl-text-disabled text-[10px] leading-relaxed mt-1 px-1">
-          Log in to let the agent search the web.
-        </p>
-      )}
     </div>
 
     {/* Export Project — pairs with Import in the new-project dialog
