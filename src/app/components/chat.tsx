@@ -1753,7 +1753,7 @@ export default function Chat(props: {
                     <div className="flex items-start gap-3">
                       <FiberManualRecordIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: 8, mt: 0.8, flexShrink: 0 }} />
                       <p className="text-sl-text-tertiary text-xs md:text-sm leading-relaxed">
-                        <span className="font-semibold text-sl-text-primary">Ask across your documents:</span> Add documents to the project and every question is answered from all of them at once, with references back to the ones it used
+                        <span className="font-semibold text-sl-text-primary">Enrich the project’s knowledge:</span> Add documents to the project and the assistant draws on them when a question calls for it, with references back to the ones it used
                       </p>
                     </div>
                     <div className="flex items-start gap-3">
