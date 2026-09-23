@@ -27,8 +27,8 @@ interface ProjectSettingsPanelProps {
   onColorChange?: (color: string) => void;
   onEditInstructions: () => void;
   /**
-   * Flips the project's `web_search_enabled` flag. This panel is the only place
-   * the setting lives, so an absent handler means the toggle renders read-only
+   * Flips the project's `web_search_enabled` flag. The chat status strip
+   * mirrors it as an on/off pill; an absent handler means the toggle renders read-only
    * rather than pretending to save.
    */
   onWebSearchChange?: (enabled: boolean) => void;
@@ -60,10 +60,9 @@ export default function ProjectSettingsPanel({
   // Web search is a backend project flag. Undefined reads as ON — projects
   // created before the flag existed behave as the backend does for them.
   const webSearchOn = projectData?.web_search_enabled !== false;
-  // Shown to every account, on any plan. Whether a search actually runs is the
-  // backend's call — it guards the hosted endpoint by plan and credentials — so
-  // the switch saves the project's intent and doesn't try to predict the answer.
-  const webSearchBlocked = !onWebSearchChange;
+  // The hosted search endpoint needs a Smartloop token, so signed out the
+  // switch is disabled (as are the chat footer toggle and the hotkey).
+  const webSearchBlocked = !isSignedIn || !onWebSearchChange;
 
   // Follow the selected project, so the field never shows the last one's name.
   useEffect(() => {
@@ -208,8 +207,9 @@ export default function ProjectSettingsPanel({
 
     {/* Web search — one boolean, so it gets one row and no section header: a
         header plus a label plus a caption is three pieces of text explaining a
-        switch. This row and the Cmd/Ctrl+Alt+S hotkey (Home.tsx) are the only
-        two ways to flip it. */}
+        switch. Also flipped by the search pill in the chat status strip and the
+        Cmd/Ctrl+Alt+S hotkey (Home.tsx). */}
+    <Tooltip title={isSignedIn ? '' : 'Log in to use web search'} placement="top" arrow>
     <div>
       <Box
         className="flex items-center justify-between gap-2"
@@ -242,6 +242,7 @@ export default function ProjectSettingsPanel({
         />
       </Box>
     </div>
+    </Tooltip>
 
     {/* Export Project — pairs with Import in the new-project dialog
         (sidebar.tsx), so it uses the same word for the same .zip. Not

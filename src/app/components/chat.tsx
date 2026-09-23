@@ -268,6 +268,11 @@ const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkP
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
 const KEYBINDS_HOTKEY = '\u21e7?';
+// Web search hotkey, named in the footer pill's tooltip rather than the strip
+// itself — the pill is clickable and the keybinds dialog lists it. Same binding
+// the Home.tsx handler listens for: ⌘⌥S on macOS, ⌃⌥S (Ctrl+Alt+S) elsewhere.
+const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
+const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : '\u2303\u2325S';
 
 export default function Chat(props: {
   project?: any,
@@ -285,6 +290,14 @@ export default function Chat(props: {
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
   onCreateSkill?: (name: string) => void,
+  // Per-project web search flag, shown as the on/off pill in the status strip.
+  // Undefined reads as ON — the default the backend applies to projects that
+  // predate the flag. The setting itself lives in Project Settings.
+  webSearchEnabled?: boolean,
+  onWebSearchChange?: (enabled: boolean) => void,
+  // False when signed out: the hosted search endpoint needs a Smartloop token,
+  // so the toggle shows off and does nothing.
+  webSearchAvailable?: boolean,
   // Bumped by the parent to pull focus into the composer — set after a project
   // is created, so the new project opens ready to type into.
   focusComposerTrigger?: number
@@ -1552,12 +1565,12 @@ export default function Chat(props: {
           <ModelPicker model={model} disabled={!isServiceReady} />
         }
       />
-      <div className="flex items-center gap-1.5 px-1 text-[10px] text-sl-text-faint leading-none">
+      <div className="flex items-center gap-1.5 px-1 mt-2 text-[10px] text-sl-text-faint leading-none">
         {isServiceReady ? (
           <>
             {indexingProgress ? (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+                <span className="inline-block w-[8px] h-[8px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
                 <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
               </span>
             ) : (
@@ -1565,7 +1578,7 @@ export default function Chat(props: {
                 {[0, 1, 2].map((i) => (
                   <span
                     key={i}
-                    className={`inline-block w-[5px] h-[5px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                    className={`inline-block w-[8px] h-[8px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
                     style={{
                       backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                       ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
@@ -1574,6 +1587,38 @@ export default function Chat(props: {
                 ))}
               </span>
             )}
+            {props.onWebSearchChange && (() => {
+              const webSearchAvailable = props.webSearchAvailable !== false;
+              const webSearchOn = webSearchAvailable && props.webSearchEnabled !== false;
+              return (
+                <Tooltip
+                  title={webSearchAvailable ? `${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})` : 'Log in to use web search'}
+                  placement="top"
+                  arrow
+                >
+                  {/* A disabled button fires no events, so the tooltip hangs
+                      off this wrapper to explain the signed-out state. */}
+                  <span className="flex">
+                  <button
+                    type="button"
+                    aria-pressed={webSearchOn}
+                    disabled={!webSearchAvailable}
+                    onClick={() => props.onWebSearchChange?.(!webSearchOn)}
+                    className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {/* Outlined pill per the label style guide: brand when on,
+                        neutral when off. */}
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase leading-none ${webSearchOn ? 'text-sl-brand-primary opacity-70' : 'text-sl-text-faint'}`}
+                      style={{ border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}` }}
+                    >
+                      web search
+                    </span>
+                  </button>
+                  </span>
+                </Tooltip>
+              );
+            })()}
             {/* No base model here. The picker directly above is handed the
                 same value and already names it — it *is* the "Auto" on its
                 trigger — so a second rendering of it, in a different
@@ -1589,7 +1634,7 @@ export default function Chat(props: {
           </>
         ) : (
           <span className="flex items-center gap-1">
-            <span className="inline-block w-[6px] h-[6px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+            <span className="inline-block w-[8px] h-[8px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
             <span>starting</span>
           </span>
         )}

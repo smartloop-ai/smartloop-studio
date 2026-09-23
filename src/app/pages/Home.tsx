@@ -38,6 +38,11 @@ const mapSkills = (list: any[]) =>
 
 export default function Home() {
   const [user, setUser] = useAuthContext();
+  // Signed out is NOT a null user: useAuth stands in a guest placeholder
+  // ({ name: 'Local', guest: true }), so the guest flag is what decides.
+  // Web search runs through the hosted endpoint and needs a Smartloop token,
+  // so every web search control is disabled while signed out.
+  const isSignedIn = !!user && !user.guest;
   const {
     projects: projectsList,
     selectedProject,
@@ -811,14 +816,14 @@ export default function Home() {
     }
   };
 
-  // Flip web search for the current project. Backs the Cmd/Ctrl+Alt+S shortcut
-  // and the Project Settings toggle; undefined counts as ON, so the first press
+  // Flip web search for the current project. Backs the Cmd/Ctrl+Alt+S shortcut;
+  // the status-strip pill and Project Settings call handleWebSearchChange directly; undefined counts as ON, so the first press
   // on a pre-flag project turns it off rather than re-enabling.
   const toggleWebSearch = () => {
     if (!selectedProject?.id) return;
-    // No plan or credential check here: whether a search runs is enforced in the
-    // backend, so the hotkey saves the project's intent either way — the same
-    // thing the Project Settings toggle does.
+    // Inert while signed out, alongside the disabled footer toggle and
+    // Project Settings row.
+    if (!isSignedIn) return;
     handleWebSearchChange(currentProjectData?.web_search_enabled === false);
   };
 
@@ -1279,7 +1284,7 @@ description: A clear description of what this skill does and when to use it
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [openTabs, activeTabId, selectedProject?.id, currentProjectData?.web_search_enabled]);
+  }, [openTabs, activeTabId, selectedProject?.id, currentProjectData?.web_search_enabled, isSignedIn]);
 
   // Put the caret in the composer. Chat owns the textarea, so reach it by name the
   // same way the quote-selection flow does (chat.tsx) instead of threading a ref
@@ -1918,6 +1923,9 @@ description: A clear description of what this skill does and when to use it
                           onConversationUpdate={handleConversationUpdate}
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
+                          webSearchEnabled={currentProjectData?.web_search_enabled}
+                          webSearchAvailable={isSignedIn}
+                          onWebSearchChange={handleWebSearchChange}
                           focusComposerTrigger={composerFocus}
                         />
                       );
