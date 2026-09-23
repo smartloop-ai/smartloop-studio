@@ -186,7 +186,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpInitModel: (modelName, projectId) => ipcRenderer.invoke('slp-init-model', modelName, projectId),
   slpSetModelEnabled: (modelName, enabled, projectId) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled, projectId),
   slpLoadModel: (modelName, projectId) => ipcRenderer.invoke('slp-load-model', modelName, projectId),
-  slpCancelModelDownload: (modelName, projectId) => ipcRenderer.invoke('slp-cancel-model-download', modelName, projectId),
+  slpCancelModelDownload: (modelName) => ipcRenderer.invoke('slp-cancel-model-download', modelName),
   slpGetDownloadState: () => ipcRenderer.invoke('slp-get-download-state'),
   // These two return an unsubscribe closure that removes only their own
   // listener. A shared removeAllListeners() would let any unmounting component

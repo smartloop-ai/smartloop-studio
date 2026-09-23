@@ -82,7 +82,7 @@ function Tag({ label, color, border, tip, icon }: { label: string; color: string
  * well before the list stops being useful.
  */
 export default function ModelPicker({ model, disabled = false }: ModelPickerProps) {
-    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel } = useLocalModels();
+    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel, handleCancelDownload } = useLocalModels();
     const [user] = useAuthContext();
 
     const [open, setOpen] = useState(false);
@@ -254,12 +254,45 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
     const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
-        // Downloading. No cancel affordance: aborting the HTTP request left the
-        // backend downloading anyway, so the X stopped the progress stream and
-        // nothing else — a control that looked like it stopped the download and
-        // didn't.
+        // Downloading, and a way out of it. Weights are gigabytes, so a click
+        // made by mistake otherwise commits the machine to the whole transfer.
+        // The spinner and the stop are one control — a square inside the turning
+        // ring, as on a connection card (mcp-catalog-item.tsx) — so the slot
+        // still holds exactly one thing to aim at. Indeterminate on purpose:
+        // the percentage is spelled out in the bar below, and a second readout
+        // of the same number in the same card says nothing extra.
         if (st.busy) {
-            return <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />;
+            return (
+                <Tooltip title="Stop downloading" arrow placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); handleCancelDownload(st.name); }}
+                        sx={{
+                            color: 'var(--sl-brand-primary)',
+                            padding: '2px',
+                            '&:hover': { color: 'var(--sl-status-error)' },
+                        }}
+                    >
+                        <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14 }}>
+                            {/* Static track, so the ring reads as a ring rather
+                                than a lone arc chasing itself around nothing. */}
+                            <CircularProgress
+                                variant="determinate"
+                                value={100}
+                                size={14}
+                                thickness={2.5}
+                                sx={{ color: 'currentColor', opacity: 0.2, position: 'absolute' }}
+                            />
+                            <CircularProgress
+                                size={14}
+                                thickness={2.5}
+                                sx={{ color: 'currentColor', position: 'absolute' }}
+                            />
+                            <Box sx={{ width: 5, height: 5, borderRadius: '1px', backgroundColor: 'currentColor' }} />
+                        </Box>
+                    </IconButton>
+                </Tooltip>
+            );
         }
 
         if (st.locked) {

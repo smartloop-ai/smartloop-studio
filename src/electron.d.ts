@@ -21,12 +21,16 @@ export interface ModelDownloadState {
 // transfer that died with the weights still there to fetch, 500 for a failure
 // retrying cannot fix — which is what decides whether to offer a retry, and
 // which `requiresAuth` cannot express because it is false for both.
+// `cancelled` marks the one terminal event that is not a completion and not a
+// failure: the user stopped the download. It arrives without `error` on purpose,
+// so nothing that keys off that renders a fault for a button the user pressed.
 export interface ModelDownloadProgress extends Omit<ModelDownloadState, 'kind'> {
   kind?: 'primary' | 'aux';
   error?: string;
   detail?: string;
   code?: number | null;
   requiresAuth?: boolean;
+  cancelled?: boolean;
 }
 
 // Result of a model action that can hit the entitlement gate (download, load,
@@ -38,6 +42,9 @@ export interface ModelActionResult {
   detail?: string;
   code?: number | null;
   requiresAuth?: boolean;
+  // success: false because nothing was enabled, but the user asked for it —
+  // callers must not report it as a failure.
+  cancelled?: boolean;
 }
 
 export interface AuthResult { success: boolean; user?: any; error?: string }
@@ -208,7 +215,9 @@ export interface ElectronAPI {
   slpInitModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult>;
   slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<ModelActionResult & { downloading?: boolean }>;
   slpLoadModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult & { model?: string; downloading?: boolean }>;
-  slpCancelModelDownload: (modelName: string, projectId?: string | null) => Promise<{ success: boolean; error?: string }>;
+  // No project argument: SLP's cancel route is workspace-level and must stay
+  // that way, or the supervisor proxies it to a child with an empty registry.
+  slpCancelModelDownload: (modelName: string) => Promise<ModelActionResult & { status?: string | null; cancelled?: boolean }>;
   slpGetDownloadState: () => Promise<{ success: boolean; downloads: Record<string, ModelDownloadState> }>;
   // Both return an unsubscribe closure — call that on teardown instead of a
   // channel-wide removeAllListeners, which would drop other subscribers too.

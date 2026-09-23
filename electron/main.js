@@ -1774,6 +1774,15 @@ function isErrorFrame(data, eventName) {
   return eventName === 'error' || data.status === 'error';
 }
 
+// The stop the user asked for, which SLP reports on its own event name rather
+// than as an error carrying 499 — to the client this is the request succeeding.
+// Terminal like an error frame and matched before the progress normalizer for
+// the same reason: bootstrapProgress has no branch for it and would read an
+// unrecognised frame as "0%, still downloading", leaving a ring that never ends.
+function isCancelledFrame(data, eventName) {
+  return eventName === 'cancelled' || data.status === 'cancelled';
+}
+
 async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -2689,9 +2698,14 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
   } catch {
     detail = body;
   }
+  // 409 is SLP refusing a second transfer into the same directory (two would
+  // each delete the other's .part and neither would finish). Named here because
+  // a bare "HTTP 409" describes nothing, and the state it reports is temporary.
   const error = requiresAuth
     ? 'Sign in to download this model'
-    : `HTTP ${res.statusCode}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
+    : res.statusCode === 409
+      ? 'Already downloading'
+      : `HTTP ${res.statusCode}${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
   console.warn(`[Models] Download of ${modelName} failed: HTTP ${res.statusCode} ${String(detail).slice(0, 200)}`);
   // `detail` rides along even on the auth branch. A signed-in user hitting a 403
   // is not helped by "sign in", and the server already said the useful thing
@@ -2728,6 +2742,26 @@ async function failModelDownload(modelName, res, { kind = 'aux' } = {}) {
 function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', logOther = false } = {}) {
   let failure = null;
 
+  // A cancel is terminal but is not a failure, so it gets its own outcome rather
+  // than a flag on `failure`. Callers still have to stop — the enable PATCH must
+  // not run on weights that never arrived — but nothing about it should reach the
+  // user as a fault.
+  const cancel = (data) => {
+    if (failure) return;
+    const detail = data.message || 'Download cancelled';
+    failure = { ok: false, cancelled: true, error: 'Download cancelled', detail, code: null, requiresAuth: false };
+    console.log(`[Models] ${modelName} download cancelled`);
+    // Deliberately no `error` field on the event: ModelStatusContext keys its
+    // failure card off it, and a red card for the user's own button is exactly
+    // the thing the framework gave this its own event name to avoid.
+    emitModelDownloadProgress(
+      modelName,
+      { percent: 0, status: 'Cancelled', downloading: false, cancelled: true },
+      { kind },
+    );
+    clearActiveDownload(modelName);
+  };
+
   const fail = (data) => {
     if (failure) return;
     const code = typeof data.code === 'number' ? data.code : null;
@@ -2752,6 +2786,7 @@ function consumeSseStream(res, modelName, { kind = 'aux', doneStatus = 'Ready', 
   return readSseStream(res, {
     onFrame: (data, eventName) => {
       if (isErrorFrame(data, eventName)) { fail(data); return; }
+      if (isCancelledFrame(data, eventName)) { cancel(data); return; }
       if (failure) return;  // already terminal — ignore anything trailing
       emitModelDownloadProgress(modelName, bootstrapProgress(data), { kind });
     },
@@ -2847,17 +2882,86 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
   });
 });
 
-// IPC: cancel an in-progress model download
-ipcMain.handle('slp-cancel-model-download', async (event, modelName, projectId) => {
-  const req = activeModelDownloads.get(modelName);
-  if (req) {
-    console.log(`[Models] Cancelling download for ${modelName}`);
-    req.destroy();
-    clearActiveDownload(modelName);
-    invalidateModelsCache(projectId);
-    return { success: true };
+// One cancel request. Resolves `{ ok, payload, error, detail, code }` and never
+// throws, so the retry below can treat a refusal and a dead socket alike.
+async function requestDownloadCancel(url) {
+  try {
+    const res = await fetch(url, { method: 'DELETE' });
+    const text = await res.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch { payload = null; }
+    if (!res.ok) {
+      const detail = String(payload?.detail || text).slice(0, 200);
+      return { ok: false, payload, error: `HTTP ${res.status}`, detail, code: res.status };
+    }
+    return { ok: true, payload };
+  } catch (err) {
+    return { ok: false, payload: null, error: err.message, detail: '', code: null };
   }
-  return { success: false, error: 'No active download' };
+}
+
+// How long to keep asking while SLP has nothing registered to cancel. 3s covers
+// a signed-URL mint on a slow link; past that the click is better answered by
+// the stream's own terminal frame than by holding the button's promise open.
+const CANCEL_RETRY_MS = 250;
+const CANCEL_RETRIES = 12;
+
+// IPC: stop an in-progress model download.
+//
+// Deliberately does NOT destroy the request. Killing the socket was the first
+// attempt at this and it is why the button was removed: it stopped the progress
+// stream and left SLP downloading. SLP now owns stopping — and the cleanup that
+// follows it — so this asks, and the download's own stream reports the outcome
+// with a terminal `cancelled` frame. The stream has to stay open to deliver it.
+ipcMain.handle('slp-cancel-model-download', async (event, modelName) => {
+  if (!modelName) return { success: false, error: 'No model name' };
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'No local service' };
+
+  // No project, in the path or the query string. ProjectRoutingMiddleware
+  // forwards anything naming one to a child process, and SLP's cancel registry
+  // is per-process — a proxied cancel would signal a child's empty registry
+  // while the parent held the running transfer.
+  const url = `${baseUrl}/v1/downloads/${encodeURIComponent(modelName)}`;
+  let result = await requestDownloadCancel(url);
+  if (!result.ok) {
+    console.warn(`[Models] Cancel of ${modelName} failed: ${result.error} ${result.detail}`);
+    return { success: false, error: result.error, detail: result.detail, code: result.code };
+  }
+
+  // SLP answers `not_found` until the download thread claims the model id, and
+  // /v1/init mints signed URLs before it gets that far — so a stop pressed in
+  // the second after a misclick lands in a window where there is nothing yet to
+  // cancel. That is exactly when the button is most likely to be pressed, so
+  // keep asking while this process still holds the request. A retry that fails
+  // outright is not informative, so the first answer stands.
+  for (let i = 0; i < CANCEL_RETRIES; i++) {
+    if (result.payload?.cancelled !== false) break;
+    if (!activeModelDownloads.has(modelName)) break;
+    await new Promise((r) => setTimeout(r, CANCEL_RETRY_MS));
+    const again = await requestDownloadCancel(url);
+    if (!again.ok) break;
+    result = again;
+    // Logged per attempt, not just at the end: without it a cancel that caught
+    // on the first ask and one that caught on the fifth write the same line, and
+    // the window this loop exists to cover would be invisible in a bug report.
+    if (result.payload?.cancelled) {
+      console.log(`[Models] Cancel of ${modelName} landed after ${(i + 1) * CANCEL_RETRY_MS}ms of retries`);
+    }
+  }
+
+  const payload = result.payload;
+  console.log(`[Models] Cancel of ${modelName}: ${payload?.status || 'requested'}`);
+
+  // Still `cancelled: false` with nothing in flight here either: the transfer
+  // finished before the click landed, which the client races by construction.
+  // Not a failure — the terminal event invalidates the model cache, which is
+  // what makes the row re-read as downloaded.
+  if (payload?.cancelled === false && !activeModelDownloads.has(modelName)) {
+    emitModelDownloadProgress(modelName, { percent: 100, status: 'Ready', downloading: false });
+  }
+
+  return { success: true, status: payload?.status ?? null, cancelled: payload?.cancelled !== false };
 });
 
 // IPC: enable/disable a model for orchestrator selection
@@ -2927,10 +3031,13 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
           consumeSseStream(res, modelName, { doneStatus: 'Complete' }).then((result) => {
             if (result.ok) { resolve(true); return; }
             // Reject rather than resolve: the PATCH below would otherwise mark a
-            // model enabled whose weights never arrived.
+            // model enabled whose weights never arrived. A cancel takes the same
+            // exit for the same reason, but carries `cancelled` so the renderer
+            // can tell the user's own button from a download that broke.
             const err = new Error(result.error);
             err.code = result.code;
             err.requiresAuth = result.requiresAuth;
+            err.cancelled = result.cancelled;
             reject(err);
           });
         });
@@ -2944,6 +3051,10 @@ ipcMain.handle('slp-set-model-enabled', async (event, modelName, enabled, projec
       });
       console.log(`[Models] Download complete for ${modelName}`);
     } catch (err) {
+      if (err.cancelled) {
+        console.log(`[Models] Enable of ${modelName} abandoned — download cancelled`);
+        return { success: false, cancelled: true, error: 'Download cancelled' };
+      }
       console.error('[Models] Download error:', err.message);
       return { success: false, error: err.message, code: err.code, requiresAuth: !!err.requiresAuth };
     }
