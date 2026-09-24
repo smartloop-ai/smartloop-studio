@@ -48,9 +48,25 @@ const CLEANABLE = [
     // one family is what makes the bar say "this much of your models is in use,
     // this much isn't".  Both tints are re-set per theme (themes.ts), so nothing
     // here is a fixed colour — the panel has to work across every theme.
-    { key: 'models', label: 'Unused Models', color: 'var(--sl-brand-light)' },
-    { key: 'logs', label: 'Logs', color: 'var(--sl-status-warning)' },
-] as const satisfies ReadonlyArray<{ key: keyof StorageCleanupRequest; label: string; color: string }>;
+    //
+    // `note` says what Clean actually does to the band, because "Models" and
+    // "Unused Models" differ by a word and deleting weights is not undoable in
+    // the moment — the tooltip is where that difference gets spelled out.
+    {
+        key: 'models',
+        label: 'Unused Models',
+        color: 'var(--sl-brand-light)',
+        note: 'Downloaded weights no project has switched on. Cleaning deletes them; you can download them again whenever you need them.',
+    },
+    {
+        key: 'logs',
+        label: 'Logs',
+        color: 'var(--sl-status-warning)',
+        note: 'Cleaning empties the current log and deletes its rotated backups. The agent keeps running and starts a fresh log.',
+    },
+] as const satisfies ReadonlyArray<{
+    key: keyof StorageCleanupRequest; label: string; color: string; note: string;
+}>;
 
 // The two bands nothing can be cleaned out of.  Models is what the user is
 // actually using; System is the framework's own footprint plus everything with
@@ -1075,14 +1091,14 @@ export default function SettingsPage() {
                                 color: string;
                                 bytes: number;
                                 toggle?: keyof StorageCleanupRequest;
-                                title?: string;
+                                title: string;
                             }[] = [
                                 {
                                     key: 'models_in_use',
                                     label: 'Models',
                                     color: MODELS_IN_USE_COLOR,
                                     bytes: modelsInUse,
-                                    title: `Models — ${formatBytes(modelsInUse)} in use (can't be cleaned)`,
+                                    title: `Models — ${formatBytes(modelsInUse)}. Switched on in at least one project, or loaded right now. Cleaning never touches these.`,
                                 },
                                 ...cats.map((c) => ({
                                     key: c.key,
@@ -1090,6 +1106,7 @@ export default function SettingsPage() {
                                     color: c.color,
                                     bytes: reclaimableOf(c.key),
                                     toggle: c.key,
+                                    title: `${c.label} — ${formatBytes(reclaimableOf(c.key))}. ${c.note}`,
                                 })),
                                 {
                                     key: 'system',
@@ -1097,8 +1114,8 @@ export default function SettingsPage() {
                                     color: SYSTEM_COLOR,
                                     bytes: system,
                                     title: frameworkModels > 0
-                                        ? `System — ${formatBytes(system)}, including ${formatBytes(frameworkModels)} of framework models (${BOOTSTRAP_MODEL}, embeddings)`
-                                        : `System — ${formatBytes(system)} (can't be cleaned)`,
+                                        ? `System — ${formatBytes(system)}. ${formatBytes(frameworkModels)} of that is ${BOOTSTRAP_MODEL} and the embedding model, which the agent cannot run without; the rest is your projects, chats and app data. Cleaning never touches any of it.`
+                                        : `System — ${formatBytes(system)}. Your projects, chats and app data. Cleaning never touches any of it.`,
                                 },
                             ];
                             return (
@@ -1139,7 +1156,7 @@ export default function SettingsPage() {
                                                 <div
                                                     key={b.key}
                                                     className={isSystem ? 'flex items-center justify-end pr-2' : undefined}
-                                                    title={b.title ?? `${b.label} — ${formatBytes(b.bytes)}`}
+                                                    title={b.title}
                                                     style={{
                                                         // Floor tiny slices so a few-MB band is still visible.
                                                         // Everything but System holds its width, so the rounding
@@ -1187,11 +1204,21 @@ export default function SettingsPage() {
                                             const toggle = b.toggle;
                                             const disabled = !storage || isCleaning || b.bytes === 0;
                                             const on = cleanupSel.has(toggle) && !disabled;
+                                            // Two things in one tooltip: what the band is, and
+                                            // that this entry is a control at all — a dimmed
+                                            // legend row reads as "unavailable" unless it says
+                                            // it was switched off on purpose.
+                                            const hint = disabled
+                                                ? 'Nothing here to clean.'
+                                                : on
+                                                    ? 'Click to leave it out of the next clean.'
+                                                    : 'Left out of the next clean. Click to put it back.';
                                             return (
                                                 <button
                                                     key={b.key}
                                                     onClick={() => toggleCategory(toggle)}
                                                     disabled={disabled}
+                                                    title={`${b.title} — ${hint}`}
                                                     className="flex items-center gap-1.5 text-xs transition-opacity"
                                                     style={{ opacity: on ? 1 : 0.4, cursor: disabled ? 'not-allowed' : 'pointer' }}
                                                 >
@@ -1207,6 +1234,9 @@ export default function SettingsPage() {
                                         <button
                                             onClick={runCleanup}
                                             disabled={isCleaning || selectedReclaim === 0}
+                                            title={selectedReclaim === 0
+                                                ? 'Nothing to reclaim right now.'
+                                                : `Free ${formatBytes(selectedReclaim)}. The agent keeps running, and models you are using are never removed.`}
                                             className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                         >
