@@ -43,7 +43,12 @@ import type { StorageCleanupRequest, StorageUsage } from '@/electron';
 // Anything not listed here — those three, plus conversations, the bundled models
 // and live projects — falls into the System band instead.
 const CLEANABLE = [
-    { key: 'models', label: 'Unused Models', color: 'rgb(96,165,250)' },
+    // A tint of the brand rather than a hue of its own: these are the same
+    // things as the Models band beside it, in a different state, and reading as
+    // one family is what makes the bar say "this much of your models is in use,
+    // this much isn't".  Both tints are re-set per theme (themes.ts), so nothing
+    // here is a fixed colour — the panel has to work across every theme.
+    { key: 'models', label: 'Unused Models', color: 'var(--sl-brand-light)' },
     { key: 'logs', label: 'Logs', color: 'var(--sl-status-warning)' },
 ] as const satisfies ReadonlyArray<{ key: keyof StorageCleanupRequest; label: string; color: string }>;
 
