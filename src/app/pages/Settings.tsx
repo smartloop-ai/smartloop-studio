@@ -56,7 +56,7 @@ const CLEANABLE = [
         key: 'models',
         label: 'Unused Models',
         color: 'var(--sl-brand-light)',
-        note: 'Downloaded weights no project has switched on. Cleaning deletes them; you can download them again whenever you need them.',
+        note: 'Models you have downloaded but no project has switched on. Cleaning deletes them; you can download them again whenever you need them.',
     },
     {
         key: 'logs',
