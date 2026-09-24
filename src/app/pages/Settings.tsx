@@ -26,16 +26,25 @@ import type { StorageCleanupRequest, StorageUsage } from '@/electron';
 // Categories the Clean panel offers as toggles, in bar order.  Keys match the
 // API's category keys and the cleanup request flags.
 //
-// `orphan_projects` is deliberately absent.  An orphaned project directory only
-// exists because something left it behind, so there is no decision for anyone to
-// make about it — it is swept on every clean (see runCleanup) and never drawn.
-// Anything else the framework reports but that isn't listed here — conversations,
-// the bundled models, live projects — falls into the System band instead.
+// Three of the framework's categories are deliberately absent, and all three are
+// still swept on every clean (see runCleanup) — they are just never drawn, because
+// none of them is a decision anyone should be asked to make:
+//
+//   orphan_projects  a project directory only outlives its record because
+//                    something left it behind.  Litter, not a choice.
+//   versions         old framework payloads under <home>/<x.y.z>/.  Every packaged
+//                    build runs SLP in place from the app bundle, so these are only
+//                    ever created by the legacy CDN-install path and should not
+//                    exist at all on a build that updates properly.
+//   cache            the installer's archive staging, which it already unlinks in a
+//                    finally after extracting.  Only holds bytes after a hard kill
+//                    mid-install.
+//
+// Anything not listed here — those three, plus conversations, the bundled models
+// and live projects — falls into the System band instead.
 const CLEANABLE = [
     { key: 'models', label: 'Unused Models', color: 'rgb(96,165,250)' },
-    { key: 'versions', label: 'Versions', color: 'rgb(94,234,212)' },
     { key: 'logs', label: 'Logs', color: 'var(--sl-status-warning)' },
-    { key: 'cache', label: 'Cache', color: 'rgb(167,139,250)' },
 ] as const satisfies ReadonlyArray<{ key: keyof StorageCleanupRequest; label: string; color: string }>;
 
 // The two bands nothing can be cleaned out of.  Models is what the user is
@@ -319,13 +328,21 @@ export default function SettingsPage() {
         setIsCleaning(true);
         setCleanupError('');
         try {
-            // Orphaned project directories are always swept and never shown: they
-            // are litter from a bug, not a choice, so the only cost of surfacing
-            // them would be asking the user about a mess that isn't theirs.  A
-            // clean can therefore free slightly more than "Total to clean"
-            // promised, which is the harmless direction — and normally zero,
-            // since these only exist after something went wrong.
-            const request: StorageCleanupRequest = { orphan_projects: true };
+            // Always swept, never drawn (see CLEANABLE).  None of the three is a
+            // choice worth putting to someone: an orphaned project directory is
+            // litter from a bug, and old version payloads and the installer's
+            // archive staging should not exist at all on a build that updates
+            // itself properly.  Sweeping them anyway is self-healing for the
+            // machines where they do.
+            //
+            // A clean can therefore free slightly more than "Total to clean"
+            // promised — the harmless direction, and normally zero, since all
+            // three are empty unless something went wrong.
+            const request: StorageCleanupRequest = {
+                orphan_projects: true,
+                versions: true,
+                cache: true,
+            };
             for (const c of CLEANABLE) {
                 if (cleanupSel.has(c.key)) request[c.key] = true;
             }
