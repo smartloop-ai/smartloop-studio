@@ -65,6 +65,14 @@ export interface StorageItem {
   is_active?: boolean;
   loaded?: boolean;
   registered?: boolean;
+  /**
+   * Models only: which band of the usage bar these bytes belong to.
+   * 'system' is the framework's own (sl-mini, embeddings), 'unused' is the
+   * same set as `removable`.
+   */
+  group?: 'in_use' | 'system' | 'unused';
+  /** Models only: a .part sidecar arrived but no servable weights did. */
+  partial?: boolean;
   /** Versions only. */
   version?: string;
   /** Logs only: 'truncate' for server.log, 'delete' for its backups. */
@@ -84,6 +92,17 @@ export interface StorageCategory {
   reclaimable: number;
   kept: number;
   items: StorageItem[];
+  /**
+   * Models only, and optional because a framework older than this build does
+   * not send them: the group subtotals, which partition the category as
+   * `in_use + system + reclaimable + overhead === bytes`.  `reclaimable` is
+   * the 'unused' total, so it is not repeated. `overhead` is what the models
+   * directory holds with no item of its own — the hidden `embeddings/.locks`
+   * tree and the loose embedding GGUF.
+   */
+  in_use?: number;
+  system?: number;
+  overhead?: number;
 }
 
 /** Response of GET /v1/storage/usage. */

@@ -23,17 +23,28 @@ import { LogoMark } from '@/app/components/logo';
 
 import type { StorageCleanupRequest, StorageUsage } from '@/electron';
 
-// Categories the Clean panel offers, in bar order.  Keys match the API's
-// category keys and the cleanup request flags; anything the framework reports
-// but that isn't listed here (e.g. conversations, which are never deletable)
-// counts towards the kept remainder instead.
+// Categories the Clean panel offers as toggles, in bar order.  Keys match the
+// API's category keys and the cleanup request flags.
+//
+// `orphan_projects` is deliberately absent.  An orphaned project directory only
+// exists because something left it behind, so there is no decision for anyone to
+// make about it — it is swept on every clean (see runCleanup) and never drawn.
+// Anything else the framework reports but that isn't listed here — conversations,
+// the bundled models, live projects — falls into the System band instead.
 const CLEANABLE = [
-    { key: 'models', label: 'Models', color: 'var(--sl-brand-primary)' },
-    { key: 'versions', label: 'Versions', color: 'rgb(96,165,250)' },
+    { key: 'models', label: 'Unused Models', color: 'rgb(96,165,250)' },
+    { key: 'versions', label: 'Versions', color: 'rgb(94,234,212)' },
     { key: 'logs', label: 'Logs', color: 'var(--sl-status-warning)' },
     { key: 'cache', label: 'Cache', color: 'rgb(167,139,250)' },
-    { key: 'orphan_projects', label: 'Unused projects', color: 'rgb(94,234,212)' },
 ] as const satisfies ReadonlyArray<{ key: keyof StorageCleanupRequest; label: string; color: string }>;
+
+// The two bands nothing can be cleaned out of.  Models is what the user is
+// actually using; System is the framework's own footprint plus everything with
+// no band of its own.  They are drawn and totalled like any other segment —
+// that is the point, since burying active models in the remainder is what made
+// the panel read as "one long System bar" — but they carry no toggle.
+const MODELS_IN_USE_COLOR = 'var(--sl-brand-primary)';
+const SYSTEM_COLOR = 'var(--sl-white-alpha-10)';
 
 
 
@@ -308,7 +319,13 @@ export default function SettingsPage() {
         setIsCleaning(true);
         setCleanupError('');
         try {
-            const request: StorageCleanupRequest = {};
+            // Orphaned project directories are always swept and never shown: they
+            // are litter from a bug, not a choice, so the only cost of surfacing
+            // them would be asking the user about a mess that isn't theirs.  A
+            // clean can therefore free slightly more than "Total to clean"
+            // promised, which is the harmless direction — and normally zero,
+            // since these only exist after something went wrong.
+            const request: StorageCleanupRequest = { orphan_projects: true };
             for (const c of CLEANABLE) {
                 if (cleanupSel.has(c.key)) request[c.key] = true;
             }
@@ -998,9 +1015,9 @@ export default function SettingsPage() {
                             <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Clean up</h2>
                         </Box>
                         <p className="text-xs md:text-sm mb-4 leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
-                            Reclaim disk space used by Smartloop. Models you have selected are kept, as are the
-                            default <span className="font-mono">{BOOTSTRAP_MODEL}</span> and embedding models. The agent
-                            keeps running while it cleans up.
+                            Reclaim disk space used by Smartloop. Models you're using are kept, as are
+                            <span className="font-mono"> {BOOTSTRAP_MODEL} </span> and the embedding model, which the
+                            agent needs to run. The agent keeps running while it cleans up.
                         </p>
 
                         {(() => {
@@ -1008,9 +1025,60 @@ export default function SettingsPage() {
                             // never shows a segment for something this build can't clean.
                             const cats = CLEANABLE.filter((c) => storage?.categories?.[c.key]);
                             const totalFolder = storage ? storage.total : 0;
-                            const totalAll = cats.reduce((sum, c) => sum + reclaimableOf(c.key), 0);
-                            const kept = Math.max(0, totalFolder - totalAll);   // non-reclaimable footprint
+                            const models = storage?.categories?.models;
+
+                            // Undefined on a framework older than the group
+                            // subtotals.  Falling back to 0 is not a gap: those
+                            // bytes stay inside the System remainder below, which
+                            // is exactly how this panel read before.  Don't
+                            // "fix" this to models?.kept — that includes the
+                            // bundled trees, which belong to System.
+                            const modelsInUse = models?.in_use ?? 0;
+                            const frameworkModels = (models?.system ?? 0) + (models?.overhead ?? 0);
+
+                            const cleanableSum = cats.reduce((sum, c) => sum + reclaimableOf(c.key), 0);
+                            // One subtraction, so every byte of the footprint sits
+                            // in exactly one band and none can go negative: the
+                            // bundled models, conversations, live projects,
+                            // config.json, studio.db — and orphaned project dirs,
+                            // which are swept without ever being drawn.
+                            const system = Math.max(0, totalFolder - modelsInUse - cleanableSum);
                             const pct = (n: number) => (totalFolder > 0 ? (n / totalFolder) * 100 : 0);
+
+                            // Bar order.  `toggle` marks the bands that are a
+                            // choice; Models and System are reported, not offered.
+                            const bands: {
+                                key: string;
+                                label: string;
+                                color: string;
+                                bytes: number;
+                                toggle?: keyof StorageCleanupRequest;
+                                title?: string;
+                            }[] = [
+                                {
+                                    key: 'models_in_use',
+                                    label: 'Models',
+                                    color: MODELS_IN_USE_COLOR,
+                                    bytes: modelsInUse,
+                                    title: `Models — ${formatBytes(modelsInUse)} in use (can't be cleaned)`,
+                                },
+                                ...cats.map((c) => ({
+                                    key: c.key,
+                                    label: c.label,
+                                    color: c.color,
+                                    bytes: reclaimableOf(c.key),
+                                    toggle: c.key,
+                                })),
+                                {
+                                    key: 'system',
+                                    label: 'System',
+                                    color: SYSTEM_COLOR,
+                                    bytes: system,
+                                    title: frameworkModels > 0
+                                        ? `System — ${formatBytes(system)}, including ${formatBytes(frameworkModels)} of framework models (${BOOTSTRAP_MODEL}, embeddings)`
+                                        : `System — ${formatBytes(system)} (can't be cleaned)`,
+                                },
+                            ];
                             return (
                                 <>
                                     {/* macOS-style framed box: "X of Y used" header + disk bar */}
@@ -1030,8 +1098,10 @@ export default function SettingsPage() {
                                         </span>
                                     </div>
 
-                                    {/* macOS disk-style bar — cleanable category segments, then a
-                                        labeled "kept" remainder */}
+                                    {/* macOS disk-style bar.  Every band is drawn,
+                                        including the two that can't be cleaned, so
+                                        the bar accounts for the whole footprint
+                                        rather than trailing off into a remainder. */}
                                     <div
                                         className="flex w-full h-5 rounded-md overflow-hidden gap-[2px]"
                                         style={{
@@ -1039,64 +1109,74 @@ export default function SettingsPage() {
                                             boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.25)',
                                         }}
                                     >
-                                        {cats.map((c) => {
-                                            const size = reclaimableOf(c.key);
-                                            if (size <= 0) return null;
-                                            const on = cleanupSel.has(c.key);
+                                        {bands.map((b) => {
+                                            if (b.bytes <= 0) return null;
+                                            const on = !b.toggle || cleanupSel.has(b.toggle);
+                                            const isSystem = b.key === 'system';
                                             return (
                                                 <div
-                                                    key={c.key}
-                                                    title={`${c.label} — ${formatBytes(size)}`}
+                                                    key={b.key}
+                                                    className={isSystem ? 'flex items-center justify-end pr-2' : undefined}
+                                                    title={b.title ?? `${b.label} — ${formatBytes(b.bytes)}`}
                                                     style={{
-                                                        // Floor tiny slices so a few-MB category is still visible.
-                                                        width: `${pct(size)}%`,
+                                                        // Floor tiny slices so a few-MB band is still visible.
+                                                        // Everything but System holds its width, so the rounding
+                                                        // that buys those pixels comes out of the one band big
+                                                        // enough not to misrepresent itself by losing them.
+                                                        width: `${pct(b.bytes)}%`,
                                                         minWidth: 6,
-                                                        backgroundColor: on ? c.color : 'var(--sl-white-alpha-8)',
+                                                        flexShrink: isSystem ? 1 : 0,
+                                                        backgroundColor: on ? b.color : 'var(--sl-white-alpha-8)',
                                                         opacity: on ? 1 : 0.4,
                                                         transition: 'background-color 0.15s ease, opacity 0.15s ease',
                                                     }}
-                                                />
+                                                >
+                                                    {isSystem && (
+                                                        <span className="text-[10px] font-mono whitespace-nowrap" style={{ color: 'var(--sl-text-muted)' }}>{formatBytes(b.bytes)}</span>
+                                                    )}
+                                                </div>
                                             );
                                         })}
-                                        {kept > 0 && (
-                                            <div
-                                                className="flex items-center justify-end pr-2"
-                                                title={`System — ${formatBytes(kept)} (can't be cleaned)`}
-                                                style={{ width: `${pct(kept)}%`, minWidth: 6, backgroundColor: 'var(--sl-white-alpha-12, rgba(255,255,255,0.12))' }}
-                                            >
-                                                <span className="text-[10px] font-mono whitespace-nowrap" style={{ color: 'var(--sl-text-muted)' }}>{formatBytes(kept)}</span>
-                                            </div>
-                                        )}
                                     </div>
 
-                                    {/* macOS-style legend — colored dot + name (+ size). Cleanable
-                                        categories toggle inclusion; deselected ones dim. */}
+                                    {/* macOS-style legend — colored dot + name + size.
+                                        A band with a toggle is a button that includes or
+                                        excludes it; Models and System are plain labels,
+                                        since there is nothing to decide about them. */}
                                     <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3">
-                                        {cats.map((c) => {
-                                            const size = reclaimableOf(c.key);
-                                            const disabled = !storage || isCleaning || size === 0;
-                                            const on = cleanupSel.has(c.key) && !disabled;
+                                        {bands.map((b) => {
+                                            const swatch = (
+                                                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                                            );
+                                            const label = <span style={{ color: 'var(--sl-text-secondary)' }}>{b.label}</span>;
+                                            const size = (
+                                                <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(b.bytes) : '—'}</span>
+                                            );
+
+                                            if (!b.toggle) {
+                                                if (b.bytes <= 0) return null;
+                                                return (
+                                                    <span key={b.key} className="flex items-center gap-1.5 text-xs" title={b.title}>
+                                                        {swatch}{label}{size}
+                                                    </span>
+                                                );
+                                            }
+
+                                            const toggle = b.toggle;
+                                            const disabled = !storage || isCleaning || b.bytes === 0;
+                                            const on = cleanupSel.has(toggle) && !disabled;
                                             return (
                                                 <button
-                                                    key={c.key}
-                                                    onClick={() => toggleCategory(c.key)}
+                                                    key={b.key}
+                                                    onClick={() => toggleCategory(toggle)}
                                                     disabled={disabled}
                                                     className="flex items-center gap-1.5 text-xs transition-opacity"
                                                     style={{ opacity: on ? 1 : 0.4, cursor: disabled ? 'not-allowed' : 'pointer' }}
                                                 >
-                                                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                                                    <span style={{ color: 'var(--sl-text-secondary)' }}>{c.label}</span>
-                                                    <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(size) : '—'}</span>
+                                                    {swatch}{label}{size}
                                                 </button>
                                             );
                                         })}
-                                        {kept > 0 && (
-                                            <span className="flex items-center gap-1.5 text-xs" title="System data — can't be cleaned">
-                                                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--sl-white-alpha-12, rgba(255,255,255,0.12))' }} />
-                                                <span style={{ color: 'var(--sl-text-secondary)' }}>System</span>
-                                                <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{formatBytes(kept)}</span>
-                                            </span>
-                                        )}
                                     </div>
                                     </div>
 
