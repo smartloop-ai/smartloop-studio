@@ -35,6 +35,10 @@ export interface TraceTurn {
   prompt?: string;
   /** Project the run belongs to, so the panel can show only the current one's. */
   projectId?: string;
+  /** Conversation the run belongs to. Turns from different conversations now
+   *  interleave, so every mutator resolves its target through this rather than
+   *  through "whichever turn is newest". */
+  conversationId?: string;
   startedAt: number;
   endedAt?: number;
   /** Model named by the `step === 'model'` event, if one arrived. */
@@ -52,6 +56,11 @@ export interface TraceTurn {
 const MAX_TURNS = 20;
 
 // Newest first — the panel reads top-down and almost always wants turn 0.
+//
+// This buffer is the *live* view only. Rows are written by the main process as
+// each turn finishes (electron/chat-stream.js), because a turn can complete with
+// no renderer mounted at all — which is the whole point of DEV-398. Writing from
+// both sides would be two writers racing on the same message_id.
 let turns: TraceTurn[] = [];
 const listeners = new Set<() => void>();
 // Projects whose stored runs have been pulled in. Per project, not a single
@@ -59,42 +68,18 @@ const listeners = new Set<() => void>();
 // version of this hydrated once and then showed the wrong project's runs.
 const hydratedProjects = new Set<string>();
 
-/** Where a persisted run came from, so a turn can be tied to its conversation. */
-let context: { conversationId?: string; projectId?: string } = {};
-
 const emit = () => {
   // A copy per change so React sees a new reference and repaints.
   turns = [...turns];
   listeners.forEach((fn) => fn());
 };
 
-const current = (): TraceTurn | undefined => (turns[0] && !turns[0].endedAt ? turns[0] : undefined);
-
-/** Write a finished turn to SQLite. Fire-and-forget: the UI already has it. */
-const persist = (turn: TraceTurn) => {
-  const db = (window as any).electronAPI?.db;
-  if (!db?.addRunTrace) return;
-  db.addRunTrace({
-    message_id: turn.id,
-    conversation_id: context.conversationId ?? null,
-    project_id: context.projectId ?? null,
-    model: turn.model ?? null,
-    started_at: new Date(turn.startedAt).toISOString(),
-    ended_at: turn.endedAt ? new Date(turn.endedAt).toISOString() : null,
-    duration_ms: turn.endedAt ? turn.endedAt - turn.startedAt : null,
-    citations: turn.citations ?? null,
-    outcome: turn.outcome ?? null,
-    prompt: turn.prompt ?? null,
-    // Stored relative to the turn's start, so a restored run's stamps read the
-    // same as a live one's without carrying absolute clock times around.
-    steps: turn.steps.map((s) => ({
-      step: s.step,
-      message: s.message,
-      at: s.startedAt - turn.startedAt,
-      ms: (s.endedAt ?? turn.endedAt ?? s.startedAt) - s.startedAt,
-    })),
-  }).catch((err: any) => console.warn('[runTrace] persist failed:', err));
-};
+// The newest still-open turn *for one conversation*. This used to be
+// `turns[0], if open` — fine while only one turn could run, but with parallel
+// tabs every status, model name and citation count from one conversation landed
+// on whichever turn had started most recently.
+const current = (conversationId?: string): TraceTurn | undefined =>
+  turns.find((t) => !t.endedAt && t.conversationId === conversationId);
 
 /** Rebuild a turn from its stored row, restoring absolute step timings. */
 const fromRow = (row: any): TraceTurn => {
@@ -105,6 +90,7 @@ const fromRow = (row: any): TraceTurn => {
     startedAt,
     endedAt,
     projectId: row.project_id ?? undefined,
+    conversationId: row.conversation_id ?? undefined,
     prompt: row.prompt ?? undefined,
     model: row.model ?? undefined,
     citations: row.citations ?? undefined,
@@ -148,23 +134,29 @@ export const modelNameFromStatus = (message: string): string | null => {
 
 export const runTrace = {
   /**
-   * Which conversation and project subsequent turns belong to. Set by the chat
-   * before a turn starts, so a persisted run can be filtered by project later.
+   * A turn started streaming. Every id it will ever need is stamped on here, at
+   * the start — the previous version read a shared mutable at *persist* time,
+   * which meant a turn finishing after another had begun wrote its row tagged
+   * with the wrong conversation.
    */
-  setContext(next: { conversationId?: string; projectId?: string }) {
-    context = { ...context, ...next };
-  },
-
-  /** A turn started streaming. `prompt` is what the user asked. */
-  begin(id: string, prompt?: string) {
-    turns.unshift({ id, projectId: context.projectId, prompt, startedAt: Date.now(), steps: [] });
-    if (turns.length > MAX_TURNS) turns.length = MAX_TURNS;
+  begin({ id, conversationId, projectId, prompt }:
+        { id: string; conversationId?: string; projectId?: string; prompt?: string }) {
+    turns.unshift({ id, conversationId, projectId, prompt, startedAt: Date.now(), steps: [] });
+    // Never evict a turn that is still running: with several conversations going
+    // at once, a busy one would otherwise drop another's live turn off the end
+    // and leave its stream writing into something nothing renders.
+    if (turns.length > MAX_TURNS) {
+      const keep = turns.filter((t) => !t.endedAt);
+      const done = turns.filter((t) => t.endedAt);
+      turns = [...keep, ...done.slice(0, Math.max(0, MAX_TURNS - keep.length))]
+        .sort((a, b) => b.startedAt - a.startedAt);
+    }
     emit();
   },
 
   /** One `chat.status` event. Closes the step before it. */
-  status(step: string | null, message: string) {
-    const turn = current();
+  status(conversationId: string | undefined, step: string | null, message: string) {
+    const turn = current(conversationId);
     if (!turn || !message) return;
     const now = Date.now();
     const prev = turn.steps[turn.steps.length - 1];
@@ -180,8 +172,8 @@ export const runTrace = {
    * model for document processing…" — so the authority is the request itself
    * and the `model` field the stream echoes back on each chunk.
    */
-  model(name?: string | null) {
-    const turn = current();
+  model(conversationId: string | undefined, name?: string | null) {
+    const turn = current(conversationId);
     if (!turn || !name) return;
     if (turn.model === name) return;
     turn.model = name;
@@ -189,16 +181,16 @@ export const runTrace = {
   },
 
   /** `chat.citations` — how many sources the answer drew on. */
-  citations(count: number) {
-    const turn = current();
+  citations(conversationId: string | undefined, count: number) {
+    const turn = current(conversationId);
     if (!turn) return;
     turn.citations = count;
     emit();
   },
 
   /** The stream finished, was stopped, or failed. */
-  end(info: { tokensPerSecond?: number | null; outcome?: TraceTurn['outcome'] } = {}) {
-    const turn = current();
+  end(conversationId: string | undefined, info: { tokensPerSecond?: number | null; outcome?: TraceTurn['outcome'] } = {}) {
+    const turn = current(conversationId);
     if (!turn) return;
     const now = Date.now();
     const last = turn.steps[turn.steps.length - 1];
@@ -207,7 +199,6 @@ export const runTrace = {
     turn.outcome = info.outcome ?? 'done';
     if (info.tokensPerSecond) turn.tokensPerSecond = info.tokensPerSecond;
     emit();
-    persist(turn);
   },
 
   /**

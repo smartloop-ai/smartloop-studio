@@ -206,6 +206,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('mcp-catalog-updated', handler);
     return () => ipcRenderer.off('mcp-catalog-updated', handler);
   },
+  // Chat turns. The stream is owned by main, so a conversation keeps collecting
+  // its answer while its tab is in the background — or while the chat component
+  // is not mounted at all. `onChatStreamEvent` follows the unsubscribe-closure
+  // form above for the same reason, doubly so here: a channel-wide
+  // removeAllListeners from one unmounting tab would kill every other
+  // conversation's stream.
+  chatSend: (request) => ipcRenderer.invoke('chat-send', request),
+  chatAbort: (conversationId) => ipcRenderer.invoke('chat-abort', conversationId),
+  chatGetState: () => ipcRenderer.invoke('chat-get-state'),
+  onChatStreamEvent: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('chat-stream-event', handler);
+    return () => ipcRenderer.off('chat-stream-event', handler);
+  },
   // SLP version management
   slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
   slpSwitchVersion: (version) => ipcRenderer.invoke('slp-switch-version', version),

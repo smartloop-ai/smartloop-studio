@@ -145,6 +145,83 @@ export interface StorageCleanupResult {
   usage: StorageUsage;
 }
 
+// --- Chat streaming (main-process owned) ---
+
+// Where a turn is. `queued` is a real state, not a nicety: the backend serializes
+// generation behind a single worker per project agent and emits nothing at all
+// until it gets one, so a turn can be connected and silent for a long time.
+export type ChatPhase =
+  | 'connecting' | 'loading-model' | 'reconnecting' | 'queued' | 'streaming'
+  | 'done' | 'aborted' | 'error';
+
+// Main classifies; the renderer owns the wording. Keeping the prose on one side
+// means an error reads the same whether it came from a status code, a socket, or
+// the model talking about its own context window.
+export type ChatErrorCode =
+  | 'context-limit' | 'rate-limit' | 'auth' | 'server' | 'connection' | 'unknown';
+
+export interface ChatSendRequest {
+  conversationId: string;
+  userMessageId: string;
+  responseMessageId: string;
+  text: string;
+  model: string;
+  temperature: number;
+  projectId?: string | null;
+  cwd?: string | null;
+  projectInstructions?: string | null;
+  attachments?: Array<{ file_id: string; name?: string }> | null;
+}
+
+export interface ChatUsage {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  maxContextTokens: number | null;
+}
+
+// What a mounting renderer adopts wholesale before applying any buffered event.
+export interface ChatStreamSnapshot {
+  conversationId: string;
+  turnId: string;
+  seq: number;
+  projectId: string | null;
+  userMessageId: string;
+  responseMessageId: string;
+  prompt: string;
+  content: string;
+  citations: any[] | null;
+  statuses: Array<{ step: string | null; message: string; at: number }>;
+  backendMessageId: string | null;
+  model: string | null;
+  usage: ChatUsage | null;
+  phase: ChatPhase;
+  phaseLabel: string | null;
+  error: { code: ChatErrorCode; detail: string | null } | null;
+  tokensPerSecond: number | null;
+  startedAt: number;
+  endedAt: number | null;
+}
+
+// `seq` is per turn and monotonic. A renderer that reloads mid-stream adopts a
+// snapshot and then ignores anything with seq <= snapshot.seq, so events dropped
+// while it was reloading cannot corrupt the transcript.
+export type ChatStreamEvent = { conversationId: string; turnId: string; seq: number } & (
+  | { type: 'accepted'; userMessageId: string; responseMessageId: string; prompt: string; projectId: string | null }
+  | { type: 'phase'; phase: ChatPhase; label: string | null }
+  // `text` is the increment; `fullLength` is what the total should be once it is
+  // appended. A mismatch means an event was missed — re-pull the snapshot.
+  | { type: 'delta'; text: string; fullLength: number }
+  | { type: 'status'; step: string | null; message: string }
+  | { type: 'citations'; citations: any[] }
+  | { type: 'message-id'; messageId: string }
+  | { type: 'model'; model: string }
+  | ({ type: 'usage' } & ChatUsage)
+  | { type: 'done'; content: string; tokensPerSecond: number | null; messageId: string | null; citations: any[] | null; model: string | null }
+  | { type: 'aborted'; content: string }
+  | { type: 'error'; code: ChatErrorCode; detail: string | null; partialContent: string }
+);
+
 export interface ElectronAPI {
   sendMessage: (channel: string, data: any) => void;
   receiveMessage: (channel: string, func: (...args: any[]) => void) => void;
@@ -249,6 +326,16 @@ export interface ElectronAPI {
   onModelDownloadProgress: (callback: (data: ModelDownloadProgress) => void) => () => void;
   onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => () => void;
   onMcpCatalogUpdated: (callback: (data: { entries: any[] }) => void) => () => void;
+  // Chat turns. `chatSend` resolves as soon as main accepts the request; the
+  // answer arrives on the event channel, and keeps arriving while the chat
+  // component is unmounted.
+  chatSend: (request: ChatSendRequest) => Promise<
+    { success: true; data: { turnId: string; conversationId: string; userMessageId: string; responseMessageId: string } }
+    | { success: false; error: string; streaming?: boolean; notReady?: boolean; turnId?: string }
+  >;
+  chatAbort: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  chatGetState: () => Promise<{ success: boolean; streams: Record<string, ChatStreamSnapshot> }>;
+  onChatStreamEvent: (callback: (event: ChatStreamEvent) => void) => () => void;
   // SLP service ready listener cleanup
   removeSlpServiceReadyListener: () => void;
   // App release / update check

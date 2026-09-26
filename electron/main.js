@@ -18,6 +18,8 @@ const { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, re
 const slpService = require('./slp-service');
 const healthMonitor = require('./health-monitor');
 const releaseChecker = require('./release-checker');
+const { readSseStream, isErrorFrame, isCancelledFrame } = require('./sse');
+const chatStream = require('./chat-stream');
 
 // Load environment variables from .env files (development only)
 if (process.env.NODE_ENV === 'development') {
@@ -1280,8 +1282,16 @@ ipcMain.handle('db-create-conversation', (event, conv) => database.createConvers
 ipcMain.handle('db-get-conversation', (event, id) => database.getConversation(id));
 ipcMain.handle('db-get-conversations', (event, projectId, order) => database.getConversations(projectId, order));
 ipcMain.handle('db-update-conversation', (event, id, updates) => database.updateConversation(id, updates));
-ipcMain.handle('db-delete-conversation', (event, id) => database.deleteConversation(id));
-ipcMain.handle('db-delete-conversations-by-project', (event, projectId) => database.deleteConversationsByProject(projectId));
+ipcMain.handle('db-delete-conversation', (event, id) => {
+  // A stream still writing into this conversation would finalize into rows whose
+  // parent is gone, so stop it before the cascade takes the messages.
+  chatStream.abort(id);
+  return database.deleteConversation(id);
+});
+ipcMain.handle('db-delete-conversations-by-project', (event, projectId) => {
+  chatStream.abortByProject(projectId);
+  return database.deleteConversationsByProject(projectId);
+});
 ipcMain.handle('db-select-conversation', (event, id) => database.selectConversation(id));
 ipcMain.handle('db-clear-selected-conversation', () => database.clearSelectedConversation());
 ipcMain.handle('db-get-selected-conversation', () => database.getSelectedConversation());
@@ -1743,76 +1753,6 @@ async function checkNeedsBootstrap(baseUrl) {
   }
 }
 
-// Line-buffered reader for SLP's SSE streams. Owns the framing — partial
-// chunks, the `event:` name that applies until the blank line closes a frame,
-// keepalive comments — and hands each frame to `onFrame(data, eventName)`
-// already parsed. A line that is not a parseable `data:` frame goes to `onRaw`
-// instead: /v1/models/load answers some requests with a plain JSON body rather
-// than a stream, and feeding that body to a progress parser invented a 0%
-// download for an already-resident model.
-//
-// Resolves when the response ends and rejects on a transport error; what a
-// half-finished stream means is the caller's to decide.
-function readSseStream(res, { onFrame, onRaw } = {}) {
-  return new Promise((resolve, reject) => {
-    let buffer = '';
-    let eventName = 'progress';
-
-    const handleLine = (line) => {
-      const trimmed = line.trim();
-      if (!trimmed) { eventName = 'progress'; return; }
-      if (trimmed.startsWith(':')) return;  // keepalive comment
-      if (trimmed.startsWith('event: ')) { eventName = trimmed.slice(7).trim(); return; }
-      if (!trimmed.startsWith('data: ')) { if (onRaw) onRaw(trimmed); return; }
-      let data;
-      try {
-        data = JSON.parse(trimmed.slice(6));
-      } catch {
-        // An error frame stays terminal even when its payload is malformed.
-        // Passing it to onRaw instead would report the failure as a success —
-        // the exact bug this framing exists to prevent.
-        if (eventName === 'error') { if (onFrame) onFrame({}, eventName); return; }
-        if (onRaw) onRaw(trimmed);
-        return;
-      }
-      if (onFrame) onFrame(data, eventName);
-    };
-
-    res.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line
-      for (const line of lines) handleLine(line);
-    });
-
-    res.on('end', () => {
-      // Flush a last line that arrived without its terminating newline. SLP's
-      // SSE frames always end in \n\n, but /v1/models/load's plain JSON body
-      // does not — and dropping it silently would also drop an unterminated
-      // final error frame.
-      if (buffer.trim()) handleLine(buffer);
-      resolve();
-    });
-    res.on('error', (err) => reject(err));
-  });
-}
-
-// A failure inside a stream that already returned 200. SLP settles entitlement
-// before opening the stream, so this is a mid-transfer fault — an expired
-// signed URL, a full disk, a dropped socket.
-function isErrorFrame(data, eventName) {
-  return eventName === 'error' || data.status === 'error';
-}
-
-// The stop the user asked for, which SLP reports on its own event name rather
-// than as an error carrying 499 — to the client this is the request succeeding.
-// Terminal like an error frame and matched before the progress normalizer for
-// the same reason: bootstrapProgress has no branch for it and would read an
-// unrecognised frame as "0%, still downloading", leaving a ring that never ends.
-function isCancelledFrame(data, eventName) {
-  return eventName === 'cancelled' || data.status === 'cancelled';
-}
-
 async function bootstrapSlpService(baseUrl, onProgress) {
   return new Promise((resolve, reject) => {
     console.log('[SLP] Running bootstrap...');
@@ -2049,6 +1989,14 @@ function revealMainWindow(baseUrl) {
   mainWindow.webContents.send('slp-service-ready', { port: slpService.getPort(), baseUrl });
   healthMonitor.start(() => mainWindow);
   releaseChecker.start(() => mainWindow, () => refreshTray());
+  chatStream.init({
+    getWindow: () => mainWindow,
+    isRendererReady: () => rendererReady,
+    getLocale: () => app.getLocale(),
+    database,
+    slpService,
+    loadPrimaryModel,
+  });
   fetchModels();
   refreshMcpCatalogCache();
 }
@@ -2845,11 +2793,12 @@ ipcMain.handle('slp-get-download-state', async () => {
   return { success: true, downloads };
 });
 
-// IPC: load a project's primary orchestrator model (SSE streaming progress).
+// Load a project's primary orchestrator model (SSE streaming progress).
 // Previously the renderer streamed /v1/models/load itself and re-published it as
 // window CustomEvents, so the stream died on navigation and restarted on every
-// project change. Owning it here means progress survives both.
-ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
+// project change. Owning it here means progress survives both. Named rather than
+// inlined in the handler because chat-stream.js calls it for the 503 retry.
+async function loadPrimaryModel(modelName, projectId) {
   if (!modelName) return { success: false, error: 'No model name' };
 
   // A load can be requested before SLP finishes coming up (e.g. first paint after
@@ -2910,7 +2859,19 @@ ipcMain.handle('slp-load-model', async (event, modelName, projectId) => {
     req.write(postData);
     req.end();
   });
-});
+}
+
+ipcMain.handle('slp-load-model', (event, modelName, projectId) =>
+  loadPrimaryModel(modelName, projectId));
+
+// --- Chat turns ---
+// Streaming lives here rather than in the renderer so a turn survives the chat
+// component unmounting — switching tabs, switching project, or opening Settings.
+// `chat-send` returns as soon as the request is accepted; everything after that
+// arrives on the `chat-stream-event` channel.
+ipcMain.handle('chat-send', (event, request) => chatStream.send(request));
+ipcMain.handle('chat-abort', (event, conversationId) => chatStream.abort(conversationId));
+ipcMain.handle('chat-get-state', () => chatStream.getState());
 
 // One cancel request. Resolves `{ ok, payload, error, detail, code }` and never
 // throws, so the retry below can treat a refusal and a dead socket alike.
@@ -4551,6 +4512,10 @@ app.on('before-quit', (event) => {
 
   if (shuttingDown) return;
   shuttingDown = true;
+
+  // Drop live streams before stopService: a half-written answer is already in
+  // SQLite, and leaving the sockets open just delays the shutdown.
+  chatStream.abortAll('quit');
 
   // Hold the quit open until SLP is actually dead. Firing stopService() and
   // letting Electron exit underneath it is how the server ended up outliving

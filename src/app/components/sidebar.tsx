@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Box, IconButton, Menu, MenuItem, Dialog, CircularProgress, TextField, Typography, Tooltip } from '@mui/material';
 import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useProjectActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
@@ -89,6 +90,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     deleteProject: deleteProjectCtx,
     refresh: refreshProjects,
   } = useProjectContext();
+  // Projects with a turn in flight, so a stream you navigated away from is still
+  // visible somewhere.
+  const projectActivity = useProjectActivity();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   // True while a model is (down)loading for the first time. Settings is blocked
   // during this window so the model can't be changed mid-load.
@@ -873,12 +877,26 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                           minWidth: 0,
                         }}
                       >
+                        {/* A turn running in a project you are not looking at has
+                            nowhere else to show: openTabs is per-project and is
+                            cleared on switch, so its tab is not rendered at all
+                            and a live stream would be indistinguishable from one
+                            that died. The swatch carries it — same vocabulary as
+                            the tab throbber, turning for generating and a static
+                            pulse for queued. */}
                         <Box
+                          title={projectActivity.has(project.id) ? 'Generating in this project' : undefined}
+                          className={projectActivity.has(project.id) ? 'animate-spin' : undefined}
                           sx={{
                             width: 12,
                             height: 12,
-                            borderRadius: '2px',
-                            bgcolor: getColorForProject(project),
+                            borderRadius: projectActivity.has(project.id) ? '50%' : '2px',
+                            bgcolor: projectActivity.has(project.id) ? 'transparent' : getColorForProject(project),
+                            ...(projectActivity.has(project.id) ? {
+                              border: '1.5px solid var(--sl-brand-alpha-20)',
+                              borderTopColor: getColorForProject(project),
+                              animationDuration: '0.7s',
+                            } : {}),
                             flexShrink: 0,
                           }}
                         />
