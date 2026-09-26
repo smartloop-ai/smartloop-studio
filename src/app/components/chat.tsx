@@ -268,11 +268,6 @@ const chatRemarkPlugins = [remarkLocalFileLinks, ...Object.values(defaultRemarkP
 // points at the full list: "?" opens the keybinds dialog (handler in
 // Home.tsx). Labelled as the bare character — typing it already needs Shift.
 const KEYBINDS_HOTKEY = '\u21e7?';
-// Web search hotkey, named in the footer pill's tooltip rather than the strip
-// itself — the pill is clickable and the keybinds dialog lists it. Same binding
-// the Home.tsx handler listens for: ⌘⌥S on macOS, ⌃⌥S (Ctrl+Alt+S) elsewhere.
-const IS_MAC = (window as any).electronAPI?.platform === 'darwin';
-const WEB_SEARCH_HOTKEY = IS_MAC ? '\u2318\u2325S' : '\u2303\u2325S';
 
 export default function Chat(props: {
   project?: any,
@@ -290,14 +285,6 @@ export default function Chat(props: {
   onConversationUpdate?: (conversation: any) => void,
   onOpenTab?: (tab: OpenTabRequest) => void,
   onCreateSkill?: (name: string) => void,
-  // Per-project web search flag, shown as the on/off pill in the status strip.
-  // Undefined reads as ON — the default the backend applies to projects that
-  // predate the flag. The setting itself lives in Project Settings.
-  webSearchEnabled?: boolean,
-  onWebSearchChange?: (enabled: boolean) => void,
-  // False when signed out: the hosted search endpoint needs a Smartloop token,
-  // so the toggle shows off and does nothing.
-  webSearchAvailable?: boolean,
   // Bumped by the parent to pull focus into the composer — set after a project
   // is created, so the new project opens ready to type into.
   focusComposerTrigger?: number
@@ -352,6 +339,8 @@ export default function Chat(props: {
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
   const streamStartRef = useRef<number>(0);
   const streamTokenCountRef = useRef<number>(0);
+  // When the last live tok/s update was pushed, to throttle it to ~2/sec.
+  const lastTpsTickRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
   const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
@@ -905,8 +894,12 @@ export default function Chat(props: {
       }
 
       // Process the stream
-      streamStartRef.current = Date.now();
+      // Timed from the first content token, not from here: status steps
+      // (retrieval, web search, tool calls) arrive on the same stream first and
+      // would otherwise count against generation speed.
+      streamStartRef.current = 0;
       streamTokenCountRef.current = 0;
+      lastTpsTickRef.current = 0;
       let chunkLogCount = 0;
       for await (const chunk of stream) {
         // Check if aborted
@@ -996,7 +989,17 @@ export default function Chat(props: {
 
         if (content) {
           fullText += content;
+          const now = Date.now();
+          if (!streamStartRef.current) streamStartRef.current = now;
           streamTokenCountRef.current++;
+          // Live tok/s in the status strip, throttled so it's readable rather
+          // than flickering per chunk. Waits ~1s for the rate to settle; until
+          // then the last run's value stays up.
+          const elapsed = now - streamStartRef.current;
+          if (elapsed >= 1000 && now - lastTpsTickRef.current >= 500) {
+            lastTpsTickRef.current = now;
+            setLastRunTps(Math.round(streamTokenCountRef.current / (elapsed / 1000)));
+          }
 
           // Check if the response contains a memory/context limit error
           if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
@@ -1035,7 +1038,7 @@ export default function Chat(props: {
       }
 
       // Calculate tok/s
-      const elapsedSec = (Date.now() - streamStartRef.current) / 1000;
+      const elapsedSec = streamStartRef.current ? (Date.now() - streamStartRef.current) / 1000 : 0;
       const tps = elapsedSec > 0 && streamTokenCountRef.current > 0
         ? Math.round(streamTokenCountRef.current / elapsedSec)
         : undefined;
@@ -1516,8 +1519,7 @@ export default function Chat(props: {
             <span className="flex items-center font-mono shrink-0">
               [<span className="inline-block text-center mx-[3px]" style={{ width: 6 }}>-</span>]
             </span>
-            <span className="truncate">Token Performance</span>
-            <span className="font-mono shrink-0">{lastRunTps ?? 0} tok/s</span>
+            <span className="truncate">Ready</span>
           </span>
         )}
       </div>
@@ -1570,7 +1572,7 @@ export default function Chat(props: {
           <>
             {indexingProgress ? (
               <span className="flex items-center gap-1">
-                <span className="inline-block w-[8px] h-[8px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+                <span className="inline-block w-[7px] h-[7px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
                 <span>indexing {indexingProgress.indexed}/{indexingProgress.total} documents</span>
               </span>
             ) : (
@@ -1578,7 +1580,7 @@ export default function Chat(props: {
                 {[0, 1, 2].map((i) => (
                   <span
                     key={i}
-                    className={`inline-block w-[8px] h-[8px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
+                    className={`inline-block w-[7px] h-[7px] rounded-[1px] flex-shrink-0${isLoading ? ' animate-pulse' : ''}`}
                     style={{
                       backgroundColor: isLoading ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)',
                       ...(isLoading ? { animationDelay: `${i * 180}ms` } : {}),
@@ -1587,46 +1589,10 @@ export default function Chat(props: {
                 ))}
               </span>
             )}
-            {props.onWebSearchChange && (() => {
-              const webSearchAvailable = props.webSearchAvailable !== false;
-              const webSearchOn = webSearchAvailable && props.webSearchEnabled !== false;
-              return (
-                <Tooltip
-                  title={webSearchAvailable ? `${webSearchOn ? 'Disable' : 'Enable'} web search (${WEB_SEARCH_HOTKEY})` : 'Log in to use web search'}
-                  placement="top"
-                  arrow
-                >
-                  {/* A disabled button fires no events, so the tooltip hangs
-                      off this wrapper to explain the signed-out state. */}
-                  <span className="flex">
-                  <button
-                    type="button"
-                    aria-pressed={webSearchOn}
-                    disabled={!webSearchAvailable}
-                    onClick={() => props.onWebSearchChange?.(!webSearchOn)}
-                    className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {/* Outlined pill per the label style guide: brand when on,
-                        neutral when off. */}
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase leading-none ${webSearchOn ? 'text-sl-brand-primary opacity-70' : 'text-sl-text-faint'}`}
-                      style={{ border: `1px solid ${webSearchOn ? 'var(--sl-brand-alpha-30)' : 'var(--sl-border-default)'}` }}
-                    >
-                      web search
-                    </span>
-                  </button>
-                  </span>
-                </Tooltip>
-              );
-            })()}
-            {/* No base model here. The picker directly above is handed the
-                same value and already names it — it *is* the "Auto" on its
-                trigger — so a second rendering of it, in a different
-                vocabulary, only raised the question of which of the two was
-                answering. It is also a constant: the same name on every
-                install and every turn, in the one slot of this strip that
-                reads first, while everything else here earns its place by
-                changing (status, indexing, the interrupt hint). */}
+            {/* Last run's speed. The model isn't named here: the picker above
+                already names it, and under Auto the turn may have gone to
+                another model, so a name here could pair with the wrong speed. */}
+            {lastRunTps ? <span className="tabular-nums text-sl-text-faint">{lastRunTps} tok/s</span> : null}
             <span className="flex items-center gap-1.5 ml-auto">
               <span><span className="text-sl-text-disabled">[esc]</span> <span className="text-sl-text-faint">interrupt</span></span>
               <span><span className="text-sl-text-disabled">[{KEYBINDS_HOTKEY}]</span> <span className="text-sl-text-faint">keybinds</span></span>
@@ -1634,7 +1600,7 @@ export default function Chat(props: {
           </>
         ) : (
           <span className="flex items-center gap-1">
-            <span className="inline-block w-[8px] h-[8px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
+            <span className="inline-block w-[7px] h-[7px] rounded-[1px] bg-sl-status-warning animate-pulse flex-shrink-0"></span>
             <span>starting</span>
           </span>
         )}
