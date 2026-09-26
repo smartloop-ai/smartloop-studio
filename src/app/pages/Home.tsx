@@ -817,7 +817,7 @@ export default function Home() {
   };
 
   // Flip web search for the current project. Backs the Cmd/Ctrl+Alt+S shortcut;
-  // the status-strip pill and Project Settings call handleWebSearchChange directly; undefined counts as ON, so the first press
+  // Project Settings calls handleWebSearchChange directly; undefined counts as ON, so the first press
   // on a pre-flag project turns it off rather than re-enabling.
   const toggleWebSearch = () => {
     if (!selectedProject?.id) return;
@@ -1923,9 +1923,6 @@ description: A clear description of what this skill does and when to use it
                           onConversationUpdate={handleConversationUpdate}
                           onOpenTab={handleOpenTab}
                           onCreateSkill={createSkillFromTemplate}
-                          webSearchEnabled={currentProjectData?.web_search_enabled}
-                          webSearchAvailable={isSignedIn}
-                          onWebSearchChange={handleWebSearchChange}
                           focusComposerTrigger={composerFocus}
                         />
                       );

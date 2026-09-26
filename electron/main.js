@@ -1214,6 +1214,36 @@ ipcMain.handle('projects-update', async (event, projectId, updates) => {
   }
 });
 
+// PATCH web_search_enabled on every project — the app-wide switch in Settings.
+// Web search is a per-project backend flag, so "off" means off in each one;
+// a single broadcast afterwards so the renderer refetches once, not per project.
+ipcMain.handle('projects-set-web-search', async (event, enabled) => {
+  try {
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const res = await fetch(`${baseUrl}/v1/projects`);
+    if (!res.ok) return { success: false, error: 'Failed to list projects' };
+    const data = await res.json();
+    const projects = Array.isArray(data) ? data : (Array.isArray(data?.projects) ? data.projects : []);
+
+    const results = await Promise.all(projects.map((p) =>
+      fetch(`${baseUrl}/v1/projects/${p.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ web_search_enabled: !!enabled }),
+      }).then((r) => r.ok).catch(() => false)
+    ));
+
+    broadcastProjectsChanged();
+    const failed = results.filter((ok) => !ok).length;
+    return failed ? { success: false, error: `Failed to update ${failed} project(s)` } : { success: true };
+  } catch (err) {
+    console.error('[Projects] Error setting web search:', err.message);
+    return { success: false, error: err.message || 'An error occurred while updating web search' };
+  }
+});
+
 // DELETE /v1/projects/{id}, cascading local SQLite cleanup. Atomic, off-renderer.
 ipcMain.handle('projects-delete', async (event, projectId) => {
   try {

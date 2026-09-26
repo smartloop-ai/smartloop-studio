@@ -314,6 +314,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     create: (params) => ipcRenderer.invoke('projects-create', params),
     update: (id, updates) => ipcRenderer.invoke('projects-update', id, updates),
     delete: (id) => ipcRenderer.invoke('projects-delete', id),
+    // Sets web_search_enabled on every project (Settings → Web search).
+    setWebSearch: (enabled) => ipcRenderer.invoke('projects-set-web-search', enabled),
   },
   // SQLite database methods
   db: {

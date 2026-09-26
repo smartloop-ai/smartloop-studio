@@ -5,6 +5,8 @@ import { useThemeContext } from '@/app/contexts/ThemeContext';
 
 import { storageService } from '@/app/services/storage.service';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
+import { useProjectContext } from '@/app/contexts/ProjectContext';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
 import DnsIcon from '@mui/icons-material/Dns';
@@ -211,6 +213,25 @@ export default function SettingsPage() {
     // Local SLP health and app-update state both come from AppStatusContext —
     // the page never fetches /health or subscribes to updater events itself.
     const { serverHealth, appUpdate } = useAppStatus();
+
+    // Web search is a per-project backend flag; this switch sets it on every
+    // project at once. Shown on while any project still has it on (undefined
+    // reads as ON, the backend default), so "off" here means off everywhere.
+    // The hosted search endpoint needs a Smartloop token, so it's disabled
+    // while signed out (useAuth stands in a { guest: true } placeholder).
+    const { projects } = useProjectContext();
+    const isSignedIn = !!user && !user.guest;
+    const webSearchOn = projects.some((p: any) => p.web_search_enabled !== false);
+    const [webSearchSaving, setWebSearchSaving] = useState(false);
+    const handleWebSearchToggle = async (enabled: boolean) => {
+        setWebSearchSaving(true);
+        try {
+            const res = await (window as any).electronAPI?.projects?.setWebSearch(enabled);
+            if (!res?.success) console.error('[Settings] Failed to set web search:', res?.error);
+        } finally {
+            setWebSearchSaving(false);
+        }
+    };
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -876,6 +897,48 @@ export default function SettingsPage() {
                             </Box>
                         );
                     })()}
+
+                    {/* Web search — app-wide, applied to every project */}
+                    <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
+                        <Box className="flex items-center gap-2 mb-4 md:mb-6">
+                            <TravelExploreIcon sx={{ color: 'var(--sl-brand-primary)', fontSize: { xs: 20, md: 24 } }} />
+                            <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Web search</h2>
+                        </Box>
+
+                        <Box className="flex items-center justify-between gap-4 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)', opacity: isSignedIn ? 1 : 0.5 }}>
+                            <Box>
+                                <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--sl-text-primary)' }}>Enable web search</h3>
+                                <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>
+                                    {isSignedIn
+                                        ? 'Let answers reach current information from the web, with sources cited. Applies to all projects.'
+                                        : 'Log in to use web search.'}
+                                </p>
+                            </Box>
+                            <Switch
+                                checked={isSignedIn && webSearchOn}
+                                disabled={!isSignedIn || webSearchSaving || projects.length === 0}
+                                onChange={(e) => handleWebSearchToggle(e.target.checked)}
+                                sx={{
+                                    '& .MuiSwitch-switchBase.Mui-checked': { color: 'var(--sl-brand-primary)' },
+                                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'var(--sl-brand-primary)' },
+                                }}
+                            />
+                        </Box>
+                        <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
+                            Only the search query leaves your device. Result links come back through Smartloop, then candidate pages are
+                            fetched and ranked locally, so Smartloop never sees which sites you visit. Query wording, results and page
+                            contents are not retained — your account records only that a search ran (when, from which app, and how many
+                            results came back) and counts it against your monthly allowance.{' '}
+                            <button
+                                type="button"
+                                onClick={() => (window as any).electronAPI?.openExternal('https://smartloop.ai/docs/web-search/')}
+                                className="cursor-pointer underline"
+                                style={{ color: 'var(--sl-brand-primary)' }}
+                            >
+                                Learn more
+                            </button>
+                        </p>
+                    </Box>
 
                     {/* Analytics */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>
