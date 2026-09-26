@@ -28,7 +28,7 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import MessageInput from './message-input';
 import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
-import { runTrace, fmtMs, turnDuration, type TraceTurn } from '@/app/services/run-trace.service';
+import { runTrace } from '@/app/services/run-trace.service';
 
 import { getLocalApiEndpoint } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -143,26 +143,6 @@ function LiveStatusText() {
     return runTrace.subscribe(read);
   }, []);
   return <>{text || 'Generating response…'}</>;
-}
-
-// The idle counterpart to LiveStatusText: how the last turn ended and how long
-// it took, so the activity line still says something about the run at rest.
-// Performance (tok/s) lives in the status strip under the composer.
-function LastRunText() {
-  const [turn, setTurn] = useState<TraceTurn | undefined>(undefined);
-  useEffect(() => {
-    const read = () => {
-      const t = runTrace.getTurns()[0];
-      setTurn(t && t.endedAt ? { ...t } : undefined);
-    };
-    read();
-    return runTrace.subscribe(read);
-  }, []);
-  if (!turn) return <>Ready</>;
-  const took = fmtMs(turnDuration(turn, Date.now()));
-  if (turn.outcome === 'stopped') return <>Stopped after {took}</>;
-  if (turn.outcome === 'error') return <>Failed after {took}</>;
-  return <>Done in {took}</>;
 }
 
 const USER_URL_REGEX = /(https?:\/\/[^\s<>()]+)/g;
@@ -1539,9 +1519,7 @@ export default function Chat(props: {
             <span className="flex items-center font-mono shrink-0">
               [<span className="inline-block text-center mx-[3px]" style={{ width: 6 }}>-</span>]
             </span>
-            {/* Nothing sent in this conversation yet: just "Ready", never a
-                stale run from another conversation or project. */}
-            <span className="truncate">{messages.length === 0 ? 'Ready' : <LastRunText />}</span>
+            <span className="truncate">Ready</span>
           </span>
         )}
       </div>
