@@ -23,8 +23,8 @@ import { LogoMark } from '@/app/components/logo';
 
 import type { StorageCleanupRequest, StorageUsage } from '@/electron';
 
-// Categories the Clean panel offers as toggles, in bar order.  Keys match the
-// API's category keys and the cleanup request flags.
+// Categories the Clean panel draws as bands of their own, in bar order.  Keys
+// match the API's category keys and the cleanup request flags.
 //
 // Three of the framework's categories are deliberately absent, and all three are
 // still swept on every clean (see runCleanup) — they are just never drawn, because
@@ -72,7 +72,7 @@ const CLEANABLE = [
 // actually using; System is the framework's own footprint plus everything with
 // no band of its own.  They are drawn and totalled like any other segment —
 // that is the point, since burying active models in the remainder is what made
-// the panel read as "one long System bar" — but they carry no toggle.
+// the panel read as "one long System bar".
 const MODELS_IN_USE_COLOR = 'var(--sl-brand-primary)';
 const SYSTEM_COLOR = 'var(--sl-white-alpha-10)';
 
@@ -310,7 +310,6 @@ export default function SettingsPage() {
     // is reclaimable in each (GET /v1/storage/usage); this panel only renders
     // them, so a new category needs no change here beyond a label and a colour.
     const [storage, setStorage] = useState<StorageUsage | null>(null);
-    const [cleanupSel, setCleanupSel] = useState<Set<string>>(new Set(CLEANABLE.map((c) => c.key)));
     const [isCleaning, setIsCleaning] = useState(false);
     const [cleanupError, setCleanupError] = useState('');
 
@@ -327,14 +326,11 @@ export default function SettingsPage() {
     useEffect(() => { loadStorage(); }, []);
 
     const reclaimableOf = (key: string) => storage?.categories?.[key]?.reclaimable ?? 0;
-    const selectedReclaim = CLEANABLE.reduce(
-        (sum, c) => sum + (cleanupSel.has(c.key) ? reclaimableOf(c.key) : 0), 0,
-    );
-    const toggleCategory = (key: string) => setCleanupSel((prev) => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        return next;
-    });
+    // Everything Clean will free.  There is no per-band opt-out: choosing to
+    // leave some reclaimable space behind is not a thing people want, and
+    // offering it as pre-checked filters that can only be switched *off* asked
+    // everyone to understand a control almost nobody needed.
+    const totalReclaim = CLEANABLE.reduce((sum, c) => sum + reclaimableOf(c.key), 0);
 
     const formatBytes = (bytes: number) => {
         if (!bytes || bytes < 1024) return `${bytes || 0} B`;
@@ -365,7 +361,7 @@ export default function SettingsPage() {
                 cache: true,
             };
             for (const c of CLEANABLE) {
-                if (cleanupSel.has(c.key)) request[c.key] = true;
+                request[c.key] = true;
             }
             const res = await window.electronAPI?.cleanupStorage?.(request);
             if (!res?.success) {
@@ -1083,14 +1079,13 @@ export default function SettingsPage() {
                             const system = Math.max(0, totalFolder - modelsInUse - cleanableSum);
                             const pct = (n: number) => (totalFolder > 0 ? (n / totalFolder) * 100 : 0);
 
-                            // Bar order.  `toggle` marks the bands that are a
-                            // choice; Models and System are reported, not offered.
+                            // Bar order, biggest commitment first: what is in use,
+                            // then what is not, then everything untouchable.
                             const bands: {
                                 key: string;
                                 label: string;
                                 color: string;
                                 bytes: number;
-                                toggle?: keyof StorageCleanupRequest;
                                 title: string;
                             }[] = [
                                 {
@@ -1105,7 +1100,6 @@ export default function SettingsPage() {
                                     label: c.label,
                                     color: c.color,
                                     bytes: reclaimableOf(c.key),
-                                    toggle: c.key,
                                     title: `${c.label} — ${formatBytes(reclaimableOf(c.key))}. ${c.note}`,
                                 })),
                                 {
@@ -1130,7 +1124,7 @@ export default function SettingsPage() {
                                     <div className="flex items-center justify-between gap-2 mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>Total to clean</span>
-                                            <span className="text-sm font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(selectedReclaim)}</span>
+                                            <span className="text-sm font-semibold font-mono" style={{ color: 'var(--sl-brand-primary)' }}>{formatBytes(totalReclaim)}</span>
                                         </div>
                                         <span className="text-sm" style={{ color: 'var(--sl-text-faint)' }}>
                                             of <span className="font-mono">{formatBytes(totalFolder)}</span> used
@@ -1150,7 +1144,6 @@ export default function SettingsPage() {
                                     >
                                         {bands.map((b) => {
                                             if (b.bytes <= 0) return null;
-                                            const on = !b.toggle || cleanupSel.has(b.toggle);
                                             const isSystem = b.key === 'system';
                                             return (
                                                 <div
@@ -1165,9 +1158,7 @@ export default function SettingsPage() {
                                                         width: `${pct(b.bytes)}%`,
                                                         minWidth: 6,
                                                         flexShrink: isSystem ? 1 : 0,
-                                                        backgroundColor: on ? b.color : 'var(--sl-white-alpha-8)',
-                                                        opacity: on ? 1 : 0.4,
-                                                        transition: 'background-color 0.15s ease, opacity 0.15s ease',
+                                                        backgroundColor: b.color,
                                                     }}
                                                 >
                                                     {isSystem && (
@@ -1179,51 +1170,18 @@ export default function SettingsPage() {
                                     </div>
 
                                     {/* macOS-style legend — colored dot + name + size.
-                                        A band with a toggle is a button that includes or
-                                        excludes it; Models and System are plain labels,
-                                        since there is nothing to decide about them. */}
+                                        Labels, not controls: Clean reclaims everything it
+                                        safely can in one press, so there is no per-band
+                                        choice to present. */}
                                     <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3">
                                         {bands.map((b) => {
-                                            const swatch = (
-                                                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
-                                            );
-                                            const label = <span style={{ color: 'var(--sl-text-secondary)' }}>{b.label}</span>;
-                                            const size = (
-                                                <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(b.bytes) : '—'}</span>
-                                            );
-
-                                            if (!b.toggle) {
-                                                if (b.bytes <= 0) return null;
-                                                return (
-                                                    <span key={b.key} className="flex items-center gap-1.5 text-xs" title={b.title}>
-                                                        {swatch}{label}{size}
-                                                    </span>
-                                                );
-                                            }
-
-                                            const toggle = b.toggle;
-                                            const disabled = !storage || isCleaning || b.bytes === 0;
-                                            const on = cleanupSel.has(toggle) && !disabled;
-                                            // Two things in one tooltip: what the band is, and
-                                            // that this entry is a control at all — a dimmed
-                                            // legend row reads as "unavailable" unless it says
-                                            // it was switched off on purpose.
-                                            const hint = disabled
-                                                ? 'Nothing here to clean.'
-                                                : on
-                                                    ? 'Click to leave it out of the next clean.'
-                                                    : 'Left out of the next clean. Click to put it back.';
+                                            if (b.bytes <= 0) return null;
                                             return (
-                                                <button
-                                                    key={b.key}
-                                                    onClick={() => toggleCategory(toggle)}
-                                                    disabled={disabled}
-                                                    title={`${b.title} — ${hint}`}
-                                                    className="flex items-center gap-1.5 text-xs transition-opacity"
-                                                    style={{ opacity: on ? 1 : 0.4, cursor: disabled ? 'not-allowed' : 'pointer' }}
-                                                >
-                                                    {swatch}{label}{size}
-                                                </button>
+                                                <span key={b.key} className="flex items-center gap-1.5 text-xs" title={b.title}>
+                                                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                                                    <span style={{ color: 'var(--sl-text-secondary)' }}>{b.label}</span>
+                                                    <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(b.bytes) : '—'}</span>
+                                                </span>
                                             );
                                         })}
                                     </div>
@@ -1233,10 +1191,10 @@ export default function SettingsPage() {
                                     <div className="flex items-center gap-3 justify-start">
                                         <button
                                             onClick={runCleanup}
-                                            disabled={isCleaning || selectedReclaim === 0}
-                                            title={selectedReclaim === 0
+                                            disabled={isCleaning || totalReclaim === 0}
+                                            title={totalReclaim === 0
                                                 ? 'Nothing to reclaim right now.'
-                                                : `Free ${formatBytes(selectedReclaim)}. The agent keeps running, and models you are using are never removed.`}
+                                                : `Free ${formatBytes(totalReclaim)}. The agent keeps running, and models you are using are never removed.`}
                                             className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                         >
