@@ -41,7 +41,11 @@ permissions:
   id-token: write
 
 env:
-  GCP_BUCKET: gs://smartloop-gcp-us-east-releases
+  # Releases live in Cloudflare R2 (no egress charge) and are served at
+  # dl.smartloop.ai; see slp-infra-project cloudflare/README.md.
+  R2_BUCKET: smartloop-releases
+  # Versions can be re-uploaded (overwrite=true on a draft), so cache briefly.
+  R2_CACHE_CONTROL: public, max-age=3600
   APP_NAME: smartloop-studio
   # Matches ci_push_release.py's default base URL.
   RELEASES_API_BASE_URL: https://api.smartloop.ai
@@ -355,7 +359,7 @@ jobs:
           retention-days: 1
 
   upload-to-gcp:
-    name: Upload to GCP Bucket
+    name: Upload to R2
     needs: [notify-start, build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     outputs:
@@ -381,13 +385,27 @@ jobs:
           name: windows-build
           path: artifacts/windows
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+      # The aws CLI on the runner talks to R2's S3 API. Single-part PUTs
+      # (every installer is under the 5 GB limit) keep each object's ETag its
+      # MD5, which clients verify downloads against.
+      - name: Configure R2 access
+        run: |
+          for s in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT; do
+            [ -n "${!s}" ] || { echo "::error::Secret $s is not set"; exit 1; }
+          done
+          {
+            echo "AWS_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID"
+            echo "AWS_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY"
+            echo "AWS_ENDPOINT_URL=$R2_ENDPOINT"
+            echo "AWS_DEFAULT_REGION=auto"
+            echo "AWS_REQUEST_CHECKSUM_CALCULATION=when_required"
+            echo "AWS_RESPONSE_CHECKSUM_VALIDATION=when_required"
+          } >> "$GITHUB_ENV"
+          aws configure set default.s3.multipart_threshold 5GB
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
 
       # Every release path is version-based. A blank input means "redo the
       # version package.json already declares" — validated equal to package.json
@@ -416,19 +434,20 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           OVERWRITE="${{ inputs.overwrite }}"
 
-          # `gsutil ls` exits non-zero both for "no such prefix" and for real
-          # errors (auth, typo'd bucket). Only the former means "safe" — every
-          # other failure is unknowable, and the whole check branches on this.
+          # list-objects-v2 fails only on real errors (auth, typo'd bucket) and
+          # reports an empty prefix as KeyCount 0, so the two can't be confused.
+          # Every failure is unknowable, and the whole check branches on this.
           set +e
-          LS_OUT=$(gsutil ls "${{ env.GCP_BUCKET }}/$VERSION/" 2>&1); LS_RC=$?
+          LS_OUT=$(aws s3api list-objects-v2 --bucket "$R2_BUCKET" --prefix "$VERSION/" \
+            --max-keys 1 --query KeyCount --output text 2>&1); LS_RC=$?
           set -e
           if [ $LS_RC -ne 0 ]; then
-            if echo "$LS_OUT" | grep -q "matched no objects"; then
-              echo "No existing $VERSION dir in bucket — safe to upload."
-              exit 0
-            fi
-            echo "::error::Could not check ${{ env.GCP_BUCKET }}/$VERSION/ — refusing to upload blind. $LS_OUT"
+            echo "::error::Could not check $R2_BUCKET/$VERSION/ — refusing to upload blind. $LS_OUT"
             exit 1
+          fi
+          if [ "$LS_OUT" = 0 ]; then
+            echo "No existing $VERSION dir in bucket — safe to upload."
+            exit 0
           fi
 
           CODE=$(curl -sS -o /tmp/release.json -w '%{http_code}' \
@@ -449,7 +468,7 @@ jobs:
             echo "$VERSION exists (status: $STATUS) and overwrite was requested — proceeding."
             exit 0
           fi
-          echo "::error::Release $VERSION already exists at ${{ env.GCP_BUCKET }}/$VERSION/ (status: $STATUS) — refusing to overwrite. Bump the version, or re-run with overwrite=true to replace the draft."
+          echo "::error::Release $VERSION already exists at $R2_BUCKET/$VERSION/ (status: $STATUS) — refusing to overwrite. Bump the version, or re-run with overwrite=true to replace the draft."
           exit 1
 
       - name: Create version directory structure
@@ -477,20 +496,19 @@ jobs:
           # ("No space left on device"). The upload step below pushes this one
           # directory to both bucket prefixes instead.
 
-      - name: Upload to GCP Bucket
+      # Versions can be re-uploaded (overwrite=true on a draft), so objects are
+      # cached for an hour rather than forever.
+      - name: Upload to R2
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-
-          # Upload versioned files
-          gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/$VERSION/
-
-          # Upload the same files again under latest/ — sourced from
-          # release/$VERSION, not a local duplicate of it.
-          gsutil -m cp -r release/$VERSION/* ${{ env.GCP_BUCKET }}/latest/
-
-          # Make files publicly readable (optional)
-          # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/$VERSION/
-          # gsutil -m acl ch -r -u AllUsers:R ${{ env.GCP_BUCKET }}/latest/
+          # The same files under $VERSION/ and latest/, both sourced from
+          # release/$VERSION. No local copy for latest/: every platform bundles
+          # the SLP framework, so release/$VERSION is ~8 GB and duplicating it
+          # fills the runner disk.
+          for prefix in "$VERSION" latest; do
+            aws s3 cp "release/$VERSION/" "s3://$R2_BUCKET/$prefix/" --recursive \
+              --cache-control "public, max-age=3600" --no-progress
+          done
 
       - name: Collect public download URLs
         id: urls
@@ -545,11 +563,15 @@ jobs:
           }
           EOF
 
+      # After the installers, so latest/manifest.json never names a file that
+      # isn't uploaded yet.
       - name: Upload manifest
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          gsutil cp manifest.json ${{ env.GCP_BUCKET }}/$VERSION/manifest.json
-          gsutil cp manifest.json ${{ env.GCP_BUCKET }}/latest/manifest.json
+          aws s3 cp manifest.json "s3://$R2_BUCKET/$VERSION/manifest.json" \
+            --content-type application/json --cache-control "public, max-age=3600"
+          aws s3 cp manifest.json "s3://$R2_BUCKET/latest/manifest.json" \
+            --content-type application/json --cache-control "public, max-age=300"
 
       - name: Generate download URLs
         run: |
@@ -560,17 +582,17 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**macOS:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/macos/ || echo "No macOS builds" >> $GITHUB_STEP_SUMMARY
+          aws s3 ls "s3://$R2_BUCKET/$VERSION/macos/" >> $GITHUB_STEP_SUMMARY || echo "No macOS builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Linux:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/linux/ || echo "No Linux builds" >> $GITHUB_STEP_SUMMARY
+          aws s3 ls "s3://$R2_BUCKET/$VERSION/linux/" >> $GITHUB_STEP_SUMMARY || echo "No Linux builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Windows:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          gsutil ls ${{ env.GCP_BUCKET }}/$VERSION/windows/ || echo "No Windows builds" >> $GITHUB_STEP_SUMMARY
+          aws s3 ls "s3://$R2_BUCKET/$VERSION/windows/" >> $GITHUB_STEP_SUMMARY || echo "No Windows builds" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -658,7 +680,7 @@ jobs:
 
       # Re-runs ci_push_release.py without --draft-only: it re-upserts the draft
       # (idempotent) and PATCHes it to published, after the server's per-artifact
-      # HEAD validation against the CDN files uploaded in upload-to-gcp.
+      # HEAD validation against the dl.smartloop.ai files uploaded in upload-to-gcp.
       - name: Publish release via API
         env:
           SLP_ADMIN_TOKEN_PROD: ${{ secrets.SLP_ADMIN_TOKEN_PROD }}
