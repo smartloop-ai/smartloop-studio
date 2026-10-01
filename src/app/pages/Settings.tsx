@@ -1107,9 +1107,16 @@ export default function SettingsPage() {
                                     label: 'System',
                                     color: SYSTEM_COLOR,
                                     bytes: system,
+                                    // Not "cleaning never touches any of this": the
+                                    // three categories swept but never drawn (see
+                                    // runCleanup) have nowhere else to sit, so their
+                                    // bytes are inside this band.  They are zero on a
+                                    // healthy install, and the promise that matters —
+                                    // your own files survive a clean — is made about
+                                    // the things it is actually made about.
                                     title: frameworkModels > 0
-                                        ? `System — ${formatBytes(system)}. ${formatBytes(frameworkModels)} of that is ${BOOTSTRAP_MODEL} and the embedding model, which the agent cannot run without; the rest is your projects, chats and app data. Cleaning never touches any of it.`
-                                        : `System — ${formatBytes(system)}. Your projects, chats and app data. Cleaning never touches any of it.`,
+                                        ? `System — ${formatBytes(system)}. ${formatBytes(frameworkModels)} of that is ${BOOTSTRAP_MODEL} and the embedding model, which the agent cannot run without; the rest is your projects, chats and app data. Cleaning never touches those.`
+                                        : `System — ${formatBytes(system)}. Your projects, chats and app data. Cleaning never touches those.`,
                                 },
                             ];
                             return (
