@@ -3,7 +3,7 @@ import { conversationService } from '@/app/services/conversation.service';
 import { storageService } from '@/app/services/storage.service';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, CircularProgress, Tooltip } from "@mui/material";
-import { useChatSession, useChatStream } from '@/app/contexts/ChatSessionsContext';
+import { beginSend, useChatSession, useChatStream } from '@/app/contexts/ChatSessionsContext';
 import { StreamingMarker } from '@/app/components/activity-spinner';
 
 import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
@@ -653,6 +653,12 @@ export default function Chat(props: {
     };
     console.log('[Chat sendMessage] Created userMsg:', userMsg);
     console.log('[Chat sendMessage] userMsg.attachments:', userMsg.attachments);
+    // Retire the finished turn before the new bubble goes up. Its session is
+    // still in the store until `accepted` replaces it, and the merge in
+    // useChatSession pulls those two messages out of the committed history and
+    // re-appends them — i.e. below this one — for as long as that takes. The
+    // waits between here and the send include a model download.
+    beginSend(conversationId);
     setPendingUserMsg(userMsg);
     // Emptied in the same commit: text left sitting in a composer that has already
     // started moving reads as a send that didn't take.
@@ -775,6 +781,16 @@ export default function Chat(props: {
       rollbackSend();
     }
   }
+
+  // Hand the optimistic bubble over to the session. Main echoes the id back on
+  // `accepted`, so a match means the turn owns this message and the local copy
+  // is a duplicate — one that only stayed invisible because useChatSession
+  // filters by id. Left standing once sessions are reaped it would render twice.
+  useEffect(() => {
+    if (pendingUserMsg && session.userMessageId === pendingUserMsg.id) {
+      setPendingUserMsg(null);
+    }
+  }, [session.userMessageId, pendingUserMsg]);
 
   // Reset input when conversation changes (switching tabs)
   useEffect(() => {

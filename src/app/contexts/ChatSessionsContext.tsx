@@ -43,7 +43,16 @@ export interface ChatSession {
   error: { code: ChatErrorCode; detail: string | null } | null;
   tokensPerSecond: number | null;
   attachments: Array<{ file_id: string; name?: string }> | null;
+  startedAt: number;
+  terminalAt: number | null;
 }
+
+// Main keeps a terminal record for five minutes so a reloading renderer can
+// re-adopt it (TERMINAL_TTL_MS in chat-stream.js). Mirrored here, because a
+// session outliving its turn is not merely memory: useChatSession merges it
+// over the committed history, so a finished turn lifts itself out of SQLite's
+// ordering and lands below the message the user has just typed.
+const TERMINAL_TTL_MS = 5 * 60 * 1000;
 
 const LIVE_PHASES: ReadonlySet<ChatPhase> = new Set<ChatPhase>([
   'connecting', 'loading-model', 'reconnecting', 'queued', 'streaming',
@@ -114,6 +123,35 @@ function writeSession(conversationId: string, next: ChatSession | null) {
   notify();
 }
 
+// Drop sessions whose turn is over: `drop` unconditionally, the rest once they
+// are past the TTL. One rebuild and one notify rather than a write each.
+function reap(drop?: string) {
+  const now = Date.now();
+  const next = new Map(sessions);
+  let changed = false;
+  next.forEach((s, id) => {
+    if (isLivePhase(s.phase)) return;
+    if (id === drop || (s.terminalAt !== null && now - s.terminalAt > TERMINAL_TTL_MS)) {
+      next.delete(id);
+      changed = true;
+    }
+  });
+  if (!changed) return;
+  sessions = next;
+  phaseEpoch++;
+  notify();
+}
+
+/**
+ * Called as a send begins, before the optimistic user bubble goes up. The
+ * previous turn's session is still in the map at that point, and the merge in
+ * useChatSession would re-append it below the new message — for the length of
+ * a model download, if one is in flight.
+ */
+export function beginSend(conversationId: string | null) {
+  reap(conversationId ?? undefined);
+}
+
 function patch(conversationId: string, changes: Partial<ChatSession>) {
   const prev = sessions.get(conversationId);
   if (!prev) return;
@@ -168,6 +206,8 @@ function sessionFromSnapshot(snap: ChatStreamSnapshot): ChatSession {
     error: snap.error,
     tokensPerSecond: snap.tokensPerSecond,
     attachments: null,
+    startedAt: snap.startedAt,
+    terminalAt: snap.endedAt,
   };
 }
 
@@ -187,13 +227,27 @@ async function reconcile() {
     Object.values(streams).forEach((snap) => {
       const prev = next.get(snap.conversationId);
       // A snapshot only loses to a session we have *more* of; otherwise main is
-      // authoritative, since it never stopped receiving.
-      if (prev && prev.turnId === snap.turnId && prev.seq >= snap.seq) return;
+      // authoritative, since it never stopped receiving. Within one turn that
+      // is seq. Across turns seq restarts, so it is startedAt — without which a
+      // snapshot taken during the previous turn outranks one just accepted.
+      if (prev && (prev.turnId === snap.turnId
+        ? prev.seq >= snap.seq
+        : prev.startedAt > snap.startedAt)) return;
       next.set(snap.conversationId, {
         ...sessionFromSnapshot(snap),
         attachments: prev?.attachments ?? null,
       });
       changed = true;
+    });
+    // Main sweeps a record five minutes after its turn ends. Anything still
+    // here that it no longer reports is finished and will never be mentioned
+    // again, so it has no business in the transcript merge. Live sessions are
+    // exempt: ours may be newer than the snapshot we are reconciling against.
+    next.forEach((s, id) => {
+      if (!streams[id] && !isLivePhase(s.phase)) {
+        next.delete(id);
+        changed = true;
+      }
     });
     if (changed) {
       sessions = next;
@@ -209,6 +263,7 @@ function applyEvent(event: ChatStreamEvent) {
   const { conversationId, turnId, seq } = event;
 
   if (event.type === 'accepted') {
+    reap();
     writeSession(conversationId, {
       conversationId,
       turnId,
@@ -227,6 +282,8 @@ function applyEvent(event: ChatStreamEvent) {
       error: null,
       tokensPerSecond: null,
       attachments: pendingAttachments.get(conversationId) ?? null,
+      startedAt: Date.now(),
+      terminalAt: null,
     });
     pendingAttachments.delete(conversationId);
     // The Logs panel watches turns live from here. Its rows are written by main,
@@ -290,12 +347,15 @@ function applyEvent(event: ChatStreamEvent) {
         model: event.model ?? session.model,
         tokensPerSecond: event.tokensPerSecond,
         lastStatus: null,
+        terminalAt: Date.now(),
       });
       break;
     case 'aborted':
       runTrace.end(conversationId, { outcome: 'stopped' });
       window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { done: true } }));
-      patch(conversationId, { seq, phase: 'aborted', content: event.content, lastStatus: null });
+      patch(conversationId, {
+        seq, phase: 'aborted', content: event.content, lastStatus: null, terminalAt: Date.now(),
+      });
       break;
     case 'error':
       runTrace.end(conversationId, { outcome: 'error' });
@@ -306,6 +366,7 @@ function applyEvent(event: ChatStreamEvent) {
         content: event.partialContent,
         error: { code: event.code, detail: event.detail },
         lastStatus: null,
+        terminalAt: Date.now(),
       });
       break;
   }
@@ -372,6 +433,7 @@ export function useChatSession(conversationId: string | null, history: any[] | n
 
   return {
     messages,
+    userMessageId: session?.userMessageId ?? null,
     phase: session?.phase ?? null,
     phaseLabel: session?.phaseLabel ?? null,
     lastStatus: session?.lastStatus ?? null,
