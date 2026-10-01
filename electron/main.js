@@ -1259,6 +1259,12 @@ ipcMain.handle('projects-delete', async (event, projectId) => {
     const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, { method: 'DELETE' });
 
     if (res.status === 200 || res.status === 204) {
+      // Before the cascade, not after: messages.conversation_id is ON DELETE
+      // CASCADE, so a turn still running here would finalize into rows whose
+      // parent is gone and lose its answer to a swallowed FK error. Destroying
+      // the socket also frees SLP's single inference slot, which the orphaned
+      // generation would otherwise hold against every other conversation.
+      chatStream.abortByProject(projectId);
       database.deleteConversationsByProject(projectId);
       database.deleteMcpServersByProject(projectId);
       database.deleteDocumentStatusByProject(projectId);
@@ -1287,10 +1293,6 @@ ipcMain.handle('db-delete-conversation', (event, id) => {
   // parent is gone, so stop it before the cascade takes the messages.
   chatStream.abort(id);
   return database.deleteConversation(id);
-});
-ipcMain.handle('db-delete-conversations-by-project', (event, projectId) => {
-  chatStream.abortByProject(projectId);
-  return database.deleteConversationsByProject(projectId);
 });
 ipcMain.handle('db-select-conversation', (event, id) => database.selectConversation(id));
 ipcMain.handle('db-clear-selected-conversation', () => database.clearSelectedConversation());
