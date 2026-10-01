@@ -46,6 +46,16 @@ const MIN_TPS_WINDOW_S = 0.5;
 const TERMINAL_TTL_MS = 5 * 60 * 1000;
 const MAX_RECORDS = 50;
 
+// Last resort for a record that reached no terminal state by any other route.
+// Deliberately far above any real turn — a cold model load before the first
+// byte, then a long agentic answer, is minutes on its own — because this exists
+// to stop a conversation being wedged forever, not to bound a slow one.
+const MAX_TURN_MS = 60 * 60 * 1000;
+
+// How long a response body may take to arrive once we know it is not a stream.
+// This is an error payload, not generation, so it is short.
+const BODY_TIMEOUT_MS = 10_000;
+
 // A queued turn produces no frames at all until the backend's single-worker
 // executor frees up, so silence is expected rather than broken. Say so instead
 // of leaving the tab looking stuck.
@@ -137,6 +147,16 @@ function getState() {
 function sweep() {
   const now = Date.now();
   for (const [id, r] of streams) {
+    // Only a terminal record is reclaimable, so a record that never reaches one
+    // is exempt from every rule below and from MAX_RECORDS — and send() refuses
+    // the conversation for as long as it sits there. Fail it rather than delete
+    // it: deleting is silent, where finalize tells the renderer.
+    if (!r.terminalAt && !r.finalized && now - r.startedAt > MAX_TURN_MS) {
+      console.error(`[Chat] Turn for ${id} never finished — failing it`);
+      r.aborting = true;
+      if (r.req) r.req.destroy();
+      finalize(r, 'error', { code: 'connection', detail: 'The turn never finished.' });
+    }
     if (r.terminalAt && now - r.terminalAt > TERMINAL_TTL_MS) streams.delete(id);
   }
   if (streams.size <= MAX_RECORDS) return;
@@ -447,14 +467,30 @@ function handleFrame(record, chunk) {
 function readBody(res) {
   return new Promise((resolve) => {
     let body = '';
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(body);
+    };
+    // A body that never ends would otherwise hold the turn open with no timer
+    // on it: armTimers only runs for a 200, and this path is every other status.
+    const timer = setTimeout(() => { res.destroy(); finish(); }, BODY_TIMEOUT_MS);
+    if (timer.unref) timer.unref();
     res.on('data', (c) => { body += c.toString(); });
-    res.on('end', () => resolve(body));
-    res.on('error', () => resolve(body));
+    res.on('end', finish);
+    res.on('error', finish);
   });
 }
 
 function armTimers(record) {
+  // Both handles, not just the queued one: a pre-first-token socket drop runs
+  // handleTransportFailure -> dispatchRequest -> here a second time, and the
+  // first tick chain reschedules itself forever against a record it no longer
+  // owns while finalize only ever clears the handle it can see.
   if (record.queuedTimer) clearTimeout(record.queuedTimer);
+  if (record.inactivityTimer) clearTimeout(record.inactivityTimer);
   record.queuedTimer = setTimeout(() => {
     if (record.phase === 'queued') {
       pushStatus(record, 'queued', 'Still waiting — another conversation is generating');
@@ -495,7 +531,20 @@ function dispatchRequest(record) {
       'Content-Length': Buffer.byteLength(postData),
       Accept: 'text/event-stream',
     },
+    // Nothing guarded the wait for headers: armTimers only starts once a 200 is
+    // in hand, so a connection the server accepts and then never answers left
+    // the record in 'connecting' with no timer, never swept, and send()
+    // refusing the conversation from then on. The budget is the stream's own,
+    // because the wait is the same kind: /v1/chat/completions reloads a cold
+    // model before it returns a StreamingResponse, so a legitimate first
+    // response can be minutes away, and anything longer the backend has given
+    // up on too.
+    timeout: INACTIVITY_TIMEOUT_MS,
   }, async (res) => {
+    // Headers are in, so armTimers owns the clock from here — one owner per
+    // phase. Left armed this would also fire on a slow stream, with worse
+    // wording and no idea which frame was last.
+    req.setTimeout(0);
     if (record.aborting) { res.destroy(); return; }
 
     // 503 means no model is loaded. Route the load through the same path the
@@ -556,6 +605,13 @@ function dispatchRequest(record) {
   });
 
   record.req = req;
+
+  req.on('timeout', () => {
+    if (record.finalized) return;
+    record.aborting = true;
+    req.destroy();
+    finalize(record, 'error', { code: 'connection', detail: 'The local server did not respond.' });
+  });
 
   req.on('error', (err) => {
     if (record.finalized) return;
