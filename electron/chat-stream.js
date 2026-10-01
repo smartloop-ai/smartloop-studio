@@ -16,7 +16,9 @@
 // NOTE: do not reuse isErrorFrame from ./sse here. It treats data.status ===
 // 'error' as terminal, and a chat.status frame legitimately carries that for a
 // *recoverable* failed tool call — the turn continues and still produces an
-// answer. Chat does its own frame classification below.
+// answer. The terminal signal is the *step*: SLP emits ("tools", "error") when
+// a tool call failed and ("error", "error") when the generation did, and only
+// the second ends the turn. Chat does its own frame classification below.
 
 const http = require('http');
 const { readSseStream } = require('./sse');
@@ -251,6 +253,22 @@ function classifyTransportError(err) {
   return { code: 'unknown', detail: err?.message || 'Stream failed' };
 }
 
+// A failure the backend reports from inside an otherwise healthy stream. The
+// message is a Python exception string, so this reads the same vocabulary
+// classifyHttpError does rather than inventing a second one for the same faults.
+function classifyGenerationError(message) {
+  const text = String(message || '');
+  if (/allocated memory|exceeded the limit|exceed context window|context length/i.test(text)) {
+    return { code: 'context-limit', detail: null };
+  }
+  if (/rate_limit_exceeded|insufficient_quota|insufficient credits/i.test(text)) {
+    return { code: 'rate-limit', detail: text.slice(0, 500) };
+  }
+  // Not 'server': that copy says our team has been notified, which is untrue of
+  // a model that failed on this machine.
+  return { code: 'unknown', detail: text.slice(0, 500) || null };
+}
+
 function finalize(record, outcome, error = null) {
   if (record.finalized) return;
   record.finalized = true;
@@ -258,6 +276,11 @@ function finalize(record, outcome, error = null) {
 
   if (record.inactivityTimer) { clearTimeout(record.inactivityTimer); record.inactivityTimer = null; }
   if (record.queuedTimer) { clearTimeout(record.queuedTimer); record.queuedTimer = null; }
+
+  // A context overflow fails during prompt evaluation, so whatever accumulated
+  // is the backend narrating rather than an answer. Every other failure leaves
+  // text the user watched arrive, which is worth keeping.
+  if (error && error.code === 'context-limit') record.content = '';
 
   flush(record, true);
 
@@ -360,8 +383,21 @@ function handleFrame(record, chunk) {
   }
 
   if (chunk.object === 'chat.status') {
-    // status: 'error' here is a *recoverable* step failure (a tool call that
-    // did not work). The turn continues; it only colours the trace outcome.
+    // step 'error' is the generation itself failing. SLP says so in a status
+    // frame, then streams the exception text as *content*, then finishes the
+    // response the way a success finishes — "Response complete", finish_reason
+    // stop, [DONE]. Nothing later in the stream distinguishes the two, so this
+    // frame is the only place the turn can be failed. Finalizing here also puts
+    // that content frame after record.finalized, where it is dropped, which is
+    // what keeps the failure out of the transcript.
+    if (chunk.step === 'error') {
+      record.aborting = true;
+      if (record.req) record.req.destroy();
+      finalize(record, 'error', classifyGenerationError(chunk.message));
+      return;
+    }
+    // status 'error' on any other step is a *recoverable* step failure (a tool
+    // call that did not work). The turn continues; it only colours the trace.
     if (chunk.status === 'error') record.sawErrorStatus = true;
     pushStatus(record, chunk.step ?? null, chunk.message ?? '');
     return;
@@ -402,22 +438,6 @@ function handleFrame(record, chunk) {
     record.content += content;
     record.deltaCount++;
     scheduleFlush(record);
-
-    // The backend reports a blown context as text inside the answer rather than
-    // as an error. Caught here rather than in the renderer because an unmounted
-    // renderer would never break the stream, and the raw blob would be what
-    // landed in SQLite.
-    if (record.content.includes('[ERROR]') && (
-      record.content.includes('allocated memory')
-      || record.content.includes('exceeded the limit')
-      || record.content.includes('exceed context window')
-    )) {
-      record.content = '';
-      record.aborting = true;
-      if (record.req) record.req.destroy();
-      finalize(record, 'error', { code: 'context-limit', detail: null });
-      return;
-    }
   }
 
 }
