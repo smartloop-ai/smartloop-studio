@@ -81,6 +81,12 @@ export interface StorageItem {
   cache?: 'cache' | 'templates';
   /** Orphan projects only. */
   project_id?: string;
+  /**
+   * Orphan projects only: how long the directory has sat untouched.  The
+   * framework will not offer one until it has settled, so this is always past
+   * that threshold — reported so a future UI can say how stale a leftover is.
+   */
+  age_s?: number;
   /** Conversations only (reported, never deleted). */
   session_id?: string;
   tracked?: boolean;
