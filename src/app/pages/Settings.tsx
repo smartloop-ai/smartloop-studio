@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Box, Switch, CircularProgress } from '@mui/material';
+import { Box, Switch, CircularProgress, Tooltip } from '@mui/material';
 import { useAuthContext } from '@/app/contexts/AuthContext';
 import { useThemeContext } from '@/app/contexts/ThemeContext';
 
@@ -1146,10 +1146,9 @@ export default function SettingsPage() {
                                             if (b.bytes <= 0) return null;
                                             const isSystem = b.key === 'system';
                                             return (
+                                                <Tooltip key={b.key} title={b.title} arrow placement="top">
                                                 <div
-                                                    key={b.key}
                                                     className={isSystem ? 'flex items-center justify-end pr-2' : undefined}
-                                                    title={b.title}
                                                     style={{
                                                         // Floor tiny slices so a few-MB band is still visible.
                                                         // Everything but System holds its width, so the rounding
@@ -1165,6 +1164,7 @@ export default function SettingsPage() {
                                                         <span className="text-[10px] font-mono whitespace-nowrap" style={{ color: 'var(--sl-text-muted)' }}>{formatBytes(b.bytes)}</span>
                                                     )}
                                                 </div>
+                                                </Tooltip>
                                             );
                                         })}
                                     </div>
@@ -1172,16 +1172,21 @@ export default function SettingsPage() {
                                     {/* macOS-style legend — colored dot + name + size.
                                         Labels, not controls: Clean reclaims everything it
                                         safely can in one press, so there is no per-band
-                                        choice to present. */}
+                                        choice to present.  The row is one tooltip target,
+                                        so the dot, the name and the size all explain the
+                                        band — the dot alone is a 10px target and the name
+                                        is where someone actually points. */}
                                     <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap mt-3">
                                         {bands.map((b) => {
                                             if (b.bytes <= 0) return null;
                                             return (
-                                                <span key={b.key} className="flex items-center gap-1.5 text-xs" title={b.title}>
-                                                    <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
-                                                    <span style={{ color: 'var(--sl-text-secondary)' }}>{b.label}</span>
-                                                    <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(b.bytes) : '—'}</span>
-                                                </span>
+                                                <Tooltip key={b.key} title={b.title} arrow placement="top">
+                                                    <span className="flex items-center gap-1.5 text-xs cursor-help">
+                                                        <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                                                        <span style={{ color: 'var(--sl-text-secondary)' }}>{b.label}</span>
+                                                        <span className="font-mono" style={{ color: 'var(--sl-text-faint)' }}>{storage ? formatBytes(b.bytes) : '—'}</span>
+                                                    </span>
+                                                </Tooltip>
                                             );
                                         })}
                                     </div>
@@ -1189,12 +1194,20 @@ export default function SettingsPage() {
 
                                     {/* Clean action */}
                                     <div className="flex items-center gap-3 justify-start">
-                                        <button
-                                            onClick={runCleanup}
-                                            disabled={isCleaning || totalReclaim === 0}
+                                        {/* The span is load-bearing: a disabled button fires no
+                                            pointer events, so without it the tooltip is silent
+                                            exactly when it has something to say. */}
+                                        <Tooltip
+                                            arrow
+                                            placement="top"
                                             title={totalReclaim === 0
                                                 ? 'Nothing to reclaim right now.'
                                                 : `Free ${formatBytes(totalReclaim)}. The agent keeps running, and models you are using are never removed.`}
+                                        >
+                                        <span className="inline-flex">
+                                        <button
+                                            onClick={runCleanup}
+                                            disabled={isCleaning || totalReclaim === 0}
                                             className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                                             style={{ border: '1px solid var(--sl-brand-alpha-30)', color: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-white-alpha-5)' }}
                                         >
@@ -1210,6 +1223,8 @@ export default function SettingsPage() {
                                                 </>
                                             )}
                                         </button>
+                                        </span>
+                                        </Tooltip>
                                         {cleanupError && (
                                             <span className="text-xs" style={{ color: 'var(--sl-status-warning)' }}>
                                                 {cleanupError}
