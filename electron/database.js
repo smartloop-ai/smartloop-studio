@@ -468,6 +468,14 @@ function deleteMessages(conversation_id) {
   d.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversation_id);
 }
 
+// One message, by id. A stream flushes its partial answer as it goes, so an
+// abort that arrives before any text does leaves a row for a response that never
+// existed; deleteMessages would take the whole conversation with it.
+function deleteMessage(id) {
+  const d = openDatabase();
+  d.prepare('DELETE FROM messages WHERE id = ?').run(id);
+}
+
 function formatMessage(row) {
   const msg = {
     id: row.id,
@@ -928,6 +936,7 @@ module.exports = {
   addMessages,
   getMessages,
   deleteMessages,
+  deleteMessage,
   // Memory usage
   addMemoryUsage,
   getMemoryUsage,

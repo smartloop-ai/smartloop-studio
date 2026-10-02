@@ -1,9 +1,10 @@
 
 import { conversationService } from '@/app/services/conversation.service';
 import { storageService } from '@/app/services/storage.service';
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, CircularProgress, Tooltip } from "@mui/material";
-import OpenAI from 'openai';
+import { beginSend, useChatSession, useChatStream } from '@/app/contexts/ChatSessionsContext';
+import { StreamingMarker } from '@/app/components/activity-spinner';
 
 import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins } from 'streamdown';
 import "streamdown/styles.css";
@@ -28,7 +29,6 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import MessageInput from './message-input';
 import { LogoMark } from './logo';
 import ModelPicker from './model-picker';
-import { runTrace } from '@/app/services/run-trace.service';
 
 import { getLocalApiEndpoint, BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
@@ -97,31 +97,6 @@ const TRANSCRIPT_FADE_MS = 140;
 // Turn bare URLs in plain user-message text into clickable, themed links.
 // Clicks are picked up by the document-level handler that opens web links externally.
 /**
- * The footer's status marker while a response streams: the flat square gives way
- * to a bar sweeping through | / - \, the terminal spinner the bracketed line
- * already looks like. Monospace so the four frames occupy identical width and
- * the text after it never shifts.
- *
- * Mounted only while loading, so there is no timer running on an idle app.
- */
-const SPINNER_FRAMES = ['|', '/', '-', '\\'];
-
-function StreamingMarker() {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setFrame((f) => (f + 1) % SPINNER_FRAMES.length), 120);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    /* Inherits the strip's color — the motion already says "running", and
-       recoloring it made the marker jump out of a line meant to sit quiet. */
-    <span className="inline-block text-center" style={{ width: 6 }}>
-      {SPINNER_FRAMES[frame]}
-    </span>
-  );
-}
-
-/**
  * The footer's text while a response streams: whatever the backend last said it
  * was doing ("Reading document: sp97.pdf"), falling back to a generic line
  * before the first status arrives.
@@ -131,18 +106,20 @@ function StreamingMarker() {
  * was a second copy of the same data — and the reason a run's earlier steps used
  * to vanish. Here the store is the one source and the strip just reads it.
  */
-function LiveStatusText() {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    const read = () => {
-      const turn = runTrace.getTurns()[0];
-      const open = turn && !turn.endedAt;
-      setText(open ? (turn.steps[turn.steps.length - 1]?.message ?? null) : null);
-    };
-    read();
-    return runTrace.subscribe(read);
-  }, []);
-  return <>{text || 'Generating response…'}</>;
+function LiveStatusText({ status, phase }: { status: string | null; phase: string | null }) {
+  // Read off the session rather than the trace store. `runTrace.getTurns()[0]`
+  // means "the most recently started turn", which with two conversations running
+  // is simply the wrong one — this tab would narrate the other tab's progress.
+  if (phase === 'loading-model') return <>Loading model…</>;
+  if (phase === 'reconnecting') return <>Reconnecting to the local server…</>;
+  // Whatever the backend last said it was doing wins, including while the turn
+  // is still queued: orchestration narrates itself ("Planning the response and
+  // selecting tools") long before the first token, and replacing that with a
+  // generic "waiting" would hide real progress. The generic line is only for the
+  // gap before anything has come back at all.
+  if (status) return <>{status}</>;
+  if (phase === 'queued' || phase === 'connecting') return <>Waiting for the model…</>;
+  return <>Generating response…</>;
 }
 
 const USER_URL_REGEX = /(https?:\/\/[^\s<>()]+)/g;
@@ -329,25 +306,23 @@ export default function Chat(props: {
     return () => { cancelled = true; window.removeEventListener('skillsSaved', load); };
   }, [props.project?.id]);
 
-  const [messages, setMessages]: any = useState([]);
   const [searchQuery] = useState("");
   const [filteredMessages, setFilteredMessages]: any = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // The user's message, on screen before the conversation row exists. Filtered
+  // straight back out once the session owns a turn with the same id, so it is a
+  // stand-in for exactly the round-trip it takes main to accept the send.
+  const [pendingUserMsg, setPendingUserMsg] = useState<any>(null);
+  // Covers the same gap for the busy indicator: the session has no phase yet.
+  const [starting, setStarting] = useState(false);
+  // See conversationIdForSession below.
+  const [justCreatedConversationId, setJustCreatedConversationId] = useState<string | null>(null);
   const [copied, setCopied]: any = useState("");
   const [saved, setSaved]: any = useState("");
   const [saving, setSaving]: any = useState("");
   const [feedback, setFeedback] = useState<Record<string, 'up' | 'down'>>({});
-  const streamStartRef = useRef<number>(0);
-  const streamTokenCountRef = useRef<number>(0);
-  // When the last live tok/s update was pushed, to throttle it to ~2/sec.
-  const lastTpsTickRef = useRef<number>(0);
-  const abortControllerRef = useRef<AbortController | null>(null);
   const currentConversationIdRef = useRef<string | null>(null);
-  const sendingMessageRef = useRef<boolean>(false);  // Track if currently sending
-  const hasLocalErrorRef = useRef<boolean>(false);  // Track if there's a local error message
-  const lastTpsRef = useRef<number | null>(null);  // Last known tok/s value
+  const sendingMessageRef = useRef<boolean>(false);  // Reentrancy guard for the pre-send work only
   const [lastRunTps, setLastRunTps] = useState<number | null>(null);  // Last known tok/s shown in the idle status slot; seeded from storage, null until first-ever response
-  const pendingConversationUpdateRef = useRef<any | null>(null);  // Pending onConversationUpdate to fire after render
   const [isServiceReady, setIsServiceReady] = useState(false);
   const [model, setModel] = useState<string>('');
   // Armed by a send, disarmed by a conversation load: which of the two reasons the
@@ -365,8 +340,24 @@ export default function Chat(props: {
   // Model status is owned by the main process and mirrored by ModelStatusContext;
   // this component only reads it. `enabledCapabilities` already accounts for a
   // pending toggle, so vision unlocks the instant the user enables the model.
-  const { primaryProgress, enabledCapabilities, waitForPrimaryModel, loadPrimaryModel } = useModelStatus();
+  const { primaryProgress, enabledCapabilities, waitForPrimaryModel } = useModelStatus();
   const modelDownloadProgress = primaryProgress;
+  // The live turn for the conversation on screen. Held above <Routes>, so it is
+  // the same object whether or not this component has been mounted the whole
+  // time — switching tabs or visiting Settings no longer interrupts anything.
+  // props.conversation lags a freshly created row by a render or two — the
+  // parent has to hear about it, rewrite the conv-new tab and navigate first. The
+  // session is keyed on the real id from the moment it is created, so without
+  // this the streaming answer would have nowhere to land for that window.
+  const conversationIdForSession = props.conversation?.id ?? justCreatedConversationId;
+  const history = useMemo(() => {
+    const committed = props.conversation?.messages || [];
+    return pendingUserMsg ? [...committed, pendingUserMsg] : committed;
+  }, [props.conversation?.messages, pendingUserMsg]);
+  const session = useChatSession(conversationIdForSession, history);
+  const messages = session.messages;
+  const chatStream = useChatStream();
+  const isLoading = starting || session.busy;
   // Image attachments require a vision-capable model — the SLP backend
   // OCRs/describes images through it at attachment-upload time.
   const visionEnabled = enabledCapabilities.has('vision');
@@ -381,12 +372,16 @@ export default function Chat(props: {
   useEffect(() => {
     storageService.getTpsHistory(1).then((history) => {
       const val = history[history.length - 1]?.tokens_per_second;
-      if (val) {
-        lastTpsRef.current = val;
-        setLastRunTps(prev => prev ?? val);
-      }
+      if (val) setLastRunTps(prev => prev ?? val);
     });
   }, []);
+
+  // Each finished turn reports its own speed: main measures it from the first
+  // token and writes the tps_history row, so the seed above only has to cover
+  // a cold start.
+  useEffect(() => {
+    if (session.tokensPerSecond) setLastRunTps(session.tokensPerSecond);
+  }, [session.tokensPerSecond]);
 
   // Check if the SLP service is already available, and listen for it to come online
   useEffect(() => {
@@ -559,7 +554,7 @@ export default function Chat(props: {
     }
   };
 
-  const sendMessage = async (_: any, messageOverride?: string, retryAfterRestart = false) => {
+  const sendMessage = async (_: any, messageOverride?: string) => {
     // Prevent duplicate sends
     if (isLoading || sendingMessageRef.current) {
       console.log('[Chat] Already sending a message, skipping duplicate send');
@@ -585,8 +580,11 @@ export default function Chat(props: {
     // snapped.
     animateLayoutRef.current = true;
 
-    const messageId = `msg-${Date.now()}`;
-    const responseId = `temp-${Date.now()}`;
+    // UUIDs, not timestamps: `addMessages` is INSERT OR REPLACE keyed on this id,
+    // so two tabs sending in the same millisecond used to overwrite each other's
+    // message. Harmless while only one turn could run; not once they run at once.
+    const messageId = `msg-${crypto.randomUUID()}`;
+    const responseId = `temp-${crypto.randomUUID()}`;
 
     const effectiveProjectId = props.project?.id;
     console.log('Sending message:', userMessage, 'Project ID:', effectiveProjectId);
@@ -655,20 +653,25 @@ export default function Chat(props: {
     };
     console.log('[Chat sendMessage] Created userMsg:', userMsg);
     console.log('[Chat sendMessage] userMsg.attachments:', userMsg.attachments);
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
+    // Retire the finished turn before the new bubble goes up. Its session is
+    // still in the store until `accepted` replaces it, and the merge in
+    // useChatSession pulls those two messages out of the committed history and
+    // re-appends them — i.e. below this one — for as long as that takes. The
+    // waits between here and the send include a model download.
+    beginSend(conversationId);
+    setPendingUserMsg(userMsg);
     // Emptied in the same commit: text left sitting in a composer that has already
     // started moving reads as a send that didn't take.
     setFormData({ message: "" });
     // Same reasoning as the message above — the streaming marker belongs to the
     // click, not to the IPC. Set here, it lights up as the composer starts moving,
     // which is what covers the gap until the first token actually arrives.
-    setIsLoading(true);
+    setStarting(true);
 
     // Put the composer and the transcript back the way they were — the send never
     // started, so the centred empty layout is still the truthful one.
     const rollbackSend = () => {
-      setMessages(messages);
+      setPendingUserMsg(null);
       setFormData({ message: userMessage });
       animateLayoutRef.current = false;
     };
@@ -693,6 +696,7 @@ export default function Chat(props: {
 
           // Update the ref immediately so subsequent messages know the conversation exists
           currentConversationIdRef.current = conversationId;
+          setJustCreatedConversationId(conversationId);
 
           // Notify parent component
           if (props.onConversationCreated) {
@@ -703,7 +707,7 @@ export default function Chat(props: {
           alert('Failed to create conversation. Please try again.');
           rollbackSend();
           sendingMessageRef.current = false;
-          setIsLoading(false);
+          setStarting(false);
           return;
         }
       } catch (error: any) {
@@ -711,7 +715,7 @@ export default function Chat(props: {
         alert('Failed to create conversation. Please try again.');
         rollbackSend();
         sendingMessageRef.current = false;
-        setIsLoading(false);
+        setStarting(false);
         return;
       }
     }
@@ -732,502 +736,61 @@ export default function Chat(props: {
       messageAttachmentsRef.current = [];
     }, 100);
 
-    // Create abort controller for this request
-    abortControllerRef.current = new AbortController();
+    // The turn itself now belongs to the main process: the request, the SSE
+    // loop, the 503/reconnect retries, the abort, and writing both messages to
+    // SQLite. This component only says "send" and then renders whatever the
+    // session reports — which is the whole reason the answer survives it
+    // unmounting.
+    const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
 
-    // Create initial response message for streaming
-    const responseMsg = {
-      id: responseId,
-      role: 'assistant',
-      content: '',
-      is_new: true
-    };
-
-    setMessages((prevState: any) => [...prevState, responseMsg]);
-
-    // Open the trace turn here rather than once the stream is running: getting a
-    // stream can mean loading a model first (the 503 retry below), which is a
-    // long wait and exactly when someone hits Esc. Starting later meant a cancel
-    // during that wait produced no run at all, so Activity had nothing to show
-    // for a turn the user definitely made. The turn's duration therefore covers
-    // the wait too, which is the time actually spent.
-    runTrace.setContext({ conversationId: conversationId ?? undefined, projectId: props.project?.id });
-    runTrace.begin(responseId, userMessage);
-    // Name the model up front from what we asked for; the stream's own `model`
-    // field overrides it below if the backend served something else.
-    storageService.getItem('selected_model').then((m: any) => runTrace.model(m));
-
-    let message_id: string | null = null;
+    let temperature = 0.3;
     try {
-      // Initialize OpenAI client pointing to local SLP service
-      const localBaseUrl = await getLocalApiEndpoint();
+      const savedTemp = await storageService.getSetting('default_temperature');
+      if (savedTemp !== null && savedTemp !== undefined) temperature = savedTemp;
+    } catch { /* fall back to the default */ }
 
-      const openai = new OpenAI({
-        baseURL: `${localBaseUrl}/v1`,
-        apiKey: 'local',
-        dangerouslyAllowBrowser: true
-      });
+    // Wait out an in-flight primary model load. Main retries its own 503, but
+    // waiting here means the composer says "loading" rather than going quiet.
+    if (modelDownloadProgress?.downloading) {
+      console.log('[Chat] Waiting for model init to complete...');
+      await waitForPrimaryModel();
+    }
 
-      let fullText = '';
+    const result = await chatStream.send({
+      conversationId,
+      userMessageId: messageId,
+      responseMessageId: responseId,
+      text: userMessage,
+      model: selectedModel,
+      temperature,
+      projectId: props.project?.id ? String(props.project.id) : null,
+      cwd: props.project?.folder_path || null,
+      projectInstructions: props.project?.instructions || null,
+      attachments: currentAttachments.length > 0 ? currentAttachments : null,
+    });
 
-      const projectId = props.project?.id ? String(props.project.id) : undefined;
+    sendingMessageRef.current = false;
+    setStarting(false);
 
-      console.log('[Chat sendMessage] Current project:', {
-        projectId: projectId,
-        projectObject: props.project,
-        conversationId: conversationId
-      });
-
-      // Filter to only file attachments for the SLP server request
-      // Project attachments (project-*) are handled via project_id param, not needed as attachments
-      // SLP server expects attachment IDs as plain strings (the asset_id without the "file-" prefix)
-      const fileAttachmentIds = currentAttachments
-        .filter((att: any) => att.file_id && att.file_id.startsWith('file-'))
-        .map((att: any) => att.file_id.replace(/^file-/, ''));
-
-      // Prepare the message object — SLP expects attachments inside each message
-      const messageObject: any = {
-        role: 'user',
-        content: userMessage,
-      };
-      if (fileAttachmentIds.length > 0) {
-        messageObject.attachments = fileAttachmentIds;
-      }
-
-      console.log('[Chat sendMessage] Final message object:', messageObject);
-
-      // Wait out an in-flight primary model load before sending.
-      if (modelDownloadProgress?.downloading) {
-        console.log('[Chat] Waiting for model init to complete...');
-        setMessages((prev: any) =>
-          prev.map((msg: any) =>
-            msg.id === responseId ? { ...msg, content: 'Waiting for model to load...' } : msg
-          )
-        );
-        await waitForPrimaryModel();
-        console.log('[Chat] Model init complete, proceeding with message');
-      }
-
-      // Every turn goes to the orchestrator, which routes it to whichever of the
-      // models selected in the composer's picker suits the request.
-      const selectedModel = await storageService.getItem('selected_model') || 'gemma3-1b';
-
-      // Get temperature from SQLite settings, fallback to default
-      let temperature = 0.3;
-      try {
-        const savedTemp = await storageService.getSetting('default_temperature');
-        if (savedTemp !== null && savedTemp !== undefined) {
-          temperature = savedTemp;
-        }
-      } catch { }
-
-      // Project instructions (Project Settings → Instructions) ride along on
-      // every turn as a system message — the SLP server folds any system message
-      // in the request into its own system prompt. They live in SQLite as local
-      // project metadata, so there's nothing server-side to keep in sync.
-      const projectInstructions = (props.project?.instructions || '').trim();
-      const outboundMessages: any[] = projectInstructions
-        ? [{ role: 'system', content: projectInstructions }, messageObject]
-        : [messageObject];
-
-      // Create streaming chat completion
-      // Pass session_id = conversationId so the SLP server maintains context per tab/conversation
-      // Use body override to include custom fields (session_id, project_id)
-      // that the OpenAI SDK would otherwise strip from the first arg
-      const requestBody: any = {
-        model: selectedModel,
-        messages: outboundMessages,
-        stream: true,
-        session_id: conversationId,
-        temperature,
-      };
-      if (projectId) {
-        requestBody.project_id = projectId;
-      }
-      if (props.project?.folder_path) {
-        requestBody.cwd = props.project.folder_path;
-      }
-
-      // Per-message locale + time context so the model can answer "what's today"
-      // and localize output. Any "/" skill the user picked travels inside the
-      // message content itself (a leading "/<slug>" token), which the SLP server
-      // parses to resolve the skill — no separate skill field is needed.
-      const now = new Date();
-      messageObject.additional_message_params = {
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        locale: navigator.language,
-        // Unix time (seconds since epoch, UTC) — unambiguous current instant.
-        user_date: Math.floor(now.getTime() / 1000),
-      };
-
-      const createStream = async () => {
-        return await openai.chat.completions.create({
-          model: selectedModel,
-          messages: outboundMessages,
-          stream: true,
-          temperature,
-        }, {
-          body: requestBody,
-        }) as any;
-      };
-
-      let stream: any;
-      try {
-        stream = await createStream();
-      } catch (err: any) {
-        // If 503 "No model loaded", load the model and retry once
-        if (err?.status === 503 || err?.message?.includes('503')) {
-          console.log('[Chat] 503 no model loaded, requesting a model load and retrying...');
-          setMessages((prev: any) =>
-            prev.map((msg: any) =>
-              msg.id === responseId ? { ...msg, content: 'Loading model...' } : msg
-            )
-          );
-          // Route the load through main: it dedupes against a load already in
-          // flight and its progress reaches the UI. A failure here surfaces as the
-          // retried stream's own error.
-          await loadPrimaryModel(selectedModel);
-          stream = await createStream();
-        } else {
-          throw err;
-        }
-      }
-
-      // Process the stream
-      // Timed from the first content token, not from here: status steps
-      // (retrieval, web search, tool calls) arrive on the same stream first and
-      // would otherwise count against generation speed.
-      streamStartRef.current = 0;
-      streamTokenCountRef.current = 0;
-      lastTpsTickRef.current = 0;
-      let chunkLogCount = 0;
-      for await (const chunk of stream) {
-        // Check if aborted
-        if (abortControllerRef.current?.signal.aborted) {
-          throw new Error('AbortError');
-        }
-
-        // Log first 3 chunks to find where backend message_id lives
-        if (chunkLogCount < 3) {
-          console.log('[Chat] chunk #' + chunkLogCount, JSON.stringify(chunk));
-          chunkLogCount++;
-        }
-
-        // The model that actually served this response, straight off the stream.
-        if (chunk.model) runTrace.model(chunk.model);
-
-        // Capture the backend-assigned message ID from the first chunk
-        const chunkMsgId = chunk.message_id || (chunk.id?.startsWith('msg-') ? chunk.id : null) || (chunk.choices?.[0]?.message_id) || null;
-        if (!message_id && chunkMsgId) {
-          message_id = chunkMsgId;
-          console.log('[Chat] Captured backend message_id:', message_id);
-          setMessages((prevMessages: any) =>
-            prevMessages.map((msg: any) =>
-              msg.id === responseId ? { ...msg, message_id } : msg
-            )
-          );
-        }
-
-        // Capture citations from SLP server
-        if (chunk.object === 'chat.citations' && chunk.citations) {
-          runTrace.citations(Array.isArray(chunk.citations) ? chunk.citations.length : 0);
-          setMessages((prevMessages: any) =>
-            prevMessages.map((msg: any) =>
-              msg.id === responseId ? { ...msg, citations: chunk.citations } : msg
-            )
-          );
-          continue;
-        }
-
-        // Surface SLP progress events (chat.status) so the user sees what's
-        // happening while the model spins up (Analyzing → Searching → Planning
-        // → Generating…). These arrive in a rapid burst, so we queue them and
-        // show each for a minimum dwell time — otherwise only the last one
-        // ("Generating response…") ever paints and looks fixed.
-        // The queue is flushed as soon as the first content token arrives (below).
-        if (chunk.object === 'chat.status') {
-          // "model" steps name the aux model the orchestrator just picked (e.g.
-          // "Selected Ministral 3 3B Instruct 2512 (3B) for …"). Broadcast the raw
-          // message so the model picker can light up the matching row.
-          if (chunk.step === 'model' && chunk.message) {
-            window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { message: chunk.message } }));
-          }
-          // The routing block above the message renders these — in order, with
-          // stamps, and still there after the turn ends.
-          runTrace.status(chunk.step ?? null, chunk.message ?? '');
-          continue;
-        }
-
-        // Anything else the backend narrates — a tool invocation, an event type
-        // this build doesn't know yet — goes into the trace rather than being
-        // dropped. The Logs panel is only trustworthy if it can't quietly omit
-        // a step, and the step vocabulary here is not a fixed contract.
-        if (chunk.object && chunk.object !== 'chat.completion.chunk') {
-          // Only events that narrate something. `chat.message_id` and
-          // `chat.usage` are envelope metadata — they were landing in the log as
-          // rows whose text was their own type name, which told the reader
-          // nothing about what the model was doing.
-          if (chunk.message) runTrace.status(chunk.step ?? chunk.object, chunk.message);
-          continue;
-        }
-
-        // Skip status/non-standard chunks from local SLP server
-        if (!chunk.choices || !chunk.choices[0]) continue;
-
-        // Tool calls arrive inside the delta, in fragments: the first carries the
-        // function name, the rest only argument text. Recording on a non-empty
-        // name logs each call exactly once.
-        const toolCalls = chunk.choices[0]?.delta?.tool_calls;
-        if (Array.isArray(toolCalls)) {
-          toolCalls.forEach((call: any) => {
-            const name = call?.function?.name;
-            if (name) runTrace.status('tool', `Calling ${name}`);
-          });
-        }
-
-        const content = chunk.choices[0]?.delta?.content;
-
-        if (content) {
-          fullText += content;
-          const now = Date.now();
-          if (!streamStartRef.current) streamStartRef.current = now;
-          streamTokenCountRef.current++;
-          // Live tok/s in the status strip, throttled so it's readable rather
-          // than flickering per chunk. Waits ~1s for the rate to settle; until
-          // then the last run's value stays up.
-          const elapsed = now - streamStartRef.current;
-          if (elapsed >= 1000 && now - lastTpsTickRef.current >= 500) {
-            lastTpsTickRef.current = now;
-            setLastRunTps(Math.round(streamTokenCountRef.current / (elapsed / 1000)));
-          }
-
-          // Check if the response contains a memory/context limit error
-          if (fullText.includes('[ERROR]') && (fullText.includes('allocated memory') || fullText.includes('exceeded the limit') || fullText.includes('exceed context window'))) {
-            // Display a clean error message instead of the raw error
-            const cleanErrorMessage = 'This conversation has exceeded its context limit. Please start a new conversation to continue.';
-            setMessages((prevMessages: any) =>
-              prevMessages.map((msg: any) =>
-                msg.id === responseId ? {
-                  ...msg,
-                  is_new: false,
-                  isError: true,
-                  errorIconType: 'warning',
-                  content: cleanErrorMessage
-                } : msg
-              )
-            );
-            break; // Stop processing the stream
-          }
-
-          setMessages((prevMessages: any) =>
-            prevMessages.map((msg: any) =>
-              msg.id === responseId ? {
-                ...msg,
-                is_new: true,
-                content: fullText
-              } : msg
-            )
-          );
-
-        }
-
-        // Check for finish
-        if (chunk.choices[0]?.finish_reason) {
-          break;
-        }
-      }
-
-      // Calculate tok/s
-      const elapsedSec = streamStartRef.current ? (Date.now() - streamStartRef.current) / 1000 : 0;
-      const tps = elapsedSec > 0 && streamTokenCountRef.current > 0
-        ? Math.round(streamTokenCountRef.current / elapsedSec)
-        : undefined;
-
-      runTrace.end({ tokensPerSecond: tps ?? null, outcome: 'done' });
-
-      // Persist last tok/s for display (single source of truth: SQLite tps_history)
-      if (tps) {
-        lastTpsRef.current = tps;
-        storageService.addTpsEntry(tps);
-        setLastRunTps(tps);
-      }
-
-      // Mark response as complete
-      setMessages((prevMessages: any) => {
-        const finalMessages = prevMessages.map((msg: any) =>
-          msg.id === responseId ? {
-            ...msg,
-            is_new: false,
-            ...(tps ? { tokens_per_second: tps } : {})
-          } : msg
-        );
-
-        // Store pending update — calling onConversationUpdate here would trigger setState
-        // during render (inside the state updater). Instead, fire it via useEffect.
-        if (conversationId && props.onConversationUpdate) {
-          pendingConversationUpdateRef.current = {
-            ...props.conversation,
-            id: conversationId,
-            messages: finalMessages,
-            updated_at: new Date().toISOString()
-          };
-        }
-
-        return finalMessages;
-      });
-
-      // Notify parent about token update
-      if (props.onTokenUpdate) {
-        props.onTokenUpdate();
-      }
-
-    } catch (error: any) {
-      // The explicit throw inside the loop only fires when a chunk arrives after
-      // the abort. Cancel while the stream is idle — waiting on a model, or
-      // mid-search — and the SDK rejects with its own APIUserAbortError instead,
-      // which was being recorded as a failure rather than a cancel.
-      const aborted = abortControllerRef.current?.signal.aborted
-        || error.message === 'AbortError'
-        || error.name === 'AbortError'
-        || error.name === 'APIUserAbortError';
-      runTrace.end({ outcome: aborted ? 'stopped' : 'error' });
-      if (aborted) {
-        console.log('Request aborted by user');
-        // Keep the partial response as-is, just mark it as complete
-        setMessages((prevMessages: any) => {
-          const finalMessages = prevMessages.map((msg: any) => {
-            if (msg.id === responseId) {
-              // If there's partial content, keep it; if empty, remove the message
-              if (msg.content && msg.content.trim().length > 0) {
-                return { ...msg, is_new: false };
-              }
-              return null; // Remove empty response
-            }
-            return msg;
-          }).filter(Boolean);
-
-          // Store pending update — calling onConversationUpdate here would trigger setState
-          // during render (inside the state updater). Instead, fire it via useEffect.
-          if (conversationId && props.onConversationUpdate) {
-            pendingConversationUpdateRef.current = {
-              ...props.conversation,
-              id: conversationId,
-              messages: finalMessages,
-              updated_at: new Date().toISOString()
-            };
-          }
-
-          return finalMessages;
-        });
-      } else if (
-        (error.name === 'APIConnectionError' || error.message?.includes('Failed to fetch') || error.message?.includes('Connection error')) &&
-        !retryAfterRestart
-      ) {
-        // SLP server not reachable — try to start it and retry once
-        console.warn('[Chat] Connection error — attempting to start SLP service and retry...');
-        setMessages((prev: any) =>
-          prev.map((msg: any) =>
-            msg.id === responseId ? { ...msg, is_new: true, content: 'Reconnecting to server...' } : msg
-          )
-        );
-        try {
-          if (window.electronAPI?.slpServiceStart) {
-            await window.electronAPI.slpServiceStart();
-            // Wait for the service to become ready (poll health for up to 30s)
-            const localBaseUrl = await getLocalApiEndpoint();
-            let ready = false;
-            for (let i = 0; i < 30; i++) {
-              try {
-                const res = await fetch(`${localBaseUrl}/health`);
-                if (res.ok) { ready = true; break; }
-              } catch (_) { /* not ready yet */ }
-              await new Promise(r => setTimeout(r, 1000));
-            }
-            if (ready) {
-              console.log('[Chat] SLP service restarted — retrying message...');
-              sendingMessageRef.current = false;
-              setIsLoading(false);
-              sendMessage(null, userMessage, true);
-              return;
-            }
-          }
-        } catch (restartErr) {
-          console.error('[Chat] Failed to restart SLP service:', restartErr);
-        }
-        // If restart failed, fall through to show error
-        setMessages((prev: any) =>
-          prev.map((msg: any) =>
-            msg.id === responseId ? {
-              ...msg, is_new: false, isError: true, errorIconType: 'build',
-              content: 'Unable to connect to the local server. Please check that the service is running.'
-            } : msg
-          )
-        );
-        hasLocalErrorRef.current = true;
-      } else {
-
-        // Check for 429 rate limit / out of credits error
-        let errorMessage = 'An error occurred while processing your message. Please try again.';
-        let errorIconType = 'error';
-
-        // Enhanced 429 detection - check status, message content, and error codes
-        if (
-          error.status === 429 ||
-          error.statusCode === 429 ||
-          error.message?.includes('429') ||
-          error.code === 'rate_limit_exceeded' ||
-          error.code === 'insufficient_quota' ||
-          error.message?.toLowerCase().includes('insufficient credits')
-        ) {
-          errorIconType = 'warning';
-          errorMessage = 'You have exceeded your usage limit or are out of credits. Please upgrade your account or contact support@smartloop.ai for assistance.';
-        } else if (error.message?.includes('allocated memory') || error.message?.includes('exceeded the limit') || error.message?.includes('context length')) {
-          errorIconType = 'warning';
-          errorMessage = 'This conversation has exceeded its memory limit. Please start a new conversation to continue.';
-        } else if (error.status === 401 || error.status === 403) {
-          errorIconType = 'lock';
-          errorMessage = 'Authentication error. Please log in again.';
-        } else if (error.status >= 500) {
-          errorIconType = 'build';
-          errorMessage = 'Server error. Our team has been notified. Please try again later.';
-        } else if (error.message) {
-          errorMessage = `Error: ${error.message}`;
-        }
-
-        // Update the response message with the error instead of removing it
-        setMessages((prevState: any) => {
-          const updatedMessages = prevState.map((msg: any) => {
-            if (msg.id === responseId) {
-              console.log('[DEBUG Error] MATCH FOUND - updating message:', msg.id);
-              return {
-                ...msg,
-                is_new: false,
-                isError: true,
-                errorIconType: errorIconType,
-                content: errorMessage
-              };
-            }
-            return msg;
-          });
-
-          // Mark that we have a local error to prevent conversation sync from overwriting
-          hasLocalErrorRef.current = true;
-
-          return updatedMessages;
-        });
-      }
-    } finally {
-      // Backstop: whatever path got here, the turn is over. `end` no-ops on an
-      // already-closed turn, so this only catches a bail-out that returned
-      // without closing — which would otherwise render as "Running" forever.
-      runTrace.end({ outcome: abortControllerRef.current?.signal.aborted ? 'stopped' : 'done' });
-      setIsLoading(false);
-      sendingMessageRef.current = false;  // Reset sending flag
-      abortControllerRef.current = null;
-      // Run is over — drop the aux-models panel highlight.
-      window.dispatchEvent(new CustomEvent('activeModelChanged', { detail: { done: true } }));
+    if (!result.success) {
+      console.error('[Chat] Send rejected:', result.error);
+      // Every rejection means this message did not go anywhere — including
+      // 'already-streaming', which only happens if our view of the session was
+      // stale. Putting the text back in the composer is the truthful outcome;
+      // leaving the bubble up would show a message that was never sent.
+      rollbackSend();
     }
   }
+
+  // Hand the optimistic bubble over to the session. Main echoes the id back on
+  // `accepted`, so a match means the turn owns this message and the local copy
+  // is a duplicate — one that only stayed invisible because useChatSession
+  // filters by id. Left standing once sessions are reaped it would render twice.
+  useEffect(() => {
+    if (pendingUserMsg && session.userMessageId === pendingUserMsg.id) {
+      setPendingUserMsg(null);
+    }
+  }, [session.userMessageId, pendingUserMsg]);
 
   // Reset input when conversation changes (switching tabs)
   useEffect(() => {
@@ -1239,29 +802,20 @@ export default function Chat(props: {
     clearQuoteHighlight();
     messageAttachmentsRef.current = [];
     setClearAttachmentTrigger(prev => prev + 1);
+    // Drop the just-created fallback as soon as the prop moves at all. Left
+    // standing it would point a genuinely new tab — where props.conversation is
+    // null — at the previous conversation's session.
+    setJustCreatedConversationId(null);
   }, [props.conversation?.id]);
 
-  // Load messages when conversation changes - simple and direct
+  // Resolve the conversation on screen and load its feedback.
+  //
+  // It no longer loads *messages*: the committed ones arrive as a prop and the
+  // live turn comes from the session. The bail-out that used to sit here — skip
+  // while sending — is gone with them, and deliberately: it is what made
+  // switching tabs mid-stream keep showing the streaming conversation's
+  // transcript under the other tab's title. There is nothing left to clobber.
   useEffect(() => {
-    // Don't overwrite messages while actively sending (new conversation scenario)
-    if (sendingMessageRef.current || isLoading) {
-      console.log('[Chat] Skipping message load - currently sending');
-      return;
-    }
-
-    // Don't overwrite messages if we have a local error displayed
-    if (hasLocalErrorRef.current) {
-      console.log('[Chat] Skipping message load - local error message displayed');
-      hasLocalErrorRef.current = false; // Reset for next time
-      return;
-    }
-
-    // Only (re)load when genuinely switching to a different conversation.
-    // If the incoming id matches the conversation we're already on, skip: this
-    // effect also re-runs when isLoading toggles after a send, and for a
-    // just-created conversation the parent's props.conversation can momentarily
-    // carry empty messages — reloading here would wipe the freshly streamed
-    // messages and clobber the session id, breaking history on the next turn.
     const incomingConversationId = props.conversation?.id ?? null;
     if (incomingConversationId && incomingConversationId === currentConversationIdRef.current) {
       return;
@@ -1274,8 +828,8 @@ export default function Chat(props: {
       messagesCount: conversationMessages.length
     });
 
-    // Update messages from conversation
-    setMessages(conversationMessages);
+    // A stand-in only ever belongs to the conversation it was typed into.
+    setPendingUserMsg(null);
 
     // Update conversation ref
     currentConversationIdRef.current = incomingConversationId;
@@ -1315,29 +869,32 @@ export default function Chat(props: {
       setFeedback({});
     }
 
-    // Depend on the project id, not the whole object: unrelated project patches
-    // (e.g. toggling web_search) hand us a new object reference with the same id,
-    // and reloading here would needlessly reset messages and flicker the view.
-  }, [props.conversation, props.project?.id, isLoading]);
+    // Keyed on the conversation id rather than the object: an unrelated project
+    // patch (toggling web_search, say) hands back a new reference with the same
+    // id, and re-running this would refetch feedback for no reason. `messages`
+    // is read inside but deliberately not a dependency — it changes on every
+    // turn, and this only has work to do when the conversation itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.conversation?.id, props.project?.id]);
 
-  // Fire any pending onConversationUpdate after messages state has committed to DOM
-  // (calling it inside a setMessages updater triggers "setState during render" warning)
+  // Tell the parent a turn finished, so the tab title and the sidebar refresh.
+  // It no longer carries the messages: main writes both rows itself as the turn
+  // runs, and a second writer sending the whole array from here would let a
+  // stale renderer copy overwrite newer text.
+  const lastNotifiedTurnRef = useRef<string | null>(null);
   useEffect(() => {
-    if (pendingConversationUpdateRef.current && props.onConversationUpdate) {
-      const update = pendingConversationUpdateRef.current;
-      pendingConversationUpdateRef.current = null;
-      props.onConversationUpdate(update);
-    }
-  }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
+    const convId = props.conversation?.id;
+    if (!convId || !props.onConversationUpdate) return;
+    if (session.busy || !session.phase) return;
+    const key = `${convId}:${session.phase}`;
+    if (lastNotifiedTurnRef.current === key) return;
+    lastNotifiedTurnRef.current = key;
+    props.onConversationUpdate({ ...props.conversation, id: convId, updated_at: new Date().toISOString() });
+  }, [session.phase, session.busy, props.conversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cleanup: abort any ongoing requests when component unmounts
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
+  // There is deliberately no unmount abort here any more. Aborting on unmount is
+  // what killed a turn whenever the user opened Settings or a document tab; the
+  // stream belongs to the main process now and outlives this component.
 
   // Handle link clicks: web links -> system browser; local file paths -> system default app
   useEffect(() => {
@@ -1419,16 +976,13 @@ export default function Chat(props: {
   const displayMessages = searchQuery.trim() === "" ? messages : filteredMessages;
   // Nothing said yet — and not mid-search or mid-download, both of which have
   // their own things to show in the message area.
-  // Nothing is "empty" until we know what the conversation holds, and that takes
-  // two hops. The parent restores the active tab asynchronously, so on a remount
-  // (navigating back from Settings) `props.conversation` is null for as long as
-  // that read takes — `conversationHydrating` covers it. Then `messages` starts
-  // [] and is filled by an effect that runs after the first paint, so a
-  // conversation whose stored messages haven't reached local state yet isn't
-  // empty either. Without both, the empty view paints first and flicks to the
-  // content of a tab that always had some. Local messages still win: a
-  // just-created conversation whose parent prop momentarily carries none is
-  // already non-empty by the first clause.
+  // Nothing is "empty" until we know what the conversation holds. The parent
+  // restores the active tab asynchronously, so on a remount (navigating back
+  // from Settings) `props.conversation` is null for as long as that read takes;
+  // without `conversationHydrating` the empty view paints first and flicks to
+  // the content of a tab that always had some. `messages` itself no longer lags:
+  // it is derived from the prop and the live session rather than copied into
+  // state by an effect, so it is right on the first render.
   const hydratingContent = props.conversationHydrating
     || (props.conversation?.messages?.length ?? 0) > 0;
   const isEmptyConversation = (displayMessages || []).length === 0
@@ -1512,7 +1066,7 @@ export default function Chat(props: {
             <span className="flex items-center font-mono shrink-0">
               [<span className="mx-[3px]"><StreamingMarker /></span>]
             </span>
-            <span className="truncate"><LiveStatusText /></span>
+            <span className="truncate"><LiveStatusText status={session.lastStatus} phase={session.phase} /></span>
           </span>
         ) : (
           <span className="flex items-center gap-1.5 text-sl-text-disabled min-w-0 overflow-hidden">
@@ -1528,9 +1082,10 @@ export default function Chat(props: {
         onMessageChange={(value) => setFormData({ message: value })}
         onSend={() => sendMessage(null)}
         onStop={() => {
-          if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-          }
+          // A real disconnect in main, not a flag polled between chunks: the
+          // AbortController here was never handed to the SDK, so stopping used
+          // to leave the backend generating to the end.
+          if (conversationIdForSession) chatStream.stop(conversationIdForSession);
         }}
         placeholder={modelDownloadProgress?.downloading
           ? "Waiting for model to be ready..."

@@ -2,7 +2,7 @@
 
 import '../styles/home.css';
 import '../styles/markdown-editor.css';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Box, Dialog, IconButton, CircularProgress, Typography, TextField } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
@@ -14,6 +14,7 @@ import 'easymde/dist/easymde.min.css';
 import { userService } from '@/app/services/user.service';
 import { conversationService } from '@/app/services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useTabActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
@@ -53,6 +54,9 @@ export default function Home() {
     ready: projectsReady,
   } = useProjectContext();
   const { loadPrimaryModel } = useModelStatus();
+  // Keyed by conversation id; the tab strip wants tab ids. Repaints only when a
+  // phase changes, never per token — see useTabActivity.
+  const conversationActivity = useTabActivity();
   const [isLoading, setIsLoading] = useState(true);
   const [chatMessage, setChatMessage] = useState<string | null>(null);
   const [showFileUploadDialog, setShowFileUploadDialog] = useState(false);
@@ -76,6 +80,21 @@ export default function Home() {
   const [deleteProjectError, setDeleteProjectError] = useState('');
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // Conversation ids from the session store, re-keyed to tab ids for the strip.
+  const tabActivity = useMemo(() => {
+    const out: Record<string, any> = {};
+    conversationActivity.forEach((state, conversationId) => {
+      const tabId = `conv-${conversationId}`;
+      // A failed turn is already spelled out in the transcript of the tab you
+      // are looking at, so the marker is only worth carrying on the tabs you are
+      // not. Otherwise it sits there for the rest of the session with nothing to
+      // clear it.
+      if (state === 'error' && tabId === activeTabId) return;
+      out[tabId] = state;
+    });
+    return out;
+  }, [conversationActivity, activeTabId]);
+
   const [projectConversations, setProjectConversations] = useState<any[]>([]);
   const [projectSkills, setProjectSkills] = useState<Array<{ id?: string; name: string; content: string; description?: string }>>([]);
   const [_projectMemory, setProjectMemory] = useState(true);
@@ -1148,14 +1167,23 @@ description: A clear description of what this skill does and when to use it
     const newTabs = openTabs.filter((t) => t.id !== tabId);
     setOpenTabs(newTabs);
 
-    // If it's a real conversation tab, silently delete it — same behavior as the
-    // sidebar delete (handles local + remote and dispatches conversationDeleted),
-    // just without the confirmation dialog.
+    // Closing a tab used to silently delete its conversation. That was already
+    // an unconfirmed, undoable loss one hover-click away; with streams that
+    // outlive the tab it would also delete the row a running turn is writing
+    // into. So: a conversation with a live turn, or with anything in it, simply
+    // has its tab closed. Only a genuinely empty one is cleaned up — which is
+    // the throwaway "New Conversation" case the delete was really there for.
+    // Deleting for real still lives in the sidebar, behind its confirmation.
     if (closedTab?.type === 'conversation') {
       const convId = tabId.replace('conv-', '');
-      if (convId && convId !== 'new') {
-        conversationService.deleteConversation(convId).catch(() => { });
-        setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+      if (convId && convId !== 'new' && !conversationActivity.has(convId)) {
+        // Off the critical path so the tab closes on the click, not on SQLite.
+        (async () => {
+          const msgs = await storageService.getMessages(convId);
+          if (msgs && msgs.length > 0) return;
+          await conversationService.deleteConversation(convId).catch(() => { });
+          setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
+        })();
       }
     }
 
@@ -1188,6 +1216,22 @@ description: A clear description of what this skill does and when to use it
         }
       }
     }
+  };
+
+  // Array order IS tab order, and the debounced save effect above already
+  // persists it under openTabs_<projectId> — so reordering needs no persistence
+  // of its own. Cmd/Ctrl+1..9 indexes the same array, so it follows suit.
+  const handleTabReorder = (tabId: string, toIndex: number) => {
+    setOpenTabs((prev) => {
+      const from = prev.findIndex((t) => t.id === tabId);
+      if (from === -1) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      // toIndex was measured before the removal, so anything past the old
+      // position shifts down by one.
+      next.splice(toIndex > from ? toIndex - 1 : toIndex, 0, moved);
+      return next;
+    });
   };
 
   const getActiveTab = () => openTabs.find((t) => t.id === activeTabId) || null;
@@ -1269,6 +1313,22 @@ description: A clear description of what this skill does and when to use it
         const delta = e.code === 'BracketLeft' ? -1 : 1;
         const nextIndex = (currentIndex + delta + openTabs.length) % openTabs.length;
         selectTabRef.current(openTabs[nextIndex].id);
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+PageUp / PageDown moves the ACTIVE tab, which is Chrome's
+      // own binding for it — and the only way to reorder without a pointer,
+      // since the ARIA grab/drop pattern is deprecated and barely supported.
+      if (e.shiftKey && (e.code === 'PageUp' || e.code === 'PageDown')) {
+        e.preventDefault();
+        if (!activeTabId || openTabs.length < 2) return;
+        const from = openTabs.findIndex((t) => t.id === activeTabId);
+        if (from === -1) return;
+        const to = from + (e.code === 'PageUp' ? -1 : 1);
+        if (to < 0 || to >= openTabs.length) return;
+        // handleTabReorder measures toIndex pre-removal, so moving right needs
+        // the slot past the target rather than the target's own index.
+        handleTabReorder(activeTabId, e.code === 'PageUp' ? to : to + 1);
         return;
       }
 
@@ -1372,14 +1432,20 @@ description: A clear description of what this skill does and when to use it
       );
     }
 
-    // Sync messages to storage
-    if (updatedConversation.id && updatedConversation.messages) {
+    // Messages are NOT written from here any more. The main process writes both
+    // rows of a turn as it streams (electron/chat-stream.js), which is what lets
+    // a turn finish while this page is unmounted. Sending the whole array back
+    // from the renderer would be a second writer, and a renderer holding a stale
+    // copy would overwrite main's newer text with it.
+    //
+    // What is left is to pick up what main wrote, so the sidebar and anything
+    // reading `conversation.messages` sees the finished turn.
+    if (updatedConversation.id) {
       try {
-        await conversationService.updateConversationMessages(
-          updatedConversation.id,
-          updatedConversation.messages
+        const messages = await storageService.getMessages(updatedConversation.id);
+        setConversation((prev: any) =>
+          prev && prev.id === updatedConversation.id ? { ...prev, messages: messages || [] } : prev
         );
-        console.log('[Home] Synced conversation messages');
 
         // Dispatch event to update sidebar conversation list
         window.dispatchEvent(new CustomEvent('conversationUpdated', {
@@ -1395,7 +1461,7 @@ description: A clear description of what this skill does and when to use it
           }
         }
       } catch (error) {
-        console.error('[Home] Failed to sync conversation:', error);
+        console.error('[Home] Failed to refresh conversation:', error);
       }
     }
   };
@@ -1876,6 +1942,8 @@ description: A clear description of what this skill does and when to use it
                     onTabSelect={handleTabSelect}
                     onTabClose={handleCloseTab}
                     onNewConversation={handleStartNewConversation}
+                    activity={tabActivity}
+                    onTabReorder={handleTabReorder}
                   />
                 )}
 
