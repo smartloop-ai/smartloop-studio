@@ -178,6 +178,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         return pick ? pick.name : null;
     }, [pickable, totalRamGb]);
 
+    // No auxiliary model enabled for this project, so only the orchestrator can
+    // answer. Per project, so a fresh install and a new project both get the cue.
+    const showCue = pickable.length > 0 && selected.length === 0 && !disabled && !open;
+
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
     // before it stops being useful. Search matches what a person would actually
@@ -245,6 +249,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             <span className="text-[10px] font-mono opacity-60">{MODELS_HOTKEY}</span>
         </span>
     );
+    const cueTip = 'Only the orchestrator model is loaded. Click here to enable one or more of the recommended models.';
 
     // The row's lifecycle state, as one glyph in the header's action slot —
     // the same place, size and weight as a connection card's link/unlink toggle.
@@ -555,7 +560,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
     return (
         <>
-            <Tooltip title={triggerTip} placement="top" arrow>
+            <Tooltip title={showCue ? cueTip : triggerTip} placement="top" arrow>
                 <button
                     type="button"
                     disabled={disabled}
@@ -565,7 +570,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     // composer's controls line up. The height is the box, not a
                     // by-product of padding + line-height, because those two
                     // drift apart the moment a glyph or font size changes.
-                    className="flex items-center gap-1.5 flex-shrink-0 px-2 border rounded-md max-w-[190px] transition-all text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`flex items-center gap-1.5 flex-shrink-0 px-2 border rounded-md max-w-[190px] transition-all text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-50${showCue ? ' model-cue-ring' : ''}`}
                     style={{
                         height: '28px',
                         boxSizing: 'border-box',
