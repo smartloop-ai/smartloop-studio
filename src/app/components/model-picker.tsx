@@ -24,7 +24,6 @@ import {
     describeFailure,
     isLocked,
     matchTitle,
-    memoryGb,
     memoryPressure,
     modelLabel,
     sizeTier,
@@ -158,24 +157,35 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         [pickable, isEnabled],
     );
 
-    // The one model we badge as the best fit for THIS machine: the largest that
-    // still runs comfortably, so a non-technical user gets the most capable
-    // option their RAM can handle without comparing sizes themselves.
-    const recommendedName: string | null = useMemo(() => {
-        if (!totalRamGb) return null;
+    // The models we badge as the best fit for THIS machine: for each capability,
+    // the lightest model that declares it and runs on this RAM. Any model with a
+    // capability can do that capability's work, so the light one is the right
+    // pick — it loads sooner, answers faster and leaves room for the others,
+    // which is also how the framework now routes a step (smallest capable model
+    // that fits). Low pressure beats Medium beats High; within a bucket the
+    // smaller footprint wins, and a size tie goes to the broader model.
+    const recommendedNames: Set<string> = useMemo(() => {
+        const picks = new Set<string>();
+        if (!totalRamGb) return picks;
+        const bucket = (label: string) => (label === 'Low' ? 0 : label === 'Medium' ? 1 : 2);
         const candidates = pickable
-            .filter((m: any) => {
-                const locked = isLocked(m);
-                return !locked && memoryGb(m) != null;
-            })
-            .map((m: any) => {
-                const gb = memoryGb(m)!;
-                return { name: m.name || m.id || m.model, gb, pct: (gb / totalRamGb) * 100 };
-            });
-        if (!candidates.length) return null;
-        const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
-        const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
-        return pick ? pick.name : null;
+            .filter((m: any) => !isLocked(m))
+            .map((m: any) => ({ m, pressure: memoryPressure(m, totalRamGb) }))
+            .filter((c) => c.pressure?.fits)
+            .sort((a, b) =>
+                bucket(a.pressure!.label) - bucket(b.pressure!.label)
+                || a.pressure!.gb - b.pressure!.gb
+                || (b.m.capabilities || []).length - (a.m.capabilities || []).length,
+            );
+        const covered = new Set<string>();
+        for (const { m } of candidates) {
+            const caps: string[] = m.capabilities || [];
+            if (caps.some((cap) => !covered.has(cap))) {
+                picks.add(m.name || m.id || m.model);
+                caps.forEach((cap) => covered.add(cap));
+            }
+        }
+        return picks;
     }, [pickable, totalRamGb]);
 
     // No auxiliary model enabled for this project, so only the orchestrator can
@@ -432,12 +442,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 )}
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
-                    {name === recommendedName && (
+                    {recommendedNames.has(name) && (
                         <Tag
                             label="Recommended"
                             color="var(--sl-brand-primary)"
                             border="var(--sl-brand-alpha-30)"
-                            tip="Recommended — the best fit for your computer's memory"
+                            tip="Recommended — the lightest model on this computer for what it does, so it loads and answers fastest"
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
