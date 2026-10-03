@@ -24,7 +24,6 @@ import {
     describeFailure,
     isLocked,
     matchTitle,
-    memoryGb,
     memoryPressure,
     modelLabel,
     sizeTier,
@@ -157,26 +156,6 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         () => pickable.filter((m: any) => isEnabled(m.name || m.id || m.model)),
         [pickable, isEnabled],
     );
-
-    // The one model we badge as the best fit for THIS machine: the largest that
-    // still runs comfortably, so a non-technical user gets the most capable
-    // option their RAM can handle without comparing sizes themselves.
-    const recommendedName: string | null = useMemo(() => {
-        if (!totalRamGb) return null;
-        const candidates = pickable
-            .filter((m: any) => {
-                const locked = isLocked(m);
-                return !locked && memoryGb(m) != null;
-            })
-            .map((m: any) => {
-                const gb = memoryGb(m)!;
-                return { name: m.name || m.id || m.model, gb, pct: (gb / totalRamGb) * 100 };
-            });
-        if (!candidates.length) return null;
-        const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
-        const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
-        return pick ? pick.name : null;
-    }, [pickable, totalRamGb]);
 
     // No auxiliary model enabled for this project, so only the orchestrator can
     // answer. Per project, so a fresh install and a new project both get the cue.
@@ -432,12 +411,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 )}
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
-                    {name === recommendedName && (
+                    {m.recommended === true && (
                         <Tag
                             label="Recommended"
                             color="var(--sl-brand-primary)"
                             border="var(--sl-brand-alpha-30)"
-                            tip="Recommended — the best fit for your computer's memory"
+                            tip="Recommended — light on this computer's memory, so it loads and answers fast"
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
