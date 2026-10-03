@@ -1167,23 +1167,14 @@ description: A clear description of what this skill does and when to use it
     const newTabs = openTabs.filter((t) => t.id !== tabId);
     setOpenTabs(newTabs);
 
-    // Closing a tab used to silently delete its conversation. That was already
-    // an unconfirmed, undoable loss one hover-click away; with streams that
-    // outlive the tab it would also delete the row a running turn is writing
-    // into. So: a conversation with a live turn, or with anything in it, simply
-    // has its tab closed. Only a genuinely empty one is cleaned up — which is
-    // the throwaway "New Conversation" case the delete was really there for.
-    // Deleting for real still lives in the sidebar, behind its confirmation.
+    // Closing a conversation tab deletes the conversation, same as the sidebar
+    // delete minus the confirmation. A live turn is aborted by main before the
+    // cascade (db-delete-conversation), so it can't finalize into gone rows.
     if (closedTab?.type === 'conversation') {
       const convId = tabId.replace('conv-', '');
-      if (convId && convId !== 'new' && !conversationActivity.has(convId)) {
-        // Off the critical path so the tab closes on the click, not on SQLite.
-        (async () => {
-          const msgs = await storageService.getMessages(convId);
-          if (msgs && msgs.length > 0) return;
-          await conversationService.deleteConversation(convId).catch(() => { });
-          setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
-        })();
+      if (convId && convId !== 'new') {
+        conversationService.deleteConversation(convId).catch(() => { });
+        setProjectConversations(prev => prev.filter((c: any) => c.id !== convId));
       }
     }
 
@@ -1210,9 +1201,13 @@ description: A clear description of what this skill does and when to use it
           navigate(`/?project=${selectedProject.id}`, { replace: true });
         }
       } else {
+        // Last tab closed: land on a fresh, tabless conversation. `new=1` stops
+        // the URL effect auto-selecting the latest conversation into a new tab.
         setActiveTabId(null);
+        setConversation(null);
+        setChatMessage(null);
         if (selectedProject) {
-          navigate(`/?project=${selectedProject.id}`, { replace: true });
+          navigate(`/?project=${selectedProject.id}&new=1`, { replace: true });
         }
       }
     }
