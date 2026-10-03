@@ -157,31 +157,38 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         [pickable, isEnabled],
     );
 
-    // The models we badge as the best fit for THIS machine: for each capability,
-    // the lightest model that declares it and runs on this RAM. Any model with a
-    // capability can do that capability's work, so the light one is the right
-    // pick — it loads sooner, answers faster and leaves room for the others,
-    // which is also how the framework now routes a step (smallest capable model
-    // that fits). Low pressure beats Medium beats High; within a bucket the
-    // smaller footprint wins, and a size tie goes to the broader model.
+    // The models we badge as the best fit for THIS machine: every capable model
+    // that sits at Low memory pressure here. Any of them loads quickly, answers
+    // fast and leaves room for the others — which is also how the framework
+    // routes a step (smallest capable model that fits). A machine with nothing
+    // at Low still gets a recommendation: for each capability, the lightest
+    // model that declares it and fits (Medium before High).
     const recommendedNames: Set<string> = useMemo(() => {
         const picks = new Set<string>();
         if (!totalRamGb) return picks;
-        const bucket = (label: string) => (label === 'Low' ? 0 : label === 'Medium' ? 1 : 2);
+        const nameOf = (m: any) => m.name || m.id || m.model;
         const candidates = pickable
-            .filter((m: any) => !isLocked(m))
+            .filter((m: any) => !isLocked(m) && (m.capabilities || []).length > 0)
             .map((m: any) => ({ m, pressure: memoryPressure(m, totalRamGb) }))
-            .filter((c) => c.pressure?.fits)
-            .sort((a, b) =>
-                bucket(a.pressure!.label) - bucket(b.pressure!.label)
-                || a.pressure!.gb - b.pressure!.gb
-                || (b.m.capabilities || []).length - (a.m.capabilities || []).length,
-            );
+            .filter((c) => c.pressure?.fits);
+
+        const low = candidates.filter((c) => c.pressure!.label === 'Low');
+        if (low.length) {
+            low.forEach(({ m }) => picks.add(nameOf(m)));
+            return picks;
+        }
+
+        const bucket = (label: string) => (label === 'Medium' ? 0 : 1);
+        candidates.sort((a, b) =>
+            bucket(a.pressure!.label) - bucket(b.pressure!.label)
+            || a.pressure!.gb - b.pressure!.gb
+            || (b.m.capabilities || []).length - (a.m.capabilities || []).length,
+        );
         const covered = new Set<string>();
         for (const { m } of candidates) {
             const caps: string[] = m.capabilities || [];
             if (caps.some((cap) => !covered.has(cap))) {
-                picks.add(m.name || m.id || m.model);
+                picks.add(nameOf(m));
                 caps.forEach((cap) => covered.add(cap));
             }
         }
@@ -447,7 +454,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             label="Recommended"
                             color="var(--sl-brand-primary)"
                             border="var(--sl-brand-alpha-30)"
-                            tip="Recommended — the lightest model on this computer for what it does, so it loads and answers fastest"
+                            tip="Recommended — light on this computer's memory, so it loads and answers fast"
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
