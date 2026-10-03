@@ -157,44 +157,6 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         [pickable, isEnabled],
     );
 
-    // The models we badge as the best fit for THIS machine: every capable model
-    // that sits at Low memory pressure here. Any of them loads quickly, answers
-    // fast and leaves room for the others — which is also how the framework
-    // routes a step (smallest capable model that fits). A machine with nothing
-    // at Low still gets a recommendation: for each capability, the lightest
-    // model that declares it and fits (Medium before High).
-    const recommendedNames: Set<string> = useMemo(() => {
-        const picks = new Set<string>();
-        if (!totalRamGb) return picks;
-        const nameOf = (m: any) => m.name || m.id || m.model;
-        const candidates = pickable
-            .filter((m: any) => !isLocked(m) && (m.capabilities || []).length > 0)
-            .map((m: any) => ({ m, pressure: memoryPressure(m, totalRamGb) }))
-            .filter((c) => c.pressure?.fits);
-
-        const low = candidates.filter((c) => c.pressure!.label === 'Low');
-        if (low.length) {
-            low.forEach(({ m }) => picks.add(nameOf(m)));
-            return picks;
-        }
-
-        const bucket = (label: string) => (label === 'Medium' ? 0 : 1);
-        candidates.sort((a, b) =>
-            bucket(a.pressure!.label) - bucket(b.pressure!.label)
-            || a.pressure!.gb - b.pressure!.gb
-            || (b.m.capabilities || []).length - (a.m.capabilities || []).length,
-        );
-        const covered = new Set<string>();
-        for (const { m } of candidates) {
-            const caps: string[] = m.capabilities || [];
-            if (caps.some((cap) => !covered.has(cap))) {
-                picks.add(nameOf(m));
-                caps.forEach((cap) => covered.add(cap));
-            }
-        }
-        return picks;
-    }, [pickable, totalRamGb]);
-
     // No auxiliary model enabled for this project, so only the orchestrator can
     // answer. Per project, so a fresh install and a new project both get the cue.
     const showCue = pickable.length > 0 && selected.length === 0 && !disabled && !open;
@@ -449,7 +411,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 )}
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
-                    {recommendedNames.has(name) && (
+                    {m.recommended === true && (
                         <Tag
                             label="Recommended"
                             color="var(--sl-brand-primary)"
