@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const database = require('./database');
 const { useBundledSlp, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
 
-const VERSION = '1.2.7';
+const VERSION = '1.2.8';
 // Every packaged build bundles the SLP framework and runs it in place (see
 // getInstalledBinaryPath). This CDN layout is only for the no-bundle fallback,
 // and mirrors install.sh:
@@ -222,10 +222,6 @@ function detectPlatform() {
   if (plat === 'darwin' && arch !== 'arm64') {
     throw new Error('Only Apple Silicon (arm64) is supported on macOS');
   }
-  if (plat === 'linux' && arch !== 'amd64') {
-    throw new Error('Only x86_64 (amd64) is supported on Linux');
-  }
-
   return { plat, arch };
 }
 

@@ -20,7 +20,12 @@ runs:
         # .tar.gz + slp.
         case "${RUNNER_OS:-}" in
           macOS)   PLAT=darwin  ARCH=arm64 EXT=tar.gz BIN=slp ;;
-          Linux)   PLAT=linux   ARCH=amd64 EXT=tar.gz BIN=slp ;;
+          Linux)   PLAT=linux   EXT=tar.gz BIN=slp
+                   case "${RUNNER_ARCH:-}" in
+                     X64)   ARCH=amd64 ;;
+                     ARM64) ARCH=arm64 ;;
+                     *) echo "::error::Unsupported RUNNER_ARCH='${RUNNER_ARCH:-}'"; exit 1 ;;
+                   esac ;;
           Windows) PLAT=windows ARCH=amd64 EXT=zip    BIN=slp.exe ;;
           *) echo "::error::Unsupported RUNNER_OS='${RUNNER_OS:-}'"; exit 1 ;;
         esac
