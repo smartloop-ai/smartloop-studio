@@ -97,7 +97,7 @@ end-to-end. There is no automated test suite.
 make build-electron            # current platform
 make build-electron-mac        # macOS DMG + zip (arm64), signed/notarized
 make build-electron-windows    # Windows NSIS installer
-make build-electron-linux      # Linux AppImage + deb (x64)
+make build-electron-linux      # Linux AppImage + deb (host arch: x64 or arm64)
 make build-electron-mas        # Mac App Store .pkg (sandboxed)
 make push-to-mas BUILD=x.y.z   # stage latest SLP, build MAS .pkg, upload to ASC
 ```
@@ -229,7 +229,7 @@ Artifacts land in `dist/`:
 
 - **macOS**: `studio-<version>-arm64.dmg` / `.zip`; `.pkg` for the App Store
 - **Windows**: `studio-Setup-<version>.exe` (NSIS, assisted installer)
-- **Linux**: `.AppImage` and `.deb` (x64)
+- **Linux**: `.AppImage` and `.deb` (x64, arm64)
 
 For cutting a production release — the GitHub Actions flow, versioning, tagging,
 and publishing to the update feed — see [RELEASING.md](RELEASING.md).

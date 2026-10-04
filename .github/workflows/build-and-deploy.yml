@@ -175,8 +175,18 @@ jobs:
 
   build-linux:
     needs: [notify-start]
-    name: Build for Linux
-    runs-on: ubuntu-latest
+    name: Build for Linux (${{ matrix.arch }})
+    # Native runners per arch: the SLP framework and better-sqlite3 are built
+    # for the host, so arm64 is packaged on an arm64 runner, not cross-built.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout code
@@ -215,15 +225,16 @@ jobs:
           VITE_APP_URL: ${{ secrets.VITE_APP_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # electron-builder names the arm64 feed latest-linux-arm64.yml.
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build
+          name: linux-build-${{ matrix.arch }}
           path: |
             dist/*.AppImage
             dist/*.deb
             dist/*.blockmap
-            dist/latest-linux.yml
+            dist/latest-linux*.yml
           retention-days: 1
 
   build-windows:
@@ -376,7 +387,8 @@ jobs:
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-build
+          pattern: linux-build-*
+          merge-multiple: true
           path: artifacts/linux
 
       - name: Download Windows artifacts
@@ -613,12 +625,14 @@ jobs:
           path: artifacts/macos
           pattern: latest-mac.yml
 
+      # `pattern` matches artifact names, not files inside them, so pull both
+      # Linux builds and pick the feed ymls out below.
       - name: Download Linux yml
         uses: actions/download-artifact@v4
         with:
-          name: linux-build
+          pattern: linux-build-*
+          merge-multiple: true
           path: artifacts/linux
-          pattern: latest-linux.yml
 
       - name: Download Windows yml
         uses: actions/download-artifact@v4
@@ -635,6 +649,7 @@ jobs:
             --output release.json \
             artifacts/macos/latest-mac.yml \
             artifacts/linux/latest-linux.yml \
+            artifacts/linux/latest-linux-arm64.yml \
             artifacts/windows/latest.yml
           echo "--- Release payload ---"
           cat release.json

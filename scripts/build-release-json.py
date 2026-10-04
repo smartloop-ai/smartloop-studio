@@ -2,7 +2,7 @@
 """Build a releases API JSON payload from electron-builder latest*.yml files.
 
 Parses the yml files produced by electron-builder (latest-mac.yml,
-latest-linux.yml, latest.yml) and generates a ReleaseCreate JSON payload
+latest-linux.yml, latest-linux-arm64.yml, latest.yml) and generates a ReleaseCreate JSON payload
 suitable for POSTing to the /v1/releases endpoint.
 
 No third-party dependencies — uses only the Python 3 standard library so it
@@ -30,6 +30,9 @@ from pathlib import Path
 PLATFORM_MAP = {
     "latest-mac.yml": ("darwin", "macos"),
     "latest-linux.yml": ("linux", "linux"),
+    # electron-builder's feed for the arm64 Linux build; arch comes from each
+    # filename, so it lands in the same linux/ CDN directory.
+    "latest-linux-arm64.yml": ("linux", "linux"),
     "latest.yml": ("win32", "windows"),
 }
 
