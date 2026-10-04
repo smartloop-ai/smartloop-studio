@@ -563,7 +563,11 @@ export default function Home() {
     };
   }, [openTabs, activeTabId, selectedProject?.id]);
 
-  // Load conversations for the selected project
+  // Load conversations for the selected project. Loads overlap (project switch,
+  // create/delete events, service ready), so only the latest one may commit —
+  // otherwise a slow read for the previous project lands last and leaves its
+  // conversations in the list.
+  const conversationsLoadSeqRef = useRef(0);
   const loadProjectConversations = async () => {
     const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
 
@@ -571,6 +575,8 @@ export default function Home() {
       projectsList.find((p: any) => p.system === true)?.id;
 
     if (!projectId) return;
+    const seq = ++conversationsLoadSeqRef.current;
+    const isLatest = () => seq === conversationsLoadSeqRef.current;
 
     if (isElectron) {
       // Load from SQLite — include conversations for this project
@@ -587,8 +593,8 @@ export default function Home() {
       // Reload after fixing orphaned conversations
       if (orphaned.length > 0) {
         const updated = await storageService.getConversations(projectId);
-        setProjectConversations(updated);
-      } else {
+        if (isLatest()) setProjectConversations(updated);
+      } else if (isLatest()) {
         setProjectConversations(convos);
       }
     } else {
@@ -626,16 +632,22 @@ export default function Home() {
 
   // When SLP service comes online, reload conversations. Project re-enrichment
   // is handled by ProjectContext (selectedProject is derived from its list).
+  // Registered once, so it goes through a ref — a direct call would run the
+  // first render's loader and reload the initial (system) project's list.
+  const loadProjectConversationsRef = useRef(loadProjectConversations);
+  loadProjectConversationsRef.current = loadProjectConversations;
   useEffect(() => {
-    const handleServiceReady = () => { loadProjectConversations(); };
+    const handleServiceReady = () => { loadProjectConversationsRef.current(); };
     window.addEventListener('slpServiceReady', handleServiceReady);
     return () => {
       window.removeEventListener('slpServiceReady', handleServiceReady);
     };
   }, []);
 
-  // Ctrl+Tab cycles conversations within the project; Ctrl+Shift+Tab cycles
-  // projects. Ctrl (not Cmd) on purpose — Cmd+Tab is the macOS app switcher.
+  // Ctrl+Tab cycles the open conversation tabs; Ctrl+Shift+Tab cycles projects.
+  // Ctrl (not Cmd) on purpose — Cmd+Tab is the macOS app switcher. It walks
+  // openTabs, not projectConversations: navigating to a conversation opens a tab
+  // for it, so cycling the full SQLite list resurrected tabs the user had closed.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.key !== 'Tab') return;
@@ -650,23 +662,15 @@ export default function Home() {
         return;
       }
 
-      if (projectConversations.length > 1) {
-        const currentIndex = projectConversations.findIndex(
-          (c: any) => c.id === conversation?.id
-        );
-        const nextConv = projectConversations[(currentIndex + 1) % projectConversations.length];
-        if (nextConv) {
-          const newUrl = selectedProject
-            ? `/?conversation=${nextConv.id}&project=${selectedProject.id}`
-            : `/?conversation=${nextConv.id}`;
-          navigate(newUrl);
-        }
-      }
+      const convTabs = openTabs.filter((t) => t.type === 'conversation');
+      if (convTabs.length < 2) return;
+      const currentIndex = convTabs.findIndex((t) => t.id === activeTabId);
+      selectTabRef.current(convTabs[(currentIndex + 1) % convTabs.length].id);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projectConversations, conversation, selectedProject, navigate, projectsList, selectProject]);
+  }, [openTabs, activeTabId, selectedProject, projectsList, selectProject]);
 
 
 
