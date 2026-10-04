@@ -81,3 +81,26 @@ export const PROJECT_COLORS = [
 // Default color — uses theme brand; old pink hex kept for backwards-compat mapping
 export const DEFAULT_COLOR = 'var(--sl-brand-alpha-60)';
 export const LEGACY_PINK = '#F472B699';
+
+// ── Model names ────────────────────────────────────────────────────────────
+// Mirrors the framework's smartloop/constants.py, which is the source of truth.
+// Kept here because no endpoint exposes it: /v1/models and /v1/models/workspace
+// both filter the bootstrap model out of their results, and /health reports the
+// model currently loaded rather than which name is the built-in one.
+export const BOOTSTRAP_MODEL = 'sl-mini';
+
+// Legacy short name still recorded in older workspaces and stored selections.
+// The framework accepts it as an alias and normalizes on the way in, so the app
+// has to recognize it too.
+export const BOOTSTRAP_MODEL_ALIASES = ['slp-orchestra-mini'];
+
+/**
+ * Whether `name` is the built-in orchestrator, under its current or legacy name.
+ * Matched exactly, not as a substring: a substring guard is what let the
+ * slp-orchestra-mini → sl-mini rename pass unnoticed.
+ */
+export const isBootstrapModel = (name) => {
+  if (!name) return false;
+  const n = String(name).trim().toLowerCase();
+  return n === BOOTSTRAP_MODEL || BOOTSTRAP_MODEL_ALIASES.includes(n);
+};

@@ -186,7 +186,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   slpInitModel: (modelName, projectId) => ipcRenderer.invoke('slp-init-model', modelName, projectId),
   slpSetModelEnabled: (modelName, enabled, projectId) => ipcRenderer.invoke('slp-set-model-enabled', modelName, enabled, projectId),
   slpLoadModel: (modelName, projectId) => ipcRenderer.invoke('slp-load-model', modelName, projectId),
-  slpCancelModelDownload: (modelName, projectId) => ipcRenderer.invoke('slp-cancel-model-download', modelName, projectId),
+  slpCancelModelDownload: (modelName) => ipcRenderer.invoke('slp-cancel-model-download', modelName),
   slpGetDownloadState: () => ipcRenderer.invoke('slp-get-download-state'),
   // These two return an unsubscribe closure that removes only their own
   // listener. A shared removeAllListeners() would let any unmounting component
@@ -205,6 +205,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('mcp-catalog-updated', handler);
     return () => ipcRenderer.off('mcp-catalog-updated', handler);
+  },
+  // Chat turns. The stream is owned by main, so a conversation keeps collecting
+  // its answer while its tab is in the background — or while the chat component
+  // is not mounted at all. `onChatStreamEvent` follows the unsubscribe-closure
+  // form above for the same reason, doubly so here: a channel-wide
+  // removeAllListeners from one unmounting tab would kill every other
+  // conversation's stream.
+  chatSend: (request) => ipcRenderer.invoke('chat-send', request),
+  chatAbort: (conversationId) => ipcRenderer.invoke('chat-abort', conversationId),
+  chatGetState: () => ipcRenderer.invoke('chat-get-state'),
+  onChatStreamEvent: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('chat-stream-event', handler);
+    return () => ipcRenderer.off('chat-stream-event', handler);
   },
   // SLP version management
   slpListVersions: () => ipcRenderer.invoke('slp-list-versions'),
@@ -227,14 +241,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeHealthUpdateListener: () => {
     ipcRenderer.removeAllListeners('health-update');
-  },
-  // Transient agent-restarting signal (e.g. during a Clean). Kept off the global
-  // health-update channel so it doesn't trigger project/UI reconciles.
-  onAgentRestarting: (callback) => {
-    ipcRenderer.on('agent-restarting', (event, data) => callback(data));
-  },
-  removeAgentRestartingListener: () => {
-    ipcRenderer.removeAllListeners('agent-restarting');
   },
   // App release / update check
   getLatestRelease: () => ipcRenderer.invoke('release-get-latest'),
@@ -331,7 +337,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getConversations: (projectId, order) => ipcRenderer.invoke('db-get-conversations', projectId, order),
     updateConversation: (id, updates) => ipcRenderer.invoke('db-update-conversation', id, updates),
     deleteConversation: (id) => ipcRenderer.invoke('db-delete-conversation', id),
-    deleteConversationsByProject: (projectId) => ipcRenderer.invoke('db-delete-conversations-by-project', projectId),
     selectConversation: (id) => ipcRenderer.invoke('db-select-conversation', id),
     clearSelectedConversation: () => ipcRenderer.invoke('db-clear-selected-conversation'),
     getSelectedConversation: () => ipcRenderer.invoke('db-get-selected-conversation'),

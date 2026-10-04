@@ -328,13 +328,16 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [projectId]);
 
+  // Ask SLP to stop; don't clear anything here. The download ends the way every
+  // other download ends — with main's terminal progress event — so every mounted
+  // view drops its ring together instead of only the one that was clicked. It
+  // also means a cancel SLP refused leaves the ring up, which is the truth: the
+  // transfer is still running.
   const handleCancelDownload = useCallback(async (modelName: string) => {
     const api = window.electronAPI;
     if (!modelName || !api?.slpCancelModelDownload) return;
-    await api.slpCancelModelDownload(modelName, projectId);
-    clearAuxDownload(modelName);
-    await fetchLocalModels();
-  }, [fetchLocalModels, projectId, clearAuxDownload]);
+    await api.slpCancelModelDownload(modelName);
+  }, []);
 
   const handleToggleModel = useCallback(async (name: string, workspaceName: string, enabled: boolean) => {
     const api = window.electronAPI;
@@ -361,7 +364,11 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       // enables anything, so drop the optimistic override with it — otherwise the
       // row reads as on until the next list refresh contradicts it.
       if (res && res.success === false) {
-        setDownloadError(name, res.error || 'Download failed', !!res.requiresAuth, res.detail, res.code);
+        // A cancel takes the same exit — nothing was enabled — but it is not a
+        // failure and must not leave a reason on the card. The override still goes.
+        if (!res.cancelled) {
+          setDownloadError(name, res.error || 'Download failed', !!res.requiresAuth, res.detail, res.code);
+        }
         setEnabledOverrides(prev => { const next = new Map(prev); next.delete(name); return next; });
       }
       if (!stillDownloading) await fetchLocalModels();

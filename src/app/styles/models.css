@@ -10,3 +10,20 @@
     0%, 100% { box-shadow: 0 0 0 1px var(--sl-brand-alpha-40); }
     50% { box-shadow: 0 0 0 1px var(--sl-brand-primary); }
 }
+
+/* Cue on the model pill while a project has no auxiliary model enabled: a
+   brand ring that swells outward and fades. A steady inner ring keeps the
+   pill outlined between pulses. */
+.model-cue-ring {
+    animation: modelCuePulse 2.2s ease-out infinite;
+}
+
+@keyframes modelCuePulse {
+    0% { box-shadow: 0 0 0 1px var(--sl-brand-primary), 0 0 0 0 var(--sl-brand-alpha-40); }
+    70% { box-shadow: 0 0 0 1px var(--sl-brand-primary), 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 1px var(--sl-brand-primary), 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .model-cue-ring { animation: none; box-shadow: 0 0 0 1px var(--sl-brand-primary); }
+}

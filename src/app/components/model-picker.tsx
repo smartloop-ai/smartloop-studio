@@ -24,7 +24,6 @@ import {
     describeFailure,
     isLocked,
     matchTitle,
-    memoryGb,
     memoryPressure,
     modelLabel,
     sizeTier,
@@ -82,7 +81,7 @@ function Tag({ label, color, border, tip, icon }: { label: string; color: string
  * well before the list stops being useful.
  */
 export default function ModelPicker({ model, disabled = false }: ModelPickerProps) {
-    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel } = useLocalModels();
+    const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel, handleCancelDownload } = useLocalModels();
     const [user] = useAuthContext();
 
     const [open, setOpen] = useState(false);
@@ -158,25 +157,9 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         [pickable, isEnabled],
     );
 
-    // The one model we badge as the best fit for THIS machine: the largest that
-    // still runs comfortably, so a non-technical user gets the most capable
-    // option their RAM can handle without comparing sizes themselves.
-    const recommendedName: string | null = useMemo(() => {
-        if (!totalRamGb) return null;
-        const candidates = pickable
-            .filter((m: any) => {
-                const locked = isLocked(m);
-                return !locked && memoryGb(m) != null;
-            })
-            .map((m: any) => {
-                const gb = memoryGb(m)!;
-                return { name: m.name || m.id || m.model, gb, pct: (gb / totalRamGb) * 100 };
-            });
-        if (!candidates.length) return null;
-        const comfy = candidates.filter((c) => c.pct < 40).sort((a, b) => b.gb - a.gb);
-        const pick = comfy[0] || candidates.filter((c) => c.pct < 80).sort((a, b) => a.gb - b.gb)[0];
-        return pick ? pick.name : null;
-    }, [pickable, totalRamGb]);
+    // No auxiliary model enabled for this project, so only the orchestrator can
+    // answer. Per project, so a fresh install and a new project both get the cue.
+    const showCue = pickable.length > 0 && selected.length === 0 && !disabled && !open;
 
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
@@ -245,6 +228,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             <span className="text-[10px] font-mono opacity-60">{MODELS_HOTKEY}</span>
         </span>
     );
+    const cueTip = 'Only the orchestrator model is loaded. Click here to enable one or more of the recommended models.';
 
     // The row's lifecycle state, as one glyph in the header's action slot —
     // the same place, size and weight as a connection card's link/unlink toggle.
@@ -254,12 +238,45 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
     const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
-        // Downloading. No cancel affordance: aborting the HTTP request left the
-        // backend downloading anyway, so the X stopped the progress stream and
-        // nothing else — a control that looked like it stopped the download and
-        // didn't.
+        // Downloading, and a way out of it. Weights are gigabytes, so a click
+        // made by mistake otherwise commits the machine to the whole transfer.
+        // The spinner and the stop are one control — a square inside the turning
+        // ring, as on a connection card (mcp-catalog-item.tsx) — so the slot
+        // still holds exactly one thing to aim at. Indeterminate on purpose:
+        // the percentage is spelled out in the bar below, and a second readout
+        // of the same number in the same card says nothing extra.
         if (st.busy) {
-            return <CircularProgress size={12} sx={{ color: 'var(--sl-brand-primary)' }} />;
+            return (
+                <Tooltip title="Stop downloading" arrow placement="top">
+                    <IconButton
+                        size="small"
+                        onClick={(e) => { e.stopPropagation(); handleCancelDownload(st.name); }}
+                        sx={{
+                            color: 'var(--sl-brand-primary)',
+                            padding: '2px',
+                            '&:hover': { color: 'var(--sl-status-error)' },
+                        }}
+                    >
+                        <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14 }}>
+                            {/* Static track, so the ring reads as a ring rather
+                                than a lone arc chasing itself around nothing. */}
+                            <CircularProgress
+                                variant="determinate"
+                                value={100}
+                                size={14}
+                                thickness={2.5}
+                                sx={{ color: 'currentColor', opacity: 0.2, position: 'absolute' }}
+                            />
+                            <CircularProgress
+                                size={14}
+                                thickness={2.5}
+                                sx={{ color: 'currentColor', position: 'absolute' }}
+                            />
+                            <Box sx={{ width: 5, height: 5, borderRadius: '1px', backgroundColor: 'currentColor' }} />
+                        </Box>
+                    </IconButton>
+                </Tooltip>
+            );
         }
 
         if (st.locked) {
@@ -394,12 +411,12 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 )}
 
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mt: '8px' }}>
-                    {name === recommendedName && (
+                    {m.recommended === true && (
                         <Tag
                             label="Recommended"
                             color="var(--sl-brand-primary)"
                             border="var(--sl-brand-alpha-30)"
-                            tip="Recommended — the best fit for your computer's memory"
+                            tip="Recommended — light on this computer's memory, so it loads and answers fast"
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
@@ -522,7 +539,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
     return (
         <>
-            <Tooltip title={triggerTip} placement="top" arrow>
+            <Tooltip title={showCue ? cueTip : triggerTip} placement="top" arrow>
                 <button
                     type="button"
                     disabled={disabled}
@@ -532,7 +549,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     // composer's controls line up. The height is the box, not a
                     // by-product of padding + line-height, because those two
                     // drift apart the moment a glyph or font size changes.
-                    className="flex items-center gap-1.5 flex-shrink-0 px-2 border rounded-md max-w-[190px] transition-all text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`flex items-center gap-1.5 flex-shrink-0 px-2 border rounded-md max-w-[190px] transition-all text-xs leading-4 disabled:cursor-not-allowed disabled:opacity-50${showCue ? ' model-cue-ring' : ''}`}
                     style={{
                         height: '28px',
                         boxSizing: 'border-box',
