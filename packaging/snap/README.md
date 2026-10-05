@@ -20,22 +20,29 @@ packaging/snap/
 Driven from the repo-root `Makefile`, alongside the other release targets:
 
 ```bash
-make build-snap                       # download the published Linux .deb + pack the snap
-make push-to-snap                     # ...and upload it to latest/stable
+make build-snap                       # download the published Linux .debs + pack amd64 and arm64 snaps
+make push-to-snap                     # ...and upload both to latest/stable
 make push-to-snap SNAP_CHANNEL=beta   # release to another channel
-make build-snap FORCE=1               # re-download even if the staged .deb matches
-make clean-snap                       # drop lifecycle dirs, staged .deb, packed .snap
+make build-snap SNAP_ARCHES=arm64     # only one architecture
+make build-snap FORCE=1               # re-download even if the staged .debs match
+make clean-snap                       # drop lifecycle dirs, staged .debs, packed .snaps
 ```
 
 `make build-snap`:
 
-1. downloads `https://dl.smartloop.ai/<version>/linux/studio-<version>-amd64.deb`
+1. for each arch in `SNAP_ARCHES` (default `amd64 arm64`), downloads
+   `https://dl.smartloop.ai/<version>/linux/studio-<version>-<arch>.deb`
    — the .deb CI built for the version in `package.json` — to
-   `packaging/snap/studio-amd64.deb` (snapcraft only sees files inside its own
+   `packaging/snap/studio-<arch>.deb` (snapcraft only sees files inside its own
    project dir), skipping the download when the staged .deb is already that
    version,
 2. syncs `version:` in `snapcraft.yaml` from `package.json`, and
-3. runs `snapcraft clean && snapcraft pack`.
+3. runs `snapcraft clean --platform <arch> && snapcraft pack --platform <arch>`
+   per arch. arm64 is cross-packed on an amd64 host — nothing is compiled, the
+   part just unpacks the prebuilt arm64 .deb and pulls arm64 stage-packages.
+
+`make push-to-snap` uploads each `smartloop-studio_<version>_<arch>.snap`
+separately; the store tracks revisions per architecture.
 
 The snap wraps the **CI-published** .deb, so the store ships the same bytes as
 every other Linux download and no local Electron build is needed. The trade-off:

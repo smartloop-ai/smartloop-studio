@@ -348,20 +348,22 @@ push-to-mas: stage-slp-latest stage-model stage-template install-deps rebuild-na
 # local Electron build (no staged SLP framework, no 8 GB of dist/ artifacts).
 # Cut the snap *after* the release workflow has uploaded the version.
 #
-#   make build-snap                      # download the published .deb + pack the snap
-#   make push-to-snap                    # ...and upload it to latest/stable
+#   make build-snap                      # download the published .debs + pack amd64 and arm64 snaps
+#   make push-to-snap                    # ...and upload both to latest/stable
 #   make push-to-snap SNAP_CHANNEL=beta  # release to another channel
-#   make build-snap FORCE=1              # re-download even if the staged .deb matches
+#   make build-snap SNAP_ARCHES=arm64    # only one architecture
+#   make build-snap FORCE=1              # re-download even if the staged .debs match
 #
 # Prerequisites:
 #   • snapcraft with an initialized LXD build provider (sudo snap install
 #     snapcraft --classic; lxd init; usermod -aG lxd $USER)
 #   • `snapcraft login` for the upload
 #   • package.json's version published at $(DL_BASE_URL)/<version>/linux/
-# Packing takes a while and needs several GB of free disk.
+# Packing takes a while and needs several GB of free disk per architecture.
 SNAP_DIR      = packaging/snap
 SNAP_NAME     = smartloop-studio
-SNAP_ARCH     = amd64
+# Each must be a platform in snapcraft.yaml and have a published .deb.
+SNAP_ARCHES  ?= amd64 arm64
 SNAP_CHANNEL ?= stable
 SNAP_YAML     = $(SNAP_DIR)/snap/snapcraft.yaml
 # package.json is the single source of truth for the marketing version;
@@ -370,45 +372,47 @@ APP_VERSION  := $(shell grep -m1 '"version"' package.json | sed 's/.*: *"\([^"]*
 # Where CI publishes the release artifacts — same layout the auto-updater uses:
 # <base>/<version>/linux/studio-<version>-<arch>.deb
 DL_BASE_URL  ?= https://dl.smartloop.ai
-SNAP_DEB_URL  = $(DL_BASE_URL)/$(APP_VERSION)/linux/studio-$(APP_VERSION)-$(SNAP_ARCH).deb
-# Staged under a version-free name so `version:` is the only line that changes
-# in snapcraft.yaml from one release to the next.
-SNAP_DEB      = $(SNAP_DIR)/studio-$(SNAP_ARCH).deb
-SNAP_FILE     = $(SNAP_DIR)/$(SNAP_NAME)_$(APP_VERSION)_$(SNAP_ARCH).snap
+# Each .deb is staged as studio-<arch>.deb — a version-free name, so `version:`
+# is the only line that changes in snapcraft.yaml between releases.
+SNAP_FILES    = $(foreach a,$(SNAP_ARCHES),$(SNAP_DIR)/$(SNAP_NAME)_$(APP_VERSION)_$(a).snap)
 
-# Download the published .deb to where snapcraft can reach it and sync the
-# version. snapcraft only sees files inside its own project dir, so the .deb has
-# to land in packaging/snap/ rather than being referenced from elsewhere.
-# Re-downloading is skipped when the staged .deb is already this version; pass
-# FORCE=1 to fetch it again (e.g. after CI re-published the same version).
+# Download each arch's published .deb to where snapcraft can reach it and sync
+# the version. snapcraft only sees files inside its own project dir, so the .debs
+# have to land in packaging/snap/ rather than being referenced from elsewhere.
+# Re-downloading is skipped when a staged .deb is already this version; pass
+# FORCE=1 to fetch again (e.g. after CI re-published the same version).
 stage-snap-deb:
-	@if [ -z "$(FORCE)" ] && [ -s "$(SNAP_DEB)" ] && \
-	    [ "$$(dpkg-deb -f '$(SNAP_DEB)' Version 2>/dev/null)" = "$(APP_VERSION)" ]; then \
-		echo "📦 $(SNAP_DEB) is already $(APP_VERSION) — skipping download (FORCE=1 to re-fetch)"; \
-	else \
-		echo "⬇️  Downloading $(SNAP_DEB_URL)"; \
-		curl -fL --retry 3 --retry-delay 2 --progress-bar \
-			-o "$(SNAP_DEB).part" "$(SNAP_DEB_URL)" || { \
-			rm -f "$(SNAP_DEB).part"; \
-			echo "❌ Download failed — has CI published $(APP_VERSION) to $(DL_BASE_URL) yet?"; \
+	@set -e; for arch in $(SNAP_ARCHES); do \
+		deb="$(SNAP_DIR)/studio-$$arch.deb"; \
+		url="$(DL_BASE_URL)/$(APP_VERSION)/linux/studio-$(APP_VERSION)-$$arch.deb"; \
+		if [ -z "$(FORCE)" ] && [ -s "$$deb" ] && \
+		    [ "$$(dpkg-deb -f "$$deb" Version 2>/dev/null)" = "$(APP_VERSION)" ] && \
+		    [ "$$(dpkg-deb -f "$$deb" Architecture 2>/dev/null)" = "$$arch" ]; then \
+			echo "📦 $$deb is already $(APP_VERSION) — skipping download (FORCE=1 to re-fetch)"; \
+			continue; \
+		fi; \
+		echo "⬇️  Downloading $$url"; \
+		curl -fL --retry 3 --retry-delay 2 --progress-bar -o "$$deb.part" "$$url" || { \
+			rm -f "$$deb.part"; \
+			echo "❌ Download failed — has CI published $(APP_VERSION) $$arch to $(DL_BASE_URL) yet?"; \
 			exit 1; }; \
-		if command -v dpkg-deb >/dev/null 2>&1 && ! dpkg-deb -f "$(SNAP_DEB).part" Version >/dev/null 2>&1; then \
-			rm -f "$(SNAP_DEB).part"; \
-			echo "❌ $(SNAP_DEB_URL) is not a .deb — the CDN likely returned an error page"; \
+		if command -v dpkg-deb >/dev/null 2>&1 && ! dpkg-deb -f "$$deb.part" Version >/dev/null 2>&1; then \
+			rm -f "$$deb.part"; \
+			echo "❌ $$url is not a .deb — the CDN likely returned an error page"; \
 			exit 1; \
 		fi; \
-		mv -f "$(SNAP_DEB).part" "$(SNAP_DEB)"; \
-		echo "📦 Staged $(SNAP_DEB) ($$(du -h '$(SNAP_DEB)' | cut -f1))"; \
-	fi
+		mv -f "$$deb.part" "$$deb"; \
+		echo "📦 Staged $$deb ($$(du -h "$$deb" | cut -f1))"; \
+	done
 	@sed -i -e "s|^version: .*|version: $(APP_VERSION)|" "$(SNAP_YAML)"
 	@grep -q "^version: $(APP_VERSION)$$" "$(SNAP_YAML)" || { echo "❌ Version bump to $(APP_VERSION) failed in $(SNAP_YAML)"; exit 1; }
 	@echo "🔖 $(SNAP_YAML) pinned to version $(APP_VERSION)"
 
-# Pack the snap from the staged .deb. `snapcraft clean` first: the dump part is
-# keyed on the source path, which never changes between versions, so a stale pull
-# would otherwise repackage the previous release's .deb.
+# Pack one snap per arch from the staged .debs. `snapcraft clean` first: the dump
+# part is keyed on the source path, which never changes between versions, so a
+# stale pull would otherwise repackage the previous release's .deb.
 #
-# The pack is retried once because craft-providers warms a cold LXD instance up
+# Each pack is retried once because craft-providers warms a cold LXD instance up
 # by running `snap unset system proxy.http` inside it under a hard 60s timeout,
 # and snapd here regularly takes longer than that to apply its first config
 # change — snapcraft then dies with `snapcraft internal error: TimeoutExpired`.
@@ -417,28 +421,34 @@ stage-snap-deb:
 # during warmup, before any source is pulled, so the clean above still holds.
 build-snap: stage-snap-deb
 	@command -v snapcraft >/dev/null || { echo "❌ snapcraft not installed — sudo snap install snapcraft --classic"; exit 1; }
-	@echo "🐧 Packing $(SNAP_NAME) $(APP_VERSION) — this takes a while..."
-	cd $(SNAP_DIR) && snapcraft clean
-	@cd $(SNAP_DIR) && snapcraft pack || { \
-		echo "⚠️  snapcraft failed (often the 60s LXD warm-up timeout) — retrying once..."; \
-		snapcraft pack; }
-	@if [ ! -s "$(SNAP_FILE)" ]; then echo "❌ snapcraft did not produce $(SNAP_FILE)"; exit 1; fi
-	@echo "✅ Built $$(du -h '$(SNAP_FILE)' | cut -f1) → $(SNAP_FILE)"
+	@set -e; for arch in $(SNAP_ARCHES); do \
+		echo "🐧 Packing $(SNAP_NAME) $(APP_VERSION) for $$arch — this takes a while..."; \
+		(cd $(SNAP_DIR) && snapcraft clean --platform $$arch); \
+		(cd $(SNAP_DIR) && snapcraft pack --platform $$arch) || { \
+			echo "⚠️  snapcraft failed (often the 60s LXD warm-up timeout) — retrying once..."; \
+			(cd $(SNAP_DIR) && snapcraft pack --platform $$arch); }; \
+		file="$(SNAP_DIR)/$(SNAP_NAME)_$(APP_VERSION)_$$arch.snap"; \
+		if [ ! -s "$$file" ]; then echo "❌ snapcraft did not produce $$file"; exit 1; fi; \
+		echo "✅ Built $$(du -h "$$file" | cut -f1) → $$file"; \
+	done
 
-# Build and publish in one step. --release makes the new revision current on
-# that channel as part of the upload, so there is no separate release call.
+# Build and publish in one step. --release makes each new revision current on
+# that channel as part of the upload, so there is no separate release call. The
+# store tracks revisions per architecture, so each snap is uploaded separately.
 push-to-snap: build-snap
 	@snapcraft whoami >/dev/null 2>&1 || { echo "❌ Not logged in to the Snap Store — run: snapcraft login"; exit 1; }
-	@echo "⬆️  Uploading $(SNAP_FILE) → latest/$(SNAP_CHANNEL)"
-	snapcraft upload --release=$(SNAP_CHANNEL) "$(SNAP_FILE)"
+	@set -e; for file in $(SNAP_FILES); do \
+		echo "⬆️  Uploading $$file → latest/$(SNAP_CHANNEL)"; \
+		snapcraft upload --release=$(SNAP_CHANNEL) "$$file"; \
+	done
 	@snapcraft status $(SNAP_NAME) || true
-	@echo "✅ $(SNAP_NAME) $(APP_VERSION) is live on latest/$(SNAP_CHANNEL)"
+	@echo "✅ $(SNAP_NAME) $(APP_VERSION) ($(SNAP_ARCHES)) is live on latest/$(SNAP_CHANNEL)"
 
 # Drop the snapcraft lifecycle dirs plus the staged .deb and packed .snap.
 clean-snap:
 	@echo "🧹 Cleaning snap build artifacts..."
 	@cd $(SNAP_DIR) && snapcraft clean >/dev/null 2>&1 || true
-	@rm -f $(SNAP_DIR)/*.snap "$(SNAP_DEB)" "$(SNAP_DEB).part"
+	@rm -f $(SNAP_DIR)/*.snap $(SNAP_DIR)/studio-*.deb $(SNAP_DIR)/studio-*.deb.part
 	@echo "✅ Snap artifacts cleaned"
 
 # Run Electron app in development mode.

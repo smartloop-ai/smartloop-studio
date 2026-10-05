@@ -41,17 +41,23 @@ website: https://smartloop.ai
 contact: support@smartloop.ai
 
 # Kept in sync with package.json by `make build-snap` — don't hand-edit.
-version: 1.0.45
+version: 1.0.54
 base: core24
 grade: stable
 confinement: strict
 license: Proprietary
 icon: snap/icon.png
 
+# One snap per architecture, each wrapping the matching published .deb. arm64
+# is cross-packed on an amd64 host (nothing is compiled — the part only unpacks
+# a prebuilt .deb and pulls arm64 stage-packages), or natively on arm64.
 platforms:
   amd64:
     build-on: [amd64]
     build-for: [amd64]
+  arm64:
+    build-on: [amd64, arm64]
+    build-for: [arm64]
 
 apps:
   smartloop-studio:
@@ -101,8 +107,10 @@ parts:
     # this file — craft-parts resolves local sources against the directory
     # snapcraft was invoked from. The filename is deliberately version-free so
     # only `version:` above changes between releases; the Makefile builds the
-    # versioned download URL instead.
-    source: studio-amd64.deb
+    # versioned download URL instead. Each platform wraps its own arch's .deb.
+    source:
+      - to amd64: studio-amd64.deb
+      - to arm64: studio-arm64.deb
     source-type: deb
     override-build: |
       craftctl default
