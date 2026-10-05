@@ -886,11 +886,14 @@ export default function Chat(props: {
     const convId = props.conversation?.id;
     if (!convId || !props.onConversationUpdate) return;
     if (session.busy || !session.phase) return;
-    const key = `${convId}:${session.phase}`;
+    // Keyed per turn: every turn ends in the same phase, so conv:phase alone
+    // would skip the reload after the first, and the next send would replace
+    // the only copy of that turn on screen.
+    const key = `${convId}:${session.userMessageId}:${session.phase}`;
     if (lastNotifiedTurnRef.current === key) return;
     lastNotifiedTurnRef.current = key;
     props.onConversationUpdate({ ...props.conversation, id: convId, updated_at: new Date().toISOString() });
-  }, [session.phase, session.busy, props.conversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session.phase, session.busy, session.userMessageId, props.conversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // There is deliberately no unmount abort here any more. Aborting on unmount is
   // what killed a turn whenever the user opened Settings or a document tab; the
