@@ -84,6 +84,10 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
   // OAuth window opened for this slug — waiting on the callback
   const [awaitingAuthSlug, setAwaitingAuthSlug] = useState<string | null>(null);
   const [catalogItemError, setCatalogItemError] = useState<{ slug: string; message: string } | null>(null);
+  // Entry whose credential dialog is open — set for entries that connect with a
+  // pasted credential (credential_fields) instead of a browser OAuth flow.
+  const [credentialEntry, setCredentialEntry] = useState<McpCatalogEntry | null>(null);
+  const [credentialError, setCredentialError] = useState('');
 
   // Last API-backed list per project. Switching back repaints from this in the
   // same tick, so the connected badges, disconnect button and tool counts are
@@ -117,6 +121,8 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     setIsAddingMcp(false);
     setMcpError('');
     setMcpUrlInput('');
+    setCredentialEntry(null);
+    setCredentialError('');
   }, [projectId]);
 
   // System servers appear only in the projects-list payload, never from the /mcp
@@ -425,10 +431,51 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
 
 
   // Connect a curated catalog entry — same remote registration path as the URL
-  // box, using the entry's own server_url.
+  // box, using the entry's own server_url. An entry that needs a pasted
+  // credential opens its dialog first; the dialog's submit connects it.
   const handleConnectCatalogEntry = async (entry: McpCatalogEntry) => {
+    if (entry.remote_config?.credential_fields?.length) {
+      setCatalogItemError(null);
+      setCredentialError('');
+      setCredentialEntry(entry);
+      return;
+    }
+    await connectCatalogEntry(entry);
+  };
+
+  const handleSubmitCatalogCredentials = async (credentials: Record<string, string>) => {
+    if (!credentialEntry) return;
+    setCredentialError('');
+    const error = await connectCatalogEntry(credentialEntry, credentials);
+    if (error) {
+      setCredentialError(error);
+    } else {
+      setCredentialEntry(null);
+    }
+  };
+
+  const handleCloseCredentialDialog = () => {
+    setCredentialEntry(null);
+    setCredentialError('');
+  };
+
+  /**
+   * Register *entry*, opening the browser when it answers with OAuth. Returns
+   * the error message on failure, or null. A failure is shown on the tile —
+   * unless credentials were supplied, when the caller shows it in the dialog
+   * so the value can be corrected without starting over.
+   */
+  const connectCatalogEntry = async (
+    entry: McpCatalogEntry,
+    credentials?: Record<string, string>,
+  ): Promise<string | null> => {
     const serverUrl = entry.remote_config?.server_url;
-    if (!projectId || !serverUrl) return;
+    if (!projectId || !serverUrl) return null;
+
+    const fail = (message: string) => {
+      if (!credentials) setCatalogItemError({ slug: entry.slug, message });
+      return message;
+    };
 
     cancelledAuthRef.current.delete(entry.slug);
     setCatalogItemError(null);
@@ -444,11 +491,11 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
         server_url: serverUrl,
         name: entry.display_name,
         return_url: 'smartloop://mcp-authorization',
+        credentials,
       });
 
       if (!result.success || !result.data) {
-        setCatalogItemError({ slug: entry.slug, message: result.error || 'Failed to connect' });
-        return;
+        return fail(result.error || 'Failed to connect');
       }
 
       const data = result.data as Record<string, any>;
@@ -457,7 +504,7 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
         // Cancelled while the registration request was still in flight: don't
         // re-arm the wait, and above all don't open a browser the user has
         // just said they don't want.
-        if (cancelledAuthRef.current.has(entry.slug)) return;
+        if (cancelledAuthRef.current.has(entry.slug)) return null;
 
         mcpServerCountRef.current = apiMcpServers.length;
         setMcpPolling(true);
@@ -483,9 +530,10 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
         await loadMcpServers();
         if (serverId) setDiscoveringServerId(serverId);
       }
+      return null;
     } catch (error: any) {
       console.error('[MCP] Error connecting catalog entry:', error);
-      setCatalogItemError({ slug: entry.slug, message: error.message || 'An error occurred' });
+      return fail(error.message || 'An error occurred');
     } finally {
       setConnectingSlug(null);
     }
@@ -593,6 +641,11 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     mcpDeleteError,
     catalogError,
     catalogItemError,
+    // Credential dialog for entries connected with a pasted credential
+    credentialEntry,
+    credentialError,
+    handleSubmitCatalogCredentials,
+    handleCloseCredentialDialog,
     // Actions
     handleAddMcpUrl,
     handleConnectCatalogEntry,

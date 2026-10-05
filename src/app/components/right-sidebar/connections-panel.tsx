@@ -2,6 +2,7 @@ import { Box, CircularProgress } from '@mui/material';
 import { normalizeMcpUrl } from '@/app/services/mcp-server.service';
 import McpServerItem from '../mcp-server-item';
 import McpCatalogItem from '../mcp-catalog-item';
+import McpCredentialDialog from '../mcp-credential-dialog';
 import { McpSectionState } from './use-mcp-servers';
 
 /**
@@ -15,6 +16,14 @@ import { McpSectionState } from './use-mcp-servers';
 export default function ConnectionsPanel({ mcp, projectId }: { mcp: McpSectionState; projectId?: string }) {
   return (
     <div className="space-y-3">
+      <McpCredentialDialog
+        entry={mcp.credentialEntry}
+        submitting={!!mcp.credentialEntry && mcp.connectingSlug === mcp.credentialEntry.slug}
+        error={mcp.credentialError}
+        onClose={mcp.handleCloseCredentialDialog}
+        onSubmit={mcp.handleSubmitCatalogCredentials}
+      />
+
       {/* Intro — what connections are, in the spirit of Claude Desktop */}
       <p className="m-0 px-1 text-[11px] leading-relaxed text-sl-text-muted">
         Connections let your assistant work with tools and data beyond this app. Connect one below to give it new capabilities through an MCP (Model Context Protocol) server.
