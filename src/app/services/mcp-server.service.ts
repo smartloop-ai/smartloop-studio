@@ -145,13 +145,38 @@ interface McpServerServiceResponse {
   error?: string;
 }
 
-/** A curated connection from GET /v1/mcp-catalog — always remote + OAuth. */
+/**
+ * One value a catalog entry needs the user to paste before it can connect —
+ * e.g. GitHub's personal access token. Describes the prompt, never the secret.
+ */
+export interface McpCredentialField {
+  /** The register request field the value is sent as, e.g. "token". */
+  key: string;
+  label: string;
+  /** What to paste and, for a token, which access it needs. */
+  help?: string | null;
+  /** Where to create the credential. */
+  help_url?: string | null;
+  /** Mask on entry. */
+  secret?: boolean;
+  required?: boolean;
+}
+
+/**
+ * A curated connection from GET /v1/mcp-catalog — always remote. Connected by
+ * OAuth, or by pasting a credential when `auth_type` is "token" and
+ * `credential_fields` says what to ask for.
+ */
 export interface McpCatalogEntry {
   slug: string;
   display_name: string;
   description?: string;
   hosted_by?: 'external' | 'internal';
-  remote_config: { server_url: string; auth_type?: string };
+  remote_config: {
+    server_url: string;
+    auth_type?: 'oauth' | 'token' | 'none' | string;
+    credential_fields?: McpCredentialField[];
+  };
   icon_url?: string;
   category?: string;
   tags?: string[];
@@ -430,6 +455,10 @@ const registerMcpServer = async (projectId: string, options: {
    *  the server URL, description and tags from the catalog, so curated copy
    *  can't drift; server_url is still sent as the fallback. */
   catalog_slug?: string;
+  /** Values a catalog entry's credential_fields asked for, keyed by field key
+   *  (e.g. { token }). Sent as request fields, so a new kind of credential
+   *  needs no change here. */
+  credentials?: Record<string, string>;
 }): Promise<McpServerServiceResponse> => {
   try {
     if (!projectId) {
@@ -458,6 +487,9 @@ const registerMcpServer = async (projectId: string, options: {
     if (options.token) body.token = options.token.trim();
     if (options.return_url) body.return_url = options.return_url;
     if (options.catalog_slug) body.catalog_slug = options.catalog_slug;
+    for (const [key, value] of Object.entries(options.credentials || {})) {
+      if (value?.trim()) body[key] = value.trim();
+    }
 
     const response = await fetch(apiUrl, {
       method: 'POST',
