@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 const database = require('./database');
 const { useBundledSlp, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
 
-const VERSION = '1.2.8';
+const VERSION = '1.2.9';
 // Every packaged build bundles the SLP framework and runs it in place (see
 // getInstalledBinaryPath). This CDN layout is only for the no-bundle fallback,
 // and mirrors install.sh:
