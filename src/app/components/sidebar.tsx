@@ -36,6 +36,9 @@ const getColorForProject = (project: any): string => {
 // name, offered only when the user hasn't typed one.
 const nameFromZip = (fileName: string) => fileName.replace(/\.zip$/i, '').replace(/[_-]/g, ' ');
 
+// Only an OS file drag is an import; in-app drags (conversation tabs) pass through.
+const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+
 function DockIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
@@ -568,6 +571,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   };
 
   const handleImportDrop = async (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
@@ -594,18 +598,21 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   };
 
   const handleImportDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(true);
   };
 
   const handleImportDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
   };
 
   const handleSidebarDragEnter = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     sidebarDragCounter.current++;
@@ -615,11 +622,13 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   };
 
   const handleSidebarDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
   };
 
   const handleSidebarDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     sidebarDragCounter.current--;
@@ -629,6 +638,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   };
 
   const handleSidebarDrop = async (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     sidebarDragCounter.current = 0;
