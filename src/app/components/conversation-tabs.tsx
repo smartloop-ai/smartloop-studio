@@ -25,8 +25,13 @@ const CLOSE_TAB_HOTKEY = IS_MAC ? '⌘W' : 'Ctrl+W';
 // Pointer travel before a press becomes a drag, so a plain click still selects.
 const DRAG_THRESHOLD_PX = 4;
 
+// How long neighbours take to slide aside, and the dropped tab to settle.
+const SLIDE_MS = 150;
+const SLIDE_CLASS = 'transition-transform duration-150 ease-out';
+
 // Tab geometry captured once when a drag starts, in viewport coordinates.
-// Measuring once keeps the drop line steady while the dragged tab moves.
+// Measuring once means the neighbours' own sliding never feeds back into
+// where the dragged tab is judged to be.
 interface DragSession {
   id: string;
   pointerId: number;
@@ -35,11 +40,26 @@ interface DragSession {
   index: number;
   minDx: number;
   maxDx: number;
-  centerX: number;
-  mids: number[];
-  // Drop-line x for gap i (0..n), relative to the tablist.
-  gaps: number[];
-  dropIndex: number | null;
+  // The dragged tab's edges at rest.
+  left: number;
+  right: number;
+  // Left edge of every slot, for settling the dropped tab into its new one.
+  slotLefts: number[];
+  // Midpoints of the other tabs, in order, to pick the target slot.
+  otherMids: number[];
+  // How far a neighbour slides to make room: one tab plus the row gap.
+  shift: number;
+  target: number;
+  // Latest clamped offset; state can lag the final pointermove by a render.
+  offset: number;
+}
+
+// After a drop: the tab starts at `x` (where it was released, relative to its
+// new slot) and animates to 0 once `run` flips on the next frame.
+interface Settle {
+  id: string;
+  x: number;
+  run: boolean;
 }
 
 const TAB_ICONS: Record<TabType, React.ReactNode> = {
@@ -72,9 +92,12 @@ export default function ContentTabs({
   // Native drag-and-drop can't be bounded — the browser paints the drag image
   // wherever the cursor goes. Pointer events move the tab itself instead, so
   // its offset can be clamped to the strip and it never leaves the row.
+  // Chrome-style: the neighbours slide aside to open the slot the tab will
+  // land in, so the result is visible before release.
   const [dragId, setDragId] = useState<string | null>(null);
   const [offsetX, setOffsetX] = useState(0);
-  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
+  const [settle, setSettle] = useState<Settle | null>(null);
   const sessionRef = useRef<DragSession | null>(null);
   const suppressClickRef = useRef(false);
   const tablistRef = useRef<HTMLDivElement | null>(null);
@@ -88,8 +111,22 @@ export default function ContentTabs({
     }
     setDragId(null);
     setOffsetX(0);
-    setDropIndex(null);
+    setTarget(null);
   };
+
+  // Two frames so the start position is painted before the transition runs.
+  useEffect(() => {
+    if (!settle) return;
+    if (!settle.run) {
+      let inner = 0;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setSettle((s) => (s ? { ...s, run: true } : s)));
+      });
+      return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+    }
+    const done = setTimeout(() => setSettle(null), SLIDE_MS + 30);
+    return () => clearTimeout(done);
+  }, [settle]);
 
   // Escape cancels; the click that follows the release must not select.
   useEffect(() => {
@@ -110,20 +147,21 @@ export default function ContentTabs({
   }, [tabs]);
 
   const beginDrag = (session: DragSession, el: HTMLDivElement) => {
-    const list = tablistRef.current;
     const rects = tabs.map((t) => tabEls.current.get(t.id)?.getBoundingClientRect());
-    if (!list || rects.some((r) => !r)) return false;
+    if (rects.some((r) => !r)) return false;
     const rs = rects as DOMRect[];
     const self = rs[session.index];
-    const listLeft = list.getBoundingClientRect().left;
     const last = rs.length - 1;
     session.minDx = rs[0].left - self.left;
     session.maxDx = rs[last].right - self.right;
-    session.centerX = self.left + self.width / 2;
-    session.mids = rs.map((r) => r.left + r.width / 2);
-    session.gaps = rs.map((r, i) => (i === 0 ? r.left : (rs[i - 1].right + r.left) / 2) - listLeft);
-    session.gaps.push(rs[last].right - listLeft);
+    session.left = self.left;
+    session.right = self.right;
+    session.slotLefts = rs.map((r) => r.left);
+    session.otherMids = rs.filter((_, i) => i !== session.index).map((r) => r.left + r.width / 2);
+    session.shift = self.width + (rs.length > 1 ? rs[1].left - rs[0].right : 0);
+    session.target = session.index;
     session.started = true;
+    setSettle(null);
     el.setPointerCapture(session.pointerId);
     setDragId(session.id);
     return true;
@@ -137,14 +175,20 @@ export default function ContentTabs({
       if (Math.abs(dx) <= DRAG_THRESHOLD_PX || !beginDrag(session, e.currentTarget)) return;
     }
     const clamped = Math.min(session.maxDx, Math.max(session.minDx, dx));
-    const center = session.centerX + clamped;
-    // Gap index measured before removal, as handleTabReorder expects. The
-    // dragged tab's own midpoint counts, so "back where it started" lands on
-    // gap index or index+1 — both a no-op.
-    const index = session.mids.filter((m) => m < center).length;
-    session.dropIndex = index;
+    // A neighbour is passed once the dragged tab's leading edge crosses its
+    // midpoint. Edges, not the centre: at a clamp limit the centre sits exactly
+    // on the end tab's midpoint, and a strict comparison never took the last
+    // slot. The edges are past it at both limits.
+    const from = session.index;
+    const before = session.otherMids.slice(0, from);
+    const after = session.otherMids.slice(from);
+    const slot = from
+      - before.filter((m) => m >= session.left + clamped).length
+      + after.filter((m) => m <= session.right + clamped).length;
+    session.target = slot;
+    session.offset = clamped;
     setOffsetX(clamped);
-    setDropIndex(index);
+    setTarget(slot);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -152,29 +196,56 @@ export default function ContentTabs({
     if (!session || e.pointerId !== session.pointerId) return;
     if (session.started) {
       suppressClickRef.current = true;
-      const to = session.dropIndex;
-      if (to !== null && to !== session.index && to !== session.index + 1 && onTabReorder) {
-        onTabReorder(session.id, to);
-      }
+      const { index: from, target: to } = session;
+      // handleTabReorder takes a gap index measured before removal.
+      if (to !== from && onTabReorder) onTabReorder(session.id, to > from ? to + 1 : to);
+      // Batched with the reorder: the tab starts where it was released and
+      // glides into its new slot, while the neighbours land without animating.
+      const releasedLeft = session.slotLefts[from] + session.offset;
+      setSettle({ id: session.id, x: releasedLeft - session.slotLefts[to], run: false });
     }
     endDrag();
   };
 
-  const session = sessionRef.current;
-  const showLine = !!session?.started && dropIndex !== null
-    && dropIndex !== session.index && dropIndex !== session.index + 1;
+  // How far a neighbour moves while a drag is in progress.
+  const shiftFor = (index: number) => {
+    const session = sessionRef.current;
+    if (!session?.started || target === null) return 0;
+    const from = session.index;
+    if (from < index && index <= target) return -session.shift;
+    if (target <= index && index < from) return session.shift;
+    return 0;
+  };
 
   return (
     <Box className="flex-none border-b border-sl-border-subtle px-4 overflow-hidden">
       <Box
         ref={tablistRef}
         role="tablist"
-        className="relative flex items-end gap-[2px] min-w-0"
+        className="flex items-end gap-[2px] min-w-0"
       >
         {tabs.map((tab, index) => {
           const isActive = activeTabId === tab.id;
           const tabActivity = activity?.[tab.id];
           const isDragging = dragId === tab.id;
+          const isSettling = settle?.id === tab.id;
+          // Transform for this render and whether it animates. Neighbours
+          // slide during a drag; on the drop frame nothing animates except the
+          // dropped tab's settle, or they'd glide back from their old offsets.
+          let translate = 0;
+          let motion = 'transition-all duration-200';
+          if (isDragging) {
+            translate = offsetX;
+            motion = '';
+          } else if (dragId) {
+            translate = shiftFor(index);
+            motion = SLIDE_CLASS;
+          } else if (isSettling) {
+            translate = settle.run ? 0 : settle.x;
+            motion = settle.run ? SLIDE_CLASS : '';
+          } else if (settle && !settle.run) {
+            motion = '';
+          }
 
           return (
             <div
@@ -191,7 +262,7 @@ export default function ContentTabs({
                 suppressClickRef.current = false;
                 sessionRef.current = {
                   id: tab.id, pointerId: e.pointerId, startX: e.clientX, started: false, index,
-                  minDx: 0, maxDx: 0, centerX: 0, mids: [], gaps: [], dropIndex: null,
+                  minDx: 0, maxDx: 0, left: 0, right: 0, slotLefts: [], otherMids: [], shift: 0, target: index, offset: 0,
                 };
               }}
               onPointerMove={handlePointerMove}
@@ -205,7 +276,9 @@ export default function ContentTabs({
                 group px-4 py-2 pb-[10px] text-[13px] select-none touch-none
                 flex items-center gap-1.5 relative -mb-px
                 min-w-0 max-w-[200px] flex-1
-                ${isDragging ? 'z-10 cursor-grabbing' : 'cursor-pointer transition-all duration-200'}
+                ${isDragging ? 'z-10 cursor-grabbing' : 'cursor-pointer'}
+                ${isSettling ? 'z-10' : ''}
+                ${motion}
                 ${isActive ? 'font-medium text-sl-text-primary' : 'font-normal text-sl-text-disabled bg-transparent'}
                 ${isActive ? 'border-l border-r border-b border-t' : 'border-l border-r border-b border-t border-sl-border-subtle'}
                 hover:text-sl-text-primary
@@ -217,10 +290,10 @@ export default function ContentTabs({
                   borderColor: 'var(--sl-brand-alpha-30)',
                   borderBottomColor: 'var(--sl-brand-alpha-10)',
                 } : {}),
+                ...(translate ? { transform: `translateX(${translate}px)` } : {}),
                 // Opaque while it slides over its neighbours; the active tab
                 // keeps its tint as a layer over the solid base.
-                ...(isDragging ? {
-                  transform: `translateX(${offsetX}px)`,
+                ...(isDragging || isSettling ? {
                   backgroundColor: 'var(--sl-bg-base)',
                   ...(isActive ? { backgroundImage: 'linear-gradient(var(--sl-brand-alpha-10), var(--sl-brand-alpha-10))' } : {}),
                 } : {}),
@@ -251,14 +324,6 @@ export default function ContentTabs({
             </div>
           );
         })}
-        {/* Absolute rather than spliced into the row: inserting it into the flex
-            flow would shift the dragged tab under its own transform. */}
-        {showLine && session && (
-          <div
-            className="absolute top-1 bottom-1 w-[2px] -ml-px rounded-full pointer-events-none"
-            style={{ left: session.gaps[dropIndex!], backgroundColor: 'var(--sl-brand-primary)' }}
-          />
-        )}
 
         {/* New Conversation Button (+) */}
         <button
