@@ -75,7 +75,7 @@ help-electron:
 	@echo "  make rebuild-electron        - Quick rebuild (skips npm install)"
 	@echo "  make run-electron-dev        - Run Electron app in development mode"
 	@echo "  make prefetch-dev            - Pre-download the bootstrap model + template (skips the splash download)"
-	@echo "  make stage-model             - Clone the chat + embedding models into build/models/ so they ship inside the app"
+	@echo "  make stage-model             - Clone the chat model into build/models/ so it ships inside the app"
 	@echo "  make logs-dev                - Tail the Electron main-process log (mac/win/linux)"
 	@echo "  make logs-mac                - Tail the Electron main-process log (Mac App Store sandbox)"
 	@echo "  make logs-slp                - Tail the SLP backend service log (mac/win/linux)"
@@ -198,19 +198,16 @@ stage-slp:
 # to clone the app simply downloads SLP on first launch, which is exactly what a
 # fresh machine does. Packaging is where a missing framework is fatal — that is
 # require-staged-slp's job, not this one.
-# Stage the models into build/models/ so they ship inside the app and nothing a
+# Stage the models into build/models/ so it ships inside the app and nothing a
 # first launch needs is a download. Cloned (cp -c) from a workspace that already
 # has them, so they cost no extra disk on APFS.
 #
 # The layout under build/models/ mirrors a workspace's models/ directory exactly
-# — <org>/<model>/<file>.gguf for the chat model, embeddings/<file>.gguf for the
-# embedding model — because ensureBootstrapModel copies the relative path
-# straight across.
+# — <org>/<model>/<file>.gguf — because ensureBootstrapModel copies the relative
+# path straight across.
 #
-# Both the orchestrator (sl-mini, ~770 MB) and the embedding model (bge-m3,
-# ~418 MB): document search needs the second one, and leaving it out puts a
-# download back in the way the first time someone indexes a document. Drop it
-# with `make stage-model SKIP_EMBEDDINGS=1`.
+# Only the orchestrator (sl-mini, ~770 MB). The embedding model (bge-m3) ships
+# inside the SLP framework (build/slp/embeddings/) on every platform.
 stage-template:
 	@./scripts/stage-template.sh
 
@@ -453,8 +450,8 @@ clean-snap:
 
 # Run Electron app in development mode.
 # Pass MAS=1 to simulate the Mac App Store build in dev (Vite + Electron
-# hot-reload): SMARTLOOP_FORCE_SANDBOX=1 flips isSandboxed() on, so SLP state
-# relocates to the app container and SLP runs in place from build/slp/ (staged
+# hot-reload): SMARTLOOP_FORCE_SANDBOX=1 flips isSandboxed() on, so SLP binds
+# loopback only, the CLI install is hidden, and SLP runs in place from build/slp/ (staged
 # by `make stage-slp`). NOTE: this exercises the sandboxed *code paths*; it does
 # NOT enforce the real macOS App Sandbox (a dev Electron isn't a MAS build), so
 # it won't reproduce spawn EPERM / mimetypes / sem_open — use `mas-dev` for that.

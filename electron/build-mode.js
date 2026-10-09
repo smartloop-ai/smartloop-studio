@@ -11,9 +11,11 @@
  *     fetched from dl.smartloop.ai on first launch. Every other packaged build
  *     now ships it the same way, and all of them run it in place from the
  *     bundle rather than copying it out.
- *   - Sandboxed apps may only write inside their container, so SLP state
- *     (server.port, server.log, config, models, studio.db, assets) must live
- *     under app.getPath('userData'), not ~/.smartloop.
+ *   - SLP state (server.port, server.log, config, models, studio.db, assets)
+ *     lives in ~/.smartloop in every build. The sandboxed build reaches it
+ *     through the home-relative-path temporary exception in
+ *     entitlements.mas.plist, so it shares one data dir with the CLI and the
+ *     Developer-ID build.
  *   - The store delivers updates, so the app reports none of its own.
  *   - The sandbox cannot write to ~/.local/bin, so the `slp` CLI symlink is
  *     unavailable.
@@ -26,6 +28,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 /** True in an actual Mac App Store build. */
 function isMasBuild() {
@@ -33,14 +36,33 @@ function isMasBuild() {
 }
 
 /**
- * True when the app runs under the App Sandbox and must keep all writable
- * state inside its container (userData), bind the local server to loopback,
- * and leave updates to the store. Only the MAS build. SMARTLOOP_FORCE_SANDBOX=1
- * forces it for local testing of the sandboxed data layout.
+ * True when the app runs under the App Sandbox: bind the local server to
+ * loopback, don't install the CLI, and leave updates to the store. Only the MAS
+ * build. SMARTLOOP_FORCE_SANDBOX=1 forces it for local testing of the
+ * sandboxed code paths.
  */
 function isSandboxed() {
   if (process.env.SMARTLOOP_FORCE_SANDBOX === '1') return true;
   return isMasBuild();
+}
+
+/**
+ * The user's real home directory. Under the App Sandbox os.homedir() / $HOME is
+ * the app's container (~/Library/Containers/<bundle id>/Data), so read the home
+ * from the passwd database instead, which the sandbox doesn't redirect. Same
+ * value as os.homedir() everywhere else.
+ */
+function realHomeDir() {
+  try {
+    const home = os.userInfo().homedir;
+    if (home) return home;
+  } catch {}
+  return os.homedir();
+}
+
+/** SLP's home (SLP_HOME): ~/.smartloop under the real home, in every build. */
+function slpHomeDir() {
+  return path.join(realHomeDir(), '.smartloop');
 }
 
 /** Directory where a bundled SLP framework lives inside the packaged app. */
@@ -67,14 +89,13 @@ function bundledSlpBinaryPath() {
  * out under its own models/ directory:
  *
  *   smartloop-ai/slp-orchestra-mini/<name>.gguf   ~770 MB  the chat model
- *   embeddings/bge-m3-Q4_K_M.gguf                 ~418 MB  document search
  *
- * Both are copied into the workspace once it exists (see ensureBootstrapModel
- * in main.js). Mirroring the layout here is what makes that a copy of a
- * relative path rather than a mapping table: SLP resolves the chat weights at
- * <workspace>/models/<model_id>/ and the embedding GGUF at
- * <workspace>/models/embeddings/<file>, and neither needs to know the app put
- * them there.
+ * Copied into the workspace once it exists (see ensureBootstrapModel in
+ * main.js). Mirroring the layout here is what makes that a copy of a relative
+ * path rather than a mapping table: SLP resolves the weights at
+ * <workspace>/models/<model_id>/ and needs no notion of the app putting them
+ * there. The embedding model is not here: the SLP framework ships it next to
+ * its binary on every platform.
  */
 function bundledModelsDir() {
   const packaged = path.join(process.resourcesPath || '', 'models');
@@ -83,9 +104,6 @@ function bundledModelsDir() {
   // bundled model. Fall back to the repo's staged copy (see `make stage-model`).
   return path.join(__dirname, '..', 'build', 'models');
 }
-
-/** Directory name holding the embedding GGUF, in the bundle and the workspace. */
-const EMBEDDINGS_SUBDIR = 'embeddings';
 
 /**
  * Every .gguf that ships in this build, with the path each one keeps relative
@@ -108,12 +126,7 @@ function bundledModelFiles() {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) stack.push(full);
       else if (entry.name.endsWith('.gguf')) {
-        const relative = path.relative(root, full);
-        found.push({
-          path: full,
-          relative,
-          isEmbedding: relative.split(path.sep)[0] === EMBEDDINGS_SUBDIR,
-        });
+        found.push({ path: full, relative: path.relative(root, full) });
       }
     }
   }
@@ -122,14 +135,12 @@ function bundledModelFiles() {
 
 /** The chat model shipped inside the app, or null when none shipped. */
 function bundledModelFile() {
-  return bundledModelFiles().find((file) => !file.isEmbedding) || null;
+  return bundledModelFiles()[0] || null;
 }
 
 /**
  * True when the chat model actually ships inside this build — which is what
- * decides whether there is a first-run download to ask consent for. The
- * embedding model alone does not count: it only matters once someone indexes a
- * document, and SLP falls back to TF-IDF without it.
+ * decides whether there is a first-run download to ask consent for.
  */
 function hasBundledModel() {
   const found = bundledModelFile();
@@ -171,6 +182,8 @@ module.exports = {
   hasBundledModel,
   isMasBuild,
   isSandboxed,
+  realHomeDir,
+  slpHomeDir,
   bundledSlpDir,
   bundledSlpBinaryPath,
   hasBundledSlp,
