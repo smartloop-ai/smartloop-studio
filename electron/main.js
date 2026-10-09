@@ -11,8 +11,8 @@ const { execFile } = require('child_process');
 const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
-const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, setInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { isSandboxed, useBundledSlp, bundledModelFiles, hasBundledModel } = require('./build-mode');
+const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
+const { isSandboxed, useBundledSlp, bundledModelFiles, hasBundledModel, realHomeDir } = require('./build-mode');
 const database = require('./database');
 const { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
@@ -103,7 +103,7 @@ ipcMain.handle('contact-submit', async (event, payload) => {
 // Expand a leading ~ to the home directory. Paths reach the main process from
 // the renderer and from SLP responses in both forms.
 function resolveHomePath(p) {
-  return p.startsWith('~') ? path.join(os.homedir(), p.replace(/^~[/\\]?/, '')) : p;
+  return p.startsWith('~') ? path.join(realHomeDir(), p.replace(/^~[/\\]?/, '')) : p;
 }
 
 // Chromium launches the platform opener (xdg-open, Finder, Explorer) with the
@@ -185,7 +185,7 @@ ipcMain.handle('download-document', async (event, filePath) => {
     if (!filePath) return { success: false, error: 'No file path' };
     const { app, dialog } = require('electron');
     const resolved = filePath.startsWith('~')
-      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), filePath.replace(/^~[/\\]?/, ''))
       : filePath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
 
@@ -213,16 +213,16 @@ const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync
 // SLP data directory — SLP's home (SLP_HOME), not where the framework lives:
 // the framework runs in place from inside the app on every platform, so this
 // holds only the state SLP itself manages (server.port, server.log, config,
-// models, workspaces, studio.db). In the Developer-ID build (dmg), Windows and
-// Linux it stays ~/.smartloop/ (the default inside slp-setup), a consistent,
-// well-known location. In the sandboxed Mac App Store build the app may only
-// write inside its container, so relocate all SLP state under userData
-// (~/Library/Containers/ai.smartloop.studio/Data/…).
-if (isSandboxed()) {
-  const slpDataDir = path.join(app.getPath('userData'), 'slp');
-  setInstallDir(slpDataDir);
-  console.log('[SLP] Sandboxed build — SLP data dir relocated to container:', slpDataDir);
-}
+// models, workspaces, studio.db). It is ~/.smartloop/ (the default inside
+// slp-setup) in every build; the sandboxed Mac App Store build reaches it
+// through the home-relative-path exception in entitlements.mas.plist.
+//
+// Earlier store builds kept that state in the container
+// (~/Library/Containers/ai.smartloop.studio/Data/…/slp). Only the model weights
+// are carried over from there (adoptLegacyModels, once SLP has a workspace) —
+// conversations, studio.db, config and assets stay behind, so ~/.smartloop
+// starts clean apart from the models it would otherwise download again.
+const LEGACY_SLP_DIR = isSandboxed() ? path.join(app.getPath('userData'), 'slp') : null;
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
@@ -301,7 +301,7 @@ ipcMain.handle('read-asset-data-url', async (event, assetId) => {
 ipcMain.handle('read-text-file', async (event, filePath) => {
   try {
     const resolved = filePath.startsWith('~')
-      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), filePath.replace(/^~[/\\]?/, ''))
       : filePath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
     const content = fs.readFileSync(resolved, 'utf-8');
@@ -315,7 +315,7 @@ ipcMain.handle('read-text-file', async (event, filePath) => {
 ipcMain.handle('write-text-file', async (event, filePath, content) => {
   try {
     const resolved = filePath.startsWith('~')
-      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), filePath.replace(/^~[/\\]?/, ''))
       : filePath;
     const dir = path.dirname(resolved);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -332,7 +332,7 @@ ipcMain.handle('save-file-dialog', async (event, defaultName, content, defaultDi
     const { dialog } = require('electron');
     let resolvedDir = defaultDir;
     if (resolvedDir && resolvedDir.startsWith('~')) {
-      resolvedDir = path.join(os.homedir(), resolvedDir.replace(/^~[/\\]?/, ''));
+      resolvedDir = path.join(realHomeDir(), resolvedDir.replace(/^~[/\\]?/, ''));
     }
     if (resolvedDir) {
       fs.mkdirSync(resolvedDir, { recursive: true });
@@ -373,7 +373,7 @@ ipcMain.handle('save-binary-file', async (event, fileName, buffer) => {
 ipcMain.handle('delete-file', async (event, filePath) => {
   try {
     const resolved = filePath.startsWith('~')
-      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), filePath.replace(/^~[/\\]?/, ''))
       : filePath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
     fs.unlinkSync(resolved);
@@ -387,7 +387,7 @@ ipcMain.handle('delete-file', async (event, filePath) => {
 ipcMain.handle('delete-folder', async (event, folderPath) => {
   try {
     const resolved = folderPath.startsWith('~')
-      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), folderPath.replace(/^~[/\\]?/, ''))
       : folderPath;
     if (!fs.existsSync(resolved)) return { success: true };
     fs.rmSync(resolved, { recursive: true, force: true });
@@ -401,10 +401,10 @@ ipcMain.handle('delete-folder', async (event, folderPath) => {
 ipcMain.handle('rename-folder', async (event, oldPath, newPath) => {
   try {
     const resolvedOld = oldPath.startsWith('~')
-      ? path.join(os.homedir(), oldPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), oldPath.replace(/^~[/\\]?/, ''))
       : oldPath;
     const resolvedNew = newPath.startsWith('~')
-      ? path.join(os.homedir(), newPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), newPath.replace(/^~[/\\]?/, ''))
       : newPath;
     if (!fs.existsSync(resolvedOld)) return { success: false, error: 'Source folder not found' };
     if (fs.existsSync(resolvedNew)) return { success: false, error: 'Destination folder already exists' };
@@ -420,7 +420,7 @@ ipcMain.handle('rename-folder', async (event, oldPath, newPath) => {
 ipcMain.handle('read-skills-dir', async (event, folderPath) => {
   try {
     const resolved = folderPath.startsWith('~')
-      ? path.join(os.homedir(), folderPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), folderPath.replace(/^~[/\\]?/, ''))
       : folderPath;
     const dir = path.join(resolved, 'skills');
     if (!fs.existsSync(dir)) return { success: true, skills: [] };
@@ -450,7 +450,7 @@ ipcMain.handle('read-skills-dir', async (event, folderPath) => {
 ipcMain.handle('list-directory', async (event, dirPath) => {
   try {
     const resolved = dirPath.startsWith('~')
-      ? path.join(os.homedir(), dirPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), dirPath.replace(/^~[/\\]?/, ''))
       : dirPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'Directory not found', files: [] };
     const supportedExts = ['.pdf', '.docx', '.txt', '.csv', '.md'];
@@ -521,7 +521,7 @@ function zipDirectory(sourceDir, zipFilePath) {
 ipcMain.handle('extract-conversations-from-zip', async (event, zipPath) => {
   try {
     const resolved = zipPath.startsWith('~')
-      ? path.join(os.homedir(), zipPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), zipPath.replace(/^~[/\\]?/, ''))
       : zipPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found', conversations: [] };
 
@@ -759,7 +759,7 @@ ipcMain.handle('export-project', async (event, projectId) => {
 ipcMain.handle('import-project', async (event, zipPath, overrides) => {
   try {
     const resolved = zipPath.startsWith('~')
-      ? path.join(os.homedir(), zipPath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), zipPath.replace(/^~[/\\]?/, ''))
       : zipPath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
 
@@ -931,7 +931,7 @@ ipcMain.handle('select-file', async (event, filters) => {
 ipcMain.handle('read-binary-file', async (event, filePath) => {
   try {
     const resolved = filePath.startsWith('~')
-      ? path.join(os.homedir(), filePath.replace(/^~[/\\]?/, ''))
+      ? path.join(realHomeDir(), filePath.replace(/^~[/\\]?/, ''))
       : filePath;
     if (!fs.existsSync(resolved)) return { success: false, error: 'File not found' };
     const buffer = fs.readFileSync(resolved);
@@ -952,7 +952,7 @@ ipcMain.handle('select-folder', async () => {
 });
 
 // IPC: get the OS home directory
-ipcMain.handle('get-home-dir', () => os.homedir());
+ipcMain.handle('get-home-dir', () => realHomeDir());
 
 // Blank project template — downloaded from GitHub releases and cached locally
 const TEMPLATE_VERSION = 'v1.0.0';
@@ -2063,13 +2063,12 @@ const BOOTSTRAP_MODEL_PLATFORM_NAME = 'slp-orchestra-mini';
 const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
 
 /**
- * Let SLP create the workspace, then put the bundled models in it before
+ * Let SLP create the workspace, then put the bundled chat model in it before
  * bootstrap runs.
  *
- * The models ship inside the app the same way the SLP framework does, but they
- * cannot be used from there: SLP resolves the chat weights under
- * <workspace>/models/<model_id>/ and the embedding GGUF under
- * <workspace>/models/embeddings/, and a workspace is a runtime directory named
+ * The chat model ships inside the app the same way the SLP framework does, but
+ * it cannot be used from there: SLP resolves the weights under
+ * <workspace>/models/<model_id>/, and a workspace is a runtime directory named
  * by a UUID that does not exist until the service has started. So this runs
  * after the service is healthy and before bootstrap, and copies them across —
  * which keeps the whole arrangement on this side of the wire. SLP is asked for
@@ -2091,9 +2090,8 @@ const BOOTSTRAP_MODEL_ID = 'smartloop-ai/slp-orchestra-mini';
  *     ...
  *     if existing_model_name: yield "model_ready"      # no download
  *
- * The embedding model is not bootstrap's business at all — it is read straight
- * off disk the first time something is indexed — so seeding it here is the only
- * thing that keeps document search offline too.
+ * The embedding model is not seeded: the SLP framework ships it next to its
+ * binary on every platform and loads it from there.
  *
  * Returns true when the chat model is in place.
  */
@@ -2125,8 +2123,46 @@ async function ensureBootstrapModel(baseUrl, onProgress) {
 
   seededModelDir = path.join(modelsDir, BOOTSTRAP_MODEL_ID);
 
+  adoptLegacyModels(modelsDir);
+
   if (await placeBundledModels(modelsDir, onProgress)) return true;
   return downloadBootstrapModel(seededModelDir, onProgress);
+}
+
+/**
+ * Move the model weights an earlier store build left in its container
+ * (LEGACY_SLP_DIR/<workspace>/models) into this workspace's models/ dir, then
+ * drop the container's SLP state. Only models move: everything else there
+ * (conversations, studio.db, config, assets) is left out of ~/.smartloop.
+ *
+ * Entries already in the workspace win; the merge recurses so the per-org
+ * directories (smartloop-ai/, Qwen/, embeddings/) combine rather than collide.
+ */
+function adoptLegacyModels(modelsDir) {
+  if (!LEGACY_SLP_DIR || !fs.existsSync(LEGACY_SLP_DIR)) return;
+
+  const merge = (from, to) => {
+    if (!fs.existsSync(to)) {
+      fs.renameSync(from, to);
+      return;
+    }
+    if (!fs.statSync(from).isDirectory() || !fs.statSync(to).isDirectory()) return;
+    for (const name of fs.readdirSync(from)) merge(path.join(from, name), path.join(to, name));
+  };
+
+  try {
+    const workspaces = fs.readdirSync(LEGACY_SLP_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^[0-9a-f-]{36}$/i.test(entry.name))
+      .map((entry) => path.join(LEGACY_SLP_DIR, entry.name, 'models'))
+      .filter((dir) => fs.existsSync(dir));
+    for (const legacyModels of workspaces) {
+      merge(legacyModels, modelsDir);
+      console.log('[Model] Adopted models from', legacyModels);
+    }
+    fs.rmSync(LEGACY_SLP_DIR, { recursive: true, force: true });
+  } catch (error) {
+    console.warn('[Model] Could not adopt models from', LEGACY_SLP_DIR, error.message);
+  }
 }
 
 /**
@@ -2163,23 +2199,6 @@ async function findWorkspaceDir(waitMs = 15000) {
   return null;
 }
 
-/**
- * Copy the models that ship inside the app into the workspace's models/ dir,
- * each one keeping the relative path it has in the bundle.
- *
- * The copy is a COPYFILE_FICLONE, which on APFS is a clone — no second 1.2 GB
- * on disk and effectively instant. On any other filesystem the flag degrades to
- * a real copy rather than failing, which is why the splash says what it is
- * doing: on Windows and Linux this is a real write of ~1.2 GB and takes long
- * enough to look like a hang otherwise.
- *
- * Each file is written under a temporary name and renamed on success. A partial
- * .gguf at the real path reads as "downloaded" to SLP and would load as garbage.
- *
- * Returns true when the chat model ends up in place; the embedding model is
- * best-effort (without it SLP downloads it on first index, and falls back to
- * TF-IDF retrieval until then).
- */
 /**
  * SLP's own test for "the weights are already here" (_gguf_exists in
  * api/routers/init.py): any .gguf in the model directory, or in its bin/.
@@ -2243,6 +2262,21 @@ function bootstrapSplashEvent(data) {
   return { status: 'preparing', message: 'Checking the model…' };
 }
 
+/**
+ * Copy the models that ship inside the app into the workspace's models/ dir,
+ * each one keeping the relative path it has in the bundle.
+ *
+ * The copy is a COPYFILE_FICLONE, which on APFS is a clone — no second copy on
+ * disk and effectively instant. On any other filesystem the flag degrades to a
+ * real copy rather than failing, which is why the splash says what it is doing:
+ * on Windows and Linux this is a real write of ~770 MB and takes long enough to
+ * look like a hang otherwise.
+ *
+ * Each file is written under a temporary name and renamed on success. A partial
+ * .gguf at the real path reads as "downloaded" to SLP and would load as garbage.
+ *
+ * Returns true when the chat model ends up in place.
+ */
 async function placeBundledModels(modelsDir, onProgress) {
   const bundled = bundledModelFiles();
   if (!bundled.length) return false;
@@ -2251,22 +2285,17 @@ async function placeBundledModels(modelsDir, onProgress) {
 
   for (const file of bundled) {
     const destination = path.join(modelsDir, file.relative);
-    const label = file.isEmbedding ? 'document search' : 'the assistant';
 
     try {
-      // The chat weights are resolved by directory, the embedding GGUF by
-      // filename (AppSettings.embedding_gguf_file) — so what counts as "already
-      // there" differs, and copying over either is 400-800 MB of waste.
-      const alreadyThere = file.isEmbedding
-        ? fs.existsSync(destination) && fs.statSync(destination).size > 0
-        : hasGguf(path.dirname(destination));
-      if (alreadyThere) {
-        if (!file.isEmbedding) chatModelReady = true;
+      // Resolved by directory: any .gguf there is a model already in place, and
+      // copying over it is 770 MB of waste.
+      if (hasGguf(path.dirname(destination))) {
+        chatModelReady = true;
         continue;
       }
 
       if (onProgress) {
-        onProgress({ status: 'installing', message: `Setting up ${label}…` });
+        onProgress({ status: 'installing', message: 'Setting up the assistant…' });
       }
 
       fs.mkdirSync(path.dirname(destination), { recursive: true });
@@ -2274,7 +2303,7 @@ async function placeBundledModels(modelsDir, onProgress) {
       await fs.promises.copyFile(file.path, staging, fs.constants.COPYFILE_FICLONE);
       fs.renameSync(staging, destination);
       console.log(`[Model] Placed ${file.relative}`);
-      if (!file.isEmbedding) chatModelReady = true;
+      chatModelReady = true;
     } catch (error) {
       console.warn(`[Model] Could not place ${file.relative}:`, error.message);
       try { fs.unlinkSync(`${destination}.seeding`); } catch { /* nothing staged */ }

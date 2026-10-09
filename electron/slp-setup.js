@@ -6,7 +6,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const database = require('./database');
-const { useBundledSlp, isSandboxed, bundledSlpBinaryPath } = require('./build-mode');
+const { useBundledSlp, isSandboxed, bundledSlpBinaryPath, slpHomeDir } = require('./build-mode');
 
 const VERSION = '1.2.9';
 // Every packaged build bundles the SLP framework and runs it in place (see
@@ -16,7 +16,7 @@ const VERSION = '1.2.9';
 const SLP_BASE_URL = (process.env.SLP_BASE_URL || 'https://dl.smartloop.ai').replace(/\/+$/, '');
 function getDownloadBaseUrl() { return `${SLP_BASE_URL}/slp/${VERSION}`; }
 
-const DEFAULT_INSTALL_DIR = path.join(os.homedir(), '.smartloop');
+const DEFAULT_INSTALL_DIR = slpHomeDir();
 let INSTALL_DIR = DEFAULT_INSTALL_DIR;
 
 function getVersionDir() { return path.join(INSTALL_DIR, VERSION); }
@@ -852,9 +852,9 @@ function removeWindowsDirFromPath(dir) {
 function getCommandLineStatus() {
   // Sandboxed (Mac App Store) build: the app can't install the CLI onto the
   // user's PATH. The App Sandbox redirects os.homedir()/$HOME to the app's
-  // container, so any ~/.local/bin (or ~/.smartloop) link and PATH edits land
-  // inside the container where the shell never sees them, and the sandbox can't
-  // write to the real home or /opt/usr/local at all; Apple also forbids a
+  // container, so any ~/.local/bin link and PATH edits land inside the
+  // container where the shell never sees them, and the sandbox can't write to
+  // the real home (beyond ~/.smartloop) or /opt/usr/local at all; Apple also forbids a
   // sandboxed app from installing executables. The `slp` CLI ships separately as
   // a non-sandboxed build. Report unsupported so Settings hides the section.
   if (isSandboxed()) return { supported: false, installed: false, linkPath: null };

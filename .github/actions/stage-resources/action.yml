@@ -1,6 +1,6 @@
 name: Stage bundled resources
 description: >
-  Stage the models and the blank-project template into build/models/ and
+  Stage the chat model and the blank-project template into build/models/ and
   electron/data/, then verify every extraResources source electron-builder
   expects actually exists. Run it on every platform: electron-builder treats a
   missing extraResources source as a WARNING and packages without it, so an
@@ -14,13 +14,6 @@ inputs:
       uses the script default, https://api.smartloop.ai.
     required: false
     default: ''
-  skip-embeddings:
-    description: >
-      Set to '1' to leave the ~432 MB embedding model out. SLP then downloads it
-      the first time a document is indexed, and the check below stops requiring
-      it.
-    required: false
-    default: '0'
 
 runs:
   using: composite
@@ -29,7 +22,6 @@ runs:
       shell: bash
       env:
         VITE_BASE_URL: ${{ inputs.api-base-url }}
-        SKIP_EMBEDDINGS: ${{ inputs.skip-embeddings }}
       run: |
         set -euo pipefail
         # Both scripts are idempotent — they no-op when the file is already
@@ -40,8 +32,6 @@ runs:
 
     - name: Verify bundled resources
       shell: bash
-      env:
-        SKIP_EMBEDDINGS: ${{ inputs.skip-embeddings }}
       run: |
         set -euo pipefail
 
@@ -76,11 +66,8 @@ runs:
           missing=1
         fi
 
-        if [ "${SKIP_EMBEDDINGS:-0}" = "1" ]; then
-          echo "  ⏭️  embedding model skipped (SKIP_EMBEDDINGS=1)"
-        else
-          require_file "build/models/embeddings/$EMBEDDING_FILE" "embedding model"
-        fi
+        # The embedding model ships inside the SLP framework, next to its binary.
+        require_file "build/slp/embeddings/$EMBEDDING_FILE" "embedding model"
 
         [ "$missing" -eq 0 ] || exit 1
         echo "Bundled resources total $(du -sh build/models | cut -f1) of models plus $(du -sh build/slp | cut -f1) of framework."

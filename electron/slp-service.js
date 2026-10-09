@@ -31,9 +31,9 @@ function getSlpDir() {
  * the SLP_HOME env var (see smartloop/config/app_settings.py home_dir),
  * defaulting to ~/.smartloop. Setting it explicitly makes state (server.port,
  * server.log, config, models, workspaces, conversations) land in whatever
- * getSlpDir() points at. In the Developer-ID build that's still ~/.smartloop
- * (no behavior change); in the sandboxed MAS build main.js points it at the
- * app's userData container, the only writable location. SLP defaults its API
+ * getSlpDir() points at: ~/.smartloop under the real home in every build,
+ * including the sandboxed MAS build, where $HOME is the app's container and
+ * SLP's own default would land there instead. SLP defaults its API
  * host to 0.0.0.0; in the bundled/sandboxed build bind loopback only.
  */
 function slpEnv() {

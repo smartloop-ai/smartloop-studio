@@ -45,6 +45,8 @@ The entitlements this build requests are:
 - `com.apple.security.network.client`
 - `com.apple.security.network.server`
 - `com.apple.security.files.user-selected.read-write`
+- `com.apple.security.temporary-exception.files.home-relative-path.read-write`
+  (`/.smartloop/` only)
 
 On `com.apple.security.network.server`, in case it is queried: all inference is
 performed locally. On launch the app starts the bundled runtime, which listens
@@ -118,6 +120,24 @@ Paste the entitlement section into **App Store Connect → App Review Informatio
 > Electron binary, which is why an automated scan of the main executable finds
 > no matching functionality.
 
+### `com.apple.security.temporary-exception.files.home-relative-path.read-write` — `/.smartloop/` only
+
+> Smartloop Studio keeps its local runtime's state — downloaded models, the
+> document index, conversation history and configuration — in `~/.smartloop`.
+> The same directory is used by the Smartloop command-line tool and by the
+> direct-download build of the app, so a user who has already downloaded a
+> model (often several gigabytes) or indexed their documents keeps them when
+> they switch to the App Store build, rather than downloading and indexing
+> everything a second time inside the container. The exception is limited to
+> that one directory; the app reads and writes nothing else in the home folder
+> without the user picking it through an open or save panel.
+
+In code: `slpHomeDir()` in `electron/build-mode.js` resolves the real home from
+the passwd database (`os.userInfo().homedir`), since `os.homedir()` is the
+container under the sandbox. On first launch, an older store build's
+container data (`userData/slp`) is moved to `~/.smartloop` if that doesn't
+exist yet (`electron/main.js`).
+
 ### `com.apple.security.files.downloads.read-write` — removed
 
 Removed in `build/entitlements.mas.plist` (and from the Developer ID
@@ -127,8 +147,8 @@ writes outside its container goes through `NSSavePanel`
 project — which extends the sandbox to the path the user picks.
 `app.getPath('downloads')` was only used to seed the panel's default location,
 which is a path string and needs no entitlement.
-`com.apple.security.files.user-selected.read-write` is the only file
-entitlement the app now requests.
+Besides `com.apple.security.files.user-selected.read-write`, the only file
+access the app requests is the `~/.smartloop` exception above.
 
 ## Additional downloads (guideline 2.x)
 
