@@ -11,6 +11,8 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
+import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
@@ -22,8 +24,11 @@ import {
     CAPABILITY_INFO,
     CAPABILITY_STYLE,
     TIER_INFO,
+    contextTag,
     describeFailure,
     isLocked,
+    isRemote,
+    locationTag,
     matchTitle,
     memoryPressure,
     modelLabel,
@@ -166,7 +171,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
     // before it stops being useful. Search matches what a person would actually
-    // type — the friendly name, the raw id, the maker, or a capability ("vision").
+    // type — the friendly name, the raw id, the maker, a capability ("vision"),
+    // or where it runs ("cloud").
     const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
         const matches = (m: any) => {
@@ -176,6 +182,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 m.name || m.id || m.model,
                 brandName(m.name || m.id || m.model) || '',
                 (m.capabilities || []).join(' '),
+                locationTag(m).label,
                 m.description || '',
             ].join(' ').toLowerCase();
             return hay.includes(q);
@@ -343,8 +350,13 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
-        const pressure = memoryPressure(m, totalRamGb);
-        const size = sizeTier(m);
+        const remote = isRemote(m);
+        const where = locationTag(m);
+        // Size and memory describe weights on this machine, which a cloud model
+        // doesn't have.
+        const pressure = remote ? null : memoryPressure(m, totalRamGb);
+        const size = remote ? null : sizeTier(m);
+        const context = contextTag(m);
         const tier = tierTag(m);
         const maker = brandName(name);
         const description = m.description || '';
@@ -425,11 +437,19 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
+                    <Tag
+                        label={where.label}
+                        color={where.color}
+                        border={where.border}
+                        tip={where.tip}
+                        icon={remote ? <CloudOutlinedIcon sx={{ fontSize: 10 }} /> : <ComputerOutlinedIcon sx={{ fontSize: 10 }} />}
+                    />
                     {(m.capabilities || []).map((cap: string) => {
                         const stl = CAPABILITY_STYLE[cap] || { color: 'var(--sl-text-muted)', border: 'var(--sl-border-default)' };
                         return <Tag key={cap} label={cap} color={stl.color} border={stl.border} tip={CAPABILITY_INFO[cap] || cap} />;
                     })}
                     {size && <Tag label={size.label} color="var(--sl-text-faint)" border="var(--sl-border-default)" tip={size.tip} />}
+                    {context && <Tag label={context.label} color="var(--sl-text-faint)" border="var(--sl-border-default)" tip={context.tip} />}
                     {tier && <Tag label={tier.label} color={tier.color} border={tier.border} tip={TIER_INFO[tier.label] || tier.label} />}
                     {pressure && (
                         <Tag

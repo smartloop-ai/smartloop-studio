@@ -128,6 +128,29 @@ export function memoryPressure(m: any, totalRamGb: number | null): { gb: number;
     return { gb: rounded, pct, label: 'Low', color: '#86efac', border: 'rgba(134,239,172,0.35)', fits: true };
 }
 
+// A model served from the cloud rather than run from weights on this machine.
+// An entry without `type` is local.
+export function isRemote(m: any): boolean {
+    return m.type === 'remote';
+}
+
+// Where the model runs, as a tag. Shown on every row so local and cloud models
+// read apart at a glance.
+export function locationTag(m: any): { label: string; color: string; border: string; tip: string } {
+    return isRemote(m)
+        ? { label: 'Cloud', color: '#7dd3fc', border: 'rgba(125,211,252,0.35)', tip: 'Cloud — runs on Smartloop servers, nothing to download. Requests leave this machine.' }
+        : { label: 'Local', color: 'var(--sl-text-faint)', border: 'var(--sl-border-default)', tip: 'Local — runs on this machine from downloaded weights. Requests stay on this machine.' };
+}
+
+// Context window as a short tag ("128K context"), or null when the catalog
+// doesn't say.
+export function contextTag(m: any): { label: string; tip: string } | null {
+    const n = m.context_length;
+    if (typeof n !== 'number' || !(n > 0)) return null;
+    const short = n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+    return { label: `${short} context`, tip: `Reads up to ${n.toLocaleString()} tokens of conversation and documents at once` };
+}
+
 // Normalized title used to match a model against the SSE "Selected …" status
 // message. The message is built from the model_id (e.g.
 // "mistralai/Ministral-3-3B-Instruct-2512" → "ministral 3 3b instruct 2512"),
