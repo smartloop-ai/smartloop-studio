@@ -30,6 +30,7 @@ import {
     isLocked,
     isRemote,
     locationTag,
+    lockRemedy,
     matchTitle,
     memoryPressure,
     modelLabel,
@@ -153,6 +154,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     }, [localModels]);
 
     const canContact = !!user?.email;
+    // Signed out is a guest profile, not a missing one — see useAuth.
+    const signedIn = !!user && !user.guest;
 
     // Everything except the orchestrator — it's represented by the Auto trigger.
     const pickable = useMemo(() => localModels.filter((m: any) => {
@@ -194,6 +197,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             { key: 'ready', title: 'Downloaded', models: [] },
             { key: 'available', title: 'Available to download', models: [] },
             { key: 'cloud', title: 'Available in the cloud', models: [] },
+            { key: 'signin', title: 'Free with sign-in', models: [] },
             { key: 'locked', title: 'Requires an upgrade', models: [] },
         ];
         for (const m of pickable) {
@@ -204,15 +208,16 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             // whole catalog with is_accessible false on the Pro tier "so the
             // client can show pro models as signup incentive" — so dropping it
             // here would discard the one thing it was sent for. It goes in the
-            // 'locked' bucket: greyed, lock icon, not clickable.
+            // 'locked' bucket: greyed, lock icon, not clickable — or, when
+            // signing in is all it takes, 'signin', where a click starts it.
             const locked = isLocked(m);
             // A cloud model is either added to the project (on) or not: it has
             // no downloaded-but-off state, because there are no weights to keep.
-            const key = isEnabled(name) ? 'on' : locked ? 'locked' : isRemote(m) ? 'cloud' : m.downloaded ? 'ready' : 'available';
+            const key = isEnabled(name) ? 'on' : locked ? (lockRemedy(m, signedIn) === 'login' ? 'signin' : 'locked') : isRemote(m) ? 'cloud' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
         return buckets.filter((b) => b.models.length > 0);
-    }, [pickable, query, isEnabled]);
+    }, [pickable, query, isEnabled, signedIn]);
 
     const matchCount = groups.reduce((n, g) => n + g.models.length, 0);
 
@@ -253,7 +258,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // gates it, a download glyph when it isn't on disk yet.
     // A cloud model swaps the download glyph for an add glyph, and has no
     // transfer to stop — its /v1/init completes at once.
-    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean; remote: boolean }) => {
+    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean; remote: boolean; needsLogin: boolean }) => {
         if (st.busy && st.remote) {
             return (
                 <Tooltip title="Adding…" arrow placement="top">
@@ -307,7 +312,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title={canUpgrade ? 'Upgrade to Pro to use this model' : 'Pro models need a Pro plan'} arrow placement="top">
+                <Tooltip title={st.needsLogin ? 'Log in to use this model — it’s free' : canUpgrade ? 'Upgrade to Pro to use this model' : 'Pro models need a Pro plan'} arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -376,8 +381,23 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const remote = isRemote(m);
         const copy = failure ? describeFailure(failure, canContact, canUpgrade, remote) : null;
         const locked = isLocked(m);
+        const needsLogin = locked && lockRemedy(m, signedIn) === 'login';
         const on = isEnabled(name);
         const isActive = activeAuto === name;
+        // A locked row is inert, except that signing in (or, in the MAS build,
+        // upgrading) is one click away, and a locked model that is still on can
+        // always be turned off.
+        const clickable = !locked || needsLogin || canUpgrade || on;
+        const onRowClick = () => {
+            if (!clickable) return;
+            if (locked && !on) {
+                setOpen(false);
+                if (needsLogin) window.dispatchEvent(new CustomEvent('requestSignIn'));
+                else openUpgrade();
+                return;
+            }
+            toggle(m);
+        };
         const where = locationTag(m);
         // Size and memory describe weights on this machine, which a cloud model
         // doesn't have.
@@ -392,14 +412,11 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             <Box
                 key={name}
                 role="button"
-                onClick={() => {
-                    if (!locked) toggle(m);
-                    else if (canUpgrade) { setOpen(false); openUpgrade(); }
-                }}
+                onClick={onRowClick}
                 className={`rounded-xl${isActive ? ' model-row-active' : ''}`}
                 sx={{
                     padding: '12px 14px',
-                    cursor: locked && !canUpgrade ? 'default' : 'pointer',
+                    cursor: clickable ? 'pointer' : 'default',
                     border: failure ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-subtle)',
                     // Deliberately identical on or off, for the same reason a
                     // connection card doesn't tint when connected: the bulb
@@ -410,7 +427,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     opacity: locked ? 0.6 : 1,
                     transition: 'box-shadow 0.15s ease, background 0.15s ease',
                     '&:hover': {
-                        boxShadow: locked || failure ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
+                        boxShadow: !clickable || failure ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
                     },
                 }}
             >
@@ -441,7 +458,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </span>
 
                     <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                        {renderState({ name, on, downloaded, locked, busy, isActive, remote })}
+                        {renderState({ name, on, downloaded, locked, busy, isActive, remote, needsLogin })}
                     </div>
                 </div>
 
