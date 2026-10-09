@@ -242,18 +242,29 @@ const SIGN_IN: FailureCopy = {
     tone: 'auth',
 };
 
+const SIGN_IN_REMOTE: FailureCopy = {
+    headline: 'Log in to use this model',
+    body: 'Cloud models run on your Smartloop account — logging in is free and takes a few seconds.',
+    action: 'login',
+    tone: 'auth',
+};
+
 // `canUpgrade` is true only in the Mac App Store build, the one build that
 // sells Pro itself (UpgradeContext). Everywhere else a plan refusal offers
 // "Contact us" and never a purchase.
-export function describeFailure(failure: DownloadFailure, canContact: boolean, canUpgrade = false): FailureCopy {
+// `remote` picks the copy for a cloud model, which is added rather than
+// downloaded: the same /v1/init statuses, minus any talk of weights or transfers.
+export function describeFailure(failure: DownloadFailure, canContact: boolean, canUpgrade = false, remote = false): FailureCopy {
     const { code, detail, message } = failure;
+    const signIn = remote ? SIGN_IN_REMOTE : SIGN_IN;
+    const failed = remote ? 'Couldn’t add this model' : 'Download failed';
 
     switch (code) {
         // No credentials the platform will accept. The backend refreshes and
         // retries before answering this, so it means sign in again — not "wait
         // and see", and never an upgrade prompt.
         case 401:
-            return SIGN_IN;
+            return signIn;
 
         // Signed in, but the model isn't on this plan. The server says the useful
         // thing ("Upgrade required to access this model"); fall back only when it
@@ -277,8 +288,8 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
 
         case 429:
             return {
-                headline: 'Too many downloads right now',
-                body: 'The service is rate-limiting downloads — try again in a moment.',
+                headline: remote ? 'Too many requests right now' : 'Too many downloads right now',
+                body: remote ? 'The service is rate-limiting requests — try again in a moment.' : 'The service is rate-limiting downloads — try again in a moment.',
                 action: 'retry',
                 tone: 'error',
             };
@@ -287,12 +298,13 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
         // that didn't match. `detail` names which, and all three are things the
         // user fixes outside the app and then retries.
         case 500:
-            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+            return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
 
         // The transfer died; the weights are still there to fetch. /v1/init is a
         // real repair action now — it no longer reports an interrupted download
         // as ready — so the retry resumes rather than lying.
         case 502:
+            if (remote) return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
             return {
                 headline: 'Connection lost during download',
                 body: detail || 'The transfer was interrupted before it finished.',
@@ -307,7 +319,7 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
             // gets the button, because a retry the user can ignore is a smaller
             // failure than hiding the only way out of a download that would have
             // worked.
-            if (failure.requiresAuth) return SIGN_IN;
-            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+            if (failure.requiresAuth) return signIn;
+            return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
     }
 }

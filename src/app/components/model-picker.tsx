@@ -13,6 +13,7 @@ import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
 import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
@@ -192,6 +193,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             { key: 'on', title: 'In use', hint: 'The orchestrator routes requests to these', models: [] },
             { key: 'ready', title: 'Downloaded', models: [] },
             { key: 'available', title: 'Available to download', models: [] },
+            { key: 'cloud', title: 'Available in the cloud', models: [] },
             { key: 'locked', title: 'Requires an upgrade', models: [] },
         ];
         for (const m of pickable) {
@@ -204,7 +206,9 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             // here would discard the one thing it was sent for. It goes in the
             // 'locked' bucket: greyed, lock icon, not clickable.
             const locked = isLocked(m);
-            const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
+            // A cloud model is either added to the project (on) or not: it has
+            // no downloaded-but-off state, because there are no weights to keep.
+            const key = isEnabled(name) ? 'on' : locked ? 'locked' : isRemote(m) ? 'cloud' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
         return buckets.filter((b) => b.models.length > 0);
@@ -216,9 +220,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const name = m.name || m.id || m.model;
         const workspaceName = m.workspace_name || name;
         // Enabling a model that isn't on disk downloads it first — see
-        // `slp-set-model-enabled`. The dialog stays open either way, because with
-        // multi-select the next thing you do is usually pick another one.
-        handleToggleModel(name, workspaceName, m.downloaded ? !isEnabled(name) : true);
+        // `slp-set-model-enabled`; adding a cloud model takes the same path and
+        // removing one is turning it off. The dialog stays open either way,
+        // because with multi-select the next thing you do is usually pick another.
+        handleToggleModel(name, workspaceName, m.downloaded || isRemote(m) ? !isEnabled(name) : true);
     };
 
     // Trigger. One model selected means the orchestrator has no choice left to
@@ -246,7 +251,19 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model can be in, so there is exactly one place to look for "what is this
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
-    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
+    // A cloud model swaps the download glyph for an add glyph, and has no
+    // transfer to stop — its /v1/init completes at once.
+    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean; remote: boolean }) => {
+        if (st.busy && st.remote) {
+            return (
+                <Tooltip title="Adding…" arrow placement="top">
+                    <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
+                        <CircularProgress size={14} thickness={2.5} sx={{ color: 'currentColor' }} />
+                    </span>
+                </Tooltip>
+            );
+        }
+
         // Downloading, and a way out of it. Weights are gigabytes, so a click
         // made by mistake otherwise commits the machine to the whole transfer.
         // The spinner and the stop are one control — a square inside the turning
@@ -298,7 +315,17 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             );
         }
 
-        if (!st.downloaded) {
+        if (st.remote && !st.on) {
+            return (
+                <Tooltip title="Add and turn on this model" arrow placement="top">
+                    <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
+                        <AddCircleOutlineIcon sx={{ fontSize: 14 }} />
+                    </span>
+                </Tooltip>
+            );
+        }
+
+        if (!st.downloaded && !st.remote) {
             return (
                 <Tooltip title="Download and turn on this model" arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
@@ -321,7 +348,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         }
 
         return (
-            <Tooltip title={st.on ? 'On — click to turn off' : 'Off — click to turn on'} arrow placement="top">
+            <Tooltip title={st.remote ? 'Added — click to remove' : st.on ? 'On — click to turn off' : 'Off — click to turn on'} arrow placement="top">
                 <span
                     className="flex items-center justify-center p-[2px]"
                     style={{ color: st.on ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }}
@@ -346,11 +373,11 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const percent = downloads.get(name)?.percent ?? 0;
         const failure = downloadErrors.get(name);
         // What to say and what to offer, decided by the status SLP answered.
-        const copy = failure ? describeFailure(failure, canContact, canUpgrade) : null;
+        const remote = isRemote(m);
+        const copy = failure ? describeFailure(failure, canContact, canUpgrade, remote) : null;
         const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
-        const remote = isRemote(m);
         const where = locationTag(m);
         // Size and memory describe weights on this machine, which a cloud model
         // doesn't have.
@@ -414,7 +441,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </span>
 
                     <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                        {renderState({ name, on, downloaded, locked, busy, isActive })}
+                        {renderState({ name, on, downloaded, locked, busy, isActive, remote })}
                     </div>
                 </div>
 
@@ -472,7 +499,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </Tooltip>
                 </Box>
 
-                {busy && (
+                {busy && !remote && (
                     <div className="mt-2 flex items-center gap-2">
                         <span className="flex-1 h-1 rounded-full overflow-hidden block" style={{ backgroundColor: 'var(--sl-white-alpha-7)' }}>
                             <span className="h-full rounded-full block transition-all" style={{ width: `${percent}%`, backgroundColor: 'var(--sl-brand-primary)' }} />
