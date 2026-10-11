@@ -111,7 +111,8 @@ In renderer code, access via `import.meta.env.VITE_*` (not `process.env`).
 A remote connection is added from the UI: paste its URL into the "Add your
 own" card and the app writes the connection file for it — `name` derived from
 the URL, `url` as given — and installs that. A server that runs locally has no
-URL to paste, so it is added by putting a `.toml` in `~/.smartloop/mcp.d/`.
+URL to paste, so it is added by putting a `.toml` in `~/.smartloop/mcp.d/`
+(`~/snap/smartloop-studio/common/mcp.d/` for the snap install).
 Either way the file describes the server and nothing else — `name`, plus `url`
 for a remote one or `package` / `command` + `args` for one run locally.
 
