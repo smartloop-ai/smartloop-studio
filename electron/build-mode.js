@@ -15,7 +15,8 @@
  *     lives in ~/.smartloop in every build. The sandboxed build reaches it
  *     through the home-relative-path temporary exception in
  *     entitlements.mas.plist, so it shares one data dir with the CLI and the
- *     Developer-ID build.
+ *     Developer-ID build. The exception is the snap, whose strict confinement
+ *     blocks ~/.* — it keeps its state in $SNAP_USER_COMMON (see slpHomeDir).
  *   - The store delivers updates, so the app reports none of its own.
  *   - The sandbox cannot write to ~/.local/bin, so the `slp` CLI symlink is
  *     unavailable.
@@ -60,8 +61,17 @@ function realHomeDir() {
   return os.homedir();
 }
 
-/** SLP's home (SLP_HOME): ~/.smartloop under the real home, in every build. */
+/**
+ * SLP's home (SLP_HOME): ~/.smartloop under the real home, in every build but
+ * the snap. Strict confinement's `home` plug denies top-level dotfiles (~/.*),
+ * so ~/.smartloop is unreachable there and SQLite fails with "unable to open
+ * database file". The snap uses $SNAP_USER_COMMON
+ * (~/snap/smartloop-studio/common) instead, which survives revision updates.
+ */
 function slpHomeDir() {
+  if (process.env.SNAP && process.env.SNAP_USER_COMMON) {
+    return process.env.SNAP_USER_COMMON;
+  }
   return path.join(realHomeDir(), '.smartloop');
 }
 
