@@ -955,7 +955,7 @@ ipcMain.handle('select-folder', async () => {
 ipcMain.handle('get-home-dir', () => realHomeDir());
 
 // Blank project template — downloaded from GitHub releases and cached locally
-const TEMPLATE_VERSION = 'v1.0.0';
+const TEMPLATE_VERSION = 'v1.1.0';
 const TEMPLATE_RELEASE_URL = `https://github.com/smartloop-ai/blank-project-template/archive/refs/tags/${TEMPLATE_VERSION}.zip`;
 const TEMPLATE_CACHE_DIR = path.join(slpService.getSlpDir(), 'templates');
 const TEMPLATE_CACHE_PATH = path.join(TEMPLATE_CACHE_DIR, 'project_1.zip');
