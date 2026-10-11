@@ -29,7 +29,7 @@ fi
 SLP_VERSION="${SLP_VERSION:-1.2.5}"
 SLP_HOME="${SMARTLOOP_HOME:-$HOME/.smartloop}"
 PORT_FILE="$SLP_HOME/server.port"
-TEMPLATE_VERSION="v1.0.0"
+TEMPLATE_VERSION="v1.1.0"
 TEMPLATE_URL="https://github.com/smartloop-ai/blank-project-template/archive/refs/tags/${TEMPLATE_VERSION}.zip"
 TEMPLATE_PATH="$SLP_HOME/templates/project_1.zip"
 

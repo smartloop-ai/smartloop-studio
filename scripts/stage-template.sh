@@ -17,7 +17,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TEMPLATE_VERSION="${TEMPLATE_VERSION:-v1.0.0}"
+TEMPLATE_VERSION="${TEMPLATE_VERSION:-v1.1.0}"
 URL="https://github.com/smartloop-ai/blank-project-template/archive/refs/tags/${TEMPLATE_VERSION}.zip"
 DEST="electron/data/templates"
 FILE="$DEST/project_1.zip"
