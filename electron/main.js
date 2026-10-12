@@ -908,6 +908,11 @@ ipcMain.handle('import-project', async (event, zipPath, overrides) => {
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
 
+    // SLP indexes the imported documents only after it spins up the project
+    // agent, a beat after this returns — so one immediate poll lands too early
+    // and the next idle poll is 30s out. Hold the fast cadence for a minute.
+    healthMonitor.boost(60_000);
+
     const project = database.getProject(newProjectId);
     return { success: true, project };
   } catch (err) {
@@ -1258,17 +1263,17 @@ ipcMain.handle('projects-delete', async (event, projectId) => {
 
     const res = await fetch(`${baseUrl}/v1/projects/${projectId}`, { method: 'DELETE' });
 
-    if (res.status === 200 || res.status === 204) {
+    // 404 means SLP already dropped it (an earlier delete that failed locally,
+    // or a retry). Purge the local rows anyway, or they linger and resurface
+    // when the same project or files are added again.
+    if (res.status === 200 || res.status === 204 || res.status === 404) {
       // Before the cascade, not after: messages.conversation_id is ON DELETE
       // CASCADE, so a turn still running here would finalize into rows whose
       // parent is gone and lose its answer to a swallowed FK error. Destroying
       // the socket also frees SLP's single inference slot, which the orphaned
       // generation would otherwise hold against every other conversation.
       chatStream.abortByProject(projectId);
-      database.deleteConversationsByProject(projectId);
-      database.deleteMcpServersByProject(projectId);
-      database.deleteDocumentStatusByProject(projectId);
-      database.deleteFoldersByProject(projectId);
+      // Single transaction: conversations, docs, folders, traces, tabs, project.
       database.deleteProject(projectId);
 
       broadcastProjectsChanged();
@@ -1338,7 +1343,7 @@ ipcMain.handle('db-get-document-folders-by-project', (event, projectId) => datab
 // Document Status
 ipcMain.handle('db-set-document-processed', (event, documentId, projectId) => database.setDocumentProcessed(documentId, projectId));
 ipcMain.handle('db-get-document-status-by-project', (event, projectId) => database.getDocumentStatusByProject(projectId));
-ipcMain.handle('db-delete-document-status', (event, documentId) => database.deleteDocumentStatus(documentId));
+ipcMain.handle('db-delete-document-status', (event, documentId, projectId) => database.deleteDocumentStatus(documentId, projectId));
 ipcMain.handle('db-delete-document-status-by-project', (event, projectId) => database.deleteDocumentStatusByProject(projectId));
 ipcMain.handle('db-delete-folders-by-project', (event, projectId) => database.deleteFoldersByProject(projectId));
 // Documents (local source of truth)

@@ -107,10 +107,13 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
     (async () => {
       const dates = await storageService.getDocumentStatusByProject(projectId);
       if (cancelled) return;
-      setProcessedDates(dates);
       const seeded: Record<string, string> = {};
       for (const id of Object.keys(dates)) seeded[id] = 'indexed';
-      setIndexingStatus(seeded);
+      // Merge under, not replace: the documents list and the health poll may
+      // already have reported live statuses for this project while SQLite was
+      // being read, and wiping them leaves those docs stuck on "Pending".
+      setIndexingStatus(prev => ({ ...seeded, ...prev }));
+      setProcessedDates(prev => ({ ...dates, ...prev }));
     })();
     return () => { cancelled = true; };
   }, [projectId]);
@@ -190,6 +193,7 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
           });
         });
       }
+
       setIndexingProgress(
         pendingCount > 0
           ? { total: indexingDocs.length, indexed: indexedCount, pending: pendingCount }
@@ -254,7 +258,7 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
 
   const removeProcessed = useCallback((docId: string) => {
     if (!docId) return;
-    storageService.deleteDocumentStatus(docId);
+    storageService.deleteDocumentStatus(docId, projectIdRef.current ?? undefined);
     setIndexingStatus(prev => {
       if (!(docId in prev)) return prev;
       const next = { ...prev };

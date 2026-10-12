@@ -133,6 +133,22 @@ export function useProjectDocuments({ projectId, folderPath }: UseProjectDocumen
     });
   }, [projectId, folderPath]);
 
+  // A file SLP has not registered yet is listed with `id: null` — its id is a
+  // content hash assigned at indexing. Health then reports the doc indexed under
+  // an id the list has never seen, so the row would sit on "Pending" until
+  // something re-fetched. When that happens, re-fetch once per new set of ids.
+  const unresolvedKeyRef = useRef('');
+  useEffect(() => {
+    if (!apiDocuments.some((d: any) => !d.id)) { unresolvedKeyRef.current = ''; return; }
+    const known = new Set(apiDocuments.map((d: any) => d.id).filter(Boolean));
+    const unseen = Object.keys(indexingStatus).filter(id => !known.has(id)).sort();
+    if (unseen.length === 0) return;
+    const key = unseen.join(',');
+    if (key === unresolvedKeyRef.current) return;
+    unresolvedKeyRef.current = key;
+    refreshDocuments();
+  }, [apiDocuments, indexingStatus, refreshDocuments]);
+
   // Project folder is the source of truth; API data enriches with status/summary
   const effectiveDocuments = useMemo(() => {
     const serverDocs: any[] = apiDocuments;

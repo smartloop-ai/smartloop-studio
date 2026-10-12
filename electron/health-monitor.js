@@ -6,6 +6,9 @@ const ACTIVE_INTERVAL_MS = 3_000;
 let timeoutId = null;
 let started = false;
 let getWindow = null;
+// Poll at the active cadence until this time even when nothing is indexing yet —
+// covers the gap between a project import returning and SLP starting to index.
+let activeUntil = 0;
 
 function send(channel, data) {
   const win = getWindow?.();
@@ -31,7 +34,7 @@ async function pollOnce() {
     const health = await res.json();
 
     // Cadence: poll fast while anything is still being indexed.
-    let nextDelay = IDLE_INTERVAL_MS;
+    let nextDelay = Date.now() < activeUntil ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
     const docs = health?.indexing?.documents;
     if (Array.isArray(docs)) {
       for (const d of docs) {
@@ -84,6 +87,16 @@ function poke() {
   tick();
 }
 
+/**
+ * Poll now and keep the fast cadence for `durationMs`. For state changes whose
+ * effect lands a few seconds later (an import's documents start indexing only
+ * once SLP has spun up the project agent), where a single poke is too early.
+ */
+function boost(durationMs) {
+  activeUntil = Math.max(activeUntil, Date.now() + durationMs);
+  poke();
+}
+
 function stop() {
   started = false;
   if (timeoutId) {
@@ -92,4 +105,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, poke };
+module.exports = { start, stop, poke, boost };
