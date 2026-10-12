@@ -1563,7 +1563,7 @@ description: A clear description of what this skill does and when to use it
       }
 
       // Clean up all SQLite records for this document
-      await storageService.deleteDocumentStatus(docId);
+      await storageService.deleteDocumentStatus(docId, selectedProject.id);
       await storageService.clearDocumentFolder(docId);
 
       // Delete the file from disk

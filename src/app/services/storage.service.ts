@@ -481,10 +481,10 @@ class StorageService {
     }
   }
 
-  async deleteDocumentStatus(documentId: string): Promise<void> {
+  async deleteDocumentStatus(documentId: string, projectId?: string): Promise<void> {
     if (!this.db) return;
     try {
-      await this.db.deleteDocumentStatus(documentId);
+      await this.db.deleteDocumentStatus(documentId, projectId);
     } catch (error) {
       console.error('Error deleting document status:', error);
     }

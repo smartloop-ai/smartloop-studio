@@ -135,10 +135,13 @@ function openDatabase() {
     CREATE INDEX IF NOT EXISTS idx_document_folders_project ON document_folders(project_id);
     CREATE INDEX IF NOT EXISTS idx_document_folders_folder ON document_folders(folder_id);
 
+    -- Keyed by (document, project): document ids are content hashes, so the
+    -- same file in two projects shares an id and must not share a timestamp.
     CREATE TABLE IF NOT EXISTS document_status (
-      document_id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL,
       project_id TEXT NOT NULL,
-      processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      processed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (document_id, project_id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_document_status_project ON document_status(project_id);
@@ -207,6 +210,29 @@ function openDatabase() {
   if (!projectCols.find(c => c.name === 'instructions')) {
     db.exec("ALTER TABLE projects ADD COLUMN instructions TEXT");
     console.log('[DB] Added instructions column to projects');
+  }
+
+  // Migration: document_status was keyed by document_id alone, so a re-added
+  // project (or any project holding the same file) inherited another project's
+  // processed_at. Rebuild it with a (document_id, project_id) key.
+  const statusPk = db.prepare("PRAGMA table_info(document_status)").all().filter(c => c.pk > 0);
+  if (statusPk.length === 1) {
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE document_status RENAME TO document_status_old;
+        CREATE TABLE document_status (
+          document_id TEXT NOT NULL,
+          project_id TEXT NOT NULL,
+          processed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (document_id, project_id)
+        );
+        INSERT INTO document_status (document_id, project_id, processed_at)
+          SELECT document_id, project_id, processed_at FROM document_status_old;
+        DROP TABLE document_status_old;
+        CREATE INDEX IF NOT EXISTS idx_document_status_project ON document_status(project_id);
+      `);
+    })();
+    console.log('[DB] Rekeyed document_status by (document_id, project_id)');
   }
 
   // Migration: seed default local MCP server for existing projects that don't have one
@@ -838,12 +864,12 @@ function setDocumentProcessed(documentId, projectId) {
   d.prepare(`
     INSERT INTO document_status (document_id, project_id, processed_at)
     VALUES (?, ?, ?)
-    ON CONFLICT(document_id) DO NOTHING
+    ON CONFLICT(document_id, project_id) DO NOTHING
   `).run(documentId, projectId, now);
   // Read back the stored value so callers can use it (preserved original on
   // conflict, freshly inserted `now` otherwise). Prevents in-memory state
   // from drifting to `now` when DB still holds the original timestamp.
-  const row = d.prepare('SELECT processed_at FROM document_status WHERE document_id = ?').get(documentId);
+  const row = d.prepare('SELECT processed_at FROM document_status WHERE document_id = ? AND project_id = ?').get(documentId, projectId);
   return row?.processed_at ?? now;
 }
 
@@ -857,9 +883,13 @@ function getDocumentStatusByProject(projectId) {
   return map;
 }
 
-function deleteDocumentStatus(documentId) {
+function deleteDocumentStatus(documentId, projectId) {
   const d = openDatabase();
-  d.prepare('DELETE FROM document_status WHERE document_id = ?').run(documentId);
+  if (projectId) {
+    d.prepare('DELETE FROM document_status WHERE document_id = ? AND project_id = ?').run(documentId, projectId);
+  } else {
+    d.prepare('DELETE FROM document_status WHERE document_id = ?').run(documentId);
+  }
 }
 
 function deleteDocumentStatusByProject(projectId) {

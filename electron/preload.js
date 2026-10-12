@@ -376,7 +376,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Document Status
     setDocumentProcessed: (documentId, projectId) => ipcRenderer.invoke('db-set-document-processed', documentId, projectId),
     getDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-get-document-status-by-project', projectId),
-    deleteDocumentStatus: (documentId) => ipcRenderer.invoke('db-delete-document-status', documentId),
+    deleteDocumentStatus: (documentId, projectId) => ipcRenderer.invoke('db-delete-document-status', documentId, projectId),
     deleteDocumentStatusByProject: (projectId) => ipcRenderer.invoke('db-delete-document-status-by-project', projectId),
     deleteFoldersByProject: (projectId) => ipcRenderer.invoke('db-delete-folders-by-project', projectId),
     // Documents (local source of truth)
