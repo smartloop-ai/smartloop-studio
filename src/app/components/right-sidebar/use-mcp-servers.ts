@@ -12,6 +12,17 @@ import {
 } from '@/app/services/mcp-server.service';
 
 /**
+ * Where a device sign-in in the credential dialog stands. "waiting" shows the
+ * code the user enters at `verificationUri`; "failed" a denied, expired or
+ * errored attempt that can be started over.
+ */
+export type DeviceSignInState =
+  | { phase: 'idle' }
+  | { phase: 'starting' }
+  | { phase: 'waiting'; userCode: string; verificationUri: string; expiresAt: number }
+  | { phase: 'failed'; message: string };
+
+/**
  * Everything the Connections section knows, as one hook.
  *
  * A hook rather than state inside the panel, because none of this can be scoped
@@ -88,6 +99,10 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
   // pasted credential (credential_fields) instead of a browser OAuth flow.
   const [credentialEntry, setCredentialEntry] = useState<McpCatalogEntry | null>(null);
   const [credentialError, setCredentialError] = useState('');
+  const [deviceSignIn, setDeviceSignIn] = useState<DeviceSignInState>({ phase: 'idle' });
+  // Bumped to abandon the device sign-in in flight; its poll loop checks this
+  // after every await and stops once it has moved on.
+  const deviceRunRef = useRef(0);
 
   // Last API-backed list per project. Switching back repaints from this in the
   // same tick, so the connected badges, disconnect button and tool counts are
@@ -123,7 +138,14 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     setMcpUrlInput('');
     setCredentialEntry(null);
     setCredentialError('');
+    deviceRunRef.current += 1;
+    setDeviceSignIn({ phase: 'idle' });
   }, [projectId]);
+
+  // Stop polling a device sign-in once the hook's owner goes away.
+  useEffect(() => () => {
+    deviceRunRef.current += 1;
+  }, []);
 
   // System servers appear only in the projects-list payload, never from the /mcp
   // endpoint, so they are merged in at read time instead of into the state above.
@@ -431,16 +453,85 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
 
 
   // Connect a curated catalog entry — same remote registration path as the URL
-  // box, using the entry's own server_url. An entry that needs a pasted
-  // credential opens its dialog first; the dialog's submit connects it.
+  // box, using the entry's own server_url. An entry that signs in by device code
+  // or needs a pasted credential opens its dialog first; the dialog connects it.
   const handleConnectCatalogEntry = async (entry: McpCatalogEntry) => {
-    if (entry.remote_config?.credential_fields?.length) {
+    if (entry.remote_config?.device_flow || entry.remote_config?.credential_fields?.length) {
       setCatalogItemError(null);
       setCredentialError('');
+      deviceRunRef.current += 1;
+      setDeviceSignIn({ phase: 'idle' });
       setCredentialEntry(entry);
       return;
     }
     await connectCatalogEntry(entry);
+  };
+
+  /**
+   * Sign the dialog's entry in by device code: show the code, then poll at the
+   * interval the provider asks for until it is approved, denied or expires. A
+   * grant registers the server in the SLP API, so success only needs the
+   * same follow-up as any other connect.
+   */
+  const handleStartDeviceSignIn = async () => {
+    const entry = credentialEntry;
+    const pid = projectId;
+    if (!entry || !pid) return;
+
+    const run = ++deviceRunRef.current;
+    const live = () => deviceRunRef.current === run;
+    const fail = (message: string) => setDeviceSignIn({ phase: 'failed', message });
+
+    setCredentialError('');
+    setDeviceSignIn({ phase: 'starting' });
+
+    const started = await mcpServerService.startDeviceSignIn(pid, entry.slug);
+    if (!live()) return;
+    if (!started.success || !started.data) {
+      fail(started.error || 'Could not start sign-in');
+      return;
+    }
+
+    const { session_id, user_code, verification_uri, verification_uri_complete, interval, expires_in } = started.data;
+    setDeviceSignIn({
+      phase: 'waiting',
+      userCode: user_code,
+      verificationUri: verification_uri_complete || verification_uri,
+      expiresAt: Date.now() + expires_in * 1000,
+    });
+
+    let waitSeconds = Math.max(interval, 1);
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      if (!live()) return;
+
+      const polled = await mcpServerService.pollDeviceSignIn(pid, session_id);
+      if (!live()) return;
+      if (!polled.success || !polled.data) {
+        fail(polled.error || 'Sign-in failed');
+        return;
+      }
+
+      const { status, interval: nextInterval, server } = polled.data;
+      if (status === 'pending') {
+        if (nextInterval) waitSeconds = nextInterval;
+        continue;
+      }
+      if (status === 'denied') {
+        fail(`Access was declined on ${entry.display_name}.`);
+        return;
+      }
+      if (status === 'expired') {
+        fail('The code expired before it was entered.');
+        return;
+      }
+
+      deviceRunRef.current += 1;
+      setDeviceSignIn({ phase: 'idle' });
+      setCredentialEntry(null);
+      await finishCatalogConnect(pid, entry, server?.id, server?.name);
+      return;
+    }
   };
 
   const handleSubmitCatalogCredentials = async (credentials: Record<string, string>) => {
@@ -457,6 +548,28 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
   const handleCloseCredentialDialog = () => {
     setCredentialEntry(null);
     setCredentialError('');
+    deviceRunRef.current += 1;
+    setDeviceSignIn({ phase: 'idle' });
+  };
+
+  /** Record a newly connected catalog server and start discovering its tools. */
+  const finishCatalogConnect = async (
+    pid: string,
+    entry: McpCatalogEntry,
+    serverId?: string,
+    name?: string,
+  ) => {
+    if (serverId) {
+      await persistMcpServerToDb({
+        id: serverId,
+        project_id: pid,
+        name: name || entry.display_name,
+        server_type: 'remote',
+        config: { server_url: entry.remote_config.server_url },
+      });
+    }
+    await loadMcpServers();
+    if (serverId) setDiscoveringServerId(serverId);
   };
 
   /**
@@ -517,18 +630,7 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
           window.open(data.auth_url, '_blank');
         }
       } else {
-        const serverId = data.id || data.server_id;
-        if (serverId) {
-          await persistMcpServerToDb({
-            id: serverId,
-            project_id: projectId,
-            name: data.name || entry.display_name,
-            server_type: 'remote',
-            config: { server_url: serverUrl },
-          });
-        }
-        await loadMcpServers();
-        if (serverId) setDiscoveringServerId(serverId);
+        await finishCatalogConnect(projectId, entry, data.id || data.server_id, data.name);
       }
       return null;
     } catch (error: any) {
@@ -646,6 +748,8 @@ export function useMcpServers({ projectId, projectMcp, sectionOpen }: UseMcpServ
     credentialError,
     handleSubmitCatalogCredentials,
     handleCloseCredentialDialog,
+    deviceSignIn,
+    handleStartDeviceSignIn,
     // Actions
     handleAddMcpUrl,
     handleConnectCatalogEntry,
