@@ -20,6 +20,8 @@ export default function ConnectionsPanel({ mcp, projectId }: { mcp: McpSectionSt
         entry={mcp.credentialEntry}
         submitting={!!mcp.credentialEntry && mcp.connectingSlug === mcp.credentialEntry.slug}
         error={mcp.credentialError}
+        deviceSignIn={mcp.deviceSignIn}
+        onStartDeviceSignIn={mcp.handleStartDeviceSignIn}
         onClose={mcp.handleCloseCredentialDialog}
         onSubmit={mcp.handleSubmitCatalogCredentials}
       />
