@@ -163,9 +163,21 @@ export interface McpCredentialField {
 }
 
 /**
+ * An RFC 8628 device sign-in a catalog entry offers — GitHub's, for one. The
+ * client id is public; the SLP API runs the flow, so the app only needs to
+ * know the entry has one.
+ */
+export interface McpDeviceFlow {
+  client_id: string;
+  device_authorization_endpoint: string;
+  token_endpoint: string;
+  scopes?: string[];
+}
+
+/**
  * A curated connection from GET /v1/mcp-catalog — always remote. Connected by
- * OAuth, or by pasting a credential when `auth_type` is "token" and
- * `credential_fields` says what to ask for.
+ * OAuth, or when `auth_type` is "token" by a device sign-in (`device_flow`) or
+ * by pasting the credential `credential_fields` describes.
  */
 export interface McpCatalogEntry {
   slug: string;
@@ -176,6 +188,7 @@ export interface McpCatalogEntry {
     server_url: string;
     auth_type?: 'oauth' | 'token' | 'none' | string;
     credential_fields?: McpCredentialField[];
+    device_flow?: McpDeviceFlow | null;
   };
   icon_url?: string;
   category?: string;
@@ -574,6 +587,66 @@ const completeOAuth = async (projectId: string, oauthData: {
 };
 
 
+/** The code to show the user and where they enter it. */
+export interface McpDeviceStart {
+  /** Passed back on each poll; the device code itself stays in the SLP API. */
+  session_id: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete?: string | null;
+  /** Seconds between polls. */
+  interval: number;
+  expires_in: number;
+}
+
+/**
+ * Where a device sign-in stands: "pending" (poll again after `interval`),
+ * "denied" or "expired" (start over), or "connected" with the new `server`.
+ */
+export interface McpDevicePoll {
+  status: 'pending' | 'denied' | 'expired' | 'connected';
+  interval?: number | null;
+  server?: McpServer | null;
+}
+
+const postDeviceSignIn = async <T>(
+  projectId: string,
+  step: 'start' | 'poll',
+  body: Record<string, string>,
+): Promise<{ success: boolean; data?: T; error?: string }> => {
+  try {
+    if (!projectId) {
+      return { success: false, error: 'Project ID is required' };
+    }
+
+    const localBase = await getLocalApiEndpoint();
+    const response = await fetch(`${localBase}/v1/projects/${projectId}/mcp/device/${step}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (response.ok) {
+      return { success: true, data: (await response.json()) as T };
+    }
+
+    const errorData = await response.json().catch(() => ({}));
+    return { success: false, error: extractErrorMessage(errorData, 'Sign-in failed') };
+  } catch (error: any) {
+    console.error(`Error in device sign-in ${step}:`, error);
+    return { success: false, error: error.message || 'An error occurred during sign-in' };
+  }
+};
+
+/** Start a device sign-in for a catalog entry that has `device_flow`. */
+const startDeviceSignIn = (projectId: string, catalogSlug: string) =>
+  postDeviceSignIn<McpDeviceStart>(projectId, 'start', { catalog_slug: catalogSlug });
+
+/** Poll a device sign-in once; a grant registers the server. */
+const pollDeviceSignIn = (projectId: string, sessionId: string) =>
+  postDeviceSignIn<McpDevicePoll>(projectId, 'poll', { session_id: sessionId });
+
+
 /**
  * Get a specific MCP server
  * @param projectId - ID of the project
@@ -906,6 +979,8 @@ export const mcpServerService = {
   deleteMcpServer,
   registerMcpServer,
   completeOAuth,
+  startDeviceSignIn,
+  pollDeviceSignIn,
   saveMcpServersToStorage,
   loadMcpServersFromStorage,
   removeMcpServerFromStorage,
