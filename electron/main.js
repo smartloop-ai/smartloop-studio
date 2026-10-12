@@ -1265,10 +1265,7 @@ ipcMain.handle('projects-delete', async (event, projectId) => {
       // the socket also frees SLP's single inference slot, which the orphaned
       // generation would otherwise hold against every other conversation.
       chatStream.abortByProject(projectId);
-      database.deleteConversationsByProject(projectId);
-      database.deleteMcpServersByProject(projectId);
-      database.deleteDocumentStatusByProject(projectId);
-      database.deleteFoldersByProject(projectId);
+      // Single transaction: conversations, docs, folders, traces, tabs, project.
       database.deleteProject(projectId);
 
       broadcastProjectsChanged();

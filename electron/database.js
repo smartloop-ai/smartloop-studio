@@ -308,9 +308,24 @@ function updateProject(id, updates) {
   return getProject(id);
 }
 
+// Purge every row keyed to the project, not just the project itself. SLP can
+// hand back the same id when a project is re-added, so anything left behind
+// (documents, processed timestamps, folders, traces, tabs) would resurface.
 function deleteProject(id) {
   const d = openDatabase();
-  d.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  d.transaction(() => {
+    // Messages cascade via FK on conversations.
+    d.prepare('DELETE FROM conversations WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM run_traces WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM mcp_servers WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM document_folders WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM folders WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM document_status WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM documents WHERE project_id = ?').run(id);
+    d.prepare('DELETE FROM settings WHERE key = ?').run(`openTabs_${id}`);
+    d.prepare("DELETE FROM settings WHERE key = 'selected_project_id' AND value = ?").run(JSON.stringify(id));
+    d.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  })();
 }
 
 function formatProject(row) {
