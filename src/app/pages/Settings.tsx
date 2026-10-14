@@ -1020,7 +1020,7 @@ export default function SettingsPage() {
                             const unmetered = limit === null;
                             const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
                             const spent = remaining === 0;
-                            // Amber before the wall, red at it — warned in time to upgrade.
+                            // Amber before the wall, red at it.
                             const barColor = spent ? 'var(--sl-status-error)' : pct >= 80 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)';
                             const planLabel = plan === 'paid' ? 'Pro' : plan === 'admin' ? 'Admin' : 'Free';
                             const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
@@ -1059,23 +1059,6 @@ export default function SettingsPage() {
                                                     : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} searches a month.`}
                                         </p>
                                     </Box>
-
-                                    {/* Only on the plan that has somewhere to go, before the limit as well as after. */}
-                                    {plan === 'free' && (
-                                        <Box className="flex items-center justify-between gap-4 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
-                                            <Box>
-                                                <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--sl-text-primary)' }}>Need more searches?</h3>
-                                                <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>Pro raises the allowance to 1,000 searches a month.</p>
-                                            </Box>
-                                            <button
-                                                type="button"
-                                                onClick={() => window.electronAPI?.openExternal(`${import.meta.env.VITE_APP_URL || 'https://app.smartloop.ai'}/settings/billing`)}
-                                                className="cursor-pointer px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap border border-[var(--sl-brand-alpha-30)] text-[var(--sl-brand-primary)] hover:bg-[var(--sl-brand-alpha-10)] transition-colors"
-                                            >
-                                                Upgrade to Pro
-                                            </button>
-                                        </Box>
-                                    )}
                                 </>
                             );
                         })()}
