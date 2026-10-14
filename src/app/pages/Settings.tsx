@@ -1027,12 +1027,12 @@ export default function SettingsPage() {
                             return (
                                 <>
                                     <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
-                                        <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>This month</h3>
+                                        <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>Credits this month</h3>
                                         {unmetered ? (
                                             <Box className="flex items-center gap-2">
                                                 <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
                                                 <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                                    {used.toLocaleString()} searches so far — unlimited
+                                                    {used.toLocaleString()} credits used so far — unlimited
                                                 </span>
                                             </Box>
                                         ) : (
@@ -1040,7 +1040,7 @@ export default function SettingsPage() {
                                                 <Box className="flex items-baseline justify-between gap-3">
                                                     <span className="text-sm" style={{ color: 'var(--sl-text-primary)' }}>
                                                         <span className="font-semibold">{used.toLocaleString()}</span>
-                                                        <span style={{ color: 'var(--sl-text-faint)' }}> / {limit!.toLocaleString()} searches</span>
+                                                        <span style={{ color: 'var(--sl-text-faint)' }}> / {limit!.toLocaleString()} credits</span>
                                                     </span>
                                                     <span className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
                                                         {(remaining ?? 0).toLocaleString()} left
@@ -1055,8 +1055,8 @@ export default function SettingsPage() {
                                             {unmetered
                                                 ? 'This account is not metered.'
                                                 : spent
-                                                    ? `You've used this month's searches. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
-                                                    : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} searches a month.`}
+                                                    ? `You've used this month's credits. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
+                                                    : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} credits a month, one per web search.`}
                                         </p>
                                     </Box>
                                 </>
