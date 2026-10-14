@@ -21,7 +21,7 @@ import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { LogoMark } from '@/app/components/logo';
 
-import type { StorageCleanupRequest, StorageUsage } from '@/electron';
+import type { StorageCleanupRequest, StorageUsage, WebSearchStatus } from '@/electron';
 
 // Categories the Clean panel draws as bands of their own, in bar order.  Keys
 // match the API's category keys and the cleanup request flags.
@@ -288,6 +288,21 @@ export default function SettingsPage() {
             setWebSearchSaving(false);
         }
     };
+
+    // The account's monthly search allowance, relayed from the cloud through
+    // SLP (which holds the token). Signed-out accounts have no allowance, and
+    // an SLP without the route leaves this null, which hides the meter.
+    const [webSearchStatus, setWebSearchStatus] = useState<WebSearchStatus | null>(null);
+    useEffect(() => {
+        if (!isSignedIn) {
+            setWebSearchStatus(null);
+            return;
+        }
+        window.electronAPI?.getWebSearchStatus?.().then((res) => {
+            setWebSearchStatus(res?.success && res.data ? res.data : null);
+        });
+    }, [isSignedIn]);
+    const webSearchQuota = webSearchStatus?.quota ?? null;
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -998,6 +1013,55 @@ export default function SettingsPage() {
                                 }}
                             />
                         </Box>
+
+                        {/* This month's search credits — mirrors the web app's Settings → Web Search. */}
+                        {isSignedIn && webSearchQuota && (() => {
+                            const { limit, used, remaining, resets_at, plan } = webSearchQuota;
+                            const unmetered = limit === null;
+                            const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                            const spent = remaining === 0;
+                            // Amber before the wall, red at it.
+                            const barColor = spent ? 'var(--sl-status-error)' : pct >= 80 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)';
+                            const planLabel = plan === 'paid' ? 'Pro' : plan === 'admin' ? 'Admin' : 'Free';
+                            const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+                            return (
+                                <>
+                                    <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
+                                        <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>Credits this month</h3>
+                                        {unmetered ? (
+                                            <Box className="flex items-center gap-2">
+                                                <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                                                <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                                    {used.toLocaleString()} credits used so far — unlimited
+                                                </span>
+                                            </Box>
+                                        ) : (
+                                            <>
+                                                <Box className="flex items-baseline justify-between gap-3">
+                                                    <span className="text-sm" style={{ color: 'var(--sl-text-primary)' }}>
+                                                        <span className="font-semibold">{used.toLocaleString()}</span>
+                                                        <span style={{ color: 'var(--sl-text-faint)' }}> / {limit!.toLocaleString()} credits</span>
+                                                    </span>
+                                                    <span className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
+                                                        {(remaining ?? 0).toLocaleString()} left
+                                                    </span>
+                                                </Box>
+                                                <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--sl-bg-surface-3)' }}>
+                                                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%`, backgroundColor: barColor }} />
+                                                </div>
+                                            </>
+                                        )}
+                                        <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>
+                                            {unmetered
+                                                ? 'This account is not metered.'
+                                                : spent
+                                                    ? `You've used this month's credits. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
+                                                    : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} credits a month, one per web search.`}
+                                        </p>
+                                    </Box>
+                                </>
+                            );
+                        })()}
                         <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
                             Only the search query leaves your device. Result links come back through Smartloop, then candidate pages are
                             fetched and ranked locally, so Smartloop never sees which sites you visit. Query wording, results and page

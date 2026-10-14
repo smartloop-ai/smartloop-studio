@@ -121,6 +121,27 @@ export interface StorageUsage {
   categories: Record<string, StorageCategory>;
 }
 
+/** The account's web search allowance this month (hosted /v1/websearch/status). */
+export interface WebSearchQuota {
+  /** Searches allowed this month; null when unmetered (admin). */
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  /** YYYY-MM */
+  period: string;
+  /** ISO timestamp — first instant of next month, UTC. */
+  resets_at: string;
+  plan: 'free' | 'paid' | 'admin' | string;
+}
+
+export interface WebSearchStatus {
+  enabled: boolean;
+  provider?: string | null;
+  /** 'unconfigured' | 'quota_exceeded' when enabled is false. */
+  reason?: string | null;
+  quota?: WebSearchQuota | null;
+}
+
 /** Body of POST /v1/storage/cleanup. Omitted categories are left alone. */
 export interface StorageCleanupRequest {
   models?: boolean;
@@ -357,6 +378,8 @@ export interface ElectronAPI {
     freeMemGb: number;
     gpu: string | null;
   }>;
+  // Web search allowance — proxied to SLP's /v1/websearch/status. `unsupported`: SLP predates the route.
+  getWebSearchStatus: () => Promise<{ success: boolean; data?: WebSearchStatus; unsupported?: boolean; error?: string }>;
   // Storage / free-up-space — proxied to the framework's /v1/storage endpoints
   getStorageUsage: () => Promise<{ success: boolean; data?: StorageUsage; error?: string }>;
   cleanupStorage: (opts: StorageCleanupRequest) =>
