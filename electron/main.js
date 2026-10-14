@@ -1632,6 +1632,28 @@ ipcMain.handle('slp-list-versions', async () => {
   }
 });
 
+// ── Web search allowance ───────────────────────────────────────────────────
+// The hosted search is metered per account per month. The tokens live in SLP,
+// not here, so SLP proxies the cloud's GET /v1/websearch/status and this only
+// relays it. A 404 is an SLP that predates the route: report it as
+// unsupported so Settings hides the meter instead of showing an error.
+ipcMain.handle('websearch-status', async () => {
+  try {
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const res = await fetch(`${baseUrl}/v1/websearch/status`);
+    if (res.status === 404) return { success: false, unsupported: true };
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      return { success: false, error: data?.detail || `Web search status failed (${res.status})` };
+    }
+    return { success: true, data: await res.json() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // ── Storage / free-up-space ────────────────────────────────────────────────
 // The framework owns everything under ~/.smartloop — the workspace record, the
 // downloaded models, its own log — so it decides what is safe to delete and
