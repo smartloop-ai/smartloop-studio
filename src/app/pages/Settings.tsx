@@ -1014,42 +1014,69 @@ export default function SettingsPage() {
                             />
                         </Box>
 
-                        {/* Monthly search credits — used / limit, with the reset date. */}
+                        {/* This month's search credits — mirrors the web app's Settings → Web Search. */}
                         {isSignedIn && webSearchQuota && (() => {
                             const { limit, used, remaining, resets_at, plan } = webSearchQuota;
                             const unmetered = limit === null;
-                            const usedPct = unmetered || !limit ? 0 : Math.min(100, (used / limit) * 100);
-                            const left = remaining ?? 0;
-                            const barColor = unmetered
-                                ? 'var(--sl-brand-primary)'
-                                : left <= 0
-                                    ? 'var(--sl-status-error)'
-                                    : limit && left / limit <= 0.2
-                                        ? 'var(--sl-status-warning)'
-                                        : 'var(--sl-brand-primary)';
-                            const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                            const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                            const spent = remaining === 0;
+                            // Amber before the wall, red at it — warned in time to upgrade.
+                            const barColor = spent ? 'var(--sl-status-error)' : pct >= 80 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)';
+                            const planLabel = plan === 'paid' ? 'Pro' : plan === 'admin' ? 'Admin' : 'Free';
+                            const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
                             return (
-                                <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
-                                    <Box className="flex items-center justify-between gap-4">
-                                        <Box className="flex items-center gap-2">
-                                            <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>Search credits</h3>
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase border border-[var(--sl-brand-alpha-30)] text-[var(--sl-brand-primary)] opacity-70">{plan}</span>
-                                        </Box>
-                                        <span className="text-xs font-mono" style={{ color: 'var(--sl-text-muted)' }}>
-                                            {unmetered ? 'Unlimited' : `${left} of ${limit} left`}
-                                        </span>
+                                <>
+                                    <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
+                                        <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>This month</h3>
+                                        {unmetered ? (
+                                            <Box className="flex items-center gap-2">
+                                                <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
+                                                <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
+                                                    {used.toLocaleString()} searches so far — unlimited
+                                                </span>
+                                            </Box>
+                                        ) : (
+                                            <>
+                                                <Box className="flex items-baseline justify-between gap-3">
+                                                    <span className="text-sm" style={{ color: 'var(--sl-text-primary)' }}>
+                                                        <span className="font-semibold">{used.toLocaleString()}</span>
+                                                        <span style={{ color: 'var(--sl-text-faint)' }}> / {limit!.toLocaleString()} searches</span>
+                                                    </span>
+                                                    <span className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
+                                                        {(remaining ?? 0).toLocaleString()} left
+                                                    </span>
+                                                </Box>
+                                                <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--sl-bg-surface-3)' }}>
+                                                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%`, backgroundColor: barColor }} />
+                                                </div>
+                                            </>
+                                        )}
+                                        <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>
+                                            {unmetered
+                                                ? 'This account is not metered.'
+                                                : spent
+                                                    ? `You've used this month's searches. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
+                                                    : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} searches a month.`}
+                                        </p>
                                     </Box>
-                                    {!unmetered && (
-                                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--sl-bg-surface-3)' }}>
-                                            <div className="h-full rounded-full transition-all" style={{ width: `${usedPct}%`, backgroundColor: barColor }} />
-                                        </div>
+
+                                    {/* Only on the plan that has somewhere to go, before the limit as well as after. */}
+                                    {plan === 'free' && (
+                                        <Box className="flex items-center justify-between gap-4 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
+                                            <Box>
+                                                <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--sl-text-primary)' }}>Need more searches?</h3>
+                                                <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>Pro raises the allowance to 1,000 searches a month.</p>
+                                            </Box>
+                                            <button
+                                                type="button"
+                                                onClick={() => window.electronAPI?.openExternal(`${import.meta.env.VITE_APP_URL || 'https://app.smartloop.ai'}/settings/billing`)}
+                                                className="cursor-pointer px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap border border-[var(--sl-brand-alpha-30)] text-[var(--sl-brand-primary)] hover:bg-[var(--sl-brand-alpha-10)] transition-colors"
+                                            >
+                                                Upgrade to Pro
+                                            </button>
+                                        </Box>
                                     )}
-                                    <p className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
-                                        {unmetered
-                                            ? `${used} searches this month`
-                                            : `${used} used this month · resets ${resetsOn}`}
-                                    </p>
-                                </Box>
+                                </>
                             );
                         })()}
                         <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
