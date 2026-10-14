@@ -12,7 +12,7 @@ const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { isSandboxed, useBundledSlp, bundledModelFiles, hasBundledModel, realHomeDir } = require('./build-mode');
+const { useBundledSlp, bundledModelFiles, hasBundledModel, realHomeDir } = require('./build-mode');
 const database = require('./database');
 const { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
@@ -213,16 +213,9 @@ const store = new Store({ name: 'smartloop-studio', encryptionKey: machineIdSync
 // SLP data directory — SLP's home (SLP_HOME), not where the framework lives:
 // the framework runs in place from inside the app on every platform, so this
 // holds only the state SLP itself manages (server.port, server.log, config,
-// models, workspaces, studio.db). It is ~/.smartloop/ (the default inside
-// slp-setup) in every build; the sandboxed Mac App Store build reaches it
-// through the home-relative-path exception in entitlements.mas.plist.
-//
-// Earlier store builds kept that state in the container
-// (~/Library/Containers/ai.smartloop.studio/Data/…/slp). Only the model weights
-// are carried over from there (adoptLegacyModels, once SLP has a workspace) —
-// conversations, studio.db, config and assets stay behind, so ~/.smartloop
-// starts clean apart from the models it would otherwise download again.
-const LEGACY_SLP_DIR = isSandboxed() ? path.join(app.getPath('userData'), 'slp') : null;
+// models, workspaces, studio.db). It is ~/.smartloop/ (slpHomeDir in
+// build-mode.js), except in the sandboxed Mac App Store build, which keeps it in
+// its container (~/Library/Containers/ai.smartloop.studio/Data/…/slp).
 
 // Storage IPC handlers
 ipcMain.handle('storage-get', (event, key) => {
@@ -2128,46 +2121,8 @@ async function ensureBootstrapModel(baseUrl, onProgress) {
 
   seededModelDir = path.join(modelsDir, BOOTSTRAP_MODEL_ID);
 
-  adoptLegacyModels(modelsDir);
-
   if (await placeBundledModels(modelsDir, onProgress)) return true;
   return downloadBootstrapModel(seededModelDir, onProgress);
-}
-
-/**
- * Move the model weights an earlier store build left in its container
- * (LEGACY_SLP_DIR/<workspace>/models) into this workspace's models/ dir, then
- * drop the container's SLP state. Only models move: everything else there
- * (conversations, studio.db, config, assets) is left out of ~/.smartloop.
- *
- * Entries already in the workspace win; the merge recurses so the per-org
- * directories (smartloop-ai/, Qwen/, embeddings/) combine rather than collide.
- */
-function adoptLegacyModels(modelsDir) {
-  if (!LEGACY_SLP_DIR || !fs.existsSync(LEGACY_SLP_DIR)) return;
-
-  const merge = (from, to) => {
-    if (!fs.existsSync(to)) {
-      fs.renameSync(from, to);
-      return;
-    }
-    if (!fs.statSync(from).isDirectory() || !fs.statSync(to).isDirectory()) return;
-    for (const name of fs.readdirSync(from)) merge(path.join(from, name), path.join(to, name));
-  };
-
-  try {
-    const workspaces = fs.readdirSync(LEGACY_SLP_DIR, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && /^[0-9a-f-]{36}$/i.test(entry.name))
-      .map((entry) => path.join(LEGACY_SLP_DIR, entry.name, 'models'))
-      .filter((dir) => fs.existsSync(dir));
-    for (const legacyModels of workspaces) {
-      merge(legacyModels, modelsDir);
-      console.log('[Model] Adopted models from', legacyModels);
-    }
-    fs.rmSync(LEGACY_SLP_DIR, { recursive: true, force: true });
-  } catch (error) {
-    console.warn('[Model] Could not adopt models from', LEGACY_SLP_DIR, error.message);
-  }
 }
 
 /**

@@ -3,7 +3,8 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const { slpHomeDir, realHomeDir } = require('./build-mode');
 
-// studio.db lives next to the SLP state in ~/.smartloop, in every build.
+// studio.db lives next to the SLP state (slpHomeDir: ~/.smartloop, or the
+// container in the sandboxed MAS build).
 const DB_DIR = slpHomeDir();
 const DB_PATH = path.join(DB_DIR, 'studio.db');
 

@@ -112,7 +112,9 @@ A remote connection is added from the UI: paste its URL into the "Add your
 own" card and the app writes the connection file for it — `name` derived from
 the URL, `url` as given — and installs that. A server that runs locally has no
 URL to paste, so it is added by putting a `.toml` in `~/.smartloop/mcp.d/`
-(`~/snap/smartloop-studio/common/mcp.d/` for the snap install).
+(`~/snap/smartloop-studio/common/mcp.d/` for the snap install;
+`~/Library/Containers/ai.smartloop.studio/Data/Library/Application Support/smartloop-studio/slp/mcp.d/`
+for the Mac App Store build, which can't reach `~/.smartloop`).
 Either way the file describes the server and nothing else — `name`, plus `url`
 for a remote one or `package` / `command` + `args` for one run locally.
 
