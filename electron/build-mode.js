@@ -12,11 +12,11 @@
  *     now ships it the same way, and all of them run it in place from the
  *     bundle rather than copying it out.
  *   - SLP state (server.port, server.log, config, models, studio.db, assets)
- *     lives in ~/.smartloop in every build. The sandboxed build reaches it
- *     through the home-relative-path temporary exception in
- *     entitlements.mas.plist, so it shares one data dir with the CLI and the
- *     Developer-ID build. The exception is the snap, whose strict confinement
- *     blocks ~/.* — it keeps its state in $SNAP_USER_COMMON (see slpHomeDir).
+ *     lives in ~/.smartloop, except where confinement forbids it: the
+ *     sandboxed MAS build keeps it in its container (App Review rejects the
+ *     home-relative-path exception that reaching ~/.smartloop would need), and
+ *     the snap, whose strict confinement blocks ~/.*, keeps it in
+ *     $SNAP_USER_COMMON (see slpHomeDir).
  *   - The store delivers updates, so the app reports none of its own.
  *   - The sandbox cannot write to ~/.local/bin, so the `slp` CLI symlink is
  *     unavailable.
@@ -62,15 +62,23 @@ function realHomeDir() {
 }
 
 /**
- * SLP's home (SLP_HOME): ~/.smartloop under the real home, in every build but
- * the snap. Strict confinement's `home` plug denies top-level dotfiles (~/.*),
- * so ~/.smartloop is unreachable there and SQLite fails with "unable to open
- * database file". The snap uses $SNAP_USER_COMMON
- * (~/snap/smartloop-studio/common) instead, which survives revision updates.
+ * SLP's home (SLP_HOME): ~/.smartloop under the real home, except in two
+ * confined builds that can't reach it:
+ *   - The sandboxed MAS build keeps it in its container (userData/slp). App
+ *     Review refuses the temporary-exception.files.home-relative-path
+ *     entitlement for /.smartloop/, so the store build does not share state
+ *     with the CLI or the Developer-ID build.
+ *   - The snap: strict confinement's `home` plug denies top-level dotfiles
+ *     (~/.*), so SQLite fails with "unable to open database file" there. It
+ *     uses $SNAP_USER_COMMON (~/snap/smartloop-studio/common) instead, which
+ *     survives revision updates.
  */
 function slpHomeDir() {
   if (process.env.SNAP && process.env.SNAP_USER_COMMON) {
     return process.env.SNAP_USER_COMMON;
+  }
+  if (isSandboxed()) {
+    return path.join(require('electron').app.getPath('userData'), 'slp');
   }
   return path.join(realHomeDir(), '.smartloop');
 }

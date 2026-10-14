@@ -51,17 +51,6 @@
     <true/>
 
     <!--
-      Read-write access to ~/.smartloop/ (SLP state, mcp.d connection files)
-      outside the container. Paths are relative to the user's real home and
-      must start with "/". This is a temporary exception, so App Review expects
-      a justification in the review notes.
-    -->
-    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
-    <array>
-      <string>/.smartloop/</string>
-    </array>
-
-    <!--
       Enable ONLY if the feature actually ships in the MAS build. Each of these
       requires a matching *UsageDescription string in Info.plist or review will
       reject. Left disabled by default to keep the review surface minimal.
