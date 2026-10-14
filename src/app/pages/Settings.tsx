@@ -21,7 +21,7 @@ import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { LogoMark } from '@/app/components/logo';
 
-import type { StorageCleanupRequest, StorageUsage } from '@/electron';
+import type { StorageCleanupRequest, StorageUsage, WebSearchStatus } from '@/electron';
 
 // Categories the Clean panel draws as bands of their own, in bar order.  Keys
 // match the API's category keys and the cleanup request flags.
@@ -288,6 +288,21 @@ export default function SettingsPage() {
             setWebSearchSaving(false);
         }
     };
+
+    // The account's monthly search allowance, relayed from the cloud through
+    // SLP (which holds the token). Signed-out accounts have no allowance, and
+    // an SLP without the route leaves this null, which hides the meter.
+    const [webSearchStatus, setWebSearchStatus] = useState<WebSearchStatus | null>(null);
+    useEffect(() => {
+        if (!isSignedIn) {
+            setWebSearchStatus(null);
+            return;
+        }
+        window.electronAPI?.getWebSearchStatus?.().then((res) => {
+            setWebSearchStatus(res?.success && res.data ? res.data : null);
+        });
+    }, [isSignedIn]);
+    const webSearchQuota = webSearchStatus?.quota ?? null;
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -998,6 +1013,45 @@ export default function SettingsPage() {
                                 }}
                             />
                         </Box>
+
+                        {/* Monthly search credits — used / limit, with the reset date. */}
+                        {isSignedIn && webSearchQuota && (() => {
+                            const { limit, used, remaining, resets_at, plan } = webSearchQuota;
+                            const unmetered = limit === null;
+                            const usedPct = unmetered || !limit ? 0 : Math.min(100, (used / limit) * 100);
+                            const left = remaining ?? 0;
+                            const barColor = unmetered
+                                ? 'var(--sl-brand-primary)'
+                                : left <= 0
+                                    ? 'var(--sl-status-error)'
+                                    : limit && left / limit <= 0.2
+                                        ? 'var(--sl-status-warning)'
+                                        : 'var(--sl-brand-primary)';
+                            const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                            return (
+                                <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
+                                    <Box className="flex items-center justify-between gap-4">
+                                        <Box className="flex items-center gap-2">
+                                            <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>Search credits</h3>
+                                            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase border border-[var(--sl-brand-alpha-30)] text-[var(--sl-brand-primary)] opacity-70">{plan}</span>
+                                        </Box>
+                                        <span className="text-xs font-mono" style={{ color: 'var(--sl-text-muted)' }}>
+                                            {unmetered ? 'Unlimited' : `${left} of ${limit} left`}
+                                        </span>
+                                    </Box>
+                                    {!unmetered && (
+                                        <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--sl-bg-surface-3)' }}>
+                                            <div className="h-full rounded-full transition-all" style={{ width: `${usedPct}%`, backgroundColor: barColor }} />
+                                        </div>
+                                    )}
+                                    <p className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
+                                        {unmetered
+                                            ? `${used} searches this month`
+                                            : `${used} used this month · resets ${resetsOn}`}
+                                    </p>
+                                </Box>
+                            );
+                        })()}
                         <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
                             Only the search query leaves your device. Result links come back through Smartloop, then candidate pages are
                             fetched and ranked locally, so Smartloop never sees which sites you visit. Query wording, results and page
