@@ -5,6 +5,7 @@ import { ProjectProvider } from './app/contexts/ProjectContext';
 import { AppStatusProvider } from './app/contexts/AppStatusContext';
 import { ModelStatusProvider } from './app/contexts/ModelStatusContext';
 import { ChatSessionsProvider } from './app/contexts/ChatSessionsContext';
+import { UpgradeProvider } from './app/contexts/UpgradeContext';
 import AppLayout from './app/layouts/AppLayout';
 import Home from './app/pages/Home';
 import Settings from './app/pages/Settings';
@@ -22,6 +23,7 @@ function App() {
                 and this is their only subscriber, so it has to outlive the route
                 swap that unmounts Home when you open Settings. */}
             <ChatSessionsProvider>
+              <UpgradeProvider>
               <Routes>
                 <Route path="/" element={<AppLayout><Home /></AppLayout>} />
                 <Route path="/settings" element={<AppLayout><Settings /></AppLayout>} />
@@ -34,6 +36,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </UpgradeProvider>
             </ChatSessionsProvider>
           </ModelStatusProvider>
         </AppStatusProvider>

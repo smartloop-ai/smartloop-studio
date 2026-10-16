@@ -12,12 +12,13 @@ const AdmZip = require('adm-zip');
 const Store = require('electron-store').default || require('electron-store');
 const { machineId, machineIdSync } = require('node-machine-id');
 const { setupSlpService, uninstallSlpService, needsInstall, verifyFramework, VERSION, listInstalledVersions, switchVersion, getCurrentVersion, checkRemoteArchiveHash, getInstallDir, getCommandLineStatus, installCommandLine, uninstallCommandLine } = require('./slp-setup');
-const { useBundledSlp, bundledModelFiles, hasBundledModel, realHomeDir } = require('./build-mode');
+const { useBundledSlp, bundledModelFiles, hasBundledModel, realHomeDir, isMasBuild } = require('./build-mode');
 const database = require('./database');
 const { createTray, destroyTray, setMainWindow, setCreateWindow, setAppReady, refreshTray, setTrayProgress, setSetupHandler } = require('./tray');
 const slpService = require('./slp-service');
 const healthMonitor = require('./health-monitor');
 const releaseChecker = require('./release-checker');
+const iap = require('./iap');
 const { readSseStream, isErrorFrame, isCancelledFrame } = require('./sse');
 const chatStream = require('./chat-stream');
 
@@ -3227,6 +3228,9 @@ async function fetchUserProfile() {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('user-profile-updated', profile);
       }
+      // A purchase that landed while signed out or offline is still waiting
+      // to be tied to an account; now there is one to tie it to.
+      iap.retryPending();
       return profile;
     }
     return null;
@@ -3241,6 +3245,111 @@ ipcMain.handle('slp-fetch-user', async () => {
   const profile = await fetchUserProfile();
   return { success: !!profile, user: profile };
 });
+
+// -- Upgrade to Pro -----------------------------------------------------------
+// One upgrade flow in every build; only the payment step differs. The Mac App
+// Store build must use In-App Purchase (App Review 3.1.1, see iap.js). Every
+// other build isn't reviewed by Apple and pays through the same Stripe Checkout
+// as the web app: SLP asks the cloud for a session (it holds the token), the
+// page opens in the browser, and the account turns paid when Stripe's webhook
+// lands. Nothing tells the app that happened, so it watches the profile.
+//
+// The MAS build never falls back to Checkout — linking out to pay is exactly
+// what got it rejected.
+const CHECKOUT_WATCH_TIMEOUT_MS = 15 * 60_000;
+const CHECKOUT_WATCH_INTERVAL_MS = 5_000;
+let checkoutWatch = null;
+
+function sendUpgradeState(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('upgrade-state', payload);
+}
+
+function upgradeMethod() {
+  if (iap.isAvailable()) return 'storekit';
+  if (isMasBuild()) return null;
+  return 'checkout';
+}
+
+// Whether the account is paid now. SLP caches the profile for minutes, so ask
+// it to re-read the plan from the cloud (POST /v1/payments/refresh); an SLP
+// that predates the route answers 404, and the cached profile is all there is.
+async function refreshPlan() {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return false;
+  try {
+    const res = await fetch(`${baseUrl}/v1/payments/refresh`, { method: 'POST' });
+    if (res.ok) return !!(await res.json())?.is_paid;
+    if (res.status !== 404) return false;
+  } catch {
+    return false;
+  }
+  return !!(await fetchUserProfile())?.is_paid;
+}
+
+function watchCheckout() {
+  if (checkoutWatch) clearInterval(checkoutWatch.timer);
+  const startedAt = Date.now();
+  const session = {};
+  session.timer = setInterval(async () => {
+    if (checkoutWatch !== session) return;
+    if (Date.now() - startedAt > CHECKOUT_WATCH_TIMEOUT_MS) {
+      clearInterval(session.timer);
+      checkoutWatch = null;
+      return;
+    }
+    const paid = await refreshPlan();
+    if (checkoutWatch !== session || !paid) return;
+    await fetchUserProfile();
+    clearInterval(session.timer);
+    checkoutWatch = null;
+    // The plan gates the model catalog, so a new plan means a new catalog.
+    invalidateModelsCache();
+    refreshModelsCache();
+    sendUpgradeState({ state: 'purchased', subscription: { is_paid: true } });
+  }, CHECKOUT_WATCH_INTERVAL_MS);
+  checkoutWatch = session;
+}
+
+async function startCheckout() {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return { success: false, error: 'The local service is not running.' };
+  const res = await fetch(`${baseUrl}/v1/payments/checkout`, { method: 'POST' });
+  const data = await res.json().catch(() => null);
+  if (res.status === 401) return { success: false, error: 'Sign in to upgrade.' };
+  if (!res.ok || !data?.checkout_url) {
+    return { success: false, error: data?.detail || `Could not start checkout (HTTP ${res.status}).` };
+  }
+  await shell.openExternal(data.checkout_url);
+  watchCheckout();
+  sendUpgradeState({ state: 'checkout' });
+  return { success: true };
+}
+
+ipcMain.handle('upgrade-status', async () => {
+  const method = upgradeMethod();
+  if (method !== 'storekit') return { available: !!method, method, product: null };
+  try {
+    return { available: true, method, product: await iap.getProduct() };
+  } catch (err) {
+    console.warn('[IAP] Could not load the Pro product:', err.message);
+    return { available: true, method, product: null, error: err.message };
+  }
+});
+
+ipcMain.handle('upgrade-purchase', async () => {
+  try {
+    const method = upgradeMethod();
+    if (method === 'storekit') return await iap.purchase();
+    if (method === 'checkout') return await startCheckout();
+    return { success: false, error: 'Purchases are not available on this device.' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Restore Purchases is a StoreKit concept; a Stripe subscription is already
+// on the account.
+ipcMain.handle('upgrade-restore', () => iap.restore());
 
 // -- Login wait ---------------------------------------------------------------
 // The browser OAuth flow POSTs its tokens straight to the local service, so
@@ -4208,6 +4317,19 @@ if (!gotTheLock) {
     createTray();
     createWindow();
     setMainWindow(mainWindow);
+
+    // Before anything slow: StoreKit replays unfinished purchases as soon as an
+    // observer is registered.
+    iap.init({
+      getBaseUrl: () => slpService.getLocalBaseUrl(),
+      send: (_channel, payload) => sendUpgradeState(payload),
+      // The plan gates the model catalog, so a new plan means a new catalog.
+      onEntitlementChanged: async () => {
+        invalidateModelsCache();
+        refreshModelsCache();
+        await fetchUserProfile();
+      },
+    });
     setCreateWindow(() => {
       createWindow();
       setMainWindow(mainWindow);

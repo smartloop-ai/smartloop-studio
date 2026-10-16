@@ -204,7 +204,7 @@ export type FailureCopy = {
     headline: string;
     body: string;
     // What the user can do about it. `null` means there is nothing to offer.
-    action: 'login' | 'contact' | 'retry' | null;
+    action: 'login' | 'contact' | 'upgrade' | 'retry' | null;
     // Which failure this reads as: an entitlement gate (a lock, in brand colour)
     // or something that went wrong (an error glyph, in red).
     tone: 'auth' | 'error';
@@ -217,7 +217,10 @@ const SIGN_IN: FailureCopy = {
     tone: 'auth',
 };
 
-export function describeFailure(failure: DownloadFailure, canContact: boolean): FailureCopy {
+// `canUpgrade` is true only in the Mac App Store build, the one build that
+// sells Pro itself (UpgradeContext). Everywhere else a plan refusal offers
+// "Contact us" and never a purchase.
+export function describeFailure(failure: DownloadFailure, canContact: boolean, canUpgrade = false): FailureCopy {
     const { code, detail, message } = failure;
 
     switch (code) {
@@ -234,7 +237,7 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean): 
             return {
                 headline: 'Your plan doesn’t include this model',
                 body: detail || 'Tell us which models you need and we’ll sort out access.',
-                action: canContact ? 'contact' : null,
+                action: canUpgrade ? 'upgrade' : canContact ? 'contact' : null,
                 tone: 'auth',
             };
 

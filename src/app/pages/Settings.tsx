@@ -7,6 +7,7 @@ import { storageService } from '@/app/services/storage.service';
 import { BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
+import { useUpgrade } from '@/app/contexts/UpgradeContext';
 import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -301,8 +302,12 @@ export default function SettingsPage() {
         window.electronAPI?.getWebSearchStatus?.().then((res) => {
             setWebSearchStatus(res?.success && res.data ? res.data : null);
         });
-    }, [isSignedIn]);
+    // Re-read on a plan change too: upgrading raises the allowance.
+    }, [isSignedIn, user?.is_paid]);
     const webSearchQuota = webSearchStatus?.quota ?? null;
+    // How a free account buys more credits: Pro, through StoreKit in the Mac
+    // App Store build and Stripe Checkout elsewhere (UpgradeContext).
+    const { available: canUpgrade, product: proProduct, openUpgrade } = useUpgrade();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -1058,6 +1063,21 @@ export default function SettingsPage() {
                                                     ? `You've used this month's credits. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
                                                     : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} credits a month, one per web search.`}
                                         </p>
+                                        {canUpgrade && plan === 'free' && (
+                                            <Box className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-sl-border-subtle">
+                                                <span className="text-xs" style={{ color: 'var(--sl-text-muted)' }}>
+                                                    Need more? Pro includes 1,000 credits a month.
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={openUpgrade}
+                                                    className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-sl-text-primary border transition-colors"
+                                                    style={{ borderColor: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' }}
+                                                >
+                                                    Upgrade · {proProduct?.formattedPrice || '$5'}/mo
+                                                </button>
+                                            </Box>
+                                        )}
                                     </Box>
                                 </>
                             );
