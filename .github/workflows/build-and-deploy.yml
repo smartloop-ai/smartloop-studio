@@ -502,25 +502,18 @@ jobs:
             mv artifacts/windows/*.exe artifacts/windows/*.blockmap release/$VERSION/windows/ 2>/dev/null || true
           fi
 
-          # No local copy for latest/. Every platform bundles the SLP framework
-          # now, so release/$VERSION is ~8 GB; duplicating it filled the runner
-          # disk hard enough that the runner could not write its own logs
-          # ("No space left on device"). The upload step below pushes this one
-          # directory to both bucket prefixes instead.
 
       # Versions can be re-uploaded (overwrite=true on a draft), so objects are
       # cached for an hour rather than forever.
       - name: Upload to R2
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # The same files under $VERSION/ and latest/, both sourced from
-          # release/$VERSION. No local copy for latest/: every platform bundles
-          # the SLP framework, so release/$VERSION is ~8 GB and duplicating it
-          # fills the runner disk.
-          for prefix in "$VERSION" latest; do
-            aws s3 cp "release/$VERSION/" "s3://$R2_BUCKET/$prefix/" --recursive \
-              --cache-control "public, max-age=3600" --no-progress
-          done
+          # Only under $VERSION/. There used to be a second copy under latest/,
+          # but nothing downloads from it — the website, app and API all resolve
+          # a version through the releases API — and with the SLP framework
+          # bundled every release is ~8 GB, so it doubled the upload and storage.
+          aws s3 cp "release/$VERSION/" "s3://$R2_BUCKET/$VERSION/" --recursive \
+            --cache-control "public, max-age=3600" --no-progress
 
       - name: Collect public download URLs
         id: urls
@@ -575,15 +568,13 @@ jobs:
           }
           EOF
 
-      # After the installers, so latest/manifest.json never names a file that
-      # isn't uploaded yet.
+      # After the installers, so the manifest never names a file that isn't
+      # uploaded yet.
       - name: Upload manifest
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           aws s3 cp manifest.json "s3://$R2_BUCKET/$VERSION/manifest.json" \
             --content-type application/json --cache-control "public, max-age=3600"
-          aws s3 cp manifest.json "s3://$R2_BUCKET/latest/manifest.json" \
-            --content-type application/json --cache-control "public, max-age=300"
 
       - name: Generate download URLs
         run: |
