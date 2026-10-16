@@ -3270,6 +3270,22 @@ function upgradeMethod() {
   return 'checkout';
 }
 
+// Whether the account is paid now. SLP caches the profile for minutes, so ask
+// it to re-read the plan from the cloud (POST /v1/payments/refresh); an SLP
+// that predates the route answers 404, and the cached profile is all there is.
+async function refreshPlan() {
+  const baseUrl = slpService.getLocalBaseUrl();
+  if (!baseUrl) return false;
+  try {
+    const res = await fetch(`${baseUrl}/v1/payments/refresh`, { method: 'POST' });
+    if (res.ok) return !!(await res.json())?.is_paid;
+    if (res.status !== 404) return false;
+  } catch {
+    return false;
+  }
+  return !!(await fetchUserProfile())?.is_paid;
+}
+
 function watchCheckout() {
   if (checkoutWatch) clearInterval(checkoutWatch.timer);
   const startedAt = Date.now();
@@ -3281,8 +3297,9 @@ function watchCheckout() {
       checkoutWatch = null;
       return;
     }
-    const profile = await fetchUserProfile();
-    if (checkoutWatch !== session || !profile?.is_paid) return;
+    const paid = await refreshPlan();
+    if (checkoutWatch !== session || !paid) return;
+    await fetchUserProfile();
     clearInterval(session.timer);
     checkoutWatch = null;
     // The plan gates the model catalog, so a new plan means a new catalog.
