@@ -103,6 +103,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   authProviderStart: (provider) => ipcRenderer.invoke('auth-provider-start', provider),
   authProviderCancel: () => ipcRenderer.invoke('auth-provider-cancel'),
   authDeleteAccount: () => ipcRenderer.invoke('auth-delete-account'),
+  // Upgrade to Pro. Every build has it; main picks the payment step — StoreKit
+  // in the Mac App Store build (iap.js), Stripe Checkout in the others.
+  upgrade: {
+    status: () => ipcRenderer.invoke('upgrade-status'),
+    purchase: () => ipcRenderer.invoke('upgrade-purchase'),
+    restore: () => ipcRenderer.invoke('upgrade-restore'),
+    onState: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('upgrade-state', handler);
+      return () => ipcRenderer.off('upgrade-state', handler);
+    },
+  },
   // The provider is done and the app is finishing the sign-in with its window
   // already out of the way.
   onAuthViewFinishing: (callback) => {

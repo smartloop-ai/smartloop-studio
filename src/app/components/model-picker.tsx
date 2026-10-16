@@ -15,6 +15,7 @@ import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
 import ContactDialog from './contact-dialog';
+import { useUpgrade } from '@/app/contexts/UpgradeContext';
 import { dialogStyles } from '@/app/shared/utils';
 import '../styles/models.css';
 import {
@@ -83,6 +84,7 @@ function Tag({ label, color, border, tip, icon }: { label: string; color: string
 export default function ModelPicker({ model, disabled = false }: ModelPickerProps) {
     const { localModels, downloads, isDownloading, downloadErrors, clearDownloadError, clearDownloadErrors, isEnabled, handleToggleModel, handleCancelDownload } = useLocalModels();
     const [user] = useAuthContext();
+    const { available: canUpgrade, openUpgrade } = useUpgrade();
 
     const [open, setOpen] = useState(false);
     const [contactOpen, setContactOpen] = useState(false);
@@ -281,7 +283,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title="Upgrade to a Pro plan to use this model" arrow placement="top">
+                <Tooltip title={canUpgrade ? 'Upgrade to Pro to use this model' : 'Pro models need a Pro plan'} arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -337,7 +339,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const percent = downloads.get(name)?.percent ?? 0;
         const failure = downloadErrors.get(name);
         // What to say and what to offer, decided by the status SLP answered.
-        const copy = failure ? describeFailure(failure, canContact) : null;
+        const copy = failure ? describeFailure(failure, canContact, canUpgrade) : null;
         const locked = isLocked(m);
         const on = isEnabled(name);
         const isActive = activeAuto === name;
@@ -351,11 +353,14 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             <Box
                 key={name}
                 role="button"
-                onClick={() => { if (!locked) toggle(m); }}
+                onClick={() => {
+                    if (!locked) toggle(m);
+                    else if (canUpgrade) { setOpen(false); openUpgrade(); }
+                }}
                 className={`rounded-xl${isActive ? ' model-row-active' : ''}`}
                 sx={{
                     padding: '12px 14px',
-                    cursor: locked ? 'default' : 'pointer',
+                    cursor: locked && !canUpgrade ? 'default' : 'pointer',
                     border: failure ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-subtle)',
                     // Deliberately identical on or off, for the same reason a
                     // connection card doesn't tint when connected: the bulb
@@ -515,6 +520,9 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                     } else if (copy.action === 'contact') {
                                         setOpen(false);
                                         setContactOpen(true);
+                                    } else if (copy.action === 'upgrade') {
+                                        setOpen(false);
+                                        openUpgrade();
                                     } else {
                                         toggle(m);
                                     }
@@ -528,7 +536,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                                     cursor: 'pointer',
                                 }}
                             >
-                                {copy.action === 'login' ? 'Log in' : copy.action === 'contact' ? 'Contact us' : 'Try again'}
+                                {copy.action === 'login' ? 'Log in' : copy.action === 'contact' ? 'Contact us' : copy.action === 'upgrade' ? 'Upgrade' : 'Try again'}
                             </button>
                         )}
                     </div>

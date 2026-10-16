@@ -142,6 +142,33 @@ export interface WebSearchStatus {
   quota?: WebSearchQuota | null;
 }
 
+/** The Pro subscription as the App Store prices it for this user. */
+export interface IapProduct {
+  id: string;
+  title: string;
+  description: string;
+  /** Localized, with currency — "$9.99". */
+  formattedPrice: string;
+  period: { numberOfUnits: number; unit: 'day' | 'week' | 'month' | 'year' } | null;
+}
+
+export interface UpgradeStatus {
+  available: boolean;
+  /** StoreKit in the Mac App Store build, Stripe Checkout in every other. */
+  method: 'storekit' | 'checkout' | null;
+  /** StoreKit only — Checkout shows its price on its own page. */
+  product: IapProduct | null;
+  error?: string;
+}
+
+/** Progress of a purchase or restore, pushed from main. */
+export interface UpgradeState {
+  /** `checkout`: the Stripe page is open in the browser, waiting on payment. */
+  state: 'purchasing' | 'deferred' | 'verifying' | 'checkout' | 'purchased' | 'failed' | 'cancelled';
+  error?: string;
+  subscription?: { is_paid: boolean; subscription_status?: string; current_period_end?: string | null };
+}
+
 /** Body of POST /v1/storage/cleanup. Omitted categories are left alone. */
 export interface StorageCleanupRequest {
   models?: boolean;
@@ -253,6 +280,12 @@ export interface ElectronAPI {
   authProviderStart: (provider: 'google' | 'apple') => Promise<{ success: boolean; error?: string }>;
   authProviderCancel: () => Promise<{ success: boolean }>;
   authDeleteAccount: () => Promise<{ success: boolean; error?: string }>;
+  upgrade: {
+    status: () => Promise<UpgradeStatus>;
+    purchase: () => Promise<{ success: boolean; error?: string }>;
+    restore: () => { success: boolean; error?: string } | Promise<{ success: boolean; error?: string }>;
+    onState: (callback: (state: UpgradeState) => void) => () => void;
+  };
   onAuthViewFinishing: (callback: () => void) => () => void;
   onAuthViewClosed: (callback: (data: { error?: string }) => void) => () => void;
   // Storage methods
