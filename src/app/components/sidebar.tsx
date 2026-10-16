@@ -5,14 +5,12 @@ import { conversationService } from '../services/conversation.service';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
 import { useProjectActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
-import { useUpgrade } from '@/app/contexts/UpgradeContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LogoutIcon from '@mui/icons-material/Logout';
 import LoginIcon from '@mui/icons-material/Login';
 import SettingsIcon from '@mui/icons-material/Settings';
-import WorkspacePremiumOutlinedIcon from '@mui/icons-material/WorkspacePremiumOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
@@ -107,8 +105,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   const modelLoading = !!primaryProgress?.downloading;
   const menuOpen = Boolean(anchorEl);
   const [authUser, setAuthUser] = useState<any>(null);
-  // Mac App Store build only; false elsewhere, which hides the upgrade item.
-  const { available: canUpgrade, openUpgrade } = useUpgrade();
 
   const loggingOutRef = useRef(false);
 
@@ -1150,15 +1146,6 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
               }
             }}
           >
-            {canUpgrade && !(authUser.is_paid || authUser.is_premium) && (
-              <MenuItem
-                onClick={() => { openUpgrade(); handleMenuClose(); }}
-                sx={{ color: 'var(--sl-brand-primary)', fontSize: '13px', fontWeight: 500, py: 1.25, px: 2, '&:hover': { bgcolor: 'var(--sl-bg-surface-1)' } }}
-              >
-                <WorkspacePremiumOutlinedIcon sx={{ fontSize: 17, mr: 1.5, color: 'var(--sl-brand-primary)' }} />
-                Upgrade to Pro
-              </MenuItem>
-            )}
             <MenuItem
               disabled={modelLoading}
               onClick={() => { handleSettings(); handleMenuClose(); }}
