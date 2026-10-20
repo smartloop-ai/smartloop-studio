@@ -1051,8 +1051,9 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
-                // No right inset: with the delete button's own 4px pulled back
-                // below, its glyph lands on the 20px line the chevrons use.
+                // No right inset: the delete button below has none either, so
+                // its glyph lands on the 20px line the chevrons use while the
+                // button stays inside the row's box.
                 padding: '8px 0 8px 11px',
                 cursor: 'pointer',
                 color: 'var(--sl-text-secondary)',
@@ -1080,8 +1081,7 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                   sx={{
                     opacity: 0,
                     transition: 'opacity 0.2s ease',
-                    padding: '4px',
-                    mr: '-4px',
+                    padding: 0,
                     color: 'var(--sl-text-secondary)',
                     '&:hover': {
                       color: 'var(--sl-brand-primary)',
