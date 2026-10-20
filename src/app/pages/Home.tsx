@@ -18,7 +18,7 @@ import { useTabActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import { documentService } from '@/app/services/document.service';
 import { storageService } from '@/app/services/storage.service';
-import { dialogStyles } from '@/app/shared/utils';
+import { dialogStyles, getProjectColor } from '@/app/shared/utils';
 import { getLocalApiEndpoint } from '@/app/constants';
 import Chat from '@/app/components/chat';
 import ContentTabs, { OpenTab } from '@/app/components/conversation-tabs';
@@ -1943,6 +1943,7 @@ description: A clear description of what this skill does and when to use it
                     onNewConversation={handleStartNewConversation}
                     activity={tabActivity}
                     onTabReorder={handleTabReorder}
+                    accentColor={getProjectColor(selectedProject)}
                   />
                 )}
 

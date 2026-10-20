@@ -17,19 +17,12 @@ import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import NoteAddOutlinedIcon from '@mui/icons-material/NoteAddOutlined';
 import { storageService } from '@/app/services/storage.service';
-import { dialogStyles } from '@/app/shared/utils';
-import { DEFAULT_COLOR, LEGACY_PINK, PROJECT_COLORS } from '@/app/constants';
+import { dialogStyles, getProjectColor } from '@/app/shared/utils';
+import { DEFAULT_COLOR, PROJECT_COLORS } from '@/app/constants';
 import { SIDEBAR_ANIM_MS } from './sidebar-motion';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
-const getColorForProject = (project: any): string => {
-  if (project?.color) {
-    if (project.color === LEGACY_PINK) return DEFAULT_COLOR;
-    return project.color;
-  }
-  return DEFAULT_COLOR;
-};
 
 /** The dock glyph: a panel with its left column filled — the side this hides. */
 // "my_project-export.zip" → "my project export": a first guess at the project's
@@ -141,8 +134,17 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
     };
     window.addEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
 
+    // A sign-out announced from elsewhere — account deletion from Settings —
+    // drops the user here too. Logout dispatches this after clearing the user
+    // itself, so for that path this is a no-op.
+    const handleAuthStateChanged = (event: CustomEvent) => {
+      if (event.detail?.loggedIn === false) setAuthUser(null);
+    };
+    window.addEventListener('authStateChanged', handleAuthStateChanged as EventListener);
+
     return () => {
       window.removeEventListener('userProfileUpdated', handleProfileUpdated as EventListener);
+      window.removeEventListener('authStateChanged', handleAuthStateChanged as EventListener);
     };
   }, []);
 
@@ -341,6 +343,20 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
   };
 
   const recentChats = getRecentChats();
+
+  // Whether the Recent Conversations list is folded away. Remembered per
+  // machine: someone who folds it wants it to stay folded next launch.
+  const RECENT_COLLAPSED_KEY = 'sidebar_recent_collapsed';
+  const [recentCollapsed, setRecentCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(RECENT_COLLAPSED_KEY) === '1'; } catch { return false; }
+  });
+  const toggleRecent = () => {
+    setRecentCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(RECENT_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* storage unavailable */ }
+      return next;
+    });
+  };
 
   // Search functionality - filter projects only
   const filteredProjects = useMemo(() => {
@@ -901,10 +917,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                             width: 12,
                             height: 12,
                             borderRadius: projectActivity.has(project.id) ? '50%' : '2px',
-                            bgcolor: projectActivity.has(project.id) ? 'transparent' : getColorForProject(project),
+                            bgcolor: projectActivity.has(project.id) ? 'transparent' : getProjectColor(project),
                             ...(projectActivity.has(project.id) ? {
                               border: '1.5px solid var(--sl-brand-alpha-20)',
-                              borderTopColor: getColorForProject(project),
+                              borderTopColor: getProjectColor(project),
                               animationDuration: '0.7s',
                             } : {}),
                             flexShrink: 0,
@@ -982,16 +998,32 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
         py: 2,
         borderTop: '1px solid var(--sl-border-subtle)',
       }}>
-        <Box sx={{
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'var(--sl-text-muted)',
-          mb: 1.5,
-          px: 1.5,
-          letterSpacing: '0.5px',
-          textTransform: 'uppercase',
-        }}>Recent Conversations</Box>
-        {recentChats.length > 0 ? (
+        <Box
+          role="button"
+          aria-expanded={!recentCollapsed}
+          onClick={toggleRecent}
+          className="flex items-center justify-between cursor-pointer select-none"
+          sx={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--sl-text-muted)',
+            mb: recentCollapsed ? 0 : 1.5,
+            px: 1.5,
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+            '&:hover': { color: 'var(--sl-text-primary)' },
+          }}
+        >
+          <span>Recent Conversations</span>
+          <ExpandMoreIcon
+            sx={{
+              fontSize: 16,
+              transform: recentCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.15s ease',
+            }}
+          />
+        </Box>
+        {recentCollapsed ? null : recentChats.length > 0 ? (
           recentChats.map((chat: any) => (
             <Box
               key={chat.id}
