@@ -4128,13 +4128,23 @@ ipcMain.handle('auth-otp-verify', async (event, email, code) => {
 });
 
 // IPC: permanently delete the signed-in account (guideline 5.1.1(v)). Proxied by
-// the local service, which holds the access token that authorizes it.
+// the local service, which holds the access token that authorizes it: the cloud
+// removes the account and the service clears the stored credentials, so on
+// success the app is already signed out and only the caches need resetting —
+// the same ones logout resets, since the model and MCP catalogs are gated by
+// the account that no longer exists.
 ipcMain.handle('auth-delete-account', async () => {
+  stopLoginWait();
   const baseUrl = slpService.getLocalBaseUrl();
   if (!baseUrl) return { success: false, error: 'Local service is not running' };
   try {
     const res = await fetch(`${baseUrl}/v1/users/me`, { method: 'DELETE' });
     if (!res.ok && res.status !== 204) {
+      // 404/405: a service older than the route. The framework ships inside
+      // the app, so this only happens on a dev install pointed at an old SLP.
+      if (res.status === 404 || res.status === 405) {
+        return { success: false, error: 'The local Smartloop service is out of date. Update the app and try again.' };
+      }
       let detail = '';
       try { detail = (await res.json())?.detail || ''; } catch { /* no body */ }
       return { success: false, error: detail || `Could not delete the account (HTTP ${res.status})` };
@@ -4142,7 +4152,11 @@ ipcMain.handle('auth-delete-account', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
-  sendLoginState({ state: 'signed-out' });
+  lastUserProfileEmail = null;
+  invalidateModelsCache();
+  refreshModelsCache();
+  invalidateMcpCatalogCache();
+  refreshMcpCatalogCache();
   healthMonitor.poke();
   return { success: true };
 });
