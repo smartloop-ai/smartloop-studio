@@ -20,6 +20,9 @@ import { parseThemeYaml, isCustomThemeId } from '@/app/theme/custom-themes';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteAccountDialog from '@/app/components/delete-account-dialog';
 import { LogoMark } from '@/app/components/logo';
 
 import type { StorageCleanupRequest, StorageUsage, WebSearchStatus } from '@/electron';
@@ -278,6 +281,16 @@ export default function SettingsPage() {
     // while signed out (useAuth stands in a { guest: true } placeholder).
     const { projects } = useProjectContext();
     const isSignedIn = !!user && !user.guest;
+
+    // Account deletion (guideline 5.1.1(v)). The dialog does the delete; on
+    // success the account is gone and the service has dropped its tokens, so
+    // this only has to make the UI agree: the auth context falls back to the
+    // guest user and the sidebar hears the same sign-out logout announces.
+    const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+    const handleAccountDeleted = () => {
+        setUser({ name: 'Local', guest: true, conversations: [] });
+        window.dispatchEvent(new CustomEvent('authStateChanged', { detail: { loggedIn: false } }));
+    };
     const webSearchOn = projects.some((p: any) => p.web_search_enabled !== false);
     const [webSearchSaving, setWebSearchSaving] = useState(false);
     const handleWebSearchToggle = async (enabled: boolean) => {
@@ -1327,8 +1340,47 @@ export default function SettingsPage() {
                         })()}
                     </Box>
 
+                    {/* Account — a GitHub-style danger zone: the heading and frame
+                        are red, and the one action in it is irreversible. Sign-in
+                        and plan live in the sidebar; guests have no account to
+                        delete, so the section is signed-in only. */}
+                    {isSignedIn && (
+                        <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-danger-alpha-30)' }}>
+                            <Box className="flex items-center gap-2 mb-4 md:mb-6">
+                                <PersonOutlineIcon sx={{ color: 'var(--sl-status-error)', fontSize: { xs: 20, md: 24 } }} />
+                                <h2 className="text-lg md:text-xl font-semibold" style={{ color: 'var(--sl-status-error)' }}>Danger zone</h2>
+                            </Box>
+
+                            <Box className="flex items-center justify-between gap-4 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-danger-alpha-20)' }}>
+                                <Box className="flex flex-col gap-1">
+                                    <h3 className="text-sm font-semibold" style={{ color: 'var(--sl-text-primary)' }}>Delete this account</h3>
+                                    <p className="text-xs leading-relaxed" style={{ color: 'var(--sl-text-muted)' }}>
+                                        Once you delete your account, there is no going back. Your Smartloop profile, plan and sign-in
+                                        {user?.email ? <> for <span className="font-mono">{user.email}</span></> : null} are removed permanently.
+                                        Projects, documents and conversations live only on this computer and are not affected.
+                                    </p>
+                                </Box>
+                                <button
+                                    onClick={() => setDeleteAccountOpen(true)}
+                                    className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0 border bg-sl-bg-surface-1 text-sl-status-error hover:bg-sl-status-error hover:text-white"
+                                    style={{ borderColor: 'var(--sl-danger-alpha-30)' }}
+                                >
+                                    <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                                    Delete account
+                                </button>
+                            </Box>
+                        </Box>
+                    )}
+
                 </Box>
             </Box>
+
+            <DeleteAccountDialog
+                open={deleteAccountOpen}
+                onClose={() => setDeleteAccountOpen(false)}
+                user={user}
+                onDeleted={handleAccountDeleted}
+            />
         </Box>
     );
 }

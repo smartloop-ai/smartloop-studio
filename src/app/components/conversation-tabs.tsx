@@ -43,8 +43,10 @@ interface DragSession {
   // The dragged tab's edges at rest.
   left: number;
   right: number;
-  // Left edge of every slot, for settling the dropped tab into its new one.
+  // Left edge and width of every slot, for settling the dropped tab into its
+  // new one. Pills are content-sized, so the slots are not interchangeable.
   slotLefts: number[];
+  slotWidths: number[];
   // Midpoints of the other tabs, in order, to pick the target slot.
   otherMids: number[];
   // How far a neighbour slides to make room: one tab plus the row gap.
@@ -78,6 +80,14 @@ interface ContentTabsProps {
   /** Keyed by tab id. Drives the throbber that replaces the type icon. */
   activity?: Record<string, ChatActivity>;
   onTabReorder?: (tabId: string, toIndex: number) => void;
+  /**
+   * The project's colour (see getProjectColor). Every open tab belongs to the
+   * selected project, so one accent tints the whole strip: the active pill's
+   * fill and ring, and the type icon on every pill. Any CSS colour works —
+   * the palette mixes hex-with-alpha and theme variables — because the tints
+   * are made with color-mix rather than by editing the value.
+   */
+  accentColor?: string;
 }
 
 export default function ContentTabs({
@@ -88,7 +98,9 @@ export default function ContentTabs({
   onNewConversation,
   activity,
   onTabReorder,
+  accentColor = 'var(--sl-brand-primary)',
 }: ContentTabsProps) {
+  const tint = (pct: number) => `color-mix(in srgb, ${accentColor} ${pct}%, transparent)`;
   // Native drag-and-drop can't be bounded — the browser paints the drag image
   // wherever the cursor goes. Pointer events move the tab itself instead, so
   // its offset can be clamped to the strip and it never leaves the row.
@@ -157,6 +169,7 @@ export default function ContentTabs({
     session.left = self.left;
     session.right = self.right;
     session.slotLefts = rs.map((r) => r.left);
+    session.slotWidths = rs.map((r) => r.width);
     session.otherMids = rs.filter((_, i) => i !== session.index).map((r) => r.left + r.width / 2);
     session.shift = self.width + (rs.length > 1 ? rs[1].left - rs[0].right : 0);
     session.target = session.index;
@@ -202,7 +215,14 @@ export default function ContentTabs({
       // Batched with the reorder: the tab starts where it was released and
       // glides into its new slot, while the neighbours land without animating.
       const releasedLeft = session.slotLefts[from] + session.offset;
-      setSettle({ id: session.id, x: releasedLeft - session.slotLefts[to], run: false });
+      // Moving right, the tab lands after a neighbour that itself slid left
+      // by the dragged width, so its new left edge is that neighbour's old
+      // right edge less the width difference; moving left it takes the slot's
+      // own left edge.
+      const newLeft = to > from
+        ? session.slotLefts[to] + session.slotWidths[to] - session.slotWidths[from]
+        : session.slotLefts[to];
+      setSettle({ id: session.id, x: releasedLeft - newLeft, run: false });
     }
     endDrag();
   };
@@ -218,11 +238,11 @@ export default function ContentTabs({
   };
 
   return (
-    <Box className="flex-none border-b border-sl-border-subtle px-4 overflow-hidden">
+    <Box className="flex-none border-b border-sl-border-subtle px-3 h-12 flex items-center overflow-hidden">
       <Box
         ref={tablistRef}
         role="tablist"
-        className="flex items-end gap-[2px] min-w-0"
+        className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden"
       >
         {tabs.map((tab, index) => {
           const isActive = activeTabId === tab.id;
@@ -262,7 +282,7 @@ export default function ContentTabs({
                 suppressClickRef.current = false;
                 sessionRef.current = {
                   id: tab.id, pointerId: e.pointerId, startX: e.clientX, started: false, index,
-                  minDx: 0, maxDx: 0, left: 0, right: 0, slotLefts: [], otherMids: [], shift: 0, target: index, offset: 0,
+                  minDx: 0, maxDx: 0, left: 0, right: 0, slotLefts: [], slotWidths: [], otherMids: [], shift: 0, target: index, offset: 0,
                 };
               }}
               onPointerMove={handlePointerMove}
@@ -272,38 +292,53 @@ export default function ContentTabs({
                 if (suppressClickRef.current) { suppressClickRef.current = false; return; }
                 onTabSelect(tab.id);
               }}
+              title={tab.title}
+              // A pill, as in Firefox's tab strip: content-sized so the whole
+              // title reads, lightly rounded like the app's other controls,
+              // and floating in the row rather than
+              // joined to the content below. When the row fills up the pills
+              // shrink rather than scroll, and not evenly: the oldest tabs
+              // give up width first (see flexShrink below), so the newest
+              // ones, which are the ones in use, keep their full titles.
+              // Shrunk far enough a pill is just its icon.
               className={`
-                group px-4 py-2 pb-[10px] text-[13px] select-none touch-none
-                flex items-center gap-1.5 relative -mb-px
-                min-w-0 max-w-[200px] flex-1
+                group h-[30px] px-3 text-[13px] select-none touch-none
+                flex items-center gap-1.5 relative min-w-0 max-w-[320px]
+                rounded-sm border
                 ${isDragging ? 'z-10 cursor-grabbing' : 'cursor-pointer'}
                 ${isSettling ? 'z-10' : ''}
                 ${motion}
-                ${isActive ? 'font-medium text-sl-text-primary' : 'font-normal text-sl-text-disabled bg-transparent'}
-                ${isActive ? 'border-l border-r border-b border-t' : 'border-l border-r border-b border-t border-sl-border-subtle'}
-                hover:text-sl-text-primary
-                ${isActive ? '' : 'hover:bg-sl-bg-surface-1'}
+                ${isActive
+                  ? 'font-medium text-sl-text-primary'
+                  : 'font-normal text-sl-text-muted border-sl-border hover:text-sl-text-primary hover:bg-sl-bg-surface-1 hover:border-sl-border-hover'}
               `}
               style={{
-                ...(isActive ? {
-                  backgroundColor: 'var(--sl-brand-alpha-10)',
-                  borderColor: 'var(--sl-brand-alpha-30)',
-                  borderBottomColor: 'var(--sl-brand-alpha-10)',
-                } : {}),
+                // The active tab never shrinks: it is the one being read. The
+                // rest shrink in proportion to their age, the first tab the
+                // most and the last one least, so the row collapses from the
+                // left like a stack of older, less-needed tabs.
+                flexShrink: isActive ? 0 : tabs.length - index,
+                // Unselected pills keep the theme's quiet outline (the class
+                // above); the selected one takes the project's colour instead.
+                ...(isActive ? { backgroundColor: tint(18), borderColor: tint(45) } : {}),
                 ...(translate ? { transform: `translateX(${translate}px)` } : {}),
                 // Opaque while it slides over its neighbours; the active tab
                 // keeps its tint as a layer over the solid base.
                 ...(isDragging || isSettling ? {
                   backgroundColor: 'var(--sl-bg-base)',
-                  ...(isActive ? { backgroundImage: 'linear-gradient(var(--sl-brand-alpha-10), var(--sl-brand-alpha-10))' } : {}),
+                  ...(isActive ? { backgroundImage: `linear-gradient(${tint(18)}, ${tint(18)})` } : {}),
                 } : {}),
               }}
             >
               {/* Fixed slot so swapping icon for throbber doesn't shift the title. */}
-              <span className="flex-none w-[14px] h-[14px] flex items-center justify-center">
+              <span
+                className="flex-none w-[14px] h-[14px] flex items-center justify-center"
+                // The project's colour on every pill, strongest on the active one.
+                style={{ color: accentColor, opacity: isActive ? 1 : 0.7 }}
+              >
                 {tabActivity ? <TabActivitySpinner state={tabActivity} /> : TAB_ICONS[tab.type]}
               </span>
-              <span className="overflow-hidden text-ellipsis whitespace-nowrap flex-1">
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
                 {tab.title}
               </span>
               {/* Wrapped in a span because SVG ignores the `title` attribute — the
@@ -328,7 +363,7 @@ export default function ContentTabs({
         {/* New Conversation Button (+) */}
         <button
           onClick={onNewConversation}
-          className="flex-shrink-0 px-2 py-1.5 mb-1 ml-1 transition-colors text-sl-text-muted cursor-pointer"
+          className="flex-shrink-0 flex items-center px-1.5 ml-0.5 transition-colors text-sl-text-muted cursor-pointer"
           style={{ ['--tw-hover-color' as any]: 'var(--sl-brand-primary)' }}
           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sl-brand-primary)')}
           onMouseLeave={(e) => (e.currentTarget.style.color = '')}

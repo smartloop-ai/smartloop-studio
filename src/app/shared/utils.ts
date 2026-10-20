@@ -1,5 +1,5 @@
 import { SHA256 } from 'crypto-js';
-import { getLocalApiEndpoint } from '@/app/constants';
+import { getLocalApiEndpoint, DEFAULT_COLOR, LEGACY_PINK } from '@/app/constants';
 
 export const isValidEmail = (email: string)=>{
 	if (!/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/i.test(email)){
@@ -152,3 +152,12 @@ export const dialogStyles = {
   },
 };
 
+/**
+ * The colour a project is drawn in: its own, or the theme brand when it has
+ * none. The old default pink from before the brand variable existed maps to
+ * the brand too, so projects created back then don't stay pink forever.
+ */
+export const getProjectColor = (project: { color?: string } | null | undefined): string => {
+  if (project?.color && project.color !== LEGACY_PINK) return project.color;
+  return DEFAULT_COLOR;
+};
