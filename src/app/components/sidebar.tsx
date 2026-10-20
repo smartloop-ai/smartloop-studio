@@ -1009,11 +1009,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
             fontWeight: 600,
             color: 'var(--sl-text-muted)',
             mb: recentCollapsed ? 0 : 1.5,
-            // Left inset matches the rows below; no right inset so the chevron
-            // lands on the same 20px-from-the-edge line as the account menu's
-            // (12px section padding + 8px inner padding, against 20px here).
-            pl: 1.5,
-            pr: 0,
+            // No inset either side: the section's own 20px padding puts the
+            // icon on the avatar's left edge and the chevron on the account
+            // menu's chevron (12px section padding + 8px inner padding there).
+            // The rows below keep their 11px indent under the header.
+            px: 0,
             letterSpacing: '0.5px',
             textTransform: 'uppercase',
             '&:hover': { color: 'var(--sl-text-primary)' },
