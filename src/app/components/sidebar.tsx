@@ -1055,10 +1055,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
-                // No right inset: the delete button below has none either, so
-                // its glyph lands on the 20px line the chevrons use while the
-                // button stays inside the row's box.
+                // The row reaches 4px past the section's inset so the delete
+                // button (4px padding) sits inside it with its glyph on the
+                // 20px line the chevrons use, rather than hanging over the edge.
                 padding: '8px 0 8px 11px',
+                mr: '-4px',
                 cursor: 'pointer',
                 color: 'var(--sl-text-secondary)',
                 borderRadius: '6px',
@@ -1085,14 +1086,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                   sx={{
                     opacity: 0,
                     transition: 'opacity 0.2s ease',
-                    padding: 0,
+                    padding: '4px',
                     color: 'var(--sl-text-secondary)',
-                    // Flush with the row's edge, so no hover disc: it would
-                    // press against the edge. The row already lights up under
-                    // the pointer; the glyph turning brand is the cue.
                     '&:hover': {
                       color: 'var(--sl-brand-primary)',
-                      bgcolor: 'transparent',
+                      bgcolor: 'var(--sl-brand-alpha-10)',
                     },
                   }}
                 >
