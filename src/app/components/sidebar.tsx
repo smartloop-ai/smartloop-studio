@@ -1015,10 +1015,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
           }}
         >
           <span>Recent Conversations</span>
+          {/* Same up/down chevron as the user menu below: up while open, down
+              while folded, so the two read as one control. */}
           <ExpandMoreIcon
             sx={{
               fontSize: 16,
-              transform: recentCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              transform: recentCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
               transition: 'transform 0.15s ease',
             }}
           />
