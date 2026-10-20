@@ -7,6 +7,7 @@ import { useProjectActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import HistoryIcon from '@mui/icons-material/History';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LogoutIcon from '@mui/icons-material/Logout';
 import LoginIcon from '@mui/icons-material/Login';
@@ -1008,17 +1009,26 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
             fontWeight: 600,
             color: 'var(--sl-text-muted)',
             mb: recentCollapsed ? 0 : 1.5,
-            px: 1.5,
+            // No inset either side: the section's own 20px padding puts the
+            // icon on the avatar's left edge and the chevron on the account
+            // menu's chevron (12px section padding + 8px inner padding there).
+            // The rows below keep their 11px indent under the header.
+            px: 0,
             letterSpacing: '0.5px',
             textTransform: 'uppercase',
             '&:hover': { color: 'var(--sl-text-primary)' },
           }}
         >
-          <span>Recent Conversations</span>
+          <span className="flex items-center gap-1.5">
+            <HistoryIcon sx={{ fontSize: 14 }} />
+            Recent Conversations
+          </span>
+          {/* Same up/down chevron as the user menu below: up while open, down
+              while folded, so the two read as one control. */}
           <ExpandMoreIcon
             sx={{
               fontSize: 16,
-              transform: recentCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              transform: recentCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
               transition: 'transform 0.15s ease',
             }}
           />
@@ -1045,7 +1055,11 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
-                padding: '8px 11px',
+                // The row reaches 4px past the section's inset so the delete
+                // button (4px padding) sits inside it with its glyph on the
+                // 20px line the chevrons use, rather than hanging over the edge.
+                padding: '8px 0 8px 11px',
+                mr: '-4px',
                 cursor: 'pointer',
                 color: 'var(--sl-text-secondary)',
                 borderRadius: '6px',

@@ -288,9 +288,27 @@ export default function Home() {
         // Clear selection when switching to a project
         await storageService.clearSelectedConversation();
 
-        // Auto-select latest conversation unless user explicitly started a new one
+        // Go back to where the project was left, unless the user explicitly
+        // started a new conversation. The per-project tab state remembers
+        // which tab was active; falling straight to the most recent
+        // conversation threw that away on every project switch, because
+        // loading it activates its tab over the one the restore put back.
         if (!isExplicitNew) {
           const convos = await storageService.getConversations(urlProjectId);
+          const saved = await storageService.getSetting(`openTabs_${urlProjectId}`);
+          const savedActive: string | null = typeof saved?.activeTabId === 'string' ? saved.activeTabId : null;
+          const savedConvId = savedActive?.startsWith('conv-') ? savedActive.slice('conv-'.length) : null;
+          if (savedConvId === 'new') {
+            // They were on an unsent new conversation; the tab restore shows it.
+            setConversation(null);
+            return;
+          }
+          if (savedConvId && convos.some((c: any) => c.id === savedConvId)) {
+            navigate(`/?conversation=${savedConvId}&project=${urlProjectId}`, { replace: true });
+            return;
+          }
+          // Nothing remembered (first visit, or the remembered conversation is
+          // gone): the most recently updated conversation is the best guess.
           if (convos.length > 0) {
             const sorted = convos.sort((a: any, b: any) =>
               new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
