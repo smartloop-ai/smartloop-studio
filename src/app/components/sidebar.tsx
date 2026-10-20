@@ -1015,11 +1015,15 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
           }}
         >
           <span>Recent Conversations</span>
-          {/* A text arrow rather than an icon glyph: it sits in the label's
-              own type, like a terminal prompt. Up while open, down while folded. */}
-          <span className="font-mono text-[12px] leading-none" aria-hidden="true">
-            {recentCollapsed ? '↓' : '↑'}
-          </span>
+          {/* Same up/down chevron as the user menu below: up while open, down
+              while folded, so the two read as one control. */}
+          <ExpandMoreIcon
+            sx={{
+              fontSize: 16,
+              transform: recentCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
+              transition: 'transform 0.15s ease',
+            }}
+          />
         </Box>
         {recentCollapsed ? null : recentChats.length > 0 ? (
           recentChats.map((chat: any) => (
