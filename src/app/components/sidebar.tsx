@@ -7,6 +7,7 @@ import { useProjectActivity } from '@/app/contexts/ChatSessionsContext';
 import { useModelStatus } from '@/app/contexts/ModelStatusContext';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import HistoryIcon from '@mui/icons-material/History';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LogoutIcon from '@mui/icons-material/Logout';
 import LoginIcon from '@mui/icons-material/Login';
@@ -1018,7 +1019,10 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
             '&:hover': { color: 'var(--sl-text-primary)' },
           }}
         >
-          <span>Recent Conversations</span>
+          <span className="flex items-center gap-1.5">
+            <HistoryIcon sx={{ fontSize: 14 }} />
+            Recent Conversations
+          </span>
           {/* Same up/down chevron as the user menu below: up while open, down
               while folded, so the two read as one control. */}
           <ExpandMoreIcon
