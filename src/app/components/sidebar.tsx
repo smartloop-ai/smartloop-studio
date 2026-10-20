@@ -1083,9 +1083,12 @@ export default function Sidebar({ user, mobileOpen, onMobileClose, collapsed = f
                     transition: 'opacity 0.2s ease',
                     padding: 0,
                     color: 'var(--sl-text-secondary)',
+                    // Flush with the row's edge, so no hover disc: it would
+                    // press against the edge. The row already lights up under
+                    // the pointer; the glyph turning brand is the cue.
                     '&:hover': {
                       color: 'var(--sl-brand-primary)',
-                      bgcolor: 'var(--sl-brand-alpha-10)',
+                      bgcolor: 'transparent',
                     },
                   }}
                 >
