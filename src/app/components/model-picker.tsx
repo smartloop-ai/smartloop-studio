@@ -13,7 +13,6 @@ import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
 import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
@@ -256,8 +255,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model can be in, so there is exactly one place to look for "what is this
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
-    // A cloud model swaps the download glyph for an add glyph, and has no
-    // transfer to stop — its /v1/init completes at once.
+    // A cloud model has no download step — its /v1/init completes at once — so
+    // it is just a bulb, like a downloaded local model.
     const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean; remote: boolean; needsLogin: boolean }) => {
         if (st.busy && st.remote) {
             return (
@@ -320,16 +319,6 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             );
         }
 
-        if (st.remote && !st.on) {
-            return (
-                <Tooltip title="Add and turn on this model" arrow placement="top">
-                    <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
-                        <AddCircleOutlineIcon sx={{ fontSize: 14 }} />
-                    </span>
-                </Tooltip>
-            );
-        }
-
         if (!st.downloaded && !st.remote) {
             return (
                 <Tooltip title="Download and turn on this model" arrow placement="top">
@@ -353,7 +342,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         }
 
         return (
-            <Tooltip title={st.remote ? 'Added — click to remove' : st.on ? 'On — click to turn off' : 'Off — click to turn on'} arrow placement="top">
+            <Tooltip title={st.on ? 'On — click to turn off' : 'Off — click to turn on'} arrow placement="top">
                 <span
                     className="flex items-center justify-center p-[2px]"
                     style={{ color: st.on ? 'var(--sl-brand-primary)' : 'var(--sl-text-faint)' }}
