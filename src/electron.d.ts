@@ -47,6 +47,37 @@ export interface ModelActionResult {
   cancelled?: boolean;
 }
 
+// Who may use a catalog model. `free_login` is free for any signed-in account;
+// `pro` needs a paid plan; `internal` is staff-only.
+export type ModelAccessLevel = 'free' | 'free_login' | 'pro' | 'internal';
+
+// Where a model runs: on this machine from downloaded weights, or served from
+// `url`. An entry without `type` is local.
+export type ModelType = 'local' | 'remote';
+
+// A catalog entry (`GET /v1/models`) merged with its per-project or workspace
+// state by main's fetchModelsWithMerge. The index signature covers the id
+// aliases and size/memory fields model-meta.ts probes under several names.
+export interface CatalogModel {
+  name: string;
+  model_id?: string;
+  display_name?: string;
+  description?: string;
+  capabilities?: string[];
+  access_level?: ModelAccessLevel | null;
+  is_accessible?: boolean;
+  recommended?: boolean;
+  type?: ModelType;
+  url?: string;
+  context_length?: number | null;
+  // Merged from the project/workspace state: for a remote model `downloaded`
+  // means added, since there are no weights.
+  enabled?: boolean;
+  downloaded?: boolean;
+  workspace_name?: string;
+  [key: string]: any;
+}
+
 export interface AuthResult { success: boolean; user?: any; error?: string }
 
 /** One reclaimable (or protected) item within a storage category. */
@@ -366,7 +397,7 @@ export interface ElectronAPI {
   slpAuthLogout: () => Promise<{ success: boolean; error?: string }>;
   slpFetchUser: () => Promise<{ success: boolean; user?: any }>;
   slpUpdateUserSettings: (settings: Record<string, any>) => Promise<{ success: boolean; user?: any; error?: string }>;
-  slpListModels: (projectId?: string | null) => Promise<{ success: boolean; models?: any[]; error?: string }>;
+  slpListModels: (projectId?: string | null) => Promise<{ success: boolean; models?: CatalogModel[]; error?: string }>;
   slpMcpCatalog: () => Promise<{ success: boolean; entries?: any[]; error?: string }>;
   slpInitModel: (modelName: string, projectId?: string | null) => Promise<ModelActionResult>;
   slpSetModelEnabled: (modelName: string, enabled: boolean, projectId?: string | null) => Promise<ModelActionResult & { downloading?: boolean }>;
@@ -378,7 +409,7 @@ export interface ElectronAPI {
   // Both return an unsubscribe closure — call that on teardown instead of a
   // channel-wide removeAllListeners, which would drop other subscribers too.
   onModelDownloadProgress: (callback: (data: ModelDownloadProgress) => void) => () => void;
-  onModelsUpdated: (callback: (data: { models: any[]; projectId?: string | null }) => void) => () => void;
+  onModelsUpdated: (callback: (data: { models: CatalogModel[]; projectId?: string | null }) => void) => () => void;
   onMcpCatalogUpdated: (callback: (data: { entries: any[] }) => void) => () => void;
   // Chat turns. `chatSend` resolves as soon as main accepts the request; the
   // answer arrives on the event channel, and keeps arriving while the chat

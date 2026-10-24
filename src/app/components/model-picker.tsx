@@ -11,6 +11,8 @@ import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import MemoryOutlinedIcon from '@mui/icons-material/MemoryOutlined';
 import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
+import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import { useLocalModels } from '../hooks/useLocalModels';
 import { useAuthContext } from '../contexts/AuthContext';
 import ModelBrandIcon, { brandName } from './model-brand-icon';
@@ -22,8 +24,12 @@ import {
     CAPABILITY_INFO,
     CAPABILITY_STYLE,
     TIER_INFO,
+    contextTag,
     describeFailure,
     isLocked,
+    isRemote,
+    locationTag,
+    lockRemedy,
     matchTitle,
     memoryPressure,
     modelLabel,
@@ -147,6 +153,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     }, [localModels]);
 
     const canContact = !!user?.email;
+    // Signed out is a guest profile, not a missing one — see useAuth.
+    const signedIn = !!user && !user.guest;
 
     // Everything except the orchestrator — it's represented by the Auto trigger.
     const pickable = useMemo(() => localModels.filter((m: any) => {
@@ -166,7 +174,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // Filter, then bucket. Both exist for the same reason: the catalog grows, and
     // a flat list of everything the backend offers stops being scannable well
     // before it stops being useful. Search matches what a person would actually
-    // type — the friendly name, the raw id, the maker, or a capability ("vision").
+    // type — the friendly name, the raw id, the maker, a capability ("vision"),
+    // or where it runs ("cloud").
     const groups = useMemo(() => {
         const q = query.trim().toLowerCase();
         const matches = (m: any) => {
@@ -176,6 +185,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                 m.name || m.id || m.model,
                 brandName(m.name || m.id || m.model) || '',
                 (m.capabilities || []).join(' '),
+                locationTag(m).label,
                 m.description || '',
             ].join(' ').toLowerCase();
             return hay.includes(q);
@@ -185,6 +195,8 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             { key: 'on', title: 'In use', hint: 'The orchestrator routes requests to these', models: [] },
             { key: 'ready', title: 'Downloaded', models: [] },
             { key: 'available', title: 'Available to download', models: [] },
+            { key: 'cloud', title: 'Available in the cloud', models: [] },
+            { key: 'signin', title: 'Free with sign-in', models: [] },
             { key: 'locked', title: 'Requires an upgrade', models: [] },
         ];
         for (const m of pickable) {
@@ -195,13 +207,16 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             // whole catalog with is_accessible false on the Pro tier "so the
             // client can show pro models as signup incentive" — so dropping it
             // here would discard the one thing it was sent for. It goes in the
-            // 'locked' bucket: greyed, lock icon, not clickable.
+            // 'locked' bucket: greyed, lock icon, not clickable — or, when
+            // signing in is all it takes, 'signin', where a click starts it.
             const locked = isLocked(m);
-            const key = isEnabled(name) ? 'on' : locked ? 'locked' : m.downloaded ? 'ready' : 'available';
+            // A cloud model is either added to the project (on) or not: it has
+            // no downloaded-but-off state, because there are no weights to keep.
+            const key = isEnabled(name) ? 'on' : locked ? (lockRemedy(m, signedIn) === 'login' ? 'signin' : 'locked') : isRemote(m) ? 'cloud' : m.downloaded ? 'ready' : 'available';
             buckets.find((b) => b.key === key)!.models.push(m);
         }
         return buckets.filter((b) => b.models.length > 0);
-    }, [pickable, query, isEnabled]);
+    }, [pickable, query, isEnabled, signedIn]);
 
     const matchCount = groups.reduce((n, g) => n + g.models.length, 0);
 
@@ -209,9 +224,10 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const name = m.name || m.id || m.model;
         const workspaceName = m.workspace_name || name;
         // Enabling a model that isn't on disk downloads it first — see
-        // `slp-set-model-enabled`. The dialog stays open either way, because with
-        // multi-select the next thing you do is usually pick another one.
-        handleToggleModel(name, workspaceName, m.downloaded ? !isEnabled(name) : true);
+        // `slp-set-model-enabled`; adding a cloud model takes the same path and
+        // removing one is turning it off. The dialog stays open either way,
+        // because with multi-select the next thing you do is usually pick another.
+        handleToggleModel(name, workspaceName, m.downloaded || isRemote(m) ? !isEnabled(name) : true);
     };
 
     // Trigger. One model selected means the orchestrator has no choice left to
@@ -239,7 +255,19 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
     // model can be in, so there is exactly one place to look for "what is this
     // model doing" — a spinner while its weights arrive, a lock when the plan
     // gates it, a download glyph when it isn't on disk yet.
-    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean }) => {
+    // A cloud model has no download step — its /v1/init completes at once — so
+    // it is just a bulb, like a downloaded local model.
+    const renderState = (st: { name: string; on: boolean; downloaded: boolean; locked: boolean; busy: boolean; isActive: boolean; remote: boolean; needsLogin: boolean }) => {
+        if (st.busy && st.remote) {
+            return (
+                <Tooltip title="Adding…" arrow placement="top">
+                    <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
+                        <CircularProgress size={14} thickness={2.5} sx={{ color: 'currentColor' }} />
+                    </span>
+                </Tooltip>
+            );
+        }
+
         // Downloading, and a way out of it. Weights are gigabytes, so a click
         // made by mistake otherwise commits the machine to the whole transfer.
         // The spinner and the stop are one control — a square inside the turning
@@ -283,7 +311,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
 
         if (st.locked) {
             return (
-                <Tooltip title={canUpgrade ? 'Upgrade to Pro to use this model' : 'Pro models need a Pro plan'} arrow placement="top">
+                <Tooltip title={st.needsLogin ? 'Log in to use this model — it’s free' : canUpgrade ? 'Upgrade to Pro to use this model' : 'Pro models need a Pro plan'} arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-text-faint)' }}>
                         <LockOutlinedIcon sx={{ fontSize: 14 }} />
                     </span>
@@ -291,7 +319,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             );
         }
 
-        if (!st.downloaded) {
+        if (!st.downloaded && !st.remote) {
             return (
                 <Tooltip title="Download and turn on this model" arrow placement="top">
                     <span className="flex items-center justify-center p-[2px]" style={{ color: 'var(--sl-brand-primary)' }}>
@@ -339,12 +367,32 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
         const percent = downloads.get(name)?.percent ?? 0;
         const failure = downloadErrors.get(name);
         // What to say and what to offer, decided by the status SLP answered.
-        const copy = failure ? describeFailure(failure, canContact, canUpgrade) : null;
+        const remote = isRemote(m);
+        const copy = failure ? describeFailure(failure, canContact, canUpgrade, remote) : null;
         const locked = isLocked(m);
+        const needsLogin = locked && lockRemedy(m, signedIn) === 'login';
         const on = isEnabled(name);
         const isActive = activeAuto === name;
-        const pressure = memoryPressure(m, totalRamGb);
-        const size = sizeTier(m);
+        // A locked row is inert, except that signing in (or, in the MAS build,
+        // upgrading) is one click away, and a locked model that is still on can
+        // always be turned off.
+        const clickable = !locked || needsLogin || canUpgrade || on;
+        const onRowClick = () => {
+            if (!clickable) return;
+            if (locked && !on) {
+                setOpen(false);
+                if (needsLogin) window.dispatchEvent(new CustomEvent('requestSignIn'));
+                else openUpgrade();
+                return;
+            }
+            toggle(m);
+        };
+        const where = locationTag(m);
+        // Size and memory describe weights on this machine, which a cloud model
+        // doesn't have.
+        const pressure = remote ? null : memoryPressure(m, totalRamGb);
+        const size = remote ? null : sizeTier(m);
+        const context = contextTag(m);
         const tier = tierTag(m);
         const maker = brandName(name);
         const description = m.description || '';
@@ -353,14 +401,11 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
             <Box
                 key={name}
                 role="button"
-                onClick={() => {
-                    if (!locked) toggle(m);
-                    else if (canUpgrade) { setOpen(false); openUpgrade(); }
-                }}
+                onClick={onRowClick}
                 className={`rounded-xl${isActive ? ' model-row-active' : ''}`}
                 sx={{
                     padding: '12px 14px',
-                    cursor: locked && !canUpgrade ? 'default' : 'pointer',
+                    cursor: clickable ? 'pointer' : 'default',
                     border: failure ? '1px solid var(--sl-brand-alpha-30)' : '1px solid var(--sl-border-subtle)',
                     // Deliberately identical on or off, for the same reason a
                     // connection card doesn't tint when connected: the bulb
@@ -371,7 +416,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     opacity: locked ? 0.6 : 1,
                     transition: 'box-shadow 0.15s ease, background 0.15s ease',
                     '&:hover': {
-                        boxShadow: locked || failure ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
+                        boxShadow: !clickable || failure ? 'none' : 'inset 0 0 0 1px var(--sl-brand-alpha-30)',
                     },
                 }}
             >
@@ -402,7 +447,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </span>
 
                     <div className="ml-auto flex items-center gap-0.5 flex-shrink-0">
-                        {renderState({ name, on, downloaded, locked, busy, isActive })}
+                        {renderState({ name, on, downloaded, locked, busy, isActive, remote, needsLogin })}
                     </div>
                 </div>
 
@@ -425,11 +470,19 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                             icon={<StarRoundedIcon sx={{ fontSize: 10 }} />}
                         />
                     )}
+                    <Tag
+                        label={where.label}
+                        color={where.color}
+                        border={where.border}
+                        tip={where.tip}
+                        icon={remote ? <CloudOutlinedIcon sx={{ fontSize: 10 }} /> : <ComputerOutlinedIcon sx={{ fontSize: 10 }} />}
+                    />
                     {(m.capabilities || []).map((cap: string) => {
                         const stl = CAPABILITY_STYLE[cap] || { color: 'var(--sl-text-muted)', border: 'var(--sl-border-default)' };
                         return <Tag key={cap} label={cap} color={stl.color} border={stl.border} tip={CAPABILITY_INFO[cap] || cap} />;
                     })}
                     {size && <Tag label={size.label} color="var(--sl-text-faint)" border="var(--sl-border-default)" tip={size.tip} />}
+                    {context && <Tag label={context.label} color="var(--sl-text-faint)" border="var(--sl-border-default)" tip={context.tip} />}
                     {tier && <Tag label={tier.label} color={tier.color} border={tier.border} tip={TIER_INFO[tier.label] || tier.label} />}
                     {pressure && (
                         <Tag
@@ -452,7 +505,7 @@ export default function ModelPicker({ model, disabled = false }: ModelPickerProp
                     </Tooltip>
                 </Box>
 
-                {busy && (
+                {busy && !remote && (
                     <div className="mt-2 flex items-center gap-2">
                         <span className="flex-1 h-1 rounded-full overflow-hidden block" style={{ backgroundColor: 'var(--sl-white-alpha-7)' }}>
                             <span className="h-full rounded-full block transition-all" style={{ width: `${percent}%`, backgroundColor: 'var(--sl-brand-primary)' }} />

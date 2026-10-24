@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { useProjectContext } from './ProjectContext';
-import type { ModelDownloadProgress } from '@/electron';
+import type { CatalogModel, ModelDownloadProgress } from '@/electron';
 
 // Central model state for the renderer. The main process owns model status (see
 // `modelDownloadState` in electron/main.js); this is the *single* subscriber to
@@ -21,7 +21,7 @@ import type { ModelDownloadProgress } from '@/electron';
 
 export interface ModelStatusValue {
   // --- Auxiliary model list ---
-  localModels: any[];
+  localModels: CatalogModel[];
   localModelsLoading: boolean;
   enabledModels: Set<string>;
   isEnabled: (name: string) => boolean;
@@ -80,7 +80,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
   const { selectedProject } = useProjectContext();
   const projectId = selectedProject?.id ?? null;
 
-  const [localModels, setLocalModels] = useState<any[]>([]);
+  const [localModels, setLocalModels] = useState<CatalogModel[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [enabledOverrides, setEnabledOverrides] = useState<Map<string, boolean>>(new Map());
   const [downloads, setDownloads] = useState<Map<string, { percent: number; status: string }>>(new Map());

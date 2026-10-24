@@ -128,6 +128,29 @@ export function memoryPressure(m: any, totalRamGb: number | null): { gb: number;
     return { gb: rounded, pct, label: 'Low', color: '#86efac', border: 'rgba(134,239,172,0.35)', fits: true };
 }
 
+// A model served from the cloud rather than run from weights on this machine.
+// An entry without `type` is local.
+export function isRemote(m: any): boolean {
+    return m.type === 'remote';
+}
+
+// Where the model runs, as a tag. Shown on every row so local and cloud models
+// read apart at a glance.
+export function locationTag(m: any): { label: string; color: string; border: string; tip: string } {
+    return isRemote(m)
+        ? { label: 'Cloud', color: '#7dd3fc', border: 'rgba(125,211,252,0.35)', tip: 'Cloud — runs on Smartloop servers, nothing to download. Requests leave this machine.' }
+        : { label: 'Local', color: 'var(--sl-text-faint)', border: 'var(--sl-border-default)', tip: 'Local — runs on this machine from downloaded weights. Requests stay on this machine.' };
+}
+
+// Context window as a short tag ("128K context"), or null when the catalog
+// doesn't say.
+export function contextTag(m: any): { label: string; tip: string } | null {
+    const n = m.context_length;
+    if (typeof n !== 'number' || !(n > 0)) return null;
+    const short = n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+    return { label: `${short} context`, tip: `Reads up to ${n.toLocaleString()} tokens of conversation and documents at once` };
+}
+
 // Normalized title used to match a model against the SSE "Selected …" status
 // message. The message is built from the model_id (e.g.
 // "mistralai/Ministral-3-3B-Instruct-2512" → "ministral 3 3b instruct 2512"),
@@ -143,6 +166,7 @@ export const CAPABILITY_INFO: Record<string, string> = {
     skills: 'Skills — can invoke skills to extend what it can do',
     dp: 'Document processing — reads and reasons over your documents',
     general: 'General purpose — summarization, Q&A, and content generation',
+    coding: 'Coding — writes, explains, and fixes code',
 };
 
 // Outlined colors for each capability tag, per the app's label style guide.
@@ -151,18 +175,20 @@ export const CAPABILITY_STYLE: Record<string, { color: string; border: string }>
     skills: { color: '#86efac', border: 'rgba(134,239,172,0.35)' },
     dp: { color: '#fdba74', border: 'rgba(253,186,116,0.35)' },
     general: { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' },
+    coding: { color: '#5eead4', border: 'rgba(94,234,212,0.35)' },
 };
 
 // Short explanation for each plan/access tier tag, shown on hover.
 export const TIER_INFO: Record<string, string> = {
+    'Free with sign-in': 'Free with sign-in — available to any logged-in account',
     Pro: 'Pro model — included with a Pro plan',
     Internal: 'Internal model — available to your account',
 };
 
-// Tier tag shown on gated models: pro uses the brand color, internal a blue
-// "Internal". Those are the only tiers the cloud publishes — its
-// ModelAccessLevel is FREE/PRO/INTERNAL — so a free model gets no tag.
+// Tier tag shown on gated models: free_login a green "Free with sign-in", pro
+// the brand color, internal a blue "Internal". A free model gets no tag.
 export function tierTag(m: any): { label: string; color: string; border: string } | null {
+    if (m.access_level === 'free_login') return { label: 'Free with sign-in', color: '#6ee7b7', border: 'rgba(110,231,183,0.35)' };
     if (m.access_level === 'pro') return { label: 'Pro', color: 'var(--sl-brand-primary)', border: 'var(--sl-brand-alpha-30)' };
     if (m.access_level === 'internal') return { label: 'Internal', color: 'rgb(96,165,250)', border: 'rgba(96,165,250,0.3)' };
     return null;
@@ -171,15 +197,22 @@ export function tierTag(m: any): { label: string; color: string; border: string 
 // The single gate on a model the user cannot download. `is_accessible` is
 // computed per-user by the cloud catalog (ModelAccessManager.can_access_model)
 // and already accounts for every tier: free is true for everyone, anonymous
-// callers included; pro is true for paid accounts and superusers; internal is
+// callers included; free_login is true for any signed-in account; pro is true for paid accounts and superusers; internal is
 // true for superusers and withheld from the catalog entirely for anyone else.
 // So there is nothing to combine it with — reading `access_level` alongside it
 // only ever risks disagreeing with the cloud.
 //
 // Weights already on disk stay usable whatever the plan says now, so a
-// downloaded model is never locked.
+// downloaded model is never locked. A cloud model is checked on every request,
+// so having added it earns nothing.
 export function isLocked(m: any): boolean {
-    return m.is_accessible === false && !m.downloaded;
+    return m.is_accessible === false && (isRemote(m) || !m.downloaded);
+}
+
+// What unlocks a locked model: signing in, for a free_login model and a
+// signed-out user; otherwise a plan the account doesn't have.
+export function lockRemedy(m: any, signedIn: boolean): 'login' | 'upgrade' {
+    return m.access_level === 'free_login' && !signedIn ? 'login' : 'upgrade';
 }
 
 // What to say, and what to offer, for a download that failed.
@@ -217,18 +250,29 @@ const SIGN_IN: FailureCopy = {
     tone: 'auth',
 };
 
+const SIGN_IN_REMOTE: FailureCopy = {
+    headline: 'Log in to use this model',
+    body: 'Cloud models run on your Smartloop account — logging in is free and takes a few seconds.',
+    action: 'login',
+    tone: 'auth',
+};
+
 // `canUpgrade` is true only in the Mac App Store build, the one build that
 // sells Pro itself (UpgradeContext). Everywhere else a plan refusal offers
 // "Contact us" and never a purchase.
-export function describeFailure(failure: DownloadFailure, canContact: boolean, canUpgrade = false): FailureCopy {
+// `remote` picks the copy for a cloud model, which is added rather than
+// downloaded: the same /v1/init statuses, minus any talk of weights or transfers.
+export function describeFailure(failure: DownloadFailure, canContact: boolean, canUpgrade = false, remote = false): FailureCopy {
     const { code, detail, message } = failure;
+    const signIn = remote ? SIGN_IN_REMOTE : SIGN_IN;
+    const failed = remote ? 'Couldn’t add this model' : 'Download failed';
 
     switch (code) {
         // No credentials the platform will accept. The backend refreshes and
         // retries before answering this, so it means sign in again — not "wait
         // and see", and never an upgrade prompt.
         case 401:
-            return SIGN_IN;
+            return signIn;
 
         // Signed in, but the model isn't on this plan. The server says the useful
         // thing ("Upgrade required to access this model"); fall back only when it
@@ -252,8 +296,8 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
 
         case 429:
             return {
-                headline: 'Too many downloads right now',
-                body: 'The service is rate-limiting downloads — try again in a moment.',
+                headline: remote ? 'Too many requests right now' : 'Too many downloads right now',
+                body: remote ? 'The service is rate-limiting requests — try again in a moment.' : 'The service is rate-limiting downloads — try again in a moment.',
                 action: 'retry',
                 tone: 'error',
             };
@@ -262,12 +306,13 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
         // that didn't match. `detail` names which, and all three are things the
         // user fixes outside the app and then retries.
         case 500:
-            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+            return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
 
         // The transfer died; the weights are still there to fetch. /v1/init is a
         // real repair action now — it no longer reports an interrupted download
         // as ready — so the retry resumes rather than lying.
         case 502:
+            if (remote) return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
             return {
                 headline: 'Connection lost during download',
                 body: detail || 'The transfer was interrupted before it finished.',
@@ -282,7 +327,7 @@ export function describeFailure(failure: DownloadFailure, canContact: boolean, c
             // gets the button, because a retry the user can ignore is a smaller
             // failure than hiding the only way out of a download that would have
             // worked.
-            if (failure.requiresAuth) return SIGN_IN;
-            return { headline: 'Download failed', body: detail || message, action: 'retry', tone: 'error' };
+            if (failure.requiresAuth) return signIn;
+            return { headline: failed, body: detail || message, action: 'retry', tone: 'error' };
     }
 }
