@@ -6,11 +6,6 @@ directories:
   output: dist
   buildResources: build
 asar: true
-# English only. Electron ships ~55 locale .lproj folders in the .app, and the App
-# Store lists every one as a supported language — the UI is English-only. macOS
-# reads this; it trims the bundle's Resources/*.lproj to these.
-electronLanguages:
-  - en
 extraResources:
   # Data assets (e.g. the blank-project template) bundled on every platform,
   # minus any slp/ subdir. Each platform block (mac/win/linux) adds the bundled
@@ -54,6 +49,14 @@ mac:
   artifactName: studio-${version}-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
+  # English only. Electron ships ~55 locale .lproj folders in the .app, and the
+  # App Store lists every one as a supported language — the UI is English-only.
+  # This trims the bundle's Resources/*.lproj to en.lproj. It MUST stay under
+  # mac: — at the top level electron-builder also prunes the Windows/Linux
+  # locales/ dir, where the file is en-US.pak and "en" matches nothing, so every
+  # locale is deleted and the renderer crashes on launch with a blank window.
+  electronLanguages:
+    - en
   # The app's own language is English (US), and it's the only one it declares.
   extendInfo:
     CFBundleDevelopmentRegion: en_US
