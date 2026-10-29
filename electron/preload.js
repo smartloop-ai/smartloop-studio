@@ -176,6 +176,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   // Web search monthly allowance (proxied through SLP)
   getWebSearchStatus: () => ipcRenderer.invoke('websearch-status'),
+  // Cloud model monthly allowance (proxied through SLP)
+  getCloudQuota: () => ipcRenderer.invoke('cloud-quota'),
   // Storage / free-up-space
   getStorageUsage: () => ipcRenderer.invoke('storage-usage'),
   cleanupStorage: (opts) => ipcRenderer.invoke('storage-cleanup', opts),

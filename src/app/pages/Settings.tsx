@@ -24,6 +24,7 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DeleteAccountDialog from '@/app/components/delete-account-dialog';
 import { LogoMark } from '@/app/components/logo';
+import PlanUsageCard from '@/app/components/plan-usage-card';
 
 import type { StorageCleanupRequest, StorageUsage, WebSearchStatus } from '@/electron';
 
@@ -615,6 +616,9 @@ export default function SettingsPage() {
                             );
                         })()}
                     </Box>
+
+                    {/* Plan & usage — cloud model credits this month */}
+                    <PlanUsageCard isSignedIn={isSignedIn} isPaid={user?.is_paid} />
 
                     {/* 1. Theme */}
                     <Box className="mb-6 md:mb-8 p-4 md:p-6 rounded-xl" sx={{ bgcolor: 'var(--sl-bg-surface-1)', border: '1px solid var(--sl-border-default)' }}>

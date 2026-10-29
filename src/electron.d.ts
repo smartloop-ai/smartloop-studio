@@ -173,6 +173,29 @@ export interface WebSearchStatus {
   quota?: WebSearchQuota | null;
 }
 
+/** The account's cloud model allowance this period (hosted /v1/chat/quota). */
+export interface CloudQuota {
+  /** Credits. Null when unmetered, or hidden from this account. */
+  limit: number | null;
+  used: number | null;
+  remaining: number | null;
+  /** Held by calls in flight. Credits; null when hidden. */
+  reserved: number | null;
+  /** 0–100, settled spend only. Null means unmetered. */
+  percent_used: number | null;
+  /** 0–100, what a new call can still reserve after spend and holds. */
+  percent_available: number | null;
+  in_flight: number;
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  /** YYYY-MM */
+  period: string;
+  /** ISO timestamp — first instant of next month, UTC. */
+  resets_at: string;
+  plan: 'free' | 'paid' | 'admin' | string;
+}
+
 /** The Pro subscription as the App Store prices it for this user. */
 export interface IapProduct {
   id: string;
@@ -444,6 +467,8 @@ export interface ElectronAPI {
   }>;
   // Web search allowance — proxied to SLP's /v1/websearch/status. `unsupported`: SLP predates the route.
   getWebSearchStatus: () => Promise<{ success: boolean; data?: WebSearchStatus; unsupported?: boolean; error?: string }>;
+  // Cloud model allowance — proxied to SLP's /v1/chat/quota. `unavailable`: signed out or no cloud access.
+  getCloudQuota: () => Promise<{ success: boolean; data?: CloudQuota; unavailable?: boolean; error?: string }>;
   // Storage / free-up-space — proxied to the framework's /v1/storage endpoints
   getStorageUsage: () => Promise<{ success: boolean; data?: StorageUsage; error?: string }>;
   cleanupStorage: (opts: StorageCleanupRequest) =>
