@@ -1655,6 +1655,28 @@ ipcMain.handle('websearch-status', async () => {
   }
 });
 
+// ── Cloud model allowance ──────────────────────────────────────────────────
+// Remote models are metered in credits per account per month. SLP holds the
+// tokens and relays the cloud's GET /v1/chat/quota. A 401 (signed out) or 403
+// (no cloud access on this account) comes back as `unavailable` so Settings
+// hides the meter rather than showing an error.
+ipcMain.handle('cloud-quota', async () => {
+  try {
+    const baseUrl = slpService.getLocalBaseUrl();
+    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+
+    const res = await fetch(`${baseUrl}/v1/chat/quota`);
+    if (res.status === 401 || res.status === 403) return { success: false, unavailable: true };
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      return { success: false, error: data?.detail || `Cloud quota failed (${res.status})` };
+    }
+    return { success: true, data: await res.json() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // ── Storage / free-up-space ────────────────────────────────────────────────
 // The framework owns everything under ~/.smartloop — the workspace record, the
 // downloaded models, its own log — so it decides what is safe to delete and
