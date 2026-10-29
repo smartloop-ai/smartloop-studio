@@ -5,9 +5,12 @@ import type { CloudQuota } from '@/electron';
 
 // Plan & usage: how much of this month's cloud model allowance is spent, as
 // a percentage, and when it resets — the same shape as Claude's and Cursor's
-// usage meters. Credit amounts and per-call detail live in the cloud console.
-// Hidden when signed out or when the account has no cloud access (the relay
-// answers `unavailable`).
+// usage meters. Credit amounts and per-call detail live in the cloud console;
+// the one exception is an unmetered account, which has no percentage, so it
+// shows the credits used when the API sends them. Re-read on every finished
+// chat turn: streams outlive Settings, and the charge is settled by the time
+// a turn reports done. Hidden when signed out or when the account has no
+// cloud access (the relay answers `unavailable`).
 
 // Never "0%" once anything is spent.
 function percent(n: number): string {
@@ -37,8 +40,13 @@ export default function PlanUsageCard({ isSignedIn, isPaid }: { isSignedIn: bool
             setQuota(null);
             return;
         }
-        window.electronAPI?.getCloudQuota?.().then((res) => {
-            setQuota(res?.success && res.data ? res.data : null);
+        const read = () =>
+            window.electronAPI?.getCloudQuota?.().then((res) => {
+                setQuota(res?.success && res.data ? res.data : null);
+            });
+        read();
+        return window.electronAPI?.onChatStreamEvent?.((e) => {
+            if (e.type === 'done') read();
         });
     // Re-read on a plan change too: upgrading raises the allowance.
     }, [isSignedIn, isPaid]);
@@ -89,7 +97,11 @@ export default function PlanUsageCard({ isSignedIn, isPaid }: { isSignedIn: bool
                 ) : unmetered ? (
                     <div className="flex items-baseline justify-between gap-3">
                         <h3 className="text-sm font-medium text-sl-text-primary">Cloud usage this month</h3>
-                        <span className="text-xs text-sl-text-faint">Not metered</span>
+                        <span className="text-xs text-sl-text-faint tabular-nums">
+                            {quota.used !== null
+                                ? `${quota.used.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits used · Not metered`
+                                : 'Not metered'}
+                        </span>
                     </div>
                 ) : (
                     <>
