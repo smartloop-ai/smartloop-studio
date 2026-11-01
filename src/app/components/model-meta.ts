@@ -164,6 +164,7 @@ export function matchTitle(m: any): string {
 // Capabilities are what a model has, not what a turn is about: every text
 // model reads documents and writes code, so there is no tag for those.
 export const CAPABILITY_INFO: Record<string, string> = {
+    text: 'Text — holds a conversation: answers, reads documents, writes code',
     vision: 'Vision — understands and interprets images alongside text',
     reasoning: 'Reasoning — plans, picks tools and skills, and thinks before answering',
     skills: 'Skills — can invoke skills to extend what it can do',
@@ -171,6 +172,7 @@ export const CAPABILITY_INFO: Record<string, string> = {
 
 // Outlined colors for each capability tag, per the app's label style guide.
 export const CAPABILITY_STYLE: Record<string, { color: string; border: string }> = {
+    text: { color: '#fdba74', border: 'rgba(253,186,116,0.35)' },
     vision: { color: '#93c5fd', border: 'rgba(147,197,253,0.35)' },
     reasoning: { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' },
     skills: { color: '#86efac', border: 'rgba(134,239,172,0.35)' },
