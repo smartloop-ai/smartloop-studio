@@ -91,7 +91,7 @@ export default function RightSidebar({
   onSaveSkills,
   onRefreshSkills,
 }: RightSidebarProps) {
-  const { enabledCapabilities } = useModelStatus();
+  const { textModelEnabled } = useModelStatus();
   const { themeId, theme } = useThemeContext();
   const isMc = themeId === 'minecraft';
   // Themed rail icon for the active theme: the theme's own embedded SVG (from
@@ -150,14 +150,12 @@ export default function RightSidebar({
     return () => { cancelled = true; };
   }, []);
 
-  // Combined capabilities of the currently ENABLED models. Documents need "dp"
-  // (document processing) and Skills need "skills"; the matching rail section is
-  // disabled when no enabled model provides it. The set is empty before the model
-  // list loads and when no model is enabled (the app falls back to the default
-  // model) — don't gate either case; only disable when models ARE enabled but
-  // none provide the capability. ModelStatusContext derives this from the
-  // optimistic enabled set, so a toggle takes effect before the backend confirms.
-  const docSupported = enabledCapabilities.size === 0 || enabledCapabilities.has('dp');
+  // Documents need no capability of their own: reading them is text work, so
+  // the section is open whenever what's enabled can hold a text conversation —
+  // no model enabled (the default model answers) or any enabled model that
+  // isn't vision-only. ModelStatusContext derives this from the optimistic
+  // enabled set, so a toggle takes effect before the backend confirms.
+  const docSupported = textModelEnabled;
   const [localFolderPath, setLocalFolderPath] = useState('');
   // The project's directory as the backend reports it (`cwd`, mirrored into
   // folder_path). Never guessed from the project name — the real location is

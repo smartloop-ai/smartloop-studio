@@ -161,21 +161,21 @@ export function matchTitle(m: any): string {
 }
 
 // Human-readable explanation for each capability tag, shown on hover.
+// Capabilities are what a model has, not what a turn is about: every text
+// model reads documents and writes code, so there is no tag for those.
 export const CAPABILITY_INFO: Record<string, string> = {
+    text: 'Text — holds a conversation: answers, reads documents, writes code',
     vision: 'Vision — understands and interprets images alongside text',
+    reasoning: 'Reasoning — plans, picks tools and skills, and thinks before answering',
     skills: 'Skills — can invoke skills to extend what it can do',
-    dp: 'Document processing — reads and reasons over your documents',
-    general: 'General purpose — summarization, Q&A, and content generation',
-    coding: 'Coding — writes, explains, and fixes code',
 };
 
 // Outlined colors for each capability tag, per the app's label style guide.
 export const CAPABILITY_STYLE: Record<string, { color: string; border: string }> = {
+    text: { color: '#fdba74', border: 'rgba(253,186,116,0.35)' },
     vision: { color: '#93c5fd', border: 'rgba(147,197,253,0.35)' },
+    reasoning: { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' },
     skills: { color: '#86efac', border: 'rgba(134,239,172,0.35)' },
-    dp: { color: '#fdba74', border: 'rgba(253,186,116,0.35)' },
-    general: { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' },
-    coding: { color: '#5eead4', border: 'rgba(94,234,212,0.35)' },
 };
 
 // Short explanation for each plan/access tier tag, shown on hover.

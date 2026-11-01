@@ -88,8 +88,12 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         // (e.g. before bootstrap creates the default project). Safe to commit.
         if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
         retryDelayRef.current = 400;
-        setProjects(res.data);
-        return res.data;
+        // Docent's projects are folders of code it works in from the terminal;
+        // they hold no documents to chat with here, so Studio leaves them out.
+        // The system project is every client's, whatever its record says.
+        const ours = res.data.filter((p: any) => p?.system || p?.client !== 'docent');
+        setProjects(ours);
+        return ours;
       }
       // Service isn't ready (notReady) or errored. Do NOT overwrite the current list
       // with an empty one — that's the blank-sidebar race. Keep what we have and retry
