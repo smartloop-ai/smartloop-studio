@@ -29,6 +29,9 @@ export interface ModelStatusValue {
   // `enabledModels`, so a pending toggle is reflected optimistically — an
   // enabling model still reports enabled=false from the backend.
   enabledCapabilities: Set<string>;
+  // Whether what's enabled can hold a text conversation (false only when every
+  // enabled model is vision-only); documents and skills follow this.
+  textModelEnabled: boolean;
   fetchLocalModels: () => Promise<void>;
 
   // --- Auxiliary downloads in flight, keyed by model name ---
@@ -108,6 +111,20 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
       if (enabledModels.has(name)) (m.capabilities || []).forEach((c: string) => caps.add(c));
     });
     return caps;
+  }, [localModels, enabledModels]);
+
+  // Whether a text conversation is possible with what's enabled. Every model
+  // holds one except one that declares nothing but vision, the same rule the
+  // backend routes by; so this is true with no model enabled (the default
+  // model answers) and false only when every enabled model is vision-only.
+  // Documents need no capability of their own: reading them is text work.
+  const textModelEnabled = useMemo(() => {
+    const enabled = localModels.filter((m: any) => enabledModels.has(m.name || m.id || m.model));
+    if (enabled.length === 0) return true;
+    return enabled.some((m: any) => {
+      const caps: string[] = (m.capabilities || []).map((c: string) => c.toLowerCase());
+      return caps.length === 0 || caps.some((c) => c !== 'vision');
+    });
   }, [localModels, enabledModels]);
 
   const fetchLocalModels = useCallback(async () => {
@@ -407,6 +424,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     enabledModels,
     isEnabled,
     enabledCapabilities,
+    textModelEnabled,
     fetchLocalModels,
     downloads,
     isDownloading,
@@ -419,7 +437,7 @@ export function ModelStatusProvider({ children }: { children: ReactNode }) {
     loadPrimaryModel,
     waitForPrimaryModel,
   }), [
-    localModels, localModelsLoading, enabledModels, isEnabled, enabledCapabilities,
+    localModels, localModelsLoading, enabledModels, isEnabled, enabledCapabilities, textModelEnabled,
     fetchLocalModels, downloads, isDownloading, downloadErrors,
     clearDownloadError, clearDownloadErrors, handleToggleModel, handleCancelDownload,
     primaryProgress, loadPrimaryModel, waitForPrimaryModel,
