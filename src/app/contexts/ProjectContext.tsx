@@ -90,7 +90,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         retryDelayRef.current = 400;
         // Docent's projects are folders of code it works in from the terminal;
         // they hold no documents to chat with here, so Studio leaves them out.
-        const ours = res.data.filter((p: any) => p?.client !== 'docent');
+        // The system project is every client's, whatever its record says.
+        const ours = res.data.filter((p: any) => p?.system || p?.client !== 'docent');
         setProjects(ours);
         return ours;
       }
