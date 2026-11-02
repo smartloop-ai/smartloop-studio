@@ -7,7 +7,6 @@ import { storageService } from '@/app/services/storage.service';
 import { BOOTSTRAP_MODEL } from '@/app/constants';
 import { useAppStatus } from '@/app/contexts/AppStatusContext';
 import { useProjectContext } from '@/app/contexts/ProjectContext';
-import { useUpgrade } from '@/app/contexts/UpgradeContext';
 import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -26,7 +25,7 @@ import DeleteAccountDialog from '@/app/components/delete-account-dialog';
 import { LogoMark } from '@/app/components/logo';
 import PlanUsageCard from '@/app/components/plan-usage-card';
 
-import type { StorageCleanupRequest, StorageUsage, WebSearchStatus } from '@/electron';
+import type { StorageCleanupRequest, StorageUsage } from '@/electron';
 
 // Categories the Clean panel draws as bands of their own, in bar order.  Keys
 // match the API's category keys and the cleanup request flags.
@@ -303,25 +302,6 @@ export default function SettingsPage() {
             setWebSearchSaving(false);
         }
     };
-
-    // The account's monthly search allowance, relayed from the cloud through
-    // SLP (which holds the token). Signed-out accounts have no allowance, and
-    // an SLP without the route leaves this null, which hides the meter.
-    const [webSearchStatus, setWebSearchStatus] = useState<WebSearchStatus | null>(null);
-    useEffect(() => {
-        if (!isSignedIn) {
-            setWebSearchStatus(null);
-            return;
-        }
-        window.electronAPI?.getWebSearchStatus?.().then((res) => {
-            setWebSearchStatus(res?.success && res.data ? res.data : null);
-        });
-    // Re-read on a plan change too: upgrading raises the allowance.
-    }, [isSignedIn, user?.is_paid]);
-    const webSearchQuota = webSearchStatus?.quota ?? null;
-    // How a free account buys more credits: Pro, through StoreKit in the Mac
-    // App Store build and Stripe Checkout elsewhere (UpgradeContext).
-    const { available: canUpgrade, product: proProduct, openUpgrade } = useUpgrade();
 
     // Settings state
     const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_SETTINGS);
@@ -1036,74 +1016,11 @@ export default function SettingsPage() {
                             />
                         </Box>
 
-                        {/* This month's search credits — mirrors the web app's Settings → Web Search. */}
-                        {isSignedIn && webSearchQuota && (() => {
-                            const { limit, used, remaining, resets_at, plan } = webSearchQuota;
-                            const unmetered = limit === null;
-                            const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                            const spent = remaining === 0;
-                            // Amber before the wall, red at it.
-                            const barColor = spent ? 'var(--sl-status-error)' : pct >= 80 ? 'var(--sl-status-warning)' : 'var(--sl-brand-primary)';
-                            const planLabel = plan === 'paid' ? 'Pro' : plan === 'admin' ? 'Admin' : 'Free';
-                            const resetsOn = new Date(resets_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
-                            return (
-                                <>
-                                    <Box className="flex flex-col gap-2 mt-3 p-4" sx={{ bgcolor: 'var(--sl-white-alpha-5)', borderRadius: '12px', border: '1px solid var(--sl-border-subtle)' }}>
-                                        <h3 className="text-sm font-medium" style={{ color: 'var(--sl-text-primary)' }}>Credits this month</h3>
-                                        {unmetered ? (
-                                            <Box className="flex items-center gap-2">
-                                                <TravelExploreIcon sx={{ fontSize: 16, color: 'var(--sl-text-muted)' }} />
-                                                <span className="text-sm" style={{ color: 'var(--sl-text-muted)' }}>
-                                                    {used.toLocaleString()} credits used so far — unlimited
-                                                </span>
-                                            </Box>
-                                        ) : (
-                                            <>
-                                                <Box className="flex items-baseline justify-between gap-3">
-                                                    <span className="text-sm" style={{ color: 'var(--sl-text-primary)' }}>
-                                                        <span className="font-semibold">{used.toLocaleString()}</span>
-                                                        <span style={{ color: 'var(--sl-text-faint)' }}> / {limit!.toLocaleString()} credits</span>
-                                                    </span>
-                                                    <span className="text-xs" style={{ color: 'var(--sl-text-faint)' }}>
-                                                        {(remaining ?? 0).toLocaleString()} left
-                                                    </span>
-                                                </Box>
-                                                <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ backgroundColor: 'var(--sl-bg-surface-3)' }}>
-                                                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%`, backgroundColor: barColor }} />
-                                                </div>
-                                            </>
-                                        )}
-                                        <p className="text-xs" style={{ color: 'var(--sl-text-disabled)' }}>
-                                            {unmetered
-                                                ? 'This account is not metered.'
-                                                : spent
-                                                    ? `You've used this month's credits. Answers still work — they just stop reaching the web. Resets on ${resetsOn}.`
-                                                    : `Resets on ${resetsOn}. ${planLabel} plan: ${limit!.toLocaleString()} credits a month, one per web search.`}
-                                        </p>
-                                        {canUpgrade && plan === 'free' && (
-                                            <Box className="flex items-center justify-between gap-3 pt-3 mt-1 border-t border-sl-border-subtle">
-                                                <span className="text-xs" style={{ color: 'var(--sl-text-muted)' }}>
-                                                    Need more? Pro includes 1,000 credits a month.
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={openUpgrade}
-                                                    className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-sl-text-primary border transition-colors"
-                                                    style={{ borderColor: 'var(--sl-brand-primary)', backgroundColor: 'var(--sl-brand-alpha-10)' }}
-                                                >
-                                                    Upgrade · {proProduct?.formattedPrice || '$5'}/mo
-                                                </button>
-                                            </Box>
-                                        )}
-                                    </Box>
-                                </>
-                            );
-                        })()}
                         <p className="text-xs mt-3 px-1 leading-relaxed" style={{ color: 'var(--sl-text-faint)' }}>
                             Only the search query leaves your device. Result links come back through Smartloop, then candidate pages are
                             fetched and ranked locally, so Smartloop never sees which sites you visit. Query wording, results and page
                             contents are not retained — your account records only that a search ran (when, from which app, and how many
-                            results came back) and counts it against your monthly allowance.{' '}
+                            results came back) and counts it against your monthly credits (one per search, shared with cloud models — see Plan &amp; usage).{' '}
                             <button
                                 type="button"
                                 onClick={() => (window as any).electronAPI?.openExternal('https://smartloop.ai/docs/web-search/')}

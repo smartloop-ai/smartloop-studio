@@ -343,6 +343,8 @@ function finalize(record, outcome, error = null) {
   record.terminalAt = Date.now();
 
   if (outcome === 'done') {
+    // The turn's charge is settled by now; let main re-read the credit meter.
+    try { deps?.onTurnDone?.(); } catch (err) { console.error('[Chat] onTurnDone failed:', err); }
     emit(record, {
       type: 'done',
       content: record.content,
