@@ -1655,26 +1655,69 @@ ipcMain.handle('websearch-status', async () => {
   }
 });
 
-// ── Cloud model allowance ──────────────────────────────────────────────────
-// Remote models are metered in credits per account per month. SLP holds the
-// tokens and relays the cloud's GET /v1/chat/quota. A 401 (signed out) or 403
-// (no cloud access on this account) comes back as `unavailable` so Settings
-// hides the meter rather than showing an error.
-ipcMain.handle('cloud-quota', async () => {
-  try {
-    const baseUrl = slpService.getLocalBaseUrl();
-    if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+// ── Credit allowance ───────────────────────────────────────────────────────
+// Cloud models and web searches draw on one monthly credit pool. SLP holds the
+// tokens and relays the cloud's GET /v1/chat/quota — a network round trip that
+// takes up to a second, too slow to start when Settings opens. So main keeps
+// the last answer and refreshes it on its own schedule: when the window opens,
+// on sign-in/out, and after every finished chat turn (a model call or a search
+// has just been charged). The renderer gets the cached copy at once and hears
+// 'cloud-quota-updated' when a fresh one lands.
+//
+// A 401 (signed out) or 403 (no cloud access) is cached as `unavailable`.
+let cloudQuotaCache = null;
+let cloudQuotaInFlight = null;
+// Bumped by invalidateCloudQuota. A fetch that started before a plan change
+// (sign-in, upgrade) would carry the old allowance, so its answer is dropped
+// and a fresh read takes its place.
+let cloudQuotaGeneration = 0;
 
-    const res = await fetch(`${baseUrl}/v1/chat/quota`);
-    if (res.status === 401 || res.status === 403) return { success: false, unavailable: true };
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      return { success: false, error: data?.detail || `Cloud quota failed (${res.status})` };
+function refreshCloudQuota() {
+  if (cloudQuotaInFlight) return cloudQuotaInFlight;
+  const generation = cloudQuotaGeneration;
+  cloudQuotaInFlight = (async () => {
+    let result;
+    try {
+      const baseUrl = slpService.getLocalBaseUrl();
+      if (!baseUrl) return { success: false, error: 'Local API service is not ready' };
+      const res = await fetch(`${baseUrl}/v1/chat/quota`);
+      if (res.status === 401 || res.status === 403) {
+        result = { success: false, unavailable: true };
+      } else if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        return { success: false, error: data?.detail || `Credit quota failed (${res.status})` };
+      } else {
+        result = { success: true, data: await res.json() };
+      }
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      cloudQuotaInFlight = null;
     }
-    return { success: true, data: await res.json() };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
+    if (generation !== cloudQuotaGeneration) return refreshCloudQuota();
+    // Only definite answers are cached; a transient failure keeps the last one.
+    cloudQuotaCache = result;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('cloud-quota-updated', result);
+    }
+    return result;
+  })();
+  return cloudQuotaInFlight;
+}
+
+function invalidateCloudQuota() {
+  cloudQuotaGeneration++;
+  cloudQuotaCache = null;
+  refreshCloudQuota();
+}
+
+// Stale-while-revalidate: answer from the cache at once, and re-read in the
+// background so a plan changed anywhere (browser checkout, another device, the
+// backend) lands via 'cloud-quota-updated' without a restart.
+ipcMain.handle('cloud-quota', async () => {
+  if (!cloudQuotaCache) return refreshCloudQuota();
+  refreshCloudQuota();
+  return cloudQuotaCache;
 });
 
 // ── Storage / free-up-space ────────────────────────────────────────────────
@@ -2041,9 +2084,11 @@ function revealMainWindow(baseUrl) {
     database,
     slpService,
     loadPrimaryModel,
+    onTurnDone: refreshCloudQuota,
   });
   fetchModels();
   refreshMcpCatalogCache();
+  refreshCloudQuota();
 }
 
 // A bootstrap that stops emitting SSE progress must not trap the user behind a
@@ -3194,6 +3239,7 @@ ipcMain.handle('slp-auth-logout', async () => {
       refreshModelsCache();
       invalidateMcpCatalogCache();
       refreshMcpCatalogCache();
+      invalidateCloudQuota();
       return { success: true };
     } else {
       return { success: false, error: `HTTP ${res.status}` };
@@ -3212,6 +3258,7 @@ ipcMain.handle('slp-health-poke', () => {
 
 // Track the last known identity so we can bust the models cache on user change.
 let lastUserProfileEmail = null;
+let lastUserProfilePlan = null;
 
 // Fetch the user profile from the backend and broadcast it to the renderer.
 async function fetchUserProfile() {
@@ -3238,6 +3285,10 @@ async function fetchUserProfile() {
         default_memory: result.default_memory !== undefined ? result.default_memory : true,
         onboarded: result.onboarded !== undefined ? result.onboarded : false,
       };
+      // A plan change (upgrade, cancellation, made admin) moves the allowance.
+      const plan = `${profile.admin ? 'admin' : ''}:${profile.is_paid}`;
+      const planChanged = lastUserProfilePlan !== null && lastUserProfilePlan !== plan;
+      lastUserProfilePlan = plan;
       if (lastUserProfileEmail !== profile.email) {
         lastUserProfileEmail = profile.email;
         invalidateModelsCache();
@@ -3246,6 +3297,9 @@ async function fetchUserProfile() {
         // login hook — there is no dedicated login IPC.
         invalidateMcpCatalogCache();
         refreshMcpCatalogCache();
+        invalidateCloudQuota();
+      } else if (planChanged) {
+        invalidateCloudQuota();
       }
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('user-profile-updated', profile);
@@ -3283,6 +3337,9 @@ const CHECKOUT_WATCH_INTERVAL_MS = 5_000;
 let checkoutWatch = null;
 
 function sendUpgradeState(payload) {
+  // A confirmed purchase raises the allowance; re-read it now rather than on
+  // the next profile refresh.
+  if (payload?.state === 'purchased') invalidateCloudQuota();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('upgrade-state', payload);
 }
 
@@ -3985,6 +4042,8 @@ function createWindow() {
   mainWindow.on('focus', async () => {
     if (Date.now() - lastFocusAuthCheck < FOCUS_AUTH_INTERVAL_MS) return;
     lastFocusAuthCheck = Date.now();
+    // Coming back from a browser checkout lands here: re-read the allowance too.
+    refreshCloudQuota();
     const status = await readAuthStatus();
     if (status.success && status.has_access_token) {
       fetchUserProfile();
@@ -4179,6 +4238,7 @@ ipcMain.handle('auth-delete-account', async () => {
   refreshModelsCache();
   invalidateMcpCatalogCache();
   refreshMcpCatalogCache();
+  invalidateCloudQuota();
   healthMonitor.poke();
   return { success: true };
 });

@@ -178,6 +178,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWebSearchStatus: () => ipcRenderer.invoke('websearch-status'),
   // Cloud model monthly allowance (proxied through SLP)
   getCloudQuota: () => ipcRenderer.invoke('cloud-quota'),
+  onCloudQuotaUpdated: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('cloud-quota-updated', handler);
+    return () => ipcRenderer.off('cloud-quota-updated', handler);
+  },
   // Storage / free-up-space
   getStorageUsage: () => ipcRenderer.invoke('storage-usage'),
   cleanupStorage: (opts) => ipcRenderer.invoke('storage-cleanup', opts),

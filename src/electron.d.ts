@@ -469,6 +469,8 @@ export interface ElectronAPI {
   getWebSearchStatus: () => Promise<{ success: boolean; data?: WebSearchStatus; unsupported?: boolean; error?: string }>;
   // Cloud model allowance — proxied to SLP's /v1/chat/quota. `unavailable`: signed out or no cloud access.
   getCloudQuota: () => Promise<{ success: boolean; data?: CloudQuota; unavailable?: boolean; error?: string }>;
+  // Pushed by main whenever it re-reads the allowance (window open, sign-in/out, finished turn).
+  onCloudQuotaUpdated: (callback: (res: { success: boolean; data?: CloudQuota; unavailable?: boolean; error?: string }) => void) => () => void;
   // Storage / free-up-space — proxied to the framework's /v1/storage endpoints
   getStorageUsage: () => Promise<{ success: boolean; data?: StorageUsage; error?: string }>;
   cleanupStorage: (opts: StorageCleanupRequest) =>
