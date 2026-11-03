@@ -43,6 +43,8 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
+import { useThemeIcon } from './theme-rail-icon';
 
 import '@/app/styles/chat.css';
 
@@ -69,6 +71,14 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   json: 'JSON File',
   html: 'HTML Document',
 };
+// The Connections glyph from the right rail, so an MCP citation reads as the
+// same thing the user connected: the active theme's own icon when it ships
+// one, otherwise the rail's default plug.
+function McpCitationIcon() {
+  const themeIcon = useThemeIcon();
+  return themeIcon('mcp', 12) ?? <PowerOutlinedIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />;
+}
+
 function docTypeLabel(name: string): string {
   const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
   return DOC_TYPE_LABELS[ext] || (ext ? `${ext.toUpperCase()} File` : 'Document');
@@ -1394,8 +1404,14 @@ export default function Chat(props: {
                                     const url = [citation.url, citation.link, citation.source_url, citation.href, citation.web_url]
                                       .find((v: any) => typeof v === 'string' && v.trim())
                                       ?.trim() || '';
-                                    const labelIsUrl = typeof label === 'string' && /^(https?:\/\/|www\.)/i.test(label);
-                                    const isLink = !!url || labelIsUrl;
+                                    // An MCP tool call the answer drew on: not a file and not a
+                                    // page, so it gets no preview/download and nothing to open.
+                                    // The agent sends `source: "mcp"` with the server and tool.
+                                    const isMcp = citation.source === 'mcp';
+                                    const mcpTool = (citation.tool_name || label || '').toString();
+                                    const mcpServer = (citation.server_name || '').toString();
+                                    const labelIsUrl = !isMcp && typeof label === 'string' && /^(https?:\/\/|www\.)/i.test(label);
+                                    const isLink = !isMcp && (!!url || labelIsUrl);
                                     const linkUrl = url || (labelIsUrl ? label : '');
                                     // Show only the base URL (scheme + host) in the pill. Paths,
                                     // query strings and hashes are what blow the layout out; the
@@ -1407,9 +1423,11 @@ export default function Chat(props: {
                                         return `${parsed.protocol}//${parsed.host.replace(/^www\./, '')}`;
                                       } catch { return u; }
                                     };
-                                    const displayLabel = isLink
-                                      ? baseUrl(linkUrl || label || '')
-                                      : (label || '');
+                                    const displayLabel = isMcp
+                                      ? mcpTool
+                                      : isLink
+                                        ? baseUrl(linkUrl || label || '')
+                                        : (label || '');
                                     const folderPath = props.project?.folder_path;
                                     // Prefer a path the backend gave us; only fall back to the
                                     // <project>/documents/<name> convention when it didn't.
@@ -1421,12 +1439,15 @@ export default function Chat(props: {
                                     const size = citation.file_size || citation.size;
                                     // Links carry no second line — it used to repeat the hostname,
                                     // which the label now shows on its own.
-                                    const meta = isLink
+                                    const meta = isMcp
+                                      ? ['MCP', mcpServer].filter(Boolean).join(' · ')
+                                      : isLink
                                       ? ''
                                       : [size ? formatBytes(size) : '', docTypeLabel(label)]
                                         .filter(Boolean)
                                         .join(' · ');
                                     const openDoc = () => {
+                                      if (isMcp) return;
                                       if (isLink) {
                                         const target = /^www\./i.test(linkUrl) ? `https://${linkUrl}` : linkUrl;
                                         window.electronAPI?.openExternal(target);
@@ -1440,15 +1461,19 @@ export default function Chat(props: {
                                     return (
                                       <div
                                         key={idx}
-                                        className="group inline-flex items-center gap-2 px-2 py-1 rounded-md border border-sl-border-hover hover:border-sl-brand-primary hover:bg-sl-bg-surface-2 transition-colors cursor-pointer"
-                                        title={isLink ? linkUrl : (resolvedPath || citation.document_id)}
+                                        className={`group inline-flex items-center gap-2 px-2 py-1 rounded-md border border-sl-border-hover transition-colors ${isMcp ? 'cursor-default' : 'cursor-pointer hover:border-sl-brand-primary hover:bg-sl-bg-surface-2'}`}
+                                        title={isMcp
+                                          ? `MCP tool ${mcpTool}${mcpServer ? ` on ${mcpServer}` : ''}`
+                                          : isLink ? linkUrl : (resolvedPath || citation.document_id)}
                                         onClick={openDoc}
                                       >
                                         <div
                                           className="flex items-center justify-center w-6 h-6 rounded flex-shrink-0"
                                           style={{ background: 'var(--sl-brand-alpha-15)' }}
                                         >
-                                          {isLink
+                                          {isMcp
+                                            ? <McpCitationIcon />
+                                            : isLink
                                             ? <LinkIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
                                             : <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />}
                                         </div>
@@ -1458,6 +1483,7 @@ export default function Chat(props: {
                                             <div className="text-[9px] text-sl-text-disabled uppercase tracking-wide truncate" style={{ maxWidth: 200 }}>{meta}</div>
                                           )}
                                         </div>
+                                        {!isMcp && (
                                         <div className="flex items-center gap-0.5 flex-shrink-0 ml-0.5">
                                           {isLink ? (
                                             <Tooltip title="Open in browser" arrow placement="top">
@@ -1492,6 +1518,7 @@ export default function Chat(props: {
                                             </>
                                           )}
                                         </div>
+                                        )}
                                       </div>
                                     );
                                   })}
