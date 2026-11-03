@@ -18,7 +18,7 @@ All `gh` calls run as the **mehfuzh** account: prefix them with `GH_TOKEN=$(gh a
 `.github/workflows/release-prod.yml`:
 
 1. **Dispatch** (`workflow_dispatch`, inputs `electron_version`, `agent_version`) — bumps `package.json` (electron app), `electron/slp-setup.js` (`const VERSION`) and `Makefile` (`SLP_VERSION`), and opens PR **"Release prod: electron <app>, agent <agent>"** from `release-prod-<app>`.
-2. **Merge** — a push to `main` that changes the `package.json` version (and isn't tagged yet) tags `v<app>` and calls `build-and-deploy.yml` with `publish: true`. The publish job waits for **manual approval on the `production` environment** — a person approves it in GitHub; never try to bypass it.
+2. **Merge** — a push to `main` that changes the `package.json` version (and isn't tagged yet) tags `v<app>` and calls `build-and-deploy.yml` with `publish: true`: build all platforms → upload to R2 → draft release → **publish**. The publish job runs in the `production` environment; if that environment has required reviewers it waits for a person to approve it in GitHub (never try to bypass it). Without reviewers it publishes straight away, which is what happened for 1.0.68 — so merging the release PR means shipping to users.
 
 ## Steps
 
@@ -31,7 +31,7 @@ All `gh` calls run as the **mehfuzh** account: prefix them with `GH_TOKEN=$(gh a
        echo "$f $(curl -s -o /dev/null -w '%{http_code}' https://dl.smartloop.ai/slp/<agent_version>/$f)"
      done
      ```
-     Any non-200: stop — releasing would ship an app that cannot install its agent.
+     Any non-200: stop — releasing would ship an app that cannot install its agent. Also compare each `content-length` with the previous agent version's (~430–450 MB): the archives bundle the embedding model, and the "Stage bundled resources" build step fails on an archive without it (1.2.20's linux-arm64 did). A far smaller archive must be rebuilt in the smartloop repo first.
 
 2. **Dispatch**
    - `gh workflow run release-prod.yml -R smartloop-ai/smartloop-studio -f agent_version=<agent> [-f electron_version=<app>]` — pass the agent version explicitly when following an agent release, so it matches exactly.
@@ -43,9 +43,9 @@ All `gh` calls run as the **mehfuzh** account: prefix them with `GH_TOKEN=$(gh a
 
 4. **Follow build & deploy**
    - Find the `push` run of Release Prod on `main` (`gh run list --workflow release-prod.yml --event push -L1`). Confirm `detect-release` tagged `v<app>`.
-   - Watch it in the background (`gh run watch <id> --interval 30`). When builds finish, the run sits **waiting** on the `production` environment.
-   - On a build failure: `gh run view <id> --log-failed | tail -50`, report it, and stop.
+   - Watch it in the background (`gh run watch <id> --interval 30`) until it completes or sits **waiting** on the `production` environment.
+   - On a build failure: read the failing step's log (`gh api repos/smartloop-ai/smartloop-studio/actions/jobs/<job>/logs | tail -60`), fix the cause, then `gh run rerun <id> --failed` — this re-runs only the failed platform and the skipped upload/publish jobs, not the platforms that already built.
 
-5. **Report** the app and agent versions, the tag, the run URL, and that publishing is waiting for the user to approve the `production` deployment in GitHub Actions (link the run).
+5. **Report** the app and agent versions, the tag, the run URL, and either the published download links (from the Publish Release job log) or that publishing is waiting for approval of the `production` deployment (link the run).
 
 Do not add AI attribution to anything the release creates.
