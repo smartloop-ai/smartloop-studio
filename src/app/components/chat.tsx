@@ -43,7 +43,8 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
 
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import ExtensionIcon from '@mui/icons-material/Extension';
+import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
+import { useThemeIcon } from './theme-rail-icon';
 
 import '@/app/styles/chat.css';
 
@@ -70,6 +71,14 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   json: 'JSON File',
   html: 'HTML Document',
 };
+// The Connections glyph from the right rail, so an MCP citation reads as the
+// same thing the user connected: the active theme's own icon when it ships
+// one, otherwise the rail's default plug.
+function McpCitationIcon() {
+  const themeIcon = useThemeIcon();
+  return themeIcon('mcp', 12) ?? <PowerOutlinedIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />;
+}
+
 function docTypeLabel(name: string): string {
   const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
   return DOC_TYPE_LABELS[ext] || (ext ? `${ext.toUpperCase()} File` : 'Document');
@@ -1463,7 +1472,7 @@ export default function Chat(props: {
                                           style={{ background: 'var(--sl-brand-alpha-15)' }}
                                         >
                                           {isMcp
-                                            ? <ExtensionIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
+                                            ? <McpCitationIcon />
                                             : isLink
                                             ? <LinkIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />
                                             : <InsertDriveFileIcon sx={{ fontSize: 12, color: 'var(--sl-brand-primary)' }} />}
