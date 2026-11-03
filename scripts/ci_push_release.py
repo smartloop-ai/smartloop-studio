@@ -61,6 +61,8 @@ from pathlib import Path
 
 DEFAULT_BASE_URL = "https://api.smartloop.ai"
 API_PREFIX = "/v1/releases"
+# Identify the caller; urllib/httpx defaults look like generic bots to proxies.
+USER_AGENT = "smartloop-release-ci/1.0"
 
 
 def api_url(base: str) -> str:
@@ -73,6 +75,7 @@ def _request(method: str, url: str, token: str, payload: dict = None):
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", USER_AGENT)
     try:
         with urllib.request.urlopen(req) as resp:
             body = resp.read().decode()
