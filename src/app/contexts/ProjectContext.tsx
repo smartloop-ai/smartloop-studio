@@ -202,7 +202,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (!electron?.onBootstrapComplete) return;
     electron.onBootstrapComplete(() => { refreshAndReconcile(); });
     return () => electron.removeBootstrapCompleteListener?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshAndReconcile]);
 
   // Recover off the central health-monitor poll. This is the repeated, self-healing
@@ -223,7 +222,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     // Deliberately no cleanup: preload's removeHealthUpdateListener is
     // removeAllListeners('health-update'), shared with AppStatusContext, and this
     // provider lives for the app's lifetime. Register once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Clear any pending retry timer on unmount.
