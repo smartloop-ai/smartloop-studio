@@ -950,7 +950,7 @@ export default function Home() {
     }
   };
 
-  // @ts-ignore - kept for future use with tab close
+  // @ts-expect-error - kept for future use with tab close
   const _handleDeleteConversationFromList = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation(); // Prevent navigation when clicking delete
 
