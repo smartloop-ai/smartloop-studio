@@ -23,7 +23,7 @@ talks to it over HTTP on localhost using an OpenAI-compatible API.
   OpenAI SDK; markdown, code, math, and mermaid rendered with Streamdown.
 - **Projects** — group conversations, documents, MCP servers, and skills; export
   and import a project as a zip.
-- **Documents & RAG** — upload files into a project, watch indexing progress over
+- **Documents** — upload files into a project, watch indexing progress over
   SSE, browse them in the built-in document viewer.
 - **Skills** — per-project `skills/<name>/SKILL.md` files, editable in-app.
 - **MCP servers** — configure Model Context Protocol servers per project.
