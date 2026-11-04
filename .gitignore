@@ -152,3 +152,10 @@ packaging/snap/studio-*.deb.part
 packaging/snap/parts/
 packaging/snap/stage/
 packaging/snap/prime/
+
+# Local ngrok config (holds a personal authtoken; see ngrok.example.yml)
+ngrok.yml
+
+# Python bytecode
+__pycache__/
+*.pyc

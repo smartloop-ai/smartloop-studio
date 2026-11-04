@@ -41,6 +41,7 @@ ngrok:
 	@echo "🚀 Starting ngrok tunnels for both services..."
 	@echo "Frontend: https://local.smartloop.ai -> localhost:3000"
 	@echo "API: Random ngrok URL -> localhost:8888 (check terminal output)"
+	@test -f ngrok.yml || { echo "Copy ngrok.example.yml to ngrok.yml and set your authtoken"; exit 1; }
 	ngrok start --all --config ngrok.yml
 
 # Stop ngrok processes

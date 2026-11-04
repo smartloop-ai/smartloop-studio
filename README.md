@@ -234,10 +234,42 @@ Artifacts land in `dist/`:
 For cutting a production release — the GitHub Actions flow, versioning, tagging,
 and publishing to the update feed — see [RELEASING.md](RELEASING.md).
 
+## 🤝 Contributing
+
+Contributions are welcome! Smartloop Studio is open source under the
+[Apache License 2.0](LICENSE), and every contribution is accepted under the same
+license.
+
+1. Fork the repo and create a branch from `main`.
+2. Make your change; run `npm run lint` and `npm run build`.
+3. Sign off your commits (`git commit -s`) per the
+   [Developer Certificate of Origin](https://developercertificate.org/).
+4. Open a pull request against `main` describing what changed and how you tested it.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, including how to report
+bugs and security issues.
+
+## 📄 License
+
+Copyright 2026 Smartloop Inc.
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE) for details.
+
+**SLP is not covered by this license.** The SLP inference framework that the app
+downloads or bundles is proprietary software from Smartloop Inc., distributed
+under its own terms. The Apache 2.0 license applies only to the source code in
+this repository.
+
+**Trademarks.** "Smartloop", "Smartloop Studio" and the Smartloop logos are
+trademarks of Smartloop Inc. As section 6 of the Apache License states, the
+license does not grant permission to use them. If you distribute a modified
+build, please give it a different name and icon.
+
 ## 📖 Learn More
 
 - [Electron](https://www.electronjs.org/docs) · [Vite](https://vitejs.dev/) · [React](https://react.dev/) · [electron-builder](https://www.electron.build/)
 
 ---
 
-© 2026 Smartloop Inc.
+© 2026 Smartloop Inc. · Licensed under [Apache 2.0](LICENSE)

@@ -1,0 +1,14 @@
+version: "2"
+
+# Copy to ngrok.yml (gitignored) and set your own token:
+#   cp ngrok.example.yml ngrok.yml
+# Get a token at https://dashboard.ngrok.com/get-started/your-authtoken
+authtoken: <your-ngrok-authtoken>
+
+tunnels:
+  api:
+    addr: 8888
+    proto: http
+  frontend:
+    addr: 3000
+    proto: http
