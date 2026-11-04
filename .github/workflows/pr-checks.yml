@@ -1,0 +1,46 @@
+name: PR Checks
+
+# Runs on every pull request, including PRs from forks. Uses no secrets and a
+# read-only token, so it is safe for outside contributors.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Type-check and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      # --ignore-scripts skips the electron-builder native rebuild; tsc and
+      # vite don't need the native modules.
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+
+  lint:
+    name: Lint (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # main has existing lint errors; report them without failing the PR until
+    # they're cleaned up, then drop continue-on-error.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
