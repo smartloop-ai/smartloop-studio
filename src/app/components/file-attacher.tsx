@@ -67,7 +67,6 @@ interface FileAttacherProps {
   disabled?: boolean;
   size?: 'small' | 'medium';
   showDragDrop?: boolean;
-  maxFileSize?: number; // in MB
   clearTrigger?: number; // Increment this to trigger clear from parent
   allowImages?: boolean; // Accept PNG/JPG — only when a vision model is enabled (backend OCRs them)
 
@@ -82,7 +81,6 @@ export default function FileAttacher({
   disabled = false,
   size = 'small',
   showDragDrop = false,
-  maxFileSize = 20,
   clearTrigger = 0,
   allowImages = false,
   externalDrop = null,
@@ -134,16 +132,11 @@ export default function FileAttacher({
     const allowedExtensions = ['.pdf', '.docx', '.txt', '.csv', '.json', '.md', ...(allowImages ? ['.png', '.jpg', '.jpeg'] : [])];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
 
-    const maxSizeBytes = maxFileSize * 1024 * 1024;
-
     // Check by MIME type OR by file extension
     const isValidType = allowedTypes.includes(file.type) || allowedExtensions.includes(fileExtension);
 
     if (!isValidType) {
       return `Invalid file type. Supported: PDF, DOCX, TXT, CSV, JSON${allowImages ? ', PNG, JPG' : ''}`;
-    }
-    if (file.size > maxSizeBytes) {
-      return `File size exceeds ${maxFileSize}MB limit`;
     }
     return null;
   };
@@ -196,7 +189,7 @@ export default function FileAttacher({
 
     // Start upload immediately
     await uploadFile(file);
-  }, [maxFileSize, onError]);
+  }, [onError]);
 
   // Keep ref in sync so external drop useEffect can call it
   handleFileSelectRef.current = handleFileSelect;
