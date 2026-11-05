@@ -65,8 +65,13 @@ stage_chat_model() {
   echo "⬇️  No local copy — fetching $PLATFORM_NAME from $API_BASE ..."
 
   local manifest
-  manifest="$(curl -sf --max-time 60 "$API_BASE/v1/models/$PLATFORM_NAME/download")" || {
-    echo "❌ Could not reach the download manifest at $API_BASE"
+  # The API intermittently answers 503 or hangs; retry rather than fail the
+  # whole build on one bad response. --retry covers timeouts and 408/429/5xx;
+  # --max-time applies to each attempt, so the worst case is ~4 minutes. -S
+  # prints why the last attempt failed (timeout vs HTTP status).
+  manifest="$(curl -sSf --max-time 30 --retry 5 --retry-delay 10 --retry-connrefused \
+    "$API_BASE/v1/models/$PLATFORM_NAME/download")" || {
+    echo "❌ Could not reach the download manifest at $API_BASE after 6 attempts"
     echo "   The app will download the model on first launch instead."
     return 1
   }
