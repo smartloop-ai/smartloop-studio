@@ -208,15 +208,8 @@ export function useProjectDocuments({ projectId, folderPath }: UseProjectDocumen
 
   const validateFile = (file: File): boolean => {
     const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
-    const maxSize = 50 * 1024 * 1024; // 50MB
-
     if (!allowedTypes.includes(file.type) && !/\.md$/i.test(file.name)) {
       setUploadError('Invalid file type. Supported: PDF, DOCX, TXT, MD');
-      return false;
-    }
-
-    if (file.size > maxSize) {
-      setUploadError('File size exceeds 50MB limit');
       return false;
     }
 
