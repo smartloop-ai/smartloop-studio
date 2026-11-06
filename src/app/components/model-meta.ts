@@ -168,6 +168,7 @@ export const CAPABILITY_INFO: Record<string, string> = {
     vision: 'Vision — understands and interprets images alongside text',
     reasoning: 'Reasoning — plans, picks tools and skills, and thinks before answering',
     skills: 'Skills — can invoke skills to extend what it can do',
+    tools: 'Tools — can use the tools your connected apps offer (like searching Linear or creating an issue) on its own: it picks a tool, reads the result, and continues until the task is done',
 };
 
 // Outlined colors for each capability tag, per the app's label style guide.
@@ -176,6 +177,7 @@ export const CAPABILITY_STYLE: Record<string, { color: string; border: string }>
     vision: { color: '#93c5fd', border: 'rgba(147,197,253,0.35)' },
     reasoning: { color: '#c4b5fd', border: 'rgba(196,181,253,0.35)' },
     skills: { color: '#86efac', border: 'rgba(134,239,172,0.35)' },
+    tools: { color: '#5eead4', border: 'rgba(94,234,212,0.35)' },
 };
 
 // Short explanation for each plan/access tier tag, shown on hover.
