@@ -693,6 +693,27 @@ jobs:
         run: |
           python scripts/ci_push_release.py --file release.json
 
+      # smartloop.ai bakes the latest published release into its build
+      # (website/docusaurus.config.ts), so ask its Pages workflow to rebuild now
+      # instead of waiting for the daily run. GITHUB_TOKEN can't dispatch to
+      # another repo; WEBSITE_DISPATCH_TOKEN is a fine-grained PAT on
+      # smartloop-ai/website with Contents: read & write. The release is already
+      # live at this point, so a failed dispatch only warns — the site's daily
+      # cron still picks it up.
+      - name: Rebuild smartloop.ai with the new version
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::WEBSITE_DISPATCH_TOKEN not set; smartloop.ai updates on its next daily build."
+            exit 0
+          fi
+          VERSION=$(jq -r .version release.json)
+          gh api repos/smartloop-ai/website/dispatches \
+            -f event_type=release-published \
+            -f "client_payload[version]=$VERSION" \
+            || echo "::warning::Could not trigger the smartloop.ai rebuild; it updates on its next daily build."
+
   notify-result:
     if: always()
     needs: [notify-start, build-macos, build-linux, build-windows, upload-to-gcp, create-draft-release]
