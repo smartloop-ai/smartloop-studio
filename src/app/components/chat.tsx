@@ -369,6 +369,15 @@ export default function Chat(props: {
   const messages = session.messages;
   const chatStream = useChatStream();
   const isLoading = starting || session.busy;
+  // A turn can add, change or delete a skill ("save this as a skill"); when it
+  // ends, have the "/" picker and the skills panel read the list again.
+  const wasBusyRef = useRef(false);
+  useEffect(() => {
+    if (wasBusyRef.current && !session.busy) {
+      window.dispatchEvent(new CustomEvent('skillsSaved'));
+    }
+    wasBusyRef.current = session.busy;
+  }, [session.busy]);
   // Image attachments require a vision-capable model — the SLP backend
   // OCRs/describes images through it at attachment-upload time.
   const visionEnabled = enabledCapabilities.has('vision');
