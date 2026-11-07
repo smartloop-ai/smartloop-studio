@@ -102,7 +102,7 @@ test: stop
 # SLP version (must match VERSION in electron/slp-setup.js)
 # The SLP framework is bundled into every packaged platform from build/slp/ (see
 # require-staged-slp) and run in place from inside the app.
-SLP_VERSION=1.2.21
+SLP_VERSION=1.2.22
 
 # Clean electron build artifacts
 clean-electron:
